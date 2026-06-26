@@ -17,6 +17,7 @@ Load only what the review needs:
 - `../_orbit-eval-references/orbit-eval-principles.md` for suite quality, saturation, statistics, and gate recommendations.
 - `../_orbit-eval-references/trial-isolation.md` for isolation and contamination checks.
 - `../_orbit-eval-references/scorer-selection.md` for grader calibration review.
+- `../_orbit-eval-references/llm-affordance-file-capture.md` when reviewing comparative fresh-agent evals that used file-captured outcomes or cited docs and evidence.
 
 ## Workflow
 
@@ -29,6 +30,7 @@ Load only what the review needs:
    - Spot-read representative transcripts or trajectories, including failures and surprising passes.
    - Compare final environment outcomes to end-state checks.
    - Treat final assistant claims or command stdout as supporting evidence, not as the outcome.
+   - For file-captured LLM-affordance runs, confirm `outcome_ref` and `transcript_ref` are separate, the outcome file exists and parses, and deterministic cited-path checks were recorded before any aggregate claim.
 
 3. Judge case and grader quality.
    - Confirm reference solutions or known examples prove the task is passable.
@@ -42,7 +44,9 @@ Load only what the review needs:
    - Check whether repeated samples, pass@k, pass^k, confidence intervals, or paired comparisons are needed before claiming improvement.
    - For comparative fresh-agent evals, verify baseline/treatment prompt deltas, pairing by runtime/model, visible artifacts, time budget parity, contamination handling, and invalid-trial exclusions.
    - Separate "the treatment prompt forced the intended tool" from "the affordance is naturally discoverable and useful."
-   - Treat output truncation, invalid JSON, stopped trials, and read-only violations as evidence about harness quality before counting them as agent capability.
+   - Treat missing or invalid outcome files, output truncation, invalid JSON, stopped trials, wrong worktree, answer-key leakage, and read-only violations as harness-quality evidence before counting them as agent capability.
+   - For file-captured LLM-affordance runs, review deterministic cited-path checks and semantic proof checks from `../_orbit-eval-references/llm-affordance-file-capture.md` before trusting citation-quality or coverage deltas.
+   - Downgrade or invalidate runs that relied only on terminal tails or final claims when file capture was practical.
 
 5. Decide what to do next.
    - Mark saturated capability evals as regression candidates or refresh them with harder inputs.

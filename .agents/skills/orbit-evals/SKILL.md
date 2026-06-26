@@ -51,6 +51,7 @@ When more than one stage is requested, complete them in order: construct, execut
    - Keep answer keys hidden from the agent under test.
    - Capture transcript or trajectory separately from final environment outcome.
    - For comparative fresh-agent evals, use fresh processes or threads, pair trials by runtime/model when possible, and record the controlled prompt delta plus friction metrics.
+   - For LLM-facing affordance evals with cited docs or evidence, load `../_orbit-eval-references/llm-affordance-file-capture.md` and prefer one temp outcome JSON per trial when practical.
    - Do not run `composer test:e2e*` unless the user explicitly invokes that Composer command from a shell.
 
 4. Review the run before trusting scores.

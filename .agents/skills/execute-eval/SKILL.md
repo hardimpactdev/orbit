@@ -17,6 +17,7 @@ Load only what the run needs:
 - `../_orbit-eval-references/trial-isolation.md` for clean-state, answer-key, reset, and flake rules.
 - `../_orbit-eval-references/scorer-selection.md` when applying or calibrating graders.
 - `../_orbit-eval-references/orbit-eval-principles.md` for repeated sampling, pass@k, pass^k, and release-gate boundaries.
+- `../_orbit-eval-references/llm-affordance-file-capture.md` when running comparative fresh-agent evals for LLM-facing affordances and file-captured outcomes are practical.
 
 ## Workflow
 
@@ -28,6 +29,7 @@ Load only what the run needs:
    - Use existing Orbit setup rules and project skills.
    - For state-modifying evals, isolate by worktree, sandbox, database, temp path, retained topology, or explicit reset.
    - For comparative fresh-agent evals, prepare separate fresh agent processes or fresh threads per trial and record which artifacts each condition can see.
+   - For LLM-facing affordance evals where cited docs or evidence matter, prefer the file-capture pattern in `../_orbit-eval-references/llm-affordance-file-capture.md` when practical: one temp outcome JSON per trial, transcript refs separate from outcome refs, and read-only worktrees unless the case measures edits.
    - Do not run `composer test:e2e*` unless the user explicitly invokes the relevant Composer E2E command.
 
 3. Execute one trial at a time.
@@ -35,12 +37,14 @@ Load only what the run needs:
    - For baseline/treatment pairs, keep the task, output contract, time budget, and grader the same; record the exact controlled prompt delta.
    - Capture transcript or trajectory, including messages, tool calls, intermediate observations, and final response.
    - Capture final outcome separately: files, DB rows, JSON, process state, topology facts, command side effects, or other observable state.
+   - For file-captured LLM-affordance trials, require exactly one outcome JSON per trial when practical, record its path in `outcome_ref`, keep `transcript_ref` separate, and run the deterministic checks from `../_orbit-eval-references/llm-affordance-file-capture.md` before semantic scoring.
    - Capture friction metrics when relevant: elapsed time, tool calls, files or sources used, evidence count, output validity, uncertainty count, and stop reason.
 
 4. Grade and reset.
    - Run deterministic graders before model or human graders when both apply.
    - Record grader results per trial, including `Unknown` or inconclusive results when evidence is insufficient.
-   - Mark contaminated, truncated, invalid-output, wrong-worktree, read-only-violating, or answer-key-leaking trials as invalid, harness failure, or infrastructure failure before scoring agent capability.
+   - Mark contaminated, truncated, missing or invalid outcome files, wrong-worktree, read-only-violating, or answer-key-leaking trials as invalid, harness failure, or infrastructure failure before scoring agent capability.
+   - Record deterministic grader commands and results for file-captured outcomes; classify exact-path misses as agent citation failures only after harness validity is confirmed.
    - Record reset or teardown steps before starting the next trial.
    - Classify infrastructure failure separately from genuine agent failure.
 

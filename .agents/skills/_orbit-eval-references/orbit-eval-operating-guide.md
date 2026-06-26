@@ -67,14 +67,16 @@ Execute:
 
 - Start each trial in a fresh Solo process or fresh Codex thread.
 - Pair baseline and treatment trials by runtime/model when possible.
-- Capture transcript refs, final outcome refs, visible artifacts, environment snapshot, and reset notes.
+- For LLM-facing affordance evals with cited docs or evidence, prefer file-captured outcomes when practical. See `llm-affordance-file-capture.md` for the one-outcome-file-per-trial contract, deterministic path checks, and semantic proof checks.
+- Capture transcript refs, final outcome refs, visible artifacts, environment snapshot, and reset notes. Keep transcript refs separate from outcome refs.
 - Track friction metrics: elapsed time, tool calls, file/source count, evidence count, output validity, uncertainty count, and stop reason.
-- Mark contaminated, truncated, invalid-output, wrong-worktree, read-only-violating, or answer-key-leaking trials as invalid or harness failures before aggregation.
+- Mark contaminated, truncated, missing or invalid outcome files, wrong-worktree, read-only-violating, or answer-key-leaking trials as invalid or harness failures before aggregation.
 
 Review:
 
 - Check the prompt delta before trusting the score. A treatment that was forced to use a tool proves tool-assisted performance, not natural discoverability.
 - Read representative transcripts, including failures and surprising passes.
+- For file-captured runs, confirm deterministic cited-path checks and semantic proof checks ran before trusting citation or coverage claims. See `llm-affordance-file-capture.md`.
 - Scope conclusions to the sample size. A small paired run can justify the next slice or a sharper eval; it rarely justifies a release gate.
 
 ## Promotion Rules
