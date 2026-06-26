@@ -103,7 +103,18 @@ if ! [[ "$MAX_BACKGROUND_JOBS" =~ ^[0-9]+$ ]] || [ "$MAX_BACKGROUND_JOBS" -lt 1 
 fi
 
 running_bg_jobs() {
-    jobs -pr | wc -l | tr -d '[:space:]'
+    local count=0
+    local pid
+
+    for pid in $(jobs -pr); do
+        if [ -n "${PROGRESS_TICKER_PID:-}" ] && [ "$pid" = "$PROGRESS_TICKER_PID" ]; then
+            continue
+        fi
+
+        count=$((count + 1))
+    done
+
+    echo "$count"
 }
 
 wait_for_bg_label() {
@@ -144,6 +155,18 @@ subgate_duration_seconds() {
     fi
 
     cat "$duration_file"
+}
+
+record_subgate_running() {
+    local label="$1"
+
+    : >"$LOG_DIR/$label.running"
+}
+
+clear_subgate_running() {
+    local label="$1"
+
+    rm -f "$LOG_DIR/$label.running"
 }
 
 PROGRESS_AREAS=(
@@ -219,10 +242,36 @@ quality_check_label_area() {
     esac
 }
 
+quality_check_label_running() {
+    local label="$1"
+    local pid_file="$LOG_DIR/$label.pid"
+    local pid
+
+    if [ ! -f "$LOG_DIR/$label.running" ]; then
+        return 1
+    fi
+
+    if [ -f "$LOG_DIR/$label.exit" ]; then
+        return 1
+    fi
+
+    if [ ! -f "$pid_file" ]; then
+        return 0
+    fi
+
+    pid="$(cat "$pid_file" 2>/dev/null || true)"
+
+    if [ -z "$pid" ]; then
+        return 0
+    fi
+
+    kill -0 "$pid" 2>/dev/null
+}
+
 quality_check_area_row_state() {
     local area="$1"
     local total=0
-    local started=0
+    local active=0
     local completed=0
     local failures=0
     local label
@@ -238,8 +287,8 @@ quality_check_area_row_state() {
 
         total=$((total + 1))
 
-        if [ -f "$LOG_DIR/$label.start" ] || [ -f "$LOG_DIR/$label.exit" ]; then
-            started=$((started + 1))
+        if quality_check_label_running "$label"; then
+            active=$((active + 1))
         fi
 
         if [ -f "$LOG_DIR/$label.exit" ]; then
@@ -267,7 +316,7 @@ quality_check_area_row_state() {
         return
     fi
 
-    if [ "$started" -gt 0 ]; then
+    if [ "$active" -gt 0 ]; then
         echo running
         return
     fi
@@ -490,6 +539,54 @@ quality_check_progress_self_test() {
     rm -rf "$LOG_DIR"
 }
 
+quality_check_progress_state_self_test() {
+    local state
+    local sleeper_pid
+    local ticker_pid
+    local worker_pid
+
+    LOG_DIR="$(mktemp -d)"
+    touch "$LOG_DIR/progress.stop"
+
+    record_subgate_start gateway_mago_analyze
+    echo 0 >"$LOG_DIR/gateway_mago_analyze.exit"
+    state="$(quality_check_area_row_state apps/gateway)"
+    echo "completed-plus-queued=${state}"
+
+    record_subgate_start cli_mago_analyze
+    record_subgate_running cli_mago_analyze
+    (sleep 1) &
+    sleeper_pid=$!
+    echo "$sleeper_pid" >"$LOG_DIR/cli_mago_analyze.pid"
+
+    state="$(quality_check_area_row_state apps/cli)"
+    echo "active=${state}"
+
+    kill "$sleeper_pid" 2>/dev/null || true
+    wait "$sleeper_pid" 2>/dev/null || true
+    clear_subgate_running cli_mago_analyze
+    echo 0 >"$LOG_DIR/cli_mago_analyze.exit"
+
+    state="$(quality_check_area_row_state apps/cli)"
+    echo "completed-plus-queued-after-active=${state}"
+
+    (sleep 1) &
+    ticker_pid=$!
+    PROGRESS_TICKER_PID="$ticker_pid"
+
+    (sleep 1) &
+    worker_pid=$!
+
+    echo "background-count=$(running_bg_jobs)"
+
+    kill "$worker_pid" "$ticker_pid" 2>/dev/null || true
+    wait "$worker_pid" 2>/dev/null || true
+    wait "$ticker_pid" 2>/dev/null || true
+    PROGRESS_TICKER_PID=""
+
+    rm -rf "$LOG_DIR"
+}
+
 STATIC_CHECK_LABELS=(
     docs_lint
     docs_testing
@@ -573,14 +670,31 @@ if [ "${ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST:-}" = "1" ]; then
     exit 0
 fi
 
+if [ "${ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST:-}" = "1" ]; then
+    quality_check_progress_state_self_test
+    exit 0
+fi
+
 run_bg() {
     local label="$1"
     shift
     local log="$LOG_DIR/$label.log"
+    local pid
+
     wait_for_bg_slot
     record_subgate_start "$label"
-    ( "$@" >"$log" 2>&1; code="$?"; record_subgate_duration "$label"; echo "$code" >"$LOG_DIR/$label.exit"; exit "$code" ) &
-    eval "${label}_PID=$!"
+    (
+        record_subgate_running "$label"
+        "$@" >"$log" 2>&1
+        code="$?"
+        record_subgate_duration "$label"
+        echo "$code" >"$LOG_DIR/$label.exit"
+        clear_subgate_running "$label"
+        exit "$code"
+    ) &
+    pid=$!
+    echo "$pid" >"$LOG_DIR/$label.pid"
+    eval "${label}_PID=$pid"
 }
 
 quality_check_progress_start_ticker
@@ -640,8 +754,10 @@ done
 # this lane out of the background fan-out so unrelated Pest suites cannot
 # deliver process-group signals to the core Pest parent.
 record_subgate_start core_pest
+record_subgate_running core_pest
 ( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )
 record_subgate_duration core_pest
+clear_subgate_running core_pest
 
 quality_check_progress_render_final
 

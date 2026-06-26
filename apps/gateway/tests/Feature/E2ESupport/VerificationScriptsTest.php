@@ -247,7 +247,9 @@ it('caps aggregate quality gate fan-out by host size', function (): void {
         ->toContain('echo 2')
         ->toContain('default_jobs=$((detected_jobs / 2))')
         ->toContain('echo 8')
-        ->toContain('wait_for_bg_slot');
+        ->toContain('wait_for_bg_slot')
+        ->toContain('PROGRESS_TICKER_PID')
+        ->toContain('[ "$pid" = "$PROGRESS_TICKER_PID" ]');
 });
 
 it('keeps the aggregate quality gate static subgates complete', function (): void {
@@ -400,6 +402,48 @@ it('renders a TTY progress tree for aggregate quality-check areas', function ():
         ->toBeLessThan($scriptPosition('print_log "$label"'))
         ->and($scriptPosition('quality_check_progress_render_final'))
         ->toBeLessThan($scriptPosition('print_log "$label"'));
+});
+
+it('marks aggregate quality gate areas running only while one of their labels is active', function (): void {
+    $script = quality_check_script_source();
+
+    expect($script)
+        ->toContain('quality_check_label_running')
+        ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST')
+        ->toContain('local active=0')
+        ->toContain('if quality_check_label_running "$label"; then')
+        ->toContain('if [ "$active" -gt 0 ]; then')
+        ->toContain('record_subgate_running core_pest')
+        ->toContain('clear_subgate_running core_pest')
+        ->not->toContain('local started=0')
+        ->not->toContain('started=$((started + 1))')
+        ->not->toContain('if [ "$started" -gt 0 ]; then');
+
+    $process = new Process(
+        [
+            'env',
+            'ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST=1',
+            'bash',
+            repo_path('bin/quality-check.sh'),
+        ],
+        repo_path(),
+        null,
+        null,
+        30,
+    );
+    $process->mustRun();
+
+    $lines = collect(preg_split('/\R+/', trim($process->getOutput())) ?: [])
+        ->filter()
+        ->values()
+        ->all();
+
+    expect($lines)->toBe([
+        'completed-plus-queued=waiting',
+        'active=running',
+        'completed-plus-queued-after-active=waiting',
+        'background-count=1',
+    ]);
 });
 
 it('maps every aggregate subgate to a quality-check progress area', function (): void {
