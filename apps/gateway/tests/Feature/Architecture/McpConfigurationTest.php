@@ -276,12 +276,12 @@ it('provides first-party boost skill sources in orbit packages', function (): vo
 });
 
 it('keeps the project-owned orbit skill aligned with current CLI stream-json guidance and signatures', function (): void {
-    $skill = file_get_contents(repo_path('.agents/skills/orbit/SKILL.md')) ?: '';
-    $concepts = file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md')) ?: '';
-    $app = file_get_contents(repo_path('.agents/skills/orbit/references/app.md')) ?: '';
-    $node = file_get_contents(repo_path('.agents/skills/orbit/references/node.md')) ?: '';
-    $tool = file_get_contents(repo_path('.agents/skills/orbit/references/tool.md')) ?: '';
-    $operation = file_get_contents(repo_path('.agents/skills/orbit/references/operation.md')) ?: '';
+    $skill = (string) file_get_contents(repo_path('.agents/skills/orbit/SKILL.md'));
+    $concepts = (string) file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md'));
+    $app = (string) file_get_contents(repo_path('.agents/skills/orbit/references/app.md'));
+    $node = (string) file_get_contents(repo_path('.agents/skills/orbit/references/node.md'));
+    $tool = (string) file_get_contents(repo_path('.agents/skills/orbit/references/tool.md'));
+    $operation = (string) file_get_contents(repo_path('.agents/skills/orbit/references/operation.md'));
 
     preg_match('/## Universal output rules\n\n([\s\S]*?)\n\n## /', $skill, $universalOutputRules);
 

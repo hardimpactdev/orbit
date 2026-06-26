@@ -5,6 +5,51 @@ declare(strict_types=1);
 use App\E2E\Support\E2ECurrentCheckout;
 use Symfony\Component\Process\Process;
 
+function quality_check_script_source(): string
+{
+    return (string) file_get_contents(repo_path('bin/quality-check.sh'));
+}
+
+function quality_check_script_position(string $script, string $needle): int
+{
+    $position = strpos($script, $needle);
+
+    if ($position === false) {
+        throw new RuntimeException("Expected quality-check script to contain [{$needle}].");
+    }
+
+    return $position;
+}
+
+/**
+ * @return list<string>
+ */
+function quality_check_script_labels(string $script, string $arrayName): array
+{
+    $pattern = '/^'.preg_quote($arrayName, '/').'=\\(\\R(?P<body>.*?)^\\)/ms';
+    $matches = [];
+
+    if (preg_match($pattern, $script, $matches) !== 1) {
+        throw new RuntimeException("Expected quality-check script to define [{$arrayName}].");
+    }
+
+    $labelMatches = [];
+    preg_match_all('/^    (?P<label>[a-z0-9_]+)$/m', $matches['body'], $labelMatches);
+
+    return $labelMatches['label'];
+}
+
+/**
+ * @return list<string>
+ */
+function quality_check_background_labels(string $script): array
+{
+    $backgroundLabelMatches = [];
+    preg_match_all('/^run_bg (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
+
+    return array_values(array_unique($backgroundLabelMatches['label']));
+}
+
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
     expect(repo_path('bin/e2e'))->not->toBeFile();
 });
@@ -172,72 +217,46 @@ it('uses Mago for analysis, linting, and formatting', function (): void {
     }
 });
 
-it('keeps the aggregate quality gate complete', function (): void {
+it('keeps the aggregate quality gate composer scripts quiet', function (): void {
     $composer = json_decode(
         file_get_contents(repo_path('composer.json')) ?: '',
         associative: true,
         flags: JSON_THROW_ON_ERROR,
     );
 
-    // The gate keeps every subgate but caps background fan-out so local
-    // runner contention does not distort the Pest lanes unnecessarily.
-    expect($composer['scripts']['quality-check'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'bin/quality-check.sh',
-    ]);
+    // The gate keeps every subgate while capping background fan-out to the host.
+    expect($composer['scripts']['quality-check'])
+        ->toBe([
+            'bin/quality-check.sh',
+        ])
+        ->and($composer['scripts']['quality-check:fix'])
+        ->toBe([
+            'bin/quality-check.sh --fix',
+        ]);
+});
 
-    $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
-    $scriptPosition = function (string $needle) use ($script): int {
-        $position = strpos($script, $needle);
-
-        if ($position === false) {
-            throw new RuntimeException("Expected quality-check script to contain [{$needle}].");
-        }
-
-        return $position;
-    };
-    $scriptLabels = function (string $arrayName) use ($script): array {
-        $pattern = '/^'.preg_quote($arrayName, '/').'=\\(\\R(?P<body>.*?)^\\)/ms';
-        $matches = [];
-
-        if (preg_match($pattern, $script, $matches) !== 1) {
-            throw new RuntimeException("Expected quality-check script to define [{$arrayName}].");
-        }
-
-        $labelMatches = [];
-        preg_match_all('/^    (?P<label>[a-z0-9_]+)$/m', $matches['body'], $labelMatches);
-
-        return $labelMatches['label'];
-    };
-    $backgroundLabelMatches = [];
-    preg_match_all('/^run_bg (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
-
-    $backgroundLabels = array_values(array_unique($backgroundLabelMatches['label']));
-    $waitedBackgroundLabels = [
-        ...$scriptLabels('STATIC_CHECK_LABELS'),
-        ...$scriptLabels('LONG_RUNNING_PEST_LABELS'),
-    ];
-    $aggregationLabels = $scriptLabels('CHECK_LABELS');
-    $expectedAggregationLabels = [
-        ...$backgroundLabels,
-        'core_pest',
-    ];
-
-    sort($backgroundLabels);
-    sort($waitedBackgroundLabels);
-    sort($aggregationLabels);
-    sort($expectedAggregationLabels);
+it('caps aggregate quality gate fan-out by host size', function (): void {
+    $script = quality_check_script_source();
 
     expect($script)
-        ->toContain('librarian:lint')
         ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
         ->toContain('quality_check_default_max_background_jobs')
         ->toContain('if [ "$detected_jobs" -le 1 ]; then')
+        ->toContain('if [ "$detected_jobs" -le 4 ]; then')
         ->toContain('echo 1')
         ->toContain('echo 2')
+        ->toContain('default_jobs=$((detected_jobs / 2))')
+        ->toContain('echo 8')
+        ->toContain('wait_for_bg_slot');
+});
+
+it('keeps the aggregate quality gate static subgates complete', function (): void {
+    $script = quality_check_script_source();
+
+    expect($script)
+        ->toContain('librarian:lint')
         ->toContain('STATIC_CHECK_LABELS=(')
         ->toContain('LONG_RUNNING_PEST_LABELS=(')
-        ->toContain('wait_for_bg_slot')
         ->toContain('--path=testing')
         ->toContain('--group=references')
         ->toContain('mago analyze')
@@ -268,18 +287,45 @@ it('keeps the aggregate quality gate complete', function (): void {
             'cd packages/core && vendor/bin/mago format',
         )->toContain('cd packages/sdk && vendor/bin/mago format')->toContain(
             'cd apps/e2e && vendor/bin/mago format',
-        )->toContain('bin/orbit-cli-pest')->toContain('bin/orbit-docs-pest')->toContain(
-            'cd packages/core && vendor/bin/pest',
-        )->toContain('cd packages/sdk && vendor/bin/pest')
-        ->not->toContain(
-            'cd apps/e2e && vendor/bin/pest',
-        )
+        );
+});
+
+it('keeps the aggregate quality gate Pest lanes complete', function (): void {
+    $script = quality_check_script_source();
+
+    expect($script)
+        ->toContain('bin/orbit-cli-pest')
+        ->toContain('bin/orbit-docs-pest')
+        ->toContain('cd packages/core && vendor/bin/pest')
+        ->toContain('cd packages/sdk && vendor/bin/pest')
+        ->toContain('bin/orbit-gateway-pest')
+        ->toContain('--exclude-group=e2e')
+        ->toContain('--exclude-group=slow')
+        ->toContain('--parallel')
+        ->toContain('--compact')
+        ->not->toContain('bin/orbit-cli-pest-quality')
+        ->not->toContain('cd apps/e2e && vendor/bin/pest')
         ->not->toContain('run_bg e2e_pest')
-        ->not->toContain('PRE_E2E_PEST_LABELS=(')->toContain(
-            'bin/orbit-gateway-pest',
-        )->toContain(
-            '--exclude-group=e2e',
-        )->toContain('--exclude-group=slow')->toContain('--parallel')->toContain('--compact');
+        ->not->toContain('PRE_E2E_PEST_LABELS=(');
+});
+
+it('keeps aggregate quality gate labels complete and ordered', function (): void {
+    $script = quality_check_script_source();
+    $backgroundLabels = quality_check_background_labels(script: $script);
+    $waitedBackgroundLabels = [
+        ...quality_check_script_labels(script: $script, arrayName: 'STATIC_CHECK_LABELS'),
+        ...quality_check_script_labels(script: $script, arrayName: 'LONG_RUNNING_PEST_LABELS'),
+    ];
+    $aggregationLabels = quality_check_script_labels(script: $script, arrayName: 'CHECK_LABELS');
+    $expectedAggregationLabels = [
+        ...$backgroundLabels,
+        'core_pest',
+    ];
+
+    sort($backgroundLabels);
+    sort($waitedBackgroundLabels);
+    sort($aggregationLabels);
+    sort($expectedAggregationLabels);
 
     expect($waitedBackgroundLabels)
         ->toBe($backgroundLabels)
@@ -289,53 +335,27 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toBe($expectedAggregationLabels)
         ->and($aggregationLabels)
         ->toHaveCount(count(array_unique($aggregationLabels)))
-        ->and($scriptLabels('LONG_RUNNING_PEST_LABELS'))
+        ->and(quality_check_script_labels(script: $script, arrayName: 'LONG_RUNNING_PEST_LABELS'))
         ->toBe([
             'cli_pest',
             'gateway_pest',
             'docs_pest',
             'sdk_pest',
         ])
-        ->and($scriptPosition('for label in "${STATIC_CHECK_LABELS[@]}"'))
-        ->toBeLessThan($scriptPosition('for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
-        ->and($scriptPosition('run_bg gateway_pest'))
-        ->toBeLessThan($scriptPosition('run_bg sdk_pest'))
-        ->and($scriptPosition('run_bg sdk_pest'))
-        ->toBeLessThan($scriptPosition('for label in "${STATIC_CHECK_LABELS[@]}"'))
-        ->and($scriptPosition('for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
-        ->toBeLessThan($scriptPosition('record_subgate_start core_pest'));
-
-    $cliPestQuality = (string) file_get_contents(repo_path('bin/orbit-cli-pest-quality'));
-    $cliWrapperPosition = function (string $needle) use ($cliPestQuality): int {
-        $position = strpos($cliPestQuality, $needle);
-
-        if ($position === false) {
-            throw new RuntimeException("Expected CLI Pest quality wrapper to contain [{$needle}].");
-        }
-
-        return $position;
-    };
-    $cliWrapperLabels = function (string $arrayName) use ($cliPestQuality): array {
-        $pattern = '/^'.preg_quote($arrayName, '/').'=\\((?P<body>.*?)\\)$/m';
-        $matches = [];
-
-        if (preg_match($pattern, $cliPestQuality, $matches) !== 1) {
-            throw new RuntimeException("Expected CLI Pest quality wrapper to define [{$arrayName}].");
-        }
-
-        return array_values(array_filter(explode(' ', trim($matches['body']))));
-    };
-
-    expect($cliWrapperLabels('GROUP_LABELS'))
-        ->toBe(['root', 'commands', 'services', 'support'])
-        ->and($cliWrapperLabels('PARALLEL_GROUP_LABELS'))
-        ->toBe(['root', 'commands', 'support'])
-        ->and($cliWrapperLabels('SERIAL_GROUP_LABELS'))
-        ->toBe(['services'])
-        ->and($cliWrapperPosition('for label in "${PARALLEL_GROUP_LABELS[@]}"'))
-        ->toBeLessThan($cliWrapperPosition('run_group services "${service_dirs[@]}"'))
-        ->and($cliWrapperPosition('run_group services "${service_dirs[@]}"'))
-        ->toBeLessThan($cliWrapperPosition('for label in "${SERIAL_GROUP_LABELS[@]}"'));
+        ->and(quality_check_script_position(script: $script, needle: 'for label in "${STATIC_CHECK_LABELS[@]}"'))
+        ->toBeLessThan(quality_check_script_position(
+            script: $script,
+            needle: 'for label in "${LONG_RUNNING_PEST_LABELS[@]}"',
+        ))
+        ->and(quality_check_script_position(script: $script, needle: 'run_bg gateway_pest'))
+        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg sdk_pest'))
+        ->and(quality_check_script_position(script: $script, needle: 'run_bg sdk_pest'))
+        ->toBeLessThan(quality_check_script_position(
+            script: $script,
+            needle: 'for label in "${STATIC_CHECK_LABELS[@]}"',
+        ))
+        ->and(quality_check_script_position(script: $script, needle: 'for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
+        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'record_subgate_start core_pest'));
 });
 
 it('renders a TTY progress tree for aggregate quality-check areas', function (): void {
@@ -359,7 +379,10 @@ it('renders a TTY progress tree for aggregate quality-check areas', function ():
         ->toContain('quality_check_progress_start_ticker')
         ->toContain('quality_check_progress_stop_ticker')
         ->toContain('quality_check_progress_render_final')
+        ->toContain('PROGRESS_AREA_WIDTH=15')
+        ->toContain('printf -v padded_area')
         ->toContain('Running quality checks')
+        ->toContain('Queued')
         ->toContain('Working...')
         ->toContain('Quality checks passed')
         ->toContain('Quality checks failed')

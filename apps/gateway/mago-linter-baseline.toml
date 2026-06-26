@@ -12340,7 +12340,7 @@ count = 5
 file = "tests/Feature/Architecture/McpConfigurationTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 15
+count = 13
 
 [[issues]]
 file = "tests/Feature/Architecture/RootGatewayForwardingShimTest.php"
@@ -14906,12 +14906,6 @@ count = 13
 
 [[issues]]
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume and effort"
-count = 1
-
-[[issues]]
-file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
 code = "literal-named-argument"
 message = "Literal argument `''` should be passed as a named argument for clarity."
 count = 2
@@ -14920,7 +14914,7 @@ count = 2
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
@@ -20967,12 +20961,6 @@ count = 2
 [[issues]]
 file = "tests/Unit/Services/Doctor/FleetDoctorProbeBatchingTest.php"
 code = "literal-named-argument"
-message = "Literal argument `512` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Doctor/FleetDoctorProbeBatchingTest.php"
-code = "literal-named-argument"
 message = "Literal argument `5` should be passed as a named argument for clarity."
 count = 1
 
@@ -20986,7 +20974,7 @@ count = 1
 file = "tests/Unit/Services/Doctor/FleetDoctorProbeBatchingTest.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 3
+count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Doctor/FleetDoctorProbeBatchingTest.php"

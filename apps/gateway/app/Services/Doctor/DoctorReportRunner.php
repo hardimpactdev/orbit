@@ -2138,7 +2138,7 @@ final readonly class DoctorReportRunner
      */
     private function applyIssue(Node $node, string $mode, array $issue): ?array
     {
-        $family = $issue['family'] ?? null;
+        $family = is_string($issue['family'] ?? null) ? $issue['family'] : null;
         $key = is_string($issue['key'] ?? null) ? $issue['key'] : null;
         $detail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
 
@@ -2438,9 +2438,11 @@ final readonly class DoctorReportRunner
         $process->loadMissing('owner');
 
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $hashLabel = $config['container_spec_hash_label'] ?? null;
+        $hashLabel = is_string($config['container_spec_hash_label'] ?? null)
+            ? $config['container_spec_hash_label']
+            : null;
 
-        if (! is_string($hashLabel) || trim($hashLabel) === '') {
+        if ($hashLabel === null || trim($hashLabel) === '') {
             return;
         }
 

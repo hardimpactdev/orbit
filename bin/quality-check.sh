@@ -66,6 +66,7 @@ fi
 
 quality_check_default_max_background_jobs() {
     local detected_jobs
+    local default_jobs
 
     detected_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 8)"
 
@@ -79,7 +80,19 @@ quality_check_default_max_background_jobs() {
         return
     fi
 
-    echo 2
+    if [ "$detected_jobs" -le 4 ]; then
+        echo 2
+        return
+    fi
+
+    default_jobs=$((detected_jobs / 2))
+
+    if [ "$default_jobs" -gt 8 ]; then
+        echo 8
+        return
+    fi
+
+    echo "$default_jobs"
 }
 
 DEFAULT_MAX_BACKGROUND_JOBS="$(quality_check_default_max_background_jobs)"
@@ -166,6 +179,7 @@ PROGRESS_SPINNER_FRAMES=(
 PROGRESS_TICKER_PID=""
 PROGRESS_TREE_LINES=0
 PROGRESS_CURSOR_HIDDEN=0
+PROGRESS_AREA_WIDTH=15
 
 quality_check_progress_enabled() {
     [ -t 1 ]
@@ -266,23 +280,26 @@ quality_check_area_row_line() {
     local state="$2"
     local tick="$3"
     local frame
+    local padded_area
+
+    printf -v padded_area "%-${PROGRESS_AREA_WIDTH}s" "$area"
 
     case "$state" in
         waiting)
-            quality_check_progress_print_line '  %s○%s  %s%s%s\n' "$PROGRESS_DIM" "$PROGRESS_RESET" "$PROGRESS_DIM" "$area" "$PROGRESS_RESET"
+            quality_check_progress_print_line '  %s○%s  %s%s%s %sQueued%s\n' "$PROGRESS_DIM" "$PROGRESS_RESET" "$PROGRESS_DIM" "$padded_area" "$PROGRESS_RESET" "$PROGRESS_DIM" "$PROGRESS_RESET"
             ;;
         running)
             frame="${PROGRESS_SPINNER_FRAMES[$((tick % ${#PROGRESS_SPINNER_FRAMES[@]}))]}"
-            quality_check_progress_print_line '  %s  %s    Running\n' "$frame" "$area"
+            quality_check_progress_print_line '  %s  %s Running\n' "$frame" "$padded_area"
             ;;
         passed)
-            quality_check_progress_print_line '  %s●%s  %s    Passed\n' "$PROGRESS_GREEN" "$PROGRESS_RESET" "$area"
+            quality_check_progress_print_line '  %s●%s  %s Passed\n' "$PROGRESS_GREEN" "$PROGRESS_RESET" "$padded_area"
             ;;
         failed)
-            quality_check_progress_print_line '  %s●%s  %s    Failed\n' "$PROGRESS_RED" "$PROGRESS_RESET" "$area"
+            quality_check_progress_print_line '  %s●%s  %s Failed\n' "$PROGRESS_RED" "$PROGRESS_RESET" "$padded_area"
             ;;
         *)
-            quality_check_progress_print_line '  %s○%s  %s%s%s\n' "$PROGRESS_DIM" "$PROGRESS_RESET" "$PROGRESS_DIM" "$area" "$PROGRESS_RESET"
+            quality_check_progress_print_line '  %s○%s  %s%s%s %sQueued%s\n' "$PROGRESS_DIM" "$PROGRESS_RESET" "$PROGRESS_DIM" "$padded_area" "$PROGRESS_RESET" "$PROGRESS_DIM" "$PROGRESS_RESET"
             ;;
     esac
 }
@@ -603,7 +620,7 @@ run_bg core_mago_format bash -lc 'cd packages/core && vendor/bin/mago format "$@
 run_bg sdk_mago_format bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
 run_bg e2e_mago_format bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
 
-run_bg cli_pest bin/orbit-cli-pest-quality --exclude-group=slow --compact
+run_bg cli_pest bin/orbit-cli-pest --exclude-group=slow --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true

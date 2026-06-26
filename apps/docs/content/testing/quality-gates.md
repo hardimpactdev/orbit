@@ -34,12 +34,12 @@ a lane-specific command such as `bin/orbit-gateway-pest --group=slow` or
 `bin/orbit-cli-pest --group=slow`, or run a focused Pest command for the changed
 file.
 
-The wrapper caps background fan-out at two jobs by default so local runner
-contention does not inflate the long Pest lane timings unnecessarily. One-core
-hosts use one background job. The cap only changes scheduling; every subgate
-still runs and still contributes to the final exit code. For a one-off
-diagnostic, override it with `ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=<n>
-composer quality-check`.
+The wrapper derives background fan-out from the host: one-core hosts use one
+background job, hosts with up to four logical CPUs use two, and larger hosts use
+half of the detected logical CPU count capped at eight. The cap only changes
+scheduling; every subgate still runs and still contributes to the final exit
+code. For a one-off diagnostic, override it with
+`ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=<n> composer quality-check`.
 
 Subgate durations start when the actual subgate command starts, after any
 background-slot queue wait. Queue time is reflected in the aggregate gate
@@ -54,13 +54,9 @@ auto-fix runs without rerunning the gate.
 The E2E lane launcher gives each provider lane its own temp directory. This
 keeps Pest cache files isolated when Docker and Incus lanes start together.
 
-The CLI Pest subgate runs the default CLI suite through
-`bin/orbit-cli-pest-quality`, which splits the suite into non-overlapping Pest
-processes by test surface. This is not Pest's `--parallel` mode. The root,
-command, and support surfaces run together. The services surface runs after
-those finish because it is more sensitive to nested runner contention. The split
-keeps the Laravel Zero CLI bootstrap isolated while reducing the quality-check
-critical path.
+The CLI Pest subgate runs the default CLI suite through `bin/orbit-cli-pest`.
+The aggregate gate avoids an extra split-wrapper layer here so the CLI lane uses
+the same stable Pest process model as `composer test`.
 
 The SDK Pest lane runs as a background subgate after the gateway lane has
 started. Mago and Rector still cover `apps/e2e` during the aggregate
