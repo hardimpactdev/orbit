@@ -22,6 +22,9 @@ orbit workspace:new feature-a --app=my-app
 
 # Branched from a non-default source ref
 orbit workspace:new bugfix-1 --app=my-app --base=production
+
+# Stream progress as newline-delimited JSON
+orbit workspace:new feature-a --app=my-app --stream-json
 ```
 
 ## Arguments and options
@@ -39,6 +42,8 @@ orbit workspace:new bugfix-1 --app=my-app --base=production
 - `--php-version=<version>`: workspace PHP version override. When omitted, the
   workspace inherits the parent app's PHP version.
 - `--json`: output structured JSON (forces non-interactive mode).
+- `--stream-json`: stream newline-delimited progress JSON. Mutually exclusive
+  with `--json` and forces non-interactive mode.
 
 ## Path Awareness
 
@@ -81,6 +86,7 @@ The output format depends on whether `--json` is passed.
 - **Human**: Progress covering worktree creation, runtime artifacts, proxy
   route registration, and setup step execution.
 - **JSON**: A machine-readable result including the new workspace record.
+- **Stream JSON**: Newline-delimited progress JSON for non-interactive agents.
 
 ## Related
 

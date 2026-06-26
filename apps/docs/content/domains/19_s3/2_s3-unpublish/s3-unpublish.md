@@ -9,7 +9,7 @@ Remove one public HTTPS hostname from the fleet S3 service.
 ## Usage
 
 ```bash
-orbit s3:unpublish [host] [--node=<node>] [--force] [--json]
+orbit s3:unpublish [host] [--node=<node>] [--force] [--json|--stream-json]
 ```
 
 ## Description
@@ -27,12 +27,14 @@ backend pool, SeaweedFS credentials, buckets, object data, or the s3 role's
 orbit s3:unpublish s3.example.com
 orbit s3:unpublish s3.example.com --node=storage-1 --force
 orbit s3:unpublish s3.example.com --force --json
+orbit s3:unpublish s3.example.com --force --stream-json
 ```
 
 ## Output
 
-Pass `--json` to receive machine-readable output. Human output renders progress
-and a summary naming the removed host and selected S3 node.
+Pass `--json` to receive one machine-readable result, or `--stream-json` to
+receive newline-delimited progress JSON. Human output renders progress and a
+summary naming the removed host and selected S3 node.
 
 ## Requirements
 

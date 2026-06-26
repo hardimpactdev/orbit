@@ -11,7 +11,7 @@ first install, process runtime migration, or configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Examples
@@ -21,6 +21,7 @@ orbit tool:update composer --node=app-1
 orbit tool:update composer --node=app-1 --expected-version=2.9.2
 orbit tool:update --node=app-1
 orbit tool:update opencode-server --app=docs --json
+orbit tool:update opencode-server --app=docs --stream-json
 ```
 
 ## Arguments and options
@@ -33,6 +34,8 @@ orbit tool:update opencode-server --app=docs --json
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--app`: Resolve the target node from an app.
 - `--json`: Output JSON.
+- `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
+  with `--json`.
 
 Target context is required when neither `--node`, `--app`, nor local
 `node:default` resolves a node.
@@ -55,7 +58,8 @@ processes.
 
 ## Output
 
-Use `--json` to get machine-readable results; omit it to see progress grouped by tool.
+Use `--json` to get machine-readable results, or `--stream-json` to stream
+newline-delimited progress JSON.
 
 Human output shows progress grouped by selected tool.
 

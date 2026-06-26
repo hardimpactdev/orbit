@@ -12,7 +12,7 @@ app's owning node through the gateway, and records captured output.
 ## Usage
 
 ```bash
-orbit deploy:run [app] [--detach] [--json]
+orbit deploy:run [app] [--detach] [--json|--stream-json]
 ```
 
 ## Examples
@@ -21,6 +21,7 @@ orbit deploy:run [app] [--detach] [--json]
 orbit deploy:run docs
 orbit deploy:run docs --detach
 orbit deploy:run docs --json
+orbit deploy:run docs --stream-json
 ```
 
 ## Arguments and options
@@ -29,6 +30,8 @@ orbit deploy:run docs --json
 - `--detach`: start the deployment under gateway control and return after the
   run has been created.
 - `--json`: Output JSON.
+- `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
+  with `--json`.
 
 ## What Happens
 
@@ -54,7 +57,8 @@ Detached runs return the run identifier without streaming step output.
 
 ## Output
 
-Run without `--json` to see progress, streamed deployment output, and a final run summary.
+Run without `--json` or `--stream-json` to see progress, streamed deployment
+output, and a final run summary.
 
 JSON output returns the deployment run entity and captured output for bounded
 foreground runs. Detached JSON output returns the created run with

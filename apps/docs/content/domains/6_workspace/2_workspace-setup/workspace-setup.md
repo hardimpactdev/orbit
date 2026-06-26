@@ -26,6 +26,9 @@ orbit workspace:setup feature-a --app=my-app
 
 # Adopt an existing path as a workspace
 orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/feature-a
+
+# Stream setup progress as newline-delimited JSON
+orbit workspace:setup feature-a --app=my-app --stream-json
 ```
 
 ## Arguments and options
@@ -41,6 +44,8 @@ orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/f
   root itself is not a valid workspace path. A relative or non-absolute value
   fails before side effects.
 - `--json`: Output JSON.
+- `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
+  with `--json` and forces non-interactive mode.
 
 ## Path Awareness
 
@@ -138,6 +143,7 @@ The output format depends on whether `--json` is passed.
   including a durable `workspace.adopted` flag set when the path was first
   adopted via setup. The result of the HTTP probe performed at setup time is
   included in metadata.
+- **Stream JSON**: Newline-delimited progress JSON for non-interactive agents.
 
 ## Related
 

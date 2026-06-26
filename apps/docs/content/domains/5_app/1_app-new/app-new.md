@@ -11,6 +11,7 @@ orbit app:new [name]
 orbit app:new [name] --node=app-1
 orbit app:new [name] --repo=hardimpactdev/orbit --php-version=8.5
 orbit app:new [name] --domain=example.com --json
+orbit app:new [name] --domain=example.com --stream-json
 ```
 
 ## Description
@@ -69,6 +70,8 @@ You will receive one of the following output formats depending on the flags you 
 - **Human:** Progress covering source creation, registry write, setup, proxy route application, and apply verification.
 - **JSON:** A machine-readable result containing the new app's registry data, or
   a machine-readable failure with diagnostic metadata.
+- **Stream JSON:** `--stream-json` emits newline-delimited progress JSON and is
+  mutually exclusive with `--json`.
 
 ## Related
 

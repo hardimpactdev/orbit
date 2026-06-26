@@ -9,7 +9,7 @@ Publish a public HTTPS hostname for the fleet S3 service.
 ## Usage
 
 ```bash
-orbit s3:publish [host] [--node=<node>] [--json]
+orbit s3:publish [host] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Description
@@ -29,13 +29,14 @@ directly to an s3 role node.
 orbit s3:publish s3.example.com
 orbit s3:publish s3.example.com --node=storage-1
 orbit s3:publish s3.example.com --json
+orbit s3:publish s3.example.com --stream-json
 ```
 
 ## Output
 
-Pass `--json` to receive machine-readable output. Human output renders progress
-and a summary naming the host, selected S3 node, private endpoint, and public
-endpoint.
+Pass `--json` to receive one machine-readable result, or `--stream-json` to
+receive newline-delimited progress JSON. Human output renders progress and a
+summary naming the host, selected S3 node, private endpoint, and public endpoint.
 
 ## Requirements
 

@@ -11,7 +11,7 @@ credential repair, missing config files, or setup reruns.
 ## Usage
 
 ```bash
-orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json]
+orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json|--stream-json]
 ```
 
 ## Examples
@@ -20,6 +20,7 @@ orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<passwor
 orbit tool:reconfigure opencode-server --node=agent-1
 orbit tool:reconfigure opencode-server --app=docs --password=<new-password>
 orbit tool:reconfigure opencode-server --node=agent-1 --json
+orbit tool:reconfigure opencode-server --node=agent-1 --stream-json
 ```
 
 ## Arguments and options
@@ -31,6 +32,8 @@ orbit tool:reconfigure opencode-server --node=agent-1 --json
 - `--password`: Optional new authentication password when the tool definition
   supports password reconfiguration.
 - `--json`: Output JSON.
+- `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
+  with `--json`.
 
 Target context is required when neither `--node`, `--app`, nor local
 `node:default` resolves a node.
@@ -54,7 +57,8 @@ explicit `doctor --family=tool --adopt` semantics for supported adoption.
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for progress.
+Use `--json` to get one machine-readable result, or `--stream-json` to stream
+newline-delimited progress JSON.
 
 Human output shows progress for setup/configuration steps.
 

@@ -6,6 +6,7 @@ use App\Librarian\CliCommand;
 use App\Librarian\CliSurface;
 use App\Librarian\Rules\BannedTermsRule;
 use App\Librarian\Rules\CommandSurfaceCoverageRule;
+use App\Librarian\Rules\PublicStreamJsonOptionContractRule;
 use App\Librarian\Rules\SignatureLiveSurfaceRule;
 use HardImpact\Librarian\Docs\DocsConfig;
 use Illuminate\Support\Facades\Artisan;
@@ -165,6 +166,47 @@ it('passes signatures that match the live command definition', function (): void
     $payload = runLiveSurfaceLint();
 
     expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
+});
+
+it('reports a public command page that omits a live stream json option', function (): void {
+    config()->set('librarian.rules', [PublicStreamJsonOptionContractRule::class]);
+    bindLiveSurfaceFake([
+        new CliCommand(name: 'node:new', arguments: ['name'], options: ['json', 'stream-json']),
+    ]);
+    writeLiveSurfaceFamily(
+        $this->fixtureRoot,
+        signature: 'orbit node:new <name> [--json] [--stream-json]',
+        publicPage: "# `orbit node:new`\n\nUse `--json` for automation.\n\n[Technical](technical/1_node-new.md)\n",
+    );
+
+    $payload = runLiveSurfaceLint();
+
+    $findings = liveSurfaceFindings($payload, rule: 'command_docs.public_stream_json_option_contract');
+
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['path'])
+        ->toBe('docs/domains/1_node/1_node-new/node-new.md')
+        ->and($findings[0]['message'])
+        ->toContain('--stream-json');
+});
+
+it('passes public command pages that mention a live stream json option', function (): void {
+    config()->set('librarian.rules', [PublicStreamJsonOptionContractRule::class]);
+    bindLiveSurfaceFake([
+        new CliCommand(name: 'node:new', arguments: ['name'], options: ['json', 'stream-json']),
+    ]);
+    writeLiveSurfaceFamily(
+        $this->fixtureRoot,
+        signature: 'orbit node:new <name> [--json] [--stream-json]',
+        publicPage: "# `orbit node:new`\n\nUse `--stream-json` for newline-delimited progress frames.\n\n[Technical](technical/1_node-new.md)\n",
+    );
+
+    $payload = runLiveSurfaceLint();
+
+    expect(liveSurfaceFindings($payload, rule: 'command_docs.public_stream_json_option_contract'))->toBeEmpty();
 });
 
 it('maps analytics update internal version option onto the public signature', function (): void {

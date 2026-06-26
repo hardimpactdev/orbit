@@ -17,7 +17,7 @@ initiating client and stores the local gateway configuration.
 Run this command to register a new node and provision it when required.
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--self-grant=<mode>] [--agent-tool=<tool>]... [--grant-to=<node|all>] [--grant-to-preset=<preset>] [--grant-to-permissions=<list>] [--grant-from=<node|all>] [--grant-from-preset=<preset>] [--grant-from-permissions=<list>] [--json|--stream-json]
 orbit node:new
 ```
 
@@ -121,6 +121,9 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
 - `--grant-from-preset` / `--grant-from-permissions`: initial permission
   set for the `--grant-from` direction. Mutually exclusive.
 - `--json`: Output JSON.
+- `--stream-json`: Stream newline-delimited progress JSON for gateway-mediated
+  provisioning. Mutually exclusive with `--json`; unsupported for
+  first-gateway bootstrap.
 
 ## Templates At A Glance
 

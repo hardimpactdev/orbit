@@ -14,7 +14,7 @@ MySQL or Redis are not tool installs; use `process:add --service=<identifier>` f
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--json|--stream-json]
 ```
 
 ## Examples
@@ -24,6 +24,7 @@ orbit tool:install composer --node=app-1
 orbit tool:install composer --node=app-1 --tool-version=2.9.2
 orbit tool:install opencode-server --node=agent-1
 orbit tool:install composer --node=app-1 --json
+orbit tool:install composer --node=app-1 --stream-json
 ```
 
 ## Arguments and options
@@ -39,6 +40,8 @@ orbit tool:install composer --node=app-1 --json
 - `--no-process`: Install the capability only; do not configure the related
   service process.
 - `--json`: Output JSON.
+- `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
+  with `--json`.
 
 Target context is required. Provide `--node`, `--app`, configure local
 `node:default`, or select a target interactively. `tool:install` does not use a
@@ -74,7 +77,8 @@ managed tool does not migrate or restart related processes.
 
 ## Output
 
-Use `--json` to get a machine-readable result; omit it for progress.
+Use `--json` to get one machine-readable result, or `--stream-json` to stream
+newline-delimited progress JSON.
 
 Human output shows progress for configuration write and install/configuration
 steps.

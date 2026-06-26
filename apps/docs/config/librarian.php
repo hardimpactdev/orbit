@@ -38,6 +38,7 @@ use App\Librarian\Rules\NoPerCommandAuthorizationSectionRule;
 use App\Librarian\Rules\ProductCodeNamespaceRule;
 use App\Librarian\Rules\PublicCommandPageBoundaryRule;
 use App\Librarian\Rules\PublicJsonOptionContractRule;
+use App\Librarian\Rules\PublicStreamJsonOptionContractRule;
 use App\Librarian\Rules\ReadCommandNoLiveProbeRule;
 use App\Librarian\Rules\ReaderAddressRule;
 use App\Librarian\Rules\RendererPrimitiveReferenceRule;
@@ -91,6 +92,7 @@ return [
         MarkdownLinkIntegrityRule::class,
         ProductCodeNamespaceRule::class,
         PublicJsonOptionContractRule::class,
+        PublicStreamJsonOptionContractRule::class,
         JsonRendererEnvelopeRule::class,
         ExitStatusPolicyRule::class,
         NoPerCommandAuthorizationSectionRule::class,

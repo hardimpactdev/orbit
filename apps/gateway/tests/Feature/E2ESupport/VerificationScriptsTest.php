@@ -935,8 +935,10 @@ it('documents e2e topology timing event names', function (): void {
 });
 
 it('does not expose stale per-topology feature e2e aliases', function (): void {
+    $composerJson = file_get_contents(repo_path('composer.json'));
+
     $composer = json_decode(
-        file_get_contents(repo_path('composer.json')) ?: '',
+        $composerJson === false ? '' : $composerJson,
         associative: true,
         flags: JSON_THROW_ON_ERROR,
     );

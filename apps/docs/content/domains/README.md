@@ -260,6 +260,32 @@ reuse a reserved slot for a different concern. Technical file prefixes are
 unique slot numbers within that command's `technical/` directory; they do not
 reuse the parent command directory ordinal.
 
+## Machine-readable command catalog
+
+The command contracts in this directory are also published as a single
+machine-readable catalog for LLM agents, CI, and shell automation. The catalog
+is a generated projection of the existing contract surface, not a new authority.
+The domain docs, the live CLI signature, and the command-docs registries remain
+the sources of truth.
+
+The catalog is generated and never hand-edited. Regenerate it with
+`bin/orbit-docs-artisan orbit:command-catalog`. The committed artifact lives at
+`apps/docs/content/generated/command-catalog.json`. A Pest drift guard fails
+when the committed catalog omits a live public command or diverges from the
+command-docs registries, and passes once the catalog is regenerated.
+
+The catalog joins existing sources instead of re-parsing them:
+
+- Command names, arguments, and options come from the live CLI surface, not from
+  re-parsed documentation signatures.
+- Owner domain and documentation paths come from the domain directory structure.
+- Shared error codes, warning codes, state families, shared options, and entity
+  schemas come from the command-docs registries.
+
+Each command entry reserves null fields for the SDK request, gateway route,
+controller, permission, and response DTO. Later slices populate that mapping
+without a schema change.
+
 ## External Decision Tracking
 
 Command docs do not keep sidecar files for tracking in-repo ambiguity. When requested
