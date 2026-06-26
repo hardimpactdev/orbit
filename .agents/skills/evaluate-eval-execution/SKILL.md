@@ -40,10 +40,14 @@ Load only what the review needs:
    - Verify clean start state, isolation, hidden-answer-key handling, environment snapshots, reset steps, and teardown.
    - Separate infrastructure flakes, harness bugs, scorer bugs, and genuine agent failures.
    - Check whether repeated samples, pass@k, pass^k, confidence intervals, or paired comparisons are needed before claiming improvement.
+   - For comparative fresh-agent evals, verify baseline/treatment prompt deltas, pairing by runtime/model, visible artifacts, time budget parity, contamination handling, and invalid-trial exclusions.
+   - Separate "the treatment prompt forced the intended tool" from "the affordance is naturally discoverable and useful."
+   - Treat output truncation, invalid JSON, stopped trials, and read-only violations as evidence about harness quality before counting them as agent capability.
 
 5. Decide what to do next.
    - Mark saturated capability evals as regression candidates or refresh them with harder inputs.
    - Mark invalid runs when isolation, evidence, scorer, or reference-solution proof is insufficient.
+   - For comparative evals, scope conclusions to the sample size and metrics observed; recommend reruns when the claimed improvement is smaller than the noise.
    - Recommend release-gate status only as advice; actual wiring belongs to Orbit's release and quality-gate processes.
 
 ## Output Contract
@@ -57,9 +61,10 @@ Return an `eval-run-review` artifact with:
 - transcripts reviewed
 - false-positive and false-negative risks
 - statistical confidence and saturation status
+- comparative validity: prompt delta, pairing quality, contamination, sample size, and conclusion scope
 - missing cases and recommended changes
 - `release_gate` recommendation with rationale
 
 ## Stop Conditions
 
-Stop and call the run invalid when evidence cannot be re-found, outcomes were not captured separately from claims, answer keys leaked to the agent under test, isolation is unknowable, or the grader cannot be checked against reference examples.
+Stop and call the run invalid when evidence cannot be re-found, outcomes were not captured separately from claims, answer keys leaked to the agent under test, isolation is unknowable, the grader cannot be checked against reference examples, or a baseline/treatment comparison leaked the treatment artifact into the baseline context.

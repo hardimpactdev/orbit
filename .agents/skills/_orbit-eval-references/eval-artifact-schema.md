@@ -16,6 +16,15 @@ promotion_criteria:
 gate_policy:
 owner_or_domain_expert:
 maintenance_signal: production issue | live-node drift | session trace | docs drift | manual request
+comparison_design:
+  baseline_condition:
+  treatment_condition:
+  controlled_delta:
+  pairing:
+  primary_metric:
+  secondary_metrics:
+    - metric
+  minimum_trials:
 tags:
   - tag
 ```
@@ -50,6 +59,12 @@ calibration_labels:
   - input:
     expected_label:
     rationale:
+comparison:
+  condition: baseline | treatment | control | variant
+  visible_artifacts:
+    - artifact
+  hidden_artifacts:
+    - artifact
 fixtures:
   - fixture:
 risk:
@@ -79,6 +94,11 @@ trials:
 aggregate_scores:
 pass_at_k:
 pass_caret_k:
+paired_comparisons:
+  - pair_id:
+    baseline_trial_id:
+    treatment_trial_id:
+    delta:
 failures:
   agent:
   grader:
@@ -96,12 +116,18 @@ trial_id:
 run_id:
 case_id:
 attempt_index:
+condition: baseline | treatment | control | variant
+pair_id:
 agent_harness:
 eval_harness:
 model:
 user_simulation:
 start_state:
 environment_snapshot:
+visible_artifacts:
+  - artifact
+hidden_artifacts:
+  - artifact
 commands:
   - command:
     cwd:
@@ -114,6 +140,14 @@ grader_results:
 reset_or_teardown:
 duration:
 cost:
+tracked_metrics:
+  elapsed_time:
+  tool_call_count:
+  file_or_source_count:
+  evidence_count:
+  output_validity:
+  uncertainty_count:
+stop_reason:
 verdict:
 ```
 
@@ -135,6 +169,12 @@ saturation_status:
 missing_cases:
 recommended_changes:
 release_gate: recommendation only
+comparative_validity:
+  prompt_delta:
+  pairing_quality:
+  contamination:
+  sample_size:
+  conclusion_scope:
 ```
 
 ## Artifact Rules
@@ -144,4 +184,5 @@ release_gate: recommendation only
 - Record enough provenance to re-run or inspect: worktree, command, model, harness, environment, and timestamp.
 - Separate trial-level verdicts from run-level aggregate scores.
 - Separate grader failures from agent failures.
+- For comparative fresh-agent evals, record the condition, pair id, prompt delta, visible artifacts, tracked metrics, and contamination status per trial.
 - Keep private session details in scratchpads unless the user approves repo fixtures.

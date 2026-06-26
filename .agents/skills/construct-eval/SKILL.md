@@ -35,20 +35,26 @@ Load only what the task needs:
    - Use `diagnostic` for debugging or comparing approaches.
    - Use `release-gate-candidate` only as a recommendation; Orbit's existing quality and release process owns actual gates.
 
-4. Build balanced cases.
+4. Define comparison design when the eval compares an affordance.
+   - Use a comparative fresh-agent eval for command catalogs, skills, unit maps, prompts, onboarding docs, or other LLM ergonomics changes.
+   - Declare baseline condition, treatment condition, controlled prompt delta, shared task, paired runtime/model plan, primary metric, secondary friction metrics, and contamination risks.
+   - Keep treatment artifacts, answer keys, grader internals, and prior trial traces out of the baseline context.
+   - Include a plan for what proves natural discoverability versus only prompt-forced compliance.
+
+5. Build balanced cases.
    - Include positive cases and matching negative or edge cases when applicable.
    - Require `reference_solution`, `known_good_examples`, or `known_bad_examples` to prove the task is passable and the grader is sane.
    - Define end-state checks separately from transcript or final-answer claims.
    - For interactive or multi-turn behavior, define the simulated user persona and adversarial turns the execution skill should use.
    - Tighten or reject any case where two competent reviewers would not independently reach the same verdict.
 
-5. Select the least subjective scorer.
+6. Select the least subjective scorer.
    - Prefer deterministic checks for files, database rows, JSON schema, command side effects, retained topology facts, docs links, or exact contracts.
    - Use model judges only for semantic, interaction-quality, or open-ended synthesis behavior that deterministic checks cannot capture.
    - Require calibration labels for model or hybrid graders.
    - Grade exact tool paths only when path, order, or required tool use is the contract.
 
-6. Write artifacts.
+7. Write artifacts.
    - Produce an `eval-suite` plus one or more `eval-case` artifacts using `../_orbit-eval-references/eval-artifact-schema.md`.
    - Store in Solo scratchpads during iteration. Move validated eval fixtures into the repo only when the user asks for durable fixtures or regression coverage.
    - Record scratchpad name and id in the conversation when creating or updating eval artifacts.
@@ -58,6 +64,7 @@ Load only what the task needs:
 Return:
 
 - suite purpose, type, expected pass rate, promotion criteria, and gate policy
+- comparison design when applicable: baseline, treatment, controlled delta, pairing, metrics, and contamination plan
 - case list with source, intent, failure mode, polarity, inputs, expected behavior, end-state checks, and reference evidence
 - scorer choice with calibration needs
 - storage location and open risks

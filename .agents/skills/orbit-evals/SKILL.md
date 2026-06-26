@@ -30,6 +30,7 @@ Use the specialized skill that matches the current stage:
 | Design a suite, case, golden set, scorer, or rubric | `construct-eval` |
 | Run isolated trials, capture transcripts/outcomes, or aggregate results | `execute-eval` |
 | Judge whether a run, scorer, transcript set, or gate recommendation is trustworthy | `evaluate-eval-execution` |
+| Compare fresh-agent baseline vs treatment behavior for skills, catalogs, prompts, or maps | construct, then execute, then evaluate |
 
 When more than one stage is requested, complete them in order: construct, execute, evaluate. Do not skip construction artifacts just because execution feels obvious.
 
@@ -38,6 +39,7 @@ When more than one stage is requested, complete them in order: construct, execut
 1. Establish the eval intent.
    - Name the Orbit behavior or agent behavior being measured.
    - Decide whether this is capability, regression, diagnostic, or release-gate-candidate work.
+   - If measuring an LLM-facing affordance, decide whether this is a comparative fresh-agent eval with baseline and treatment conditions.
    - Store iteration artifacts in Solo scratchpads unless the user asks for durable repo fixtures.
 
 2. Construct the eval.
@@ -48,6 +50,7 @@ When more than one stage is requested, complete them in order: construct, execut
    - Use `execute-eval`.
    - Keep answer keys hidden from the agent under test.
    - Capture transcript or trajectory separately from final environment outcome.
+   - For comparative fresh-agent evals, use fresh processes or threads, pair trials by runtime/model when possible, and record the controlled prompt delta plus friction metrics.
    - Do not run `composer test:e2e*` unless the user explicitly invokes that Composer command from a shell.
 
 4. Review the run before trusting scores.

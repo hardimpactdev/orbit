@@ -27,22 +27,27 @@ Load only what the run needs:
 2. Prepare clean execution.
    - Use existing Orbit setup rules and project skills.
    - For state-modifying evals, isolate by worktree, sandbox, database, temp path, retained topology, or explicit reset.
+   - For comparative fresh-agent evals, prepare separate fresh agent processes or fresh threads per trial and record which artifacts each condition can see.
    - Do not run `composer test:e2e*` unless the user explicitly invokes the relevant Composer E2E command.
 
 3. Execute one trial at a time.
-   - Record `trial_id`, `case_id`, `attempt_index`, working directory, model, agent harness, eval harness, command or prompt, user simulation when applicable, start state, and environment snapshot.
+   - Record `trial_id`, `case_id`, `attempt_index`, condition, pair id when applicable, working directory, model, agent harness, eval harness, command or prompt, user simulation when applicable, start state, and environment snapshot.
+   - For baseline/treatment pairs, keep the task, output contract, time budget, and grader the same; record the exact controlled prompt delta.
    - Capture transcript or trajectory, including messages, tool calls, intermediate observations, and final response.
    - Capture final outcome separately: files, DB rows, JSON, process state, topology facts, command side effects, or other observable state.
+   - Capture friction metrics when relevant: elapsed time, tool calls, files or sources used, evidence count, output validity, uncertainty count, and stop reason.
 
 4. Grade and reset.
    - Run deterministic graders before model or human graders when both apply.
    - Record grader results per trial, including `Unknown` or inconclusive results when evidence is insufficient.
+   - Mark contaminated, truncated, invalid-output, wrong-worktree, read-only-violating, or answer-key-leaking trials as invalid, harness failure, or infrastructure failure before scoring agent capability.
    - Record reset or teardown steps before starting the next trial.
    - Classify infrastructure failure separately from genuine agent failure.
 
 5. Aggregate only after evidence exists.
    - Use repeated trials for nondeterministic agents.
    - Report pass@k, pass^k, confidence intervals, paired comparisons, or the reason they are not applicable.
+   - For comparative evals, report baseline and treatment aggregates separately plus paired deltas; avoid claiming small improvements from one pair.
    - Store `eval-run` and `eval-trial` artifacts in a Solo scratchpad unless the user requested durable repo fixtures.
 
 ## Output Contract
@@ -50,8 +55,9 @@ Load only what the run needs:
 Return:
 
 - run id, suite id, target, agent harness, eval harness, model, environment, and isolation method
-- trial records with transcript refs, outcome refs, grader results, reset notes, verdict, duration, and cost
+- trial records with condition, pair id, transcript refs, outcome refs, grader results, reset notes, verdict, duration, cost, and friction metrics
 - aggregate scores and nondeterminism notes
+- comparative baseline/treatment deltas when applicable
 - failures split into agent, grader, harness, and infrastructure categories
 - evidence location and residual risks
 

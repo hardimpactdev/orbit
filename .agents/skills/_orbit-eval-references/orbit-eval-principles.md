@@ -44,6 +44,19 @@ Use these rules across Orbit eval construction, execution, and review.
 - Use repeated trials for nondeterministic agents.
 - For interactive tasks, use a scripted or simulated user persona so the run is reproducible.
 
+## Comparative Fresh-Agent Rules
+
+Use comparative fresh-agent evals for LLM ergonomics changes: command catalogs, unit maps, skills, prompts, onboarding docs, or tool affordances. Treat them as offline paired evals; call them production A/B tests only when real user traffic is randomized.
+
+- Define baseline and treatment conditions before execution.
+- Keep the task, rubric, model/runtime, time budget, and output contract the same across a pair.
+- Record the allowed prompt delta and visible artifacts. The treatment may see the new affordance; the baseline must not see treatment artifacts, answer keys, grader internals, or prior trial traces.
+- Start each trial in a fresh agent process or fresh thread. Pair trials by runtime/model when possible.
+- Track correctness plus friction metrics: elapsed time, tool calls, file/source count, evidence count, output validity, uncertainty count, and stop reason.
+- Treat prompt compliance separately from affordance value. If the treatment prompt forces a tool call, do not claim the tool is naturally discoverable from that run alone.
+- Mark contaminated, truncated, invalid-JSON, read-only-violating, or wrong-worktree trials as invalid or harness failures before aggregation.
+- Use paired comparisons for shared cases and repeat trials before claiming small improvements.
+
 ## Statistical Rules
 
 - Use pass@k when any successful attempt among k attempts is acceptable.

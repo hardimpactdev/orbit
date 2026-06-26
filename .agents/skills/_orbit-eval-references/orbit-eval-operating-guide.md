@@ -52,6 +52,31 @@ The first recommended family is Orbit repo-agent process compliance. It measures
 
 Use `capability` while exploring whether agents can follow the process from a realistic request. Convert narrow, high-confidence cases into `regression` only after they repeatedly catch real backsliding or protect accepted behavior.
 
+## Comparative Fresh-Agent Evals
+
+Use this pattern when Orbit changes something meant to help LLMs work better: command catalogs, compact lookups, monorepo maps, skills, onboarding docs, prompts, or tool affordances. This is an offline paired eval, not a production A/B test unless real user traffic is randomized.
+
+Construct:
+
+- Define baseline and treatment conditions.
+- Keep the task, output contract, scorer, time budget, model/runtime, and environment the same across a pair.
+- Record the only allowed prompt or artifact delta.
+- Include a reference solution and deterministic scorer where possible.
+
+Execute:
+
+- Start each trial in a fresh Solo process or fresh Codex thread.
+- Pair baseline and treatment trials by runtime/model when possible.
+- Capture transcript refs, final outcome refs, visible artifacts, environment snapshot, and reset notes.
+- Track friction metrics: elapsed time, tool calls, file/source count, evidence count, output validity, uncertainty count, and stop reason.
+- Mark contaminated, truncated, invalid-output, wrong-worktree, read-only-violating, or answer-key-leaking trials as invalid or harness failures before aggregation.
+
+Review:
+
+- Check the prompt delta before trusting the score. A treatment that was forced to use a tool proves tool-assisted performance, not natural discoverability.
+- Read representative transcripts, including failures and surprising passes.
+- Scope conclusions to the sample size. A small paired run can justify the next slice or a sharper eval; it rarely justifies a release gate.
+
 ## Promotion Rules
 
 Promote slowly:
@@ -77,6 +102,8 @@ Add the exact scratchpad URLs for the current suite, run, and review if they alr
 - Starting execution before a structured case exists.
 - Treating a final assistant claim as an outcome check.
 - Letting the agent under test see the grader rubric, answer key, reference solution, or previous trial trace.
+- Calling an offline baseline/treatment trial a production A/B test.
+- Claiming natural discoverability from a treatment prompt that explicitly forced the new tool or artifact.
 - Calling a model judge sufficient without calibration labels.
 - Optimizing for one-sided cases without negative or edge siblings.
 - Promoting a release gate directly from a single successful run.
