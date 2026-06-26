@@ -71,7 +71,16 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolUpdateCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI tool:update single and bulk update forwarding and rendered success output. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | Streamed tool:update request shape and JSON complete frames. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_tool-update_output-render_human.md`](6.1_tool-update_output-render_human.md#test-mapping)
+- [`6.2_tool-update_output-render_json.md`](6.2_tool-update_output-render_json.md#test-mapping)

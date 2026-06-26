@@ -81,7 +81,23 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, destructive consent, side-effect boundaries, idempotent absence, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and firewall-rule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php` | CLI firewall:remove destructive consent, DELETE forwarding, JSON success envelope, removed footer prose, idempotent absence handling, and cleanup failure recovery. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php` | Interactive remove confirmation prompts, `--force` bypass, and side-effect prevention before consent. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current firewall command contract unit test. Shared firewall DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_firewall-remove_input-mode_interactive.md`](5.1_firewall-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_firewall-remove_input-mode_non-interactive.md`](5.2_firewall-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_firewall-remove_output-render_human.md`](6.1_firewall-remove_output-render_human.md#test-mapping)
+- [`6.2_firewall-remove_output-render_json.md`](6.2_firewall-remove_output-render_json.md#test-mapping)

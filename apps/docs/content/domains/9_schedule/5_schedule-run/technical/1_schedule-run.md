@@ -89,7 +89,17 @@ manual schedule run attempts.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php` | Command contract for lookup, filter validation, gateway authorization, execution request shape, run-history persistence, non-zero scheduled exit handling, failure codes, and doctor boundary. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, run request mapping, captured output mapping, and run-history entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI schedule:run POST run endpoint forwarding, scope filters, schedule.run_failed envelope passthrough, and gateway authorization failures. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current schedule command contract unit test. Shared schedule DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_schedule-run_output-render_human.md`](6.1_schedule-run_output-render_human.md#test-mapping)
+- [`6.2_schedule-run_output-render_json.md`](6.2_schedule-run_output-render_json.md#test-mapping)

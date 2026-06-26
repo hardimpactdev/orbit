@@ -79,7 +79,17 @@ schedule run-log reads.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php` | Command contract for lookup, filter validation, run selection, line limiting, gateway authorization, read-only boundary, failure codes, and doctor boundary. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, run-history lookup rules, captured output mapping, and log line limiting. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php` | CLI schedule:logs JSON filter forwarding, interactive schedule selection, gateway authorization failures, and read-only boundary. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current schedule command contract unit test. Shared schedule DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_schedule-logs_output-render_human.md`](6.1_schedule-logs_output-render_human.md#test-mapping)
+- [`6.2_schedule-logs_output-render_json.md`](6.2_schedule-logs_output-render_json.md#test-mapping)

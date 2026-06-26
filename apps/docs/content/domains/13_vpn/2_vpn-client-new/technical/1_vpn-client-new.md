@@ -96,8 +96,16 @@ role.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: grant denial, SSH execution to the active `vpn` role node, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php` | Human and JSON renderer output, config rendering, and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI vpn-client:new create forwarding, duplicate name failure, node-name collision handling, config inclusion, and rendered success output. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Node-name collision and node-peer protection rules in VPN client management. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Gateway VPN client create grant denial and write authorization envelopes. |
 | `apps/gateway/tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php` | Wg-easy adapter normalization of generated client configs to `DNS = <wireguard-server-ip>`. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_vpn-client-new_output-render_human.md`](6.1_vpn-client-new_output-render_human.md#test-mapping)
+- [`6.2_vpn-client-new_output-render_json.md`](6.2_vpn-client-new_output-render_json.md#test-mapping)

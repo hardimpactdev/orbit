@@ -65,7 +65,15 @@ tool registry reads.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolListCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | `ToolPayloadMapper` canonical entity mapping, `ToolRegistry` target/filter behavior, and registry model shape for non-live tool-list output. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolListCommandTest.php` | CLI tool:list filter forwarding, human table output, JSON list envelope, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ToolListControllerTest.php` | Gateway tool list authorization and list shape. |
+| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_tool-list_output-render_human.md`](6.1_tool-list_output-render_human.md#test-mapping)
+- [`6.2_tool-list_output-render_json.md`](6.2_tool-list_output-render_json.md#test-mapping)

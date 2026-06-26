@@ -64,7 +64,18 @@ owns app-domain health.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php` | Command contract for authorization denial, zone resolution, strict default, full mode, flexible refusal, provider authorization, provider failures, and no origin-certificate mutation. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI cf-ssl:enable zone forwarding, mode PUT payload, and gateway error passthrough for covered write paths. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human strict-mode enable progress tree and JSON strict success envelope. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+Provider authorization failures, zone-resolution edge cases, and flexible-mode refusal paths are not exhaustively covered by the linked CLI tests. Keep those assertions as coverage gaps until focused tests land.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-ssl-enable_output-render_human.md`](6.1_cf-ssl-enable_output-render_human.md#test-mapping)
+- [`6.2_cf-ssl-enable_output-render_json.md`](6.2_cf-ssl-enable_output-render_json.md#test-mapping)

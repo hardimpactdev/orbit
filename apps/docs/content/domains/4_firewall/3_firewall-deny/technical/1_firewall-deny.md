@@ -85,7 +85,23 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and firewall-rule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php` | CLI firewall:deny validation, default-node deny POST forwarding, JSON success envelope, progress tree output, and backend apply failure recovery prose. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php` | Interactive deny prompts, prompt validation, and side-effect prevention before input resolution. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current firewall command contract unit test. Shared firewall DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_firewall-deny_input-mode_interactive.md`](5.1_firewall-deny_input-mode_interactive.md#test-mapping)
+- [`5.2_firewall-deny_input-mode_non-interactive.md`](5.2_firewall-deny_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_firewall-deny_output-render_human.md`](6.1_firewall-deny_output-render_human.md#test-mapping)
+- [`6.2_firewall-deny_output-render_json.md`](6.2_firewall-deny_output-render_json.md#test-mapping)

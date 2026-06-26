@@ -64,7 +64,17 @@ The gateway API endpoint emits an activity entry for successful and failed regis
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Firewall/FirewallListCommandTest.php` | Command contract for input validation, gateway authorization, filter behavior, read-only side-effect boundary, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, node filter rules, and firewall-rule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallListCommandTest.php` | CLI firewall:list GET forwarding, filter validation, JSON list envelope, authorization_failed passthrough, and read-only boundary. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current firewall command contract unit test. Shared firewall DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_firewall-list_output-render_human.md`](6.1_firewall-list_output-render_human.md#test-mapping)
+- [`6.2_firewall-list_output-render_json.md`](6.2_firewall-list_output-render_json.md#test-mapping)

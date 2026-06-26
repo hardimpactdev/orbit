@@ -81,7 +81,15 @@ runtime drift, and node reachability drift.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientListCommandTest.php` | Command contract: grant denial, non-gateway SSH execution to the active `vpn` role node, VPN-role runtime backend execution, backend authentication, TOTP handling, empty list success, node peer classification, and read-only behavior. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php` | Human and JSON renderer output, empty state, classified client rows, and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI vpn-client:list human table and JSON list output, empty state, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Gateway VPN client list grant denial and authorization envelopes. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Node-peer classification rules for managed VPN clients. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_vpn-client-list_output-render_human.md`](6.1_vpn-client-list_output-render_human.md#test-mapping)
+- [`6.2_vpn-client-list_output-render_json.md`](6.2_vpn-client-list_output-render_json.md#test-mapping)

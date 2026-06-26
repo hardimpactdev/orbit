@@ -83,8 +83,15 @@ tool registry reads.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolShowCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php` | JSON renderer contract for live/non-live observed state, gateway request propagation, remote inspection failure, and gateway error preservation. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolShowCommandTest.php` | CLI tool:show lookup forwarding, human show-detail output, live flag forwarding, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php` | Gateway tool show authorization and detail shape. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_tool-show_output-render_human.md`](6.1_tool-show_output-render_human.md#test-mapping)
+- [`6.2_tool-show_output-render_json.md`](6.2_tool-show_output-render_json.md#test-mapping)

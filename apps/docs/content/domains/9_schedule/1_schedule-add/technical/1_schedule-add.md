@@ -100,7 +100,22 @@ schedule creation attempts.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php` | Command contract for input validation, mutually exclusive target and execution-source rules, authorization, gateway configuration write, scheduler-pickup handoff, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, target resolution, interval normalization, execution source mapping, and schedule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI schedule:add validation, POST /api/schedules forwarding, default-node resolution, mutually exclusive target and execution-source rules, gateway error passthrough, and scheduler-pickup metadata. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current schedule command contract unit test. Shared schedule DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_schedule-add_input-mode_interactive.md`](5.1_schedule-add_input-mode_interactive.md#test-mapping)
+- [`5.2_schedule-add_input-mode_non-interactive.md`](5.2_schedule-add_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_schedule-add_output-render_human.md`](6.1_schedule-add_output-render_human.md#test-mapping)
+- [`6.2_schedule-add_output-render_json.md`](6.2_schedule-add_output-render_json.md#test-mapping)

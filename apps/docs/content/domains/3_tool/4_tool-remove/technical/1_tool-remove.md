@@ -83,9 +83,19 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolRemoveCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, destructive consent when applicable, and doctor handoff behavior. |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolRemoveJsonRendererTest.php` | JSON renderer success, validation failure shape, implicit JSON consent, and gateway error preservation. |
-| `apps/gateway/tests/Feature/Http/Api/ToolRemoveControllerTest.php` | Gateway API consent-source handling, explicit target requirement, authorization failure, and streaming removal consent. |
-| `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI tool:remove consent, interactive confirmation, JSON destructive consent, DELETE forwarding, and rendered success and failure output. |
+| `apps/gateway/tests/Feature/Http/Api/ToolRemoveControllerTest.php` | Gateway tool remove authorization and destructive consent handling. |
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_tool-remove_input-mode_interactive.md`](5.1_tool-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_tool-remove_input-mode_non-interactive.md`](5.2_tool-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_tool-remove_output-render_human.md`](6.1_tool-remove_output-render_human.md#test-mapping)
+- [`6.2_tool-remove_output-render_json.md`](6.2_tool-remove_output-render_json.md#test-mapping)

@@ -85,9 +85,19 @@ detection and safe node-peer cleanup.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: grant denial, SSH execution, TOTP, missing-client failure, node-peer protection, destructive consent, backend deletion, and no node cleanup. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php` | Interactive confirmation prompt, `--force` bypass, declined confirmation failure before side effects, and prompt abort behavior. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php` | Non-interactive missing-`--force` failure, `--json` forcing non-interactive mode, and no prompts. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI vpn-client:remove force gate, interactive confirmation, DELETE forwarding, missing-client failure, and rendered success and failure output. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Node-peer protection before destructive VPN client removal. |
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_vpn-client-remove_input-mode_interactive.md`](5.1_vpn-client-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_vpn-client-remove_input-mode_non-interactive.md`](5.2_vpn-client-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_vpn-client-remove_output-render_human.md`](6.1_vpn-client-remove_output-render_human.md#test-mapping)
+- [`6.2_vpn-client-remove_output-render_json.md`](6.2_vpn-client-remove_output-render_json.md#test-mapping)

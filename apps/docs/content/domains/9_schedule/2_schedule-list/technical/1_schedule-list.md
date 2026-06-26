@@ -68,7 +68,17 @@ schedule registry reads.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | Command contract for filter validation, gateway authorization, read-only boundary, run-history summary inclusion, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, filter rules, and schedule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | CLI schedule:list filter forwarding, human table with last-run summary, JSON list envelope, authorization_failed passthrough, and read-only boundary. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current schedule command contract unit test. Shared schedule DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_schedule-list_output-render_human.md`](6.1_schedule-list_output-render_human.md#test-mapping)
+- [`6.2_schedule-list_output-render_json.md`](6.2_schedule-list_output-render_json.md#test-mapping)

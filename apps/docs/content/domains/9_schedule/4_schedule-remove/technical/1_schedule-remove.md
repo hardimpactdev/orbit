@@ -85,7 +85,22 @@ schedule removal attempts.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveCommandTest.php` | Command contract for lookup, filter validation, gateway authorization, destructive consent, cleanup failure codes, history retention, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, lookup rules, destructive consent mapping, and removed schedule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI schedule:remove lookup, destructive consent, DELETE payload forwarding, scheduler_pickup metadata, and gateway error passthrough. |
+
+There is no gateway-side coverage for this command contract: CLI contract tests above own the mapped behavior; gateway API surfaces stay coverage gaps until focused gateway tests land.
+
+There is no current schedule command contract unit test. Shared schedule DTO and entity mapping stay as coverage gaps until a focused unit test lands.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_schedule-remove_input-mode_interactive.md`](5.1_schedule-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_schedule-remove_input-mode_non-interactive.md`](5.2_schedule-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_schedule-remove_output-render_human.md`](6.1_schedule-remove_output-render_human.md#test-mapping)
+- [`6.2_schedule-remove_output-render_json.md`](6.2_schedule-remove_output-render_json.md#test-mapping)

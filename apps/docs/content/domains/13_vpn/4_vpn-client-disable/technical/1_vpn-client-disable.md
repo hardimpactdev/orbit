@@ -75,7 +75,14 @@ active `vpn` role.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php` | Command contract: grant denial, non-gateway SSH, runtime execution, TOTP, disablement, idempotent success, missing-client failure, node-peer protection, and no node writes. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI vpn-client:disable POST forwarding, idempotent success rendering, missing-client failure, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Gateway VPN client disable authorization and disablement envelopes. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_vpn-client-disable_output-render_human.md`](6.1_vpn-client-disable_output-render_human.md#test-mapping)
+- [`6.2_vpn-client-disable_output-render_json.md`](6.2_vpn-client-disable_output-render_json.md#test-mapping)
