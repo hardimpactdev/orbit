@@ -21,6 +21,8 @@ it('targets the activity list endpoint with normalized query parameters', functi
         limit: 50,
     );
 
+    $request->includeInternal();
+
     expect($request->getMethod())
         ->toBe(Method::GET)
         ->and($request->resolveEndpoint())
@@ -31,6 +33,7 @@ it('targets the activity list endpoint with normalized query parameters', functi
             'node' => 'app-1',
             'effect' => 'destructive',
             'correlation' => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+            'include_internal' => '1',
             'limit' => 50,
         ]);
 });

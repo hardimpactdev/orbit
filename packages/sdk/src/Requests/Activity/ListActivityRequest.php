@@ -22,6 +22,15 @@ final class ListActivityRequest extends GatewayRequest
         public readonly ?int $limit = null,
     ) {}
 
+    private bool $includeInternal = false;
+
+    public function includeInternal(bool $includeInternal = true): self
+    {
+        $this->includeInternal = $includeInternal;
+
+        return $this;
+    }
+
     public function resolveEndpoint(): string
     {
         return '/api/activity';
@@ -38,6 +47,7 @@ final class ListActivityRequest extends GatewayRequest
                 'node' => $this->node,
                 'effect' => $this->effect,
                 'correlation' => $this->correlation,
+                'include_internal' => $this->includeInternal ? '1' : null,
                 'limit' => $this->limit,
             ],
             static fn (mixed $value): bool => $value !== null,

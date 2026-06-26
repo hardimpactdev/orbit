@@ -337,7 +337,9 @@ it('audits remote shell executions without raw scripts or output', function (): 
         ->toBe('remote_shell')
         ->and($properties)
         ->toMatchArray([
-            'type' => 'remote_execution',
+            'type' => 'write',
+            'lane' => 'internal',
+            'category' => 'remote_execution',
             'node' => 'app-audit',
             'metadata_keys' => ['ORBIT_REQUEST_ID'],
             'timeout' => 33,

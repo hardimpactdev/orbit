@@ -32,7 +32,9 @@ final readonly class RemoteShellAuditLogger
             ->performedOn($node)
             ->withProperties(array_filter(
                 [
-                    'type' => 'remote_execution',
+                    'type' => 'write',
+                    'lane' => 'internal',
+                    'category' => 'remote_execution',
                     'node' => $node->name,
                     'script_sha256' => hash('sha256', $script),
                     'input_sha256' => $input === null ? null : hash('sha256', $input),

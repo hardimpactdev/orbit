@@ -30,6 +30,21 @@ function createActivityListCallerNode(array $overrides = []): Node
     return $node;
 }
 
+function createRemoteShellActivityEntry(Node $node, array $propertyOverrides = []): Activity
+{
+    return activity('remote_shell')
+        ->causedBy($node)
+        ->performedOn($node)
+        ->event('remote_shell.run')
+        ->withProperties(array_merge([
+            'type' => 'write',
+            'lane' => 'internal',
+            'category' => 'remote_execution',
+            'node' => $node->name,
+        ], $propertyOverrides))
+        ->log('remote_shell.run');
+}
+
 function createActivityEntry(
     string $type,
     string $effect,
@@ -185,6 +200,116 @@ describe('ActivityListController', function (): void {
         'limit high' => ['limit=201', 'limit', 'out_of_range'],
         'correlation' => ['correlation=not-a-uuid', 'correlation', 'invalid'],
     ]);
+
+    it('excludes internal remote shell activity by default', function (): void {
+        $caller = createActivityListCallerNode();
+        $appNode = Node::factory()->create(['name' => 'beast']);
+
+        $operatorActivity = createActivityEntry('node.listed', 'read', $caller);
+        createRemoteShellActivityEntry($appNode);
+
+        $response = $this->call(
+            'GET',
+            '/api/activity',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.filters.include_internal', false)
+            ->assertJsonPath('success.meta.count', 1);
+
+        $activities = $response->json('success.data.activities');
+
+        expect(array_column($activities, 'id'))->toBe([$operatorActivity->id]);
+    });
+
+    it('hides legacy remote shell rows that still store remote_execution in properties.type', function (): void {
+        $caller = createActivityListCallerNode();
+        $appNode = Node::factory()->create(['name' => 'beast']);
+
+        $operatorActivity = createActivityEntry('node.listed', 'read', $caller);
+        createRemoteShellActivityEntry($appNode, [
+            'type' => 'remote_execution',
+            'lane' => null,
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/activity',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.count', 1);
+
+        expect(array_column($response->json('success.data.activities'), 'id'))
+            ->toBe([$operatorActivity->id]);
+    });
+
+    it('includes internal remote shell activity when include_internal is true', function (): void {
+        $caller = createActivityListCallerNode();
+        $appNode = Node::factory()->create(['name' => 'beast']);
+
+        $operatorActivity = createActivityEntry('node.listed', 'read', $caller);
+        $remoteShellActivity = createRemoteShellActivityEntry($appNode);
+
+        $response = $this->call(
+            'GET',
+            '/api/activity?include_internal=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.filters.include_internal', true)
+            ->assertJsonPath('success.meta.count', 2);
+
+        $activities = $response->json('success.data.activities');
+
+        expect(array_column($activities, 'id'))->toBe([
+            $remoteShellActivity->id,
+            $operatorActivity->id,
+        ]);
+        expect($activities[0]['type'])->toBe('remote_shell.run');
+        expect($activities[0]['effect'])->toBe('write');
+    });
+
+    it('does not surface internal remote shell rows through effect filters alone', function (): void {
+        $caller = createActivityListCallerNode();
+        $appNode = Node::factory()->create(['name' => 'beast']);
+
+        $operatorActivity = createActivityEntry('node.granted', 'write', $caller, $appNode);
+        createRemoteShellActivityEntry($appNode);
+
+        $response = $this->call(
+            'GET',
+            '/api/activity?effect=write',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.meta.filters.effect', 'write')
+            ->assertJsonPath('success.meta.filters.include_internal', false)
+            ->assertJsonPath('success.meta.count', 1);
+
+        expect(array_column($response->json('success.data.activities'), 'id'))
+            ->toBe([$operatorActivity->id]);
+    });
 
     it('logs the activity list read with filter metadata', function (): void {
         $caller = createActivityListCallerNode();

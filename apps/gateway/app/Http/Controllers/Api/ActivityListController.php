@@ -20,13 +20,14 @@ final class ActivityListController implements Loggable
     private const array VALID_EFFECTS = ['read', 'write', 'destructive'];
 
     /**
-     * @var array{app: string|null, node: string|null, effect: string|null, correlation: string|null, limit: int}
+     * @var array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}
      */
     private array $filters = [
         'app' => null,
         'node' => null,
         'effect' => null,
         'correlation' => null,
+        'include_internal' => false,
         'limit' => 25,
     ];
 
@@ -56,7 +57,7 @@ final class ActivityListController implements Loggable
     }
 
     /**
-     * @return array{app: string|null, node: string|null, effect: string|null, correlation: string|null, limit: int}|JsonResponse
+     * @return array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}|JsonResponse
      */
     private function validatedFilters(Request $request): array|JsonResponse
     {
@@ -80,6 +81,14 @@ final class ActivityListController implements Loggable
             return $this->validationFailed('correlation', 'invalid');
         }
 
+        $includeInternal = $request->query('include_internal');
+        if (
+            $includeInternal !== null
+            && filter_var($includeInternal, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) === null
+        ) {
+            return $this->validationFailed('include_internal', 'invalid');
+        }
+
         $limit = $request->query('limit', '25');
         if (! is_scalar($limit) || filter_var($limit, FILTER_VALIDATE_INT) === false) {
             return $this->validationFailed('limit', 'invalid');
@@ -95,6 +104,7 @@ final class ActivityListController implements Loggable
             'node' => is_string($node) ? $node : null,
             'effect' => is_string($effect) ? $effect : null,
             'correlation' => is_string($correlation) ? $correlation : null,
+            'include_internal' => filter_var($includeInternal, FILTER_VALIDATE_BOOL),
             'limit' => $normalizedLimit,
         ];
     }
@@ -153,6 +163,7 @@ final class ActivityListController implements Loggable
             'filter_node' => $this->filters['node'],
             'filter_effect' => $this->filters['effect'],
             'filter_correlation' => $this->filters['correlation'],
+            'filter_include_internal' => $this->filters['include_internal'],
             'filter_limit' => $this->filters['limit'],
             'result_count' => $this->resultCount,
         ];
