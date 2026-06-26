@@ -28,7 +28,8 @@ The prompt should provide as many of these pointers as exist:
 - Orchestrator Codex thread id or transcript path.
 - Solo worker, reviewer, retained terminal, and scratchpad links.
 - Feature worktree path, branch, final diff, commit, or merge commit.
-- `.orbit/loop.md`, `.orbit/evidence/`, and `.orbit/quality-gates/` pointers.
+- `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, and persisted
+  `.orbit/sessions/` archive pointers when present.
 - Verification commands and results, including blocked or skipped lanes.
 - Any human corrections made during or after the implementation.
 
@@ -45,8 +46,9 @@ Read only the materials needed to analyze the completed feature loop:
 - `harness-signals/README.md`
 - `LOOP.md.example`
 - The active worktree `.orbit/loop.md`, when present
-- Worktree artifacts under `.orbit/evidence/` and `.orbit/quality-gates/`
-  named by `.orbit/loop.md`, the feature report, or the prompt
+- Worktree artifacts under `.orbit/evidence/`, `.orbit/quality-gates/`, and
+  persisted `.orbit/sessions/` archives named by `.orbit/loop.md`, the feature
+  report, or the prompt
 - Final diff, final commit, or merge commit under review
 - Codex session messages for the orchestrator thread, limited to the feature
   implementation turns needed to reconstruct decisions, corrections, claimed

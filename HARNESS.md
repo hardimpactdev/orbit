@@ -45,16 +45,18 @@ The root harness is intentionally incremental. Not in scope yet:
 - Reviewer-persona framework beyond the focused personas justified by real
   feature-loop signals
 
-`LOOP.md.example`, `.orbit/loop.md`, `.orbit/quality-gates/`,
-`.orbit/evidence/`, and `HARNESS_SIGNALS.md` define the manual feedback-loop
-layer. Later slices may add or refine reviewer personas and automation only
-after the manual loop is stable.
+`LOOP.md.example`, `.orbit/loop.md`, `.orbit/sessions/`,
+`.orbit/quality-gates/`, `.orbit/evidence/`, and `HARNESS_SIGNALS.md` define
+the manual feedback-loop layer. Later slices may add or refine reviewer
+personas and automation only after the manual loop is stable.
 
 ## Worktree-Local State
 
-Use root `.orbit/` as the gitignored home for ephemeral state in the current
-worktree. This is repository-development state for the checkout, not product
-runtime state inside app workspaces or nodes.
+Use root `.orbit/` as the gitignored home for repository-development state.
+Active `.orbit/` is the current worktree-local session state; `.orbit/sessions/`
+is the local archive home for completed sessions, normally in the primary
+checkout. This is checkout state, not product runtime state inside app
+workspaces or nodes.
 
 - `.orbit/loop.md`: current-slice state copied from `LOOP.md.example`.
 - `.orbit/quality-gates/`: local timing, analyzer, and triage reports for
@@ -62,10 +64,42 @@ runtime state inside app workspaces or nodes.
   explicitly run.
 - `.orbit/evidence/`: retained local evidence such as command transcripts,
   PTY summaries, screenshots, or pointers to Solo terminals and topology ids.
+- `.orbit/sessions/`: persisted session archives for completed active slices or
+  features. The archive home must survive feature worktree cleanup; by default
+  it is the primary checkout's `.orbit/sessions/` directory. Each archive lives
+  at `.orbit/sessions/<timestamp-feature-slug>/` and is created before worktree
+  cleanup and before rewriting `.orbit/loop.md` for a new slice.
 
 Do not commit `.orbit/`. Commit only the durable guardrail that absorbs a
 recurring signal: harness docs, skills, review personas, product/testing docs,
 tests, or a curated `harness-signals/` record.
+
+### Session Archives
+
+When an active slice or feature loop is complete and its final distillation is
+filled, archive the completed active `.orbit/` state before worktree cleanup
+and before rewriting `.orbit/loop.md` for the next slice. Copy every active
+`.orbit/` entry except `.orbit/sessions/` into the persistent project archive
+home, normally the primary checkout's
+`.orbit/sessions/<timestamp-feature-slug>/`, where
+`<timestamp-feature-slug>` is a sortable timestamp plus a short feature slug.
+Do not leave the soon-to-be-removed feature worktree's `.orbit/sessions/` as
+the only archive copy.
+
+A session archive should preserve at minimum:
+
+- `loop.md` (the completed slice's final packet)
+- `.orbit/evidence/`
+- `.orbit/quality-gates/`
+- future metadata or manifests when archive helper tooling exists
+
+Archive creation must exclude the existing `.orbit/sessions/` tree so archives
+do not recurse into prior session copies.
+
+`harness-signals/` remains curated distilled learning and guardrail history, not
+raw session storage. Post-feature analysis and future eval construction may
+inspect session archives as trace evidence, but archive helper scripts and
+eval wiring are later slices.
 
 ## Agent Discovery Path
 
@@ -80,7 +114,8 @@ Start at the monorepo root and read in this order:
    absence in a fresh checkout as a product gap
 5. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
 6. **`harness-signals/`**: curated signal records to search for prior
-   occurrences, guardrail changes, and recurrence checks
+   occurrences, guardrail changes, and recurrence checks; not raw session
+   archives under `.orbit/sessions/`
 7. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
 8. **`.agents/review-personas/`**: focused review checklists activated by the
@@ -220,11 +255,13 @@ feature loop, preserve the worktree and `.orbit/` artifacts, then run the
 post-feature analyzer against the implementation session and artifacts.
 
 The analyzer is read-only. It inspects the feature orchestrator's Codex/Solo
-session messages, `.orbit/loop.md`, `.orbit/evidence/`,
-`.orbit/quality-gates/`, Solo scratchpads, worker and reviewer reports,
-retained terminal or PTY evidence, verification output, human corrections, and
-the final diff or commit. It reports whether the loop was proper, flawed, or
-blocked by missing evidence.
+session messages, active `.orbit/loop.md`, `.orbit/evidence/`,
+`.orbit/quality-gates/`, persisted `.orbit/sessions/` archives when present,
+Solo scratchpads, worker and reviewer reports, retained terminal or PTY
+evidence, verification output, human corrections, and the final diff or commit.
+It reports whether the loop was proper, flawed, or blocked by missing evidence.
+Archive helper tooling and eval wiring that mine session archives are later
+slices; the analyzer may use archives as trace evidence when they exist.
 
 The analyzer checks guardrail decisions instead of supervising live work:
 
@@ -278,9 +315,12 @@ merge internal slices independently unless a slice is explicitly split into a
 separate feature with its own final gate.
 
 Within a feature worktree, `.orbit/loop.md` is the current-slice contract, not
-the feature history. Rewrite it when the next slice starts. Keep prior slice
-outcomes in the feature scratchpad and the actual code history in Git. The top
-of `.orbit/loop.md` should name the feature scratchpad, summarize completed
+the feature history. Before rewriting it for the next slice, archive the
+completed active `.orbit/` state into the persistent project archive home,
+normally the primary checkout's `.orbit/sessions/<timestamp-feature-slug>/`,
+and exclude `.orbit/sessions/` from the copy. Keep prior slice outcomes in the
+feature scratchpad, session archives, and the actual code history in Git. The
+top of `.orbit/loop.md` should name the feature scratchpad, summarize completed
 slices in one line each, and identify the current slice so a worker knows the
 branch may already contain earlier feature work.
 
@@ -304,8 +344,11 @@ Merge and cleanup are separate boundaries.
   terminal or PTY artifacts. Confirm accepted, rejected, already-covered, and
   deferred signals were processed and that no harness signal was lost.
 - Worktree cleanup happens only after that audit is complete or the user
-  explicitly approves cleanup. Follow the Merge Boundary Gate above before
-  running cleanup.
+  explicitly approves cleanup. Archive the completed active `.orbit/` session
+  into the persistent project archive home before cleanup, normally the primary
+  checkout's `.orbit/sessions/<timestamp-feature-slug>/`, excluding
+  `.orbit/sessions/` from the archive copy. Follow the Merge Boundary Gate above
+  before running cleanup.
 - Feature completion cleanup happens only after the user confirms the live
   topology works as expected, or explicitly says the feature can be considered
   complete. Then archive the feature scratchpad, close or resolve related Solo

@@ -108,6 +108,17 @@ Solo todo:
   scratchpad plus the named slice instead of duplicating the full loop contract.
 - Include enough context for a later implementation agent to start the slice
   without reconstructing intent from the conversation.
+- Active `.orbit/` is worktree-local session state. Completed active state
+  should be archived into the persistent project archive home before worktree
+  cleanup and before rewriting `.orbit/loop.md` for a new slice. The default
+  archive home is the primary checkout's
+  `.orbit/sessions/<timestamp-feature-slug>/`. Archives preserve every active
+  `.orbit/` entry except `.orbit/sessions/`, including `loop.md`,
+  `.orbit/evidence/`, `.orbit/quality-gates/`, and future metadata or manifests
+  when tooling exists. `harness-signals/` remains curated distilled learning,
+  not raw session storage. Post-feature analysis and future eval construction
+  may inspect session archives as trace evidence; archive helper scripts and
+  eval wiring are later slices.
 
 ## Implementation Handoff
 

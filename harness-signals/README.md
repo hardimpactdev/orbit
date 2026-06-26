@@ -17,12 +17,17 @@ to diagnose, affected correctness or safety, or revealed missing repo-wide
 guidance. Do not record ordinary typo fixes, one-off local mistakes, or every
 failed command.
 
-Raw `.orbit/` artifacts, Codex/Solo session messages, and post-feature review
-notes create candidate signals, not records by default. Before a candidate
-becomes a record or guardrail, the fresh post-feature analyzer should classify
-the completed loop and the feature orchestrator should adjudicate it against
-`HARNESS_SIGNALS.md`. A reviewed `no durable guardrail needed` result is
-healthy; do not add a record just to prove the review happened.
+Raw `.orbit/` artifacts, persisted `.orbit/sessions/` archives, Codex/Solo
+session messages, and post-feature review notes create candidate signals, not
+records by default. Session archives preserve completed active slice state for
+trace evidence; this ledger remains curated distilled learning and guardrail
+history, not raw session storage. Before a candidate becomes a record or
+guardrail, the fresh post-feature analyzer should classify the completed loop
+and the feature orchestrator should adjudicate it against `HARNESS_SIGNALS.md`.
+Post-feature analysis and future eval construction may inspect session archives
+as trace evidence, but archive helper tooling and eval wiring are later slices.
+A reviewed `no durable guardrail needed` result is healthy; do not add a record
+just to prove the review happened.
 
 Good candidates:
 
@@ -138,3 +143,12 @@ Durable guardrail targets live in places like `AGENTS.md`, `HARNESS.md`,
 `.orbit/loop.md`, `HARNESS_SIGNALS.md`, `.agents/skills/**`,
 `.agents/review-personas/**`, product docs, tests, or static checks. A guarded
 signal should point to the target that now guides or blocks future work.
+
+Do not replace `harness-signals/` with raw session archives under
+`.orbit/sessions/`. When a lesson should compound, distill it into a curated
+record here. Completed active `.orbit/` state belongs in
+the persistent project archive home before worktree cleanup or before rewriting
+`.orbit/loop.md` for a new slice. The default archive home is the primary
+checkout's `.orbit/sessions/<timestamp-feature-slug>/`; archive creation copies
+every active `.orbit/` entry except `.orbit/sessions/` to avoid recursive
+copies.

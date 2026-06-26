@@ -54,11 +54,14 @@ Responsibilities:
 - Read the handoff, docs, and existing code enough to define clear worker tasks.
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
-  active slice only, rewriting it when the next slice starts. If the source
-  roadmap lives in another Solo project or machine, create a reachable
-  execution-project scratchpad that links back to the source and mirrors the
-  source roadmap's feature request, slice order, current-slice acceptance
-  criteria, deferred slices, and open decisions before spawning workers.
+  active slice only, rewriting it when the next slice starts. Before rewriting
+  `.orbit/loop.md`, archive the completed active `.orbit/` state into the
+  persistent project archive home defined by `HARNESS.md`, copying every active
+  `.orbit/` entry except `.orbit/sessions/`. If the source roadmap lives in
+  another Solo project or machine, create a reachable execution-project
+  scratchpad that links back to the source and mirrors the source roadmap's
+  feature request, slice order, current-slice acceptance criteria, deferred
+  slices, and open decisions before spawning workers.
 - Run a dependency scan before spawning workers. If slices or verification lanes
   have disjoint ownership and neither needs the other's result, dispatch them in
   parallel through Solo by default. Use one worker serially only when ownership,
@@ -90,8 +93,9 @@ Responsibilities:
   post-feature analysis when the loop was non-trivial, and adjudicate analyzer
   findings before any durable guardrail is changed.
 - Follow `HARNESS.md` for final-distillation, merge-boundary, post-feature
-  signal-audit, and cleanup policy. Use `LOOP.md.example` for the local packet
-  shape and `bin/orbit-feature-finalization-check` for executable gate usage.
+  signal-audit, session-archive, and cleanup policy. Use `LOOP.md.example` for
+  the local packet shape and `bin/orbit-feature-finalization-check` for
+  executable gate usage.
 - Own final commit, merge-back, preserved-worktree post-analysis handoff,
   feature completion cleanup, and the implementation report.
 
@@ -783,7 +787,10 @@ command address/output transcript.
     `HARNESS_SIGNALS.md`. Report the loop outcome as `complete`, `blocked`, or
     `complete + loop improvement`. If no new durable signal remains, say that
     in `.orbit/loop.md` and the report. Re-run the narrow check that proves any
-    changed guardrail target is reachable.
+    changed guardrail target is reachable. After final distillation is complete,
+    archive the completed active `.orbit/` state into the persistent project
+    archive home before cleanup and before any later `.orbit/loop.md` rewrite.
+    Copy every active `.orbit/` entry except `.orbit/sessions/`.
 24. Commit the verified worktree changes on the worktree branch.
 25. Merge the branch back into `main` from the primary `~/orbit` checkout by
     following `HARNESS.md` merge and cleanup boundaries. Leave `~/orbit` on
@@ -798,8 +805,9 @@ command address/output transcript.
 27. When the user confirms live topology behavior or explicitly says the
     feature is complete, run feature completion cleanup: archive the feature
     scratchpad, close or resolve related Solo todos, and stand down related
-    Solo agents or retained terminals. Keep this scoped to the feature and
-    report anything intentionally preserved.
+    Solo agents or retained terminals. If the completed active `.orbit/` session
+    has not already been archived, archive it per `HARNESS.md` before cleanup.
+    Keep this scoped to the feature and report anything intentionally preserved.
 
 ## Test-Driven Development
 
@@ -992,6 +1000,8 @@ Post-feature session review:
 - Evidence reviewed: <feature thread, Solo workers, reviewer output,
   terminal/PTY evidence, verification output, human corrections, or not
   applicable>
+- Session archive: <path/status, not yet needed before cleanup or loop rewrite,
+  or blocked>
 - Mistakes found after readiness claims: <summary or none>
 - Candidate classifications: <promote/already-covered/reject/defer summary, or
   none>
