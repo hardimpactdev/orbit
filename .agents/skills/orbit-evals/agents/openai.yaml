@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orbit Evals"
+  short_description: "Route Orbit eval workflows"
+  default_prompt: "Use $orbit-evals to get oriented and choose the right Orbit eval workflow."
