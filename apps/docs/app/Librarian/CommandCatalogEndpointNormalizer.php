@@ -27,6 +27,7 @@ final readonly class CommandCatalogEndpointNormalizer
     public function normalizePhpEndpointExpression(string $expression): ?string
     {
         $expression = $this->replacePhpPropertyPlaceholders($expression);
+        $expression = $this->replaceRawurlencodePlaceholders($expression);
         $expression = $this->replaceLocalVariablePlaceholders($expression);
 
         if (preg_match('/[()?:]/', $expression) === 1) {
@@ -47,6 +48,24 @@ final readonly class CommandCatalogEndpointNormalizer
         return (
             preg_replace_callback(
                 pattern: '/(?<!\{)\$([A-Za-z_][A-Za-z0-9_]*)/',
+                callback: static fn (array $match): string => '{'.$match[1].'}',
+                subject: $expression,
+            ) ?? $expression
+        );
+    }
+
+    private function replaceRawurlencodePlaceholders(string $expression): string
+    {
+        $expression =
+            preg_replace_callback(
+                pattern: '/rawurlencode\(\s*\(string\)\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)/',
+                callback: static fn (array $match): string => '{'.$match[1].'}',
+                subject: $expression,
+            ) ?? $expression;
+
+        return (
+            preg_replace_callback(
+                pattern: '/rawurlencode\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)/',
                 callback: static fn (array $match): string => '{'.$match[1].'}',
                 subject: $expression,
             ) ?? $expression

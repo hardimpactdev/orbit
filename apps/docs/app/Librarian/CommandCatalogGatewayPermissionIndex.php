@@ -6,6 +6,32 @@ namespace App\Librarian;
 
 final readonly class CommandCatalogGatewayPermissionIndex
 {
+    /**
+     * @var list<array{class: string, action: string, permission: string}>
+     */
+    private const array KNOWN_INDIRECT_PERMISSION_CALLS = [
+        [
+            'class' => 'ScheduleLogsPayload',
+            'action' => '->forSchedule(',
+            'permission' => 'schedule:read',
+        ],
+        [
+            'class' => 'SchedulePayload',
+            'action' => '->show(',
+            'permission' => 'schedule:read',
+        ],
+        [
+            'class' => 'ProxyRouteIntent',
+            'action' => '->remove(',
+            'permission' => 'proxy:remove',
+        ],
+        [
+            'class' => 'FirewallRuleIntent',
+            'action' => '->remove(',
+            'permission' => 'firewall_rule:write',
+        ],
+    ];
+
     public function __construct(
         private CommandCatalogRepositoryPaths $paths,
         private CommandCatalogPhpMethodSourceExtractor $methods,
@@ -30,6 +56,7 @@ final readonly class CommandCatalogGatewayPermissionIndex
             ...$this->permissionStrings($classHeaderSource),
             ...$this->attributePermissions($actionSource),
             ...$this->permissionStrings($actionSource),
+            ...$this->knownIndirectPermissionStrings($source, $actionSource),
         ];
         $permissions = array_values(array_unique($permissions));
         sort($permissions);
@@ -69,5 +96,29 @@ final readonly class CommandCatalogGatewayPermissionIndex
         }
 
         return array_values($permissions);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function knownIndirectPermissionStrings(string $classSource, string $actionSource): array
+    {
+        $toolReadPermissions = preg_match('/visibleToolNodeIds\(\s*\$caller\s*,\s*true\s*\)/', $actionSource) === 1
+            ? ['tool:read']
+            : [];
+
+        return [
+            ...$toolReadPermissions,
+            ...array_map(
+                static fn (array $candidate): string => $candidate['permission'],
+                array_filter(
+                    self::KNOWN_INDIRECT_PERMISSION_CALLS,
+                    static fn (array $candidate): bool => (
+                        str_contains($classSource, (string) $candidate['class'])
+                        && str_contains($actionSource, (string) $candidate['action'])
+                    ),
+                ),
+            ),
+        ];
     }
 }

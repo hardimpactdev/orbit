@@ -20,7 +20,10 @@ final readonly class CommandCatalogCliEndpointExtractor
         $parsedGatewayCallCount = count($staticEndpoints) + count($concatenatedEndpoints);
 
         return [
-            ...$this->uniqueEndpoints([...$staticEndpoints, ...$concatenatedEndpoints]),
+            ...$this->uniqueEndpoints([
+                ...$staticEndpoints,
+                ...$concatenatedEndpoints,
+            ]),
             ...$this->unparsedGatewayCallMarkers($source, $parsedGatewayCallCount),
             ...$this->streamToolActionEndpoints($source),
             ...$this->streamToolBulkActionEndpoints($source),
@@ -57,13 +60,10 @@ final readonly class CommandCatalogCliEndpointExtractor
             PREG_SET_ORDER,
         );
 
-        return array_map(
-            fn (array $match): array => [
-                'method' => $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]),
-                'uri' => $this->normalizer->normalizeApiUri($match[3]),
-            ],
-            $matches,
-        );
+        return array_map(fn (array $match): array => [
+            'method' => $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]),
+            'uri' => $this->normalizer->normalizeApiUri($match[3]),
+        ], $matches);
     }
 
     /**
@@ -85,6 +85,22 @@ final readonly class CommandCatalogCliEndpointExtractor
             $endpoints[] = [
                 'method' => $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]),
                 'uri' => $this->normalizer->normalizeApiUri($match[3].'{'.$match[4].'}'),
+            ];
+        }
+
+        preg_match_all(
+            '/->gateway(Get|PostWithIdleTicks|Post|Put|Patch|Delete)\(\s*([\'"])(\/api\/[^\'"]+)\2\s*\.\s*rawurlencode\(\s*(?:\(string\)\s*)?\$([A-Za-z_][A-Za-z0-9_]*)\s*\)(?:\s*\.\s*([\'"])([^\'"]+)\5)?\s*(?:,|\))/s',
+            $source,
+            $matches,
+            PREG_SET_ORDER,
+        );
+
+        foreach ($matches as $match) {
+            $uri = $match[3].'{'.$match[4].'}'.($match[6] ?? '');
+
+            $endpoints[] = [
+                'method' => $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]),
+                'uri' => $this->normalizer->normalizeApiUri($uri),
             ];
         }
 
@@ -142,13 +158,10 @@ final readonly class CommandCatalogCliEndpointExtractor
         $matches = [];
         preg_match_all('/->streamProgress\(\s*([\'"])(\/api\/[^\'"]+)\1\s*,/s', $source, $matches, PREG_SET_ORDER);
 
-        return array_map(
-            fn (array $match): array => [
-                'method' => 'POST',
-                'uri' => $this->normalizer->normalizeApiUri($match[2]),
-            ],
-            $matches,
-        );
+        return array_map(fn (array $match): array => [
+            'method' => 'POST',
+            'uri' => $this->normalizer->normalizeApiUri($match[2]),
+        ], $matches);
     }
 
     /**
@@ -159,12 +172,9 @@ final readonly class CommandCatalogCliEndpointExtractor
         $matches = [];
         preg_match_all($pattern, $source, $matches, PREG_SET_ORDER);
 
-        return array_map(
-            static fn (array $match): array => [
-                'method' => 'POST',
-                'uri' => $uriPrefix.$match[2],
-            ],
-            $matches,
-        );
+        return array_map(static fn (array $match): array => [
+            'method' => 'POST',
+            'uri' => $uriPrefix.$match[2],
+        ], $matches);
     }
 }
