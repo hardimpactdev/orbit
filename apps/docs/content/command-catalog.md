@@ -72,7 +72,50 @@ Each command entry contains:
 - `docs.repo_directory`, `docs.repo_public`, and `docs.repo_technical` paths
   relative to the repository root for agents that need direct file reads.
 - `linked_test_files` parsed from technical contract test mappings.
-- `p4_mapping` reserved fields for later CLI-to-SDK/gateway enrichment.
+- `p4_mapping` deterministic CLI-to-SDK-to-gateway trace metadata for LLM
+  consumers. Values are generated from CLI gateway call sites, SDK request
+  classes, gateway routes, controller classes, and statically discoverable
+  authorization strings. They are not hand-authored per command.
+
+### `p4_mapping`
+
+Each command entry includes a `p4_mapping` object with stable keys:
+
+- `sdk_request`: SDK Saloon request metadata when a matching SDK request class
+  exists for the command's primary gateway endpoint. Object fields:
+  - `class`: fully qualified SDK request class name.
+  - `path`: repository-relative path to the request PHP file.
+- `gateway_route`: gateway HTTP route metadata when a matching route exists.
+  Object fields:
+  - `method`: HTTP verb such as `GET` or `POST`.
+  - `uri`: route URI relative to the gateway API prefix, using `{param}`
+    placeholders for dynamic segments.
+- `gateway_controller`: gateway controller metadata when the route resolves to a
+  controller. Object fields:
+  - `class`: fully qualified controller class name.
+  - `path`: repository-relative path to the controller PHP file.
+  - `action`: controller entrypoint method, usually `__invoke`.
+- `authorization_permission`: sorted list of permission strings discovered
+  statically from `#[RequiresPermission(...)]` attributes and permission-like
+  string literals in authorization-related lines of the mapped controller
+  action source. Use `[]` when a controller mapping exists but no permission
+  string is statically discoverable. Use `null` when no gateway mapping exists
+  for the command.
+- `response_dto`: SDK response DTO metadata when the matched SDK request
+  declares a `createDtoFromResponse()` return type. Object fields:
+  - `class`: fully qualified SDK response class name.
+  - `path`: repository-relative path to the response PHP file.
+
+Null semantics:
+
+- `null` on an object field means that mapping dimension is not statically
+  discoverable for the command.
+- Local-only commands with no gateway call site keep every `p4_mapping` field
+  `null`.
+- Commands with multiple or partially parsed gateway call sites keep every
+  `p4_mapping` field `null` instead of guessing a primary endpoint.
+- CLI command class mapping is intentionally deferred; `p4_mapping` traces the
+  command's primary gateway endpoint to SDK and gateway implementation surfaces.
 
 ## Drift Guarantee
 

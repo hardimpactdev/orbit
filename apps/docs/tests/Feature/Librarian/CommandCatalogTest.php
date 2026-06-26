@@ -42,13 +42,6 @@ it('builds a command catalog from the live CLI surface and docs registries', fun
                 'json' => true,
                 'stream_json' => true,
             ],
-            'p4_mapping' => [
-                'sdk_request' => null,
-                'gateway_route' => null,
-                'gateway_controller' => null,
-                'authorization_permission' => null,
-                'response_dto' => null,
-            ],
         ]);
 
     expect($catalog['commands']['tool:install']['options'])
@@ -61,6 +54,95 @@ it('builds a command catalog from the live CLI surface and docs registries', fun
 
     expect($catalog['registries'])
         ->toHaveKeys(['error_codes', 'warning_codes', 'entity_schemas', 'shared_options', 'state_families']);
+});
+
+it('maps unambiguous command endpoints to SDK and gateway implementation surfaces', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+
+    expect($catalog['commands']['tool:install']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Tools\\InstallToolRequest',
+                'path' => 'packages/sdk/src/Requests/Tools/InstallToolRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'POST',
+                'uri' => '/api/tools/{tool}/install',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\ToolInstallController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/ToolInstallController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => ['tool:install'],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolInstallResponse',
+                'path' => 'packages/sdk/src/Responses/Tools/ToolInstallResponse.php',
+            ],
+        ]);
+
+    expect($catalog['commands']['node:list']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Nodes\\ListNodesRequest',
+                'path' => 'packages/sdk/src/Requests/Nodes/ListNodesRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'GET',
+                'uri' => '/api/nodes',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\NodeListController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/NodeListController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => [],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeListResponse',
+                'path' => 'packages/sdk/src/Responses/Nodes/NodeListResponse.php',
+            ],
+        ]);
+});
+
+it('keeps local-only and partially parsed command mappings null', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+
+    expect($catalog['commands']['version']['p4_mapping'])
+        ->toBe([
+            'sdk_request' => null,
+            'gateway_route' => null,
+            'gateway_controller' => null,
+            'authorization_permission' => null,
+            'response_dto' => null,
+        ]);
+
+    expect($catalog['commands']['tool:credentials']['p4_mapping'])
+        ->toBe([
+            'sdk_request' => null,
+            'gateway_route' => null,
+            'gateway_controller' => null,
+            'authorization_permission' => null,
+            'response_dto' => null,
+        ]);
+});
+
+it('scopes command catalog authorization metadata to controller class and action permissions', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+
+    expect($catalog['commands']['cf-cache:flush']['p4_mapping']['authorization_permission'])
+        ->toBe(['cf:cache:flush']);
+
+    expect($catalog['commands']['cf-zone:list']['p4_mapping']['authorization_permission'])
+        ->toBe(['cf:zone:list']);
+
+    expect($catalog['commands']['manifest:update']['p4_mapping']['authorization_permission'])
+        ->toBe(['*']);
+
+    expect($catalog['commands']['database:query']['p4_mapping']['authorization_permission'])
+        ->toBe(['database:query', 'database:query:write']);
+
+    expect($catalog['commands']['update:all']['p4_mapping']['authorization_permission'])
+        ->toBe(['*']);
 });
 
 it('keeps the committed command catalog in sync with the generated catalog', function (): void {

@@ -41,11 +41,26 @@
                 "apps/gateway/tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Activity\\ListActivityRequest",
+                    "path": "packages/sdk/src/Requests/Activity/ListActivityRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/activity"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ActivityListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ActivityListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "activity:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Activity\\ActivityListResponse",
+                    "path": "packages/sdk/src/Responses/Activity/ActivityListResponse.php"
+                }
             }
         },
         "activity:show": {
@@ -83,11 +98,26 @@
                 "apps/gateway/tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Activity\\ShowActivityRequest",
+                    "path": "packages/sdk/src/Requests/Activity/ShowActivityRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/activity/{id}"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ActivityShowController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ActivityShowController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "activity:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Activity\\ActivityShowResponse",
+                    "path": "packages/sdk/src/Responses/Activity/ActivityShowResponse.php"
+                }
             }
         },
         "agent-ide:message": {
@@ -128,11 +158,24 @@
                 "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageNonInteractiveInputModeTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\AgentIde\\SendAgentIdeMessageRequest",
+                    "path": "packages/sdk/src/Requests/AgentIde/SendAgentIdeMessageRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/agent-ide/message"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AgentIdeMessageController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AgentIdeMessageController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\AgentIde\\AgentIdeMessageResponse",
+                    "path": "packages/sdk/src/Responses/AgentIde/AgentIdeMessageResponse.php"
+                }
             }
         },
         "analytics:update": {
@@ -168,9 +211,18 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/analytics/update"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AnalyticsUpdateController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AnalyticsUpdateController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "process:update"
+                ],
                 "response_dto": null
             }
         },
@@ -640,11 +692,26 @@
                 "apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\ListAppsRequest",
+                    "path": "packages/sdk/src/Requests/Apps/ListAppsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/apps"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppListResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppListResponse.php"
+                }
             }
         },
         "app:mount": {
@@ -746,11 +813,26 @@
                 "apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\CreateAppRequest",
+                    "path": "packages/sdk/src/Requests/Apps/CreateAppRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/apps"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:new"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppCreateResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppCreateResponse.php"
+                }
             }
         },
         "app:prune": {
@@ -790,11 +872,26 @@
                 "apps/gateway/tests/Feature/Http/Api/AppPruneControllerTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\PruneAppRequest",
+                    "path": "packages/sdk/src/Requests/Apps/PruneAppRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/apps/prune"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppPruneController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppPruneController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:prune"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\PruneAppResponse",
+                    "path": "packages/sdk/src/Responses/Apps/PruneAppResponse.php"
+                }
             }
         },
         "app:register": {
@@ -839,11 +936,26 @@
                 "apps/gateway/tests/Unit/Services/Apps/AppEnactmentServiceTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\RegisterAppRequest",
+                    "path": "packages/sdk/src/Requests/Apps/RegisterAppRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/apps/register"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppRegisterController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppRegisterController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:register"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppRegisterResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppRegisterResponse.php"
+                }
             }
         },
         "app:remove": {
@@ -1015,11 +1127,26 @@
                 "apps/gateway/tests/Feature/Commands/Apps/AppShowNonInteractiveInputModeTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Apps\\ShowAppRequest",
+                    "path": "packages/sdk/src/Requests/Apps/ShowAppRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/apps/{app}"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\AppShowController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/AppShowController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "app:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppShowResponse",
+                    "path": "packages/sdk/src/Responses/Apps/AppShowResponse.php"
+                }
             }
         },
         "app:websocket credentials": {
@@ -1295,9 +1422,18 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/cloudflare/cache/flush"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\CloudflareController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/CloudflareController.php",
+                    "action": "flushCache"
+                },
+                "authorization_permission": [
+                    "cf:cache:flush"
+                ],
                 "response_dto": null
             }
         },
@@ -1537,9 +1673,18 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/cloudflare/zones"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\CloudflareController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/CloudflareController.php",
+                    "action": "zones"
+                },
+                "authorization_permission": [
+                    "cf:zone:list"
+                ],
                 "response_dto": null
             }
         },
@@ -1584,11 +1729,26 @@
                 "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Database\\AddDatabaseConnectionRequest",
+                    "path": "packages/sdk/src/Requests/Database/AddDatabaseConnectionRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/database-connections"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DatabaseConnections\\DatabaseConnectionStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "database:write"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Database\\DatabaseConnectionResponse",
+                    "path": "packages/sdk/src/Responses/Database/DatabaseConnectionResponse.php"
+                }
             }
         },
         "database:add-user": {
@@ -1715,9 +1875,16 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/database-connections/describe"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DatabaseConnections\\DatabaseConnectionDescribeController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionDescribeController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
                 "response_dto": null
             }
         },
@@ -1799,11 +1966,24 @@
                 "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Database\\ListDatabaseConnectionsRequest",
+                    "path": "packages/sdk/src/Requests/Database/ListDatabaseConnectionsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/database-connections"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DatabaseConnections\\DatabaseConnectionIndexController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionIndexController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Database\\DatabaseConnectionListResponse",
+                    "path": "packages/sdk/src/Responses/Database/DatabaseConnectionListResponse.php"
+                }
             }
         },
         "database:query": {
@@ -1845,11 +2025,27 @@
                 "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Database\\QueryDatabaseConnectionRequest",
+                    "path": "packages/sdk/src/Requests/Database/QueryDatabaseConnectionRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/database-connections/query"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DatabaseConnections\\DatabaseConnectionQueryController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionQueryController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "database:query",
+                    "database:query:write"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Database\\DatabaseOperationResponse",
+                    "path": "packages/sdk/src/Responses/Database/DatabaseOperationResponse.php"
+                }
             }
         },
         "database:remove": {
@@ -1927,9 +2123,16 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/database-connections/schema"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DatabaseConnections\\DatabaseConnectionSchemaController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionSchemaController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
                 "response_dto": null
             }
         },
@@ -2008,9 +2211,16 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/database-connections/tables"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DatabaseConnections\\DatabaseConnectionTablesController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DatabaseConnections/DatabaseConnectionTablesController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
                 "response_dto": null
             }
         },
@@ -2099,11 +2309,26 @@
                 "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Deploy\\ListDeployHistoryRequest",
+                    "path": "packages/sdk/src/Requests/Deploy/ListDeployHistoryRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/deploy/history"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DeployController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DeployController.php",
+                    "action": "history"
+                },
+                "authorization_permission": [
+                    "deploy:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Deploy\\DeployResponse",
+                    "path": "packages/sdk/src/Responses/Deploy/DeployResponse.php"
+                }
             }
         },
         "deploy:log": {
@@ -2188,11 +2413,26 @@
                 "apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Deploy\\RunDeployRequest",
+                    "path": "packages/sdk/src/Requests/Deploy/RunDeployRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/deploy/run"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DeployController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DeployController.php",
+                    "action": "run"
+                },
+                "authorization_permission": [
+                    "deploy:run"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Deploy\\DeployResponse",
+                    "path": "packages/sdk/src/Responses/Deploy/DeployResponse.php"
+                }
             }
         },
         "deploy:step-add": {
@@ -2236,11 +2476,26 @@
                 "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Deploy\\AddDeployStepRequest",
+                    "path": "packages/sdk/src/Requests/Deploy/AddDeployStepRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/deploy/steps"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DeployController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DeployController.php",
+                    "action": "storeStep"
+                },
+                "authorization_permission": [
+                    "deploy:step"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Deploy\\DeployResponse",
+                    "path": "packages/sdk/src/Responses/Deploy/DeployResponse.php"
+                }
             }
         },
         "deploy:step-list": {
@@ -2277,11 +2532,26 @@
                 "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Deploy\\ListDeployStepsRequest",
+                    "path": "packages/sdk/src/Requests/Deploy/ListDeployStepsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/deploy/steps"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DeployController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DeployController.php",
+                    "action": "listSteps"
+                },
+                "authorization_permission": [
+                    "deploy:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Deploy\\DeployResponse",
+                    "path": "packages/sdk/src/Responses/Deploy/DeployResponse.php"
+                }
             }
         },
         "deploy:step-remove": {
@@ -2591,11 +2861,24 @@
                 "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Firewall\\ListFirewallRulesRequest",
+                    "path": "packages/sdk/src/Requests/Firewall/ListFirewallRulesRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/firewall-rules"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\FirewallRuleListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/FirewallRuleListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Firewall\\FirewallRuleListResponse",
+                    "path": "packages/sdk/src/Responses/Firewall/FirewallRuleListResponse.php"
+                }
             }
         },
         "firewall:remove": {
@@ -2865,9 +3148,18 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "DELETE",
+                    "uri": "/api/manifest"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ManifestSourceController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ManifestSourceController.php",
+                    "action": "destroy"
+                },
+                "authorization_permission": [
+                    "*"
+                ],
                 "response_dto": null
             }
         },
@@ -2905,9 +3197,18 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "PUT",
+                    "uri": "/api/manifest"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ManifestSourceController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ManifestSourceController.php",
+                    "action": "update"
+                },
+                "authorization_permission": [
+                    "*"
+                ],
                 "response_dto": null
             }
         },
@@ -3062,9 +3363,16 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/metrics/status"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\MetricsStatusController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/MetricsStatusController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
                 "response_dto": null
             }
         },
@@ -3321,11 +3629,26 @@
                 "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnOperatorNodeContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\GrantNodeRequest",
+                    "path": "packages/sdk/src/Requests/Nodes/GrantNodeRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/nodes/grant"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\NodeGrantController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/NodeGrantController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "node:grant"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeGrantResponse",
+                    "path": "packages/sdk/src/Responses/Nodes/NodeGrantResponse.php"
+                }
             }
         },
         "node:list": {
@@ -3359,11 +3682,24 @@
                 "apps/gateway/tests/Feature/Http/Api/NodeListControllerTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\ListNodesRequest",
+                    "path": "packages/sdk/src/Requests/Nodes/ListNodesRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/nodes"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\NodeListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/NodeListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeListResponse",
+                    "path": "packages/sdk/src/Responses/Nodes/NodeListResponse.php"
+                }
             }
         },
         "node:manage": {
@@ -3470,11 +3806,26 @@
                 "apps/gateway/tests/Feature/Commands/Nodes/NodeNewOnOperatorNodeContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\CreateNodeRequest",
+                    "path": "packages/sdk/src/Requests/Nodes/CreateNodeRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/nodes"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\NodeStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/NodeStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "node:new"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeCreateResponse",
+                    "path": "packages/sdk/src/Responses/Nodes/NodeCreateResponse.php"
+                }
             }
         },
         "node:permissions": {
@@ -3514,11 +3865,24 @@
                 "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\NodePermissionsRequest",
+                    "path": "packages/sdk/src/Requests/Nodes/NodePermissionsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/nodes/permissions"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\NodePermissionsController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/NodePermissionsController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodePermissionsResponse",
+                    "path": "packages/sdk/src/Responses/Nodes/NodePermissionsResponse.php"
+                }
             }
         },
         "node:remove": {
@@ -3605,11 +3969,26 @@
                 "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\RevokeNodeRequest",
+                    "path": "packages/sdk/src/Requests/Nodes/RevokeNodeRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/nodes/revoke"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\NodeRevokeController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/NodeRevokeController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "node:revoke"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeRevokeResponse",
+                    "path": "packages/sdk/src/Responses/Nodes/NodeRevokeResponse.php"
+                }
             }
         },
         "node:show": {
@@ -3647,11 +4026,24 @@
                 "apps/gateway/tests/Feature/Commands/Nodes/NodeShowNonInteractiveInputModeTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Nodes\\ShowNodeRequest",
+                    "path": "packages/sdk/src/Requests/Nodes/ShowNodeRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/nodes/{name}"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\NodeShowController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/NodeShowController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeShowResponse",
+                    "path": "packages/sdk/src/Responses/Nodes/NodeShowResponse.php"
+                }
             }
         },
         "node:update": {
@@ -3740,11 +4132,24 @@
                 "apps/gateway/tests/Unit/Services/Php/PhpRuntimeViewTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Php\\ShowPhpRuntimeRequest",
+                    "path": "packages/sdk/src/Requests/Php/ShowPhpRuntimeRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/php/runtime"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\PhpRuntimeController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/PhpRuntimeController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Php\\PhpRuntimeResponse",
+                    "path": "packages/sdk/src/Responses/Php/PhpRuntimeResponse.php"
+                }
             }
         },
         "php:use": {
@@ -3790,11 +4195,24 @@
                 "apps/gateway/tests/Unit/Services/Php/PhpRuntimeSelectionTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Php\\UsePhpRuntimeRequest",
+                    "path": "packages/sdk/src/Requests/Php/UsePhpRuntimeRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/php/use"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\PhpUseController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/PhpUseController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Php\\PhpRuntimeUseResponse",
+                    "path": "packages/sdk/src/Responses/Php/PhpRuntimeUseResponse.php"
+                }
             }
         },
         "process:add": {
@@ -3848,11 +4266,26 @@
                 "apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Processes\\AddProcessRequest",
+                    "path": "packages/sdk/src/Requests/Processes/AddProcessRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/processes"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ProcessStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ProcessStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "process:add"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Processes\\ProcessAddResponse",
+                    "path": "packages/sdk/src/Responses/Processes/ProcessAddResponse.php"
+                }
             }
         },
         "process:list": {
@@ -3892,11 +4325,24 @@
                 "apps/gateway/tests/Feature/Commands/Processes/ProcessListNonInteractiveInputModeTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Processes\\ListProcessesRequest",
+                    "path": "packages/sdk/src/Requests/Processes/ListProcessesRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/processes"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ProcessListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ProcessListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Processes\\ProcessListResponse",
+                    "path": "packages/sdk/src/Responses/Processes/ProcessListResponse.php"
+                }
             }
         },
         "process:logs": {
@@ -4266,11 +4712,24 @@
                 "apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Proxy\\AddProxyRouteRequest",
+                    "path": "packages/sdk/src/Requests/Proxy/AddProxyRouteRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/proxy-routes"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ProxyRouteStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ProxyRouteStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Proxy\\ProxyRouteMutationResponse",
+                    "path": "packages/sdk/src/Responses/Proxy/ProxyRouteMutationResponse.php"
+                }
             }
         },
         "proxy:list": {
@@ -4307,11 +4766,24 @@
                 "apps/gateway/tests/Unit/Services/Proxy/ProxyRouteQueryTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Proxy\\ListProxyRoutesRequest",
+                    "path": "packages/sdk/src/Requests/Proxy/ListProxyRoutesRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/proxy-routes"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ProxyRouteListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ProxyRouteListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Proxy\\ProxyRouteListResponse",
+                    "path": "packages/sdk/src/Responses/Proxy/ProxyRouteListResponse.php"
+                }
             }
         },
         "proxy:remove": {
@@ -4527,11 +4999,24 @@
                 "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Schedules\\AddScheduleRequest",
+                    "path": "packages/sdk/src/Requests/Schedules/AddScheduleRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/schedules"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ScheduleStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ScheduleStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Schedules\\ScheduleAddResponse",
+                    "path": "packages/sdk/src/Responses/Schedules/ScheduleAddResponse.php"
+                }
             }
         },
         "schedule:list": {
@@ -4568,11 +5053,24 @@
                 "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Schedules\\ListSchedulesRequest",
+                    "path": "packages/sdk/src/Requests/Schedules/ListSchedulesRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/schedules"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ScheduleListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ScheduleListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Schedules\\ScheduleListResponse",
+                    "path": "packages/sdk/src/Responses/Schedules/ScheduleListResponse.php"
+                }
             }
         },
         "schedule:logs": {
@@ -4835,11 +5333,26 @@
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Tools\\InstallToolRequest",
+                    "path": "packages/sdk/src/Requests/Tools/InstallToolRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/tools/{tool}/install"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ToolInstallController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ToolInstallController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "tool:install"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolInstallResponse",
+                    "path": "packages/sdk/src/Responses/Tools/ToolInstallResponse.php"
+                }
             }
         },
         "tool:list": {
@@ -4875,11 +5388,24 @@
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Tools\\ListToolsRequest",
+                    "path": "packages/sdk/src/Requests/Tools/ListToolsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/tools"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ToolListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ToolListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolListResponse",
+                    "path": "packages/sdk/src/Responses/Tools/ToolListResponse.php"
+                }
             }
         },
         "tool:reconfigure": {
@@ -4919,11 +5445,26 @@
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Tools\\ReconfigureToolRequest",
+                    "path": "packages/sdk/src/Requests/Tools/ReconfigureToolRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/tools/{tool}/reconfigure"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ToolReconfigureController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ToolReconfigureController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "tool:reconfigure"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolReconfigureResponse",
+                    "path": "packages/sdk/src/Responses/Tools/ToolReconfigureResponse.php"
+                }
             }
         },
         "tool:remove": {
@@ -5138,9 +5679,18 @@
             ],
             "p4_mapping": {
                 "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/update/all/start"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\UpdateAllStartController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/UpdateAllStartController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "*"
+                ],
                 "response_dto": null
             }
         },
@@ -5295,11 +5845,26 @@
                 "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Vpn\\ListVpnClientsRequest",
+                    "path": "packages/sdk/src/Requests/Vpn/ListVpnClientsRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/vpn/clients"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\VpnClientListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/VpnClientListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "vpn:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Vpn\\VpnClientListResponse",
+                    "path": "packages/sdk/src/Responses/Vpn/VpnClientListResponse.php"
+                }
             }
         },
         "vpn-client:new": {
@@ -5337,11 +5902,26 @@
                 "apps/gateway/tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Vpn\\CreateVpnClientRequest",
+                    "path": "packages/sdk/src/Requests/Vpn/CreateVpnClientRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/vpn/clients"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\VpnClientCreateController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/VpnClientCreateController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "vpn:write"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Vpn\\VpnClientResponse",
+                    "path": "packages/sdk/src/Responses/Vpn/VpnClientResponse.php"
+                }
             }
         },
         "vpn-client:remove": {
@@ -5423,11 +6003,26 @@
                 "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Vpn\\ChangeVpnWebUiPasswordRequest",
+                    "path": "packages/sdk/src/Requests/Vpn/ChangeVpnWebUiPasswordRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/vpn/web-ui/password"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\VpnWebUiChangePasswordController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/VpnWebUiChangePasswordController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "vpn:write"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Vpn\\VpnPasswordResponse",
+                    "path": "packages/sdk/src/Responses/Vpn/VpnPasswordResponse.php"
+                }
             }
         },
         "workspace-setup-step:add": {
@@ -5769,11 +6364,26 @@
                 "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListJsonRendererTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Workspaces\\ListWorkspacesRequest",
+                    "path": "packages/sdk/src/Requests/Workspaces/ListWorkspacesRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/workspaces"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\WorkspaceListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/WorkspaceListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "workspace:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Workspaces\\WorkspaceListResponse",
+                    "path": "packages/sdk/src/Responses/Workspaces/WorkspaceListResponse.php"
+                }
             }
         },
         "workspace:log": {
@@ -5859,11 +6469,26 @@
                 "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewOnGatewayNodeContractTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Workspaces\\CreateWorkspaceRequest",
+                    "path": "packages/sdk/src/Requests/Workspaces/CreateWorkspaceRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/workspaces"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\WorkspaceStoreController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/WorkspaceStoreController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "workspace:new"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Workspaces\\CreateWorkspaceResponse",
+                    "path": "packages/sdk/src/Responses/Workspaces/CreateWorkspaceResponse.php"
+                }
             }
         },
         "workspace:remove": {
@@ -5961,11 +6586,26 @@
                 "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Workspaces\\SetupWorkspaceRequest",
+                    "path": "packages/sdk/src/Requests/Workspaces/SetupWorkspaceRequest.php"
+                },
+                "gateway_route": {
+                    "method": "POST",
+                    "uri": "/api/workspaces/setup"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\WorkspaceSetupController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/WorkspaceSetupController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "workspace:setup"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Workspaces\\SetupWorkspaceResponse",
+                    "path": "packages/sdk/src/Responses/Workspaces/SetupWorkspaceResponse.php"
+                }
             }
         },
         "workspace:show": {
