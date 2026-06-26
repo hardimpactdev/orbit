@@ -1032,7 +1032,7 @@ it('documents quality gate artifact and analyzer commands', function (): void {
 
     expect($qualityGatesProse)
         ->toContain(
-            'In the tree, every row for an area starts as queued, moves to running once one of its subgates starts, and does not return to queued while later subgates for that area are still waiting.',
+            'In the tree, every row for an area starts as queued. It shows running only while at least one owned subgate is actively executing. It may return to queued between subgates when no owned subgate is currently active and later subgates for that area are still waiting.',
         );
 });
 

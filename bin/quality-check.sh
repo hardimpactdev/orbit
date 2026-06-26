@@ -272,7 +272,6 @@ quality_check_area_row_state() {
     local area="$1"
     local total=0
     local active=0
-    local started=0
     local completed=0
     local failures=0
     local label
@@ -290,10 +289,6 @@ quality_check_area_row_state() {
 
         if quality_check_label_running "$label"; then
             active=$((active + 1))
-        fi
-
-        if [ -f "$LOG_DIR/$label.start" ]; then
-            started=$((started + 1))
         fi
 
         if [ -f "$LOG_DIR/$label.exit" ]; then
@@ -321,7 +316,7 @@ quality_check_area_row_state() {
         return
     fi
 
-    if [ "$active" -gt 0 ] || [ "$started" -gt 0 ]; then
+    if [ "$active" -gt 0 ]; then
         echo running
         return
     fi

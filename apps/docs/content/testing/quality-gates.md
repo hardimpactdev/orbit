@@ -24,9 +24,10 @@ for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/e2e`,
 final pass/fail tree visible, and then prints the same per-subgate logs and
 summaries as before.
 
-In the tree, every row for an area starts as queued, moves to running once one
-of its subgates starts, and does not return to queued while later subgates for
-that area are still waiting.
+In the tree, every row for an area starts as queued. It shows running only while
+at least one owned subgate is actively executing. It may return to queued
+between subgates when no owned subgate is currently active and later subgates
+for that area are still waiting.
 
 Redirected or non-TTY runs skip the live tree so CI logs stay free of ANSI
 cursor repainting. `NO_COLOR` removes color from the tree but keeps the live
