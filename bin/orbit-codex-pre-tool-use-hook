@@ -420,7 +420,7 @@ function is_mergeable_loop_outcome(string $value): bool
 }
 
 /**
- * @param  array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_production_php: bool}  $requirements
+ * @param  array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_topology_relevant_php: bool}  $requirements
  */
 function required_verification_problem(string $section, string $worktree, array $requirements): ?string
 {
@@ -472,31 +472,31 @@ function required_verification_problem(string $section, string $worktree, array 
 
     $retainedTopologyProof = required_verification_row($values, 'Retained topology proof');
 
-    if ($requirements['has_production_php'] && ($retainedTopologyProof === null || ! is_passed_verification_value($retainedTopologyProof))) {
+    if ($requirements['has_topology_relevant_php'] && ($retainedTopologyProof === null || ! is_passed_verification_value($retainedTopologyProof))) {
         $current = $retainedTopologyProof ?? 'missing row';
 
-        return "production PHP diff requires Retained topology proof: passed with retained topology evidence; current row: {$current}";
+        return "topology-relevant PHP diff requires Retained topology proof: passed with retained topology evidence; current row: {$current}";
     }
 
     return null;
 }
 
 /**
- * @return array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_production_php: bool}
+ * @return array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_topology_relevant_php: bool}
  */
 function verification_requirements(string $root, string $worktree, string $subject): array
 {
     $changedFiles = changed_files($root, $worktree, $subject);
     $docsOnly = $changedFiles !== [] && every($changedFiles, fn (string $path): bool => is_markdown_file($path));
     $phpFiles = array_values(array_filter($changedFiles, fn (string $path): bool => is_php_file($path)));
-    $productionPhpFiles = array_values(array_filter($phpFiles, fn (string $path): bool => is_production_php_file($path)));
+    $topologyRelevantPhpFiles = array_values(array_filter($phpFiles, fn (string $path): bool => is_topology_relevant_php_file($path)));
 
     return [
         'changed_files' => $changedFiles,
         'docs_only' => $docsOnly,
         'requires_quality_check' => $changedFiles !== [] && ! $docsOnly,
         'has_php' => $phpFiles !== [],
-        'has_production_php' => $productionPhpFiles !== [],
+        'has_topology_relevant_php' => $topologyRelevantPhpFiles !== [],
     ];
 }
 
@@ -565,13 +565,17 @@ function is_php_file(string $path): bool
     return preg_match('/\.php$/i', $path) === 1;
 }
 
-function is_production_php_file(string $path): bool
+function is_topology_relevant_php_file(string $path): bool
 {
     if (! is_php_file($path)) {
         return false;
     }
 
-    return ! str_contains('/'.$path, '/tests/');
+    if (str_contains('/'.$path, '/tests/')) {
+        return false;
+    }
+
+    return ! str_starts_with($path, 'apps/docs/');
 }
 
 function docs_only_artifact_problem(string $worktree): ?string

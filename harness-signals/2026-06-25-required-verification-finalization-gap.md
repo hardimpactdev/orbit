@@ -48,8 +48,10 @@ prose.
   packet omits required verification rows or records blocked/incomplete status.
 - The hook derives required proof from the branch diff. Docs-only diffs require
   a successful `docs-lint` or broader `quality-check` artifact, other diffs
-  require a successful `quality-check` artifact, and production PHP diffs also
-  require retained topology proof to be `passed`.
+  require a successful `quality-check` artifact, and topology-relevant PHP
+  diffs also require retained topology proof to be `passed`. Docs-app tooling
+  PHP under `apps/docs/` is excluded unless the slice also changes topology
+  behavior.
 - `composer docs-lint` now writes a `docs-lint` artifact under
   `.orbit/quality-gates/`, so docs-only finalization can be proven without
   rerunning Pest or E2E.
@@ -76,11 +78,12 @@ and the allowed `not applicable` case.
 
 Diff-derived tests cover docs-only finalization with and without docs-lint
 evidence, PHP diffs without quality-check artifacts, non-docs diffs with
-quality-check marked not applicable, production PHP diffs with retained topology
-proof marked not applicable, and production PHP diffs with artifact-backed
-quality-check plus retained topology proof. Quality-gate artifact tests also
-pin the manual-only E2E policy across default Composer gates, helper scripts,
-and active skills.
+quality-check marked not applicable, topology-relevant PHP diffs with retained
+topology proof marked not applicable, docs-app tooling PHP with retained
+topology proof marked not applicable, and topology-relevant PHP diffs with
+artifact-backed quality-check plus retained topology proof. Quality-gate
+artifact tests also pin the manual-only E2E policy across default Composer
+gates, helper scripts, and active skills.
 
 ## Reappearance Check
 
