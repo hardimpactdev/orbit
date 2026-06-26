@@ -60,7 +60,14 @@ owns app-domain health.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php` | Command contract for authorization denial, gateway forwarding, provider authorization, Cloudflare token failures, empty zone lists, and no Orbit state writes. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareReadCommandsTest.php` | CLI zone list forwarding, human table and empty-state output, and JSON meta count output. |
+| `apps/gateway/tests/Feature/Http/Api/CloudflareControllerTest.php` | Gateway zone listing authorization, provider authorization, Cloudflare token failures, and empty zone lists. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-zone-list_output-render_human.md`](6.1_cf-zone-list_output-render_human.md#test-mapping)
+- [`6.2_cf-zone-list_output-render_json.md`](6.2_cf-zone-list_output-render_json.md#test-mapping)

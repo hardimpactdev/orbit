@@ -75,8 +75,21 @@ Ingress route health remains owned by [`doctor --family=proxy`](../../../8_proxy
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php` | Command contract for authorization denial, zone resolution, app-name resolution, provider authorization, provider failures, and no deploy or proxy mutations. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php` | Interactive zone prompt and non-interactive missing-zone failure. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI zone and app resolution, interactive zone prompt, non-interactive missing-zone validation, and gateway forwarding. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human progress-tree flush output and JSON validation and error rendering. |
+
+There is no gateway-side coverage for this command contract: `CloudflareController::flushCache` has no dedicated routine gateway feature test owner. CLI forwarding, zone resolution, and renderer output are covered by the linked CLI tests above.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_cf-cache-flush_input-mode_interactive.md`](5.1_cf-cache-flush_input-mode_interactive.md#test-mapping)
+- [`5.2_cf-cache-flush_input-mode_non-interactive.md`](5.2_cf-cache-flush_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-cache-flush_output-render_human.md`](6.1_cf-cache-flush_output-render_human.md#test-mapping)
+- [`6.2_cf-cache-flush_output-render_json.md`](6.2_cf-cache-flush_output-render_json.md#test-mapping)

@@ -50,9 +50,11 @@ execution.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Gateway-local removal, destructive consent coverage, grant cleanup, peer teardown, structured warning reporting for failed peer teardown, any-gateway-node refusal. |
-| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Integration: grants and peer removed together. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway-local remove authorization, destructive consent, self-removal, gateway-node denial, not-found envelopes, and grant cleanup. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php` | Gateway API development DNS warning payload and no-warning cleanup success. |
+
+Destructive consent coverage note: gateway API tests cover missing-consent rejection; interactive confirmation remains a CLI prompt coverage gap outside this gateway-caller page.
+
+Warning payload coverage note: development DNS warning payload shape is covered by the linked API test; WireGuard detach warning variants stay coverage gaps until focused tests land.

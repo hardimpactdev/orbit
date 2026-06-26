@@ -118,5 +118,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, and family scope validation against the target category set. |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Operator-node forwarding through the typed gateway request, mutually exclusive flag rejection, unsupported family rejection, authorization failure handling, verify request shape, and rendered panel structure. |
+| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI scope selection, panel rendering, JSON and stream output, and gateway request forwarding from client context. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway verify scope, authorization failure handling, and diagnostic response shape. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category sets, universal process-family support for role-bearing nodes, and family scope validation. |

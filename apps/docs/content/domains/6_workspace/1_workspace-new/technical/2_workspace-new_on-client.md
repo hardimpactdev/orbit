@@ -35,5 +35,7 @@ When run from a client with an operator identity, `workspace:new` acts as a gate
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Client input gathering, gateway HTTPS forwarding, gateway-driven SSH apply routing, progress-stream consumption, missing-gateway failure shape, and absence of direct SSH from the client. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspaceNewOperatorForwardingTest.php` | Real-environment smoke coverage: `workspace:new` invoked from an operator node forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side workspace:new validation and gateway stream request payload. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
+
+There is no gateway-side coverage for this client-forwarding path: request construction and stream handling live in `apps/cli`; gateway creation behavior is mapped in the gateway-node and command-level contracts. Documented error.code values and warning payload shape are not exhaustively asserted by the linked CLI tests unless the rows above name them explicitly.

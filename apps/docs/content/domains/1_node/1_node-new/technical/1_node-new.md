@@ -373,11 +373,11 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeNewInputContractTest.php` | Owns the canonical input contract: fields, sources, required/forbidden conditions, defaults, value validation, `operator_name` required only for first-gateway bootstrap, and post-input path eligibility timing. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Canonical input contract validation, role mutual exclusion, canonical role validation, non-interactive normalization, and JSON complete frames. |
+| `apps/gateway/tests/Feature/Http/Api/NodeStoreControllerTest.php` | Gateway node store authorization and app-dev provisioning. |
+| `apps/gateway/tests/Feature/Http/Api/NodeStoreStreamControllerTest.php` | Gateway streamed node creation and SSE creation frames. |
 
-The contract owner asserts resolved input and validation outcomes — not
-resolver internals. Input-mode prompting and gateway-side authorization
-outcomes belong to the split contracts.
+There is no routine test mapping for E2E smoke coverage: retained-topology proof and artifact-backed end-to-end lanes are manual-only and must not be linked from product docs.
 
 Input-mode-specific test mapping lives in:
 
@@ -389,7 +389,7 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-new_output-render_human.md`](6.1_node-new_output-render_human.md#test-mapping)
 - [`6.2_node-new_output-render_json.md`](6.2_node-new_output-render_json.md#test-mapping)
 
-Role-specific and E2E test mapping lives in:
+Deployment-context-specific test mapping lives in:
 
 - [`2_node-new_on-client.md`](2_node-new_on-client.md#test-mapping)
 - [`3_node-new_on-gateway-node.md`](3_node-new_on-gateway-node.md#test-mapping)

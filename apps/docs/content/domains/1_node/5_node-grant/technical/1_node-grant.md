@@ -167,16 +167,15 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Grant success, idempotence, validation failures, elevated-grant consent, self-grants, client forwarding, authorization failure, JSON envelope, and warning payloads. |
-| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: grant creation, idempotence, and policy enforcement. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnOperatorNodeContractTest.php` | Configured operator-node forwarding, no SSH fallback, `node:grant` authorization on a gateway grant, gateway-unavailable failure, and result rendering. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI grant create, idempotence, elevated-grant consent, self-grants, human renderer prose, and JSON envelopes covered by the linked subset of documented error codes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeGrantControllerTest.php` | Gateway grant authorization, validation failures, idempotence, and warning payloads. |
 
 Renderer-specific test mapping lives in:
 
 - [`6.1_node-grant_output-render_human.md`](6.1_node-grant_output-render_human.md#test-mapping)
 - [`6.2_node-grant_output-render_json.md`](6.2_node-grant_output-render_json.md#test-mapping)
 
-Deployment-context test mapping lives in:
+Deployment-context-specific test mapping lives in:
 
 - [`2_node-grant_on-client.md`](2_node-grant_on-client.md#test-mapping)
 - [`3_node-grant_on-gateway-node.md`](3_node-grant_on-gateway-node.md#test-mapping)

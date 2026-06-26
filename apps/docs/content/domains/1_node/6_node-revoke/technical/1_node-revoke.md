@@ -158,8 +158,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Revocation success, idempotent absence, node-not-found validation, client forwarding, authorization failure, confirmation, and `--force` behavior. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php` | Configured operator-node forwarding, no SSH fallback, `node:revoke` authorization on a gateway grant, self-lockout, destructive consent, and result rendering. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI revoke forwarding, idempotent behavior, self-lockout consent, human renderer prose, and JSON envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRevokeControllerTest.php` | Gateway revoke authorization, idempotence, and validation envelopes. |
 
 Input-mode-specific test mapping lives in:
 
@@ -171,7 +171,8 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-revoke_output-render_human.md`](6.1_node-revoke_output-render_human.md#test-mapping)
 - [`6.2_node-revoke_output-render_json.md`](6.2_node-revoke_output-render_json.md#test-mapping)
 
-Deployment-context test mapping lives in:
+Deployment-context-specific test mapping lives in:
 
 - [`2_node-revoke_on-client.md`](2_node-revoke_on-client.md#test-mapping)
 - [`3_node-revoke_on-gateway-node.md`](3_node-revoke_on-gateway-node.md#test-mapping)
+Destructive consent coverage note: routine tests cover only the mapped `--force`, destructive consent, or confirmation paths above; prompt-only variants and operator forwarding stay as coverage gaps when no path is listed.

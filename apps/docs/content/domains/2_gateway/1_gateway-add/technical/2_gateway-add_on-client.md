@@ -57,4 +57,5 @@ and trust configuration only.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Non-gateway host behavior: first add flow, local onboarding path, CA fetch, `/api/me` verification, local settings write, no local node registry mirror creation, and gateway-host rejection. |
+
+There is no gateway-side coverage for this deferred mapping: no current routine gateway test proves this documented behavior. Keep it as a coverage gap until a focused test lands.

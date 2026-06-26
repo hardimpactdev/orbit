@@ -64,4 +64,6 @@ gateway is marked per entry.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayListCommandTest.php` | Command contract: local config read, active gateway resolution, empty config failure, and no gateway API contact. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewaySelectionCommandTest.php` | CLI `gateway:list` local config reads, active gateway resolution, empty config failure, JSON output, and human table output without gateway API contact. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

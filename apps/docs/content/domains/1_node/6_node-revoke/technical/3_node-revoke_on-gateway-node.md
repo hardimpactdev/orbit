@@ -40,8 +40,8 @@ execution.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Gateway-local revocation, destructive consent coverage, idempotent absent success, node-not-found validation, and grant deletion. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRevokeControllerTest.php` | Gateway-local revoke authorization, idempotence, self-lockout reporting, destructive consent, and validation envelopes. |
+
+Destructive consent coverage note: gateway API tests cover missing-consent rejection; interactive confirmation remains a CLI prompt coverage gap outside this gateway-caller page.

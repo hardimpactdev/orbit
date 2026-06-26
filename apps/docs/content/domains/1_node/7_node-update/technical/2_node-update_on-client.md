@@ -98,8 +98,8 @@ This node is not authorized for 'node:update' on '<target>'.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php` | Configured operator-node forwarding over HTTPS through WireGuard, no SSH-to-gateway path, forwarded `tld` payload, gateway-preserved TLD role rejection, grant authorization failures, self-update detection, gateway-unavailable failure, and result rendering. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:update forwarding and rendered output. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

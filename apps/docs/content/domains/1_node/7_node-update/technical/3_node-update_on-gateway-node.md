@@ -61,9 +61,8 @@ change outside `node:update`.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Gateway-local update, field validation, role-conditional field rules including `tld`, no-op success, artifact re-applying reporting, and warning payload shape for partial-success drift. |
-| `apps/gateway/tests/Feature/Http/Api/NodeUpdateControllerTest.php` | Gateway TLD updates, operator TLD updates, duplicate-TLD conflict, and invalid-TLD syntax. |
+| `apps/gateway/tests/Feature/Http/Api/NodeUpdateControllerTest.php` | Gateway-local update authorization, field validation, no-op updates, TLD conflicts, artifact warning payloads, and not-found envelopes. |
+
+Warning payload coverage note: gateway API tests cover the artifact warning payload shape for partial re-application failure; other warning variants stay coverage gaps until focused tests land.

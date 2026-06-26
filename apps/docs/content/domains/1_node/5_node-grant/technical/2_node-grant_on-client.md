@@ -81,8 +81,8 @@ This action requires the node:grant permission on a grant to the gateway.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnOperatorNodeContractTest.php` | Configured operator-node forwarding, no SSH fallback, forwarded payload, `node:grant` authorization, gateway-unavailable failure, authorization failure, and result rendering. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context grant forwarding and rendered success and failure output. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

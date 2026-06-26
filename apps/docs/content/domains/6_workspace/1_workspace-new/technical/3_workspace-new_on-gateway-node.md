@@ -27,5 +27,4 @@ executes the workspace creation flow locally:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewOnGatewayNodeContractTest.php` | Gateway-local execution: direct invocation of the underlying actions/services, SQLite configuration write, SSH apply to the parent node via `RemoteShell`, and identical observable result to the forwarded path. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspaceNewGatewayLocalTest.php` | Real-environment smoke coverage: `workspace:new` invoked on a gateway node bypasses the HTTPS hop and produces equivalent gateway configuration and node artifacts as the client-forwarded path. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway-local workspace creation API, created action payload, path/base metadata, and authorization failure handling. |

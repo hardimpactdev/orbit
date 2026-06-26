@@ -355,20 +355,9 @@ returning the new key.
 
 ## Test Mapping
 
-Required test files:
+Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Unit/Services/Nodes/NodesProbeTest.php` | In-memory node probe diff behavior (see breakdown below). |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Node-family dispatch through the global doctor command, drift-detected exit semantics, healthy and unhealthy human/JSON output for the node family, and rejection of unsupported node-family flag combinations. |
-
-`NodesProbeTest` covers diff behavior for registry configuration, role
-assignment compatibility and status, access grant integrity, WireGuard
-identity, and presented caller identity resolving to a unique active node
-record. It also covers platform reality, SSH reachability, public IP metadata
-exclusion from probe/restore/adopt behavior, gateway service readiness,
-node bootstrap readiness, node security posture, and development TLD mapping readiness. The
-probe additionally covers `node.local_default_invalid` and
-`node.agent_ide_default_invalid`, and verifies that the CLI PHP default check
-currently returns no `node.cli_php_default_mismatch` drift (reserved
-placeholder; not yet an emitted issue code).
+| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI doctor scope selection and rendered output when node doctor sections are exercised from the CLI. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway verify scope and authorization when node-family doctor probes run through the API. |

@@ -82,7 +82,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessListCommandTest.php` | App and workspace context resolution, grant-scoped visibility, registry-backed listing in process order, latest durable event display, no live node probing, authorization failure, and gateway-unavailable failure. |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessListInputContractTest.php` | App and workspace input resolution, missing context failures, ambiguous context failures, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessListControllerTest.php` | Gateway process listing for app, workspace, and node contexts, grant-scoped visibility, managed-service metadata, validation failures, authorization failures, and unauthenticated requests. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessListCommandTest.php` | CLI `process:list` `--app`, `--workspace`, `--node`, and `--json` forwarding, JSON envelope shape, human table output, empty state, and gateway error passthrough. |
 
 Renderer and input-mode test mapping lives in the split companion files.

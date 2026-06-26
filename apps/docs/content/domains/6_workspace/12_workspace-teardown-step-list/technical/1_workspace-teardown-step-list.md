@@ -155,8 +155,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListCommandTest.php` | Parent-app resolution chain, `order ASC` sort, full-dump shape matching `workspace-teardown-step:add`, empty-list behavior for apps with no steps, `workspace.app_not_found`, `authorization_failed`, and read-only guarantee. |
-| `apps/gateway/tests/E2E/WorkspaceStepListTest.php` | Real read-only `workspace-teardown-step:list --json` against a registered app with steps, including ordering and envelope alignment. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStepListCommandTest.php` | CLI teardown-step list request forwarding, app/path resolution, human output, empty state, and JSON payload. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceStepListControllerTest.php` | Gateway teardown-step list ordering and phase filtering. |
 
 Renderer-specific test mapping lives in:
 

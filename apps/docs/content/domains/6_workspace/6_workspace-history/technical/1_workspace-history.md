@@ -166,8 +166,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceHistoryCommandTest.php` | Command contract for `workspace:history` lifecycle; see detail below. |
-| `apps/gateway/tests/E2E/Read/WorkspaceHistoryTest.php` | Real read-only `workspace:history --json` against a workspace with mixed lifecycle and setup runs. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceHistoryControllerTest.php` | Gateway workspace history lookup, pagination, limit-capping metadata, and authorization failures. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceHistoryCommandTest.php` | CLI history filter forwarding, path resolution, human table rendering, empty state, and gateway error passthrough. |
 
 `WorkspaceHistoryCommandTest.php` covers input resolution (CWD, name, `--app`
 disambiguation), authorization check, filter validation, status and action

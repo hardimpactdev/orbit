@@ -273,8 +273,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, client forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `apps/gateway/tests/Feature/Http/Api/NodeUpdateControllerTest.php` | API forwarding and gateway-local updates: `tld` payloads for gateway, operator, app-dev, app-prod, and agent targets; structured errors; duplicate TLD conflict; and invalid TLD syntax. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI update post, render, drift reporting, human renderer prose, non-interactive required-input validation, and JSON envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeUpdateControllerTest.php` | Gateway field updates, TLD handling, no-op updates, and authorization envelopes. |
 
 Input-mode-specific test mapping lives in:
 
@@ -286,7 +286,8 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-update_output-render_human.md`](6.1_node-update_output-render_human.md#test-mapping)
 - [`6.2_node-update_output-render_json.md`](6.2_node-update_output-render_json.md#test-mapping)
 
-Role-specific and E2E test mapping lives in:
+Deployment-context-specific test mapping lives in:
 
 - [`2_node-update_on-client.md`](2_node-update_on-client.md#test-mapping)
 - [`3_node-update_on-gateway-node.md`](3_node-update_on-gateway-node.md#test-mapping)
+Warning payload coverage note: linked tests cover only the mapped warning payload shape assertions above; remaining variants of the warning payload stay as coverage gaps until focused tests land.

@@ -233,27 +233,8 @@ identity. It must not overwrite a proven but incompatible host.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/NodeNewCommandTest.php` | Gateway-caller behavior (see breakdown below). |
-| `apps/gateway/tests/E2E/NodeNewDevelopmentAppTest.php` | Real-node smoke coverage for gateway-owned development app-role provisioning and development TLD mapping. |
-| `apps/gateway/tests/E2E/NodeNewProductionAppTest.php` | Real-node smoke coverage for gateway-owned production app-role provisioning without development TLD mapping. |
-
-`NodeNewCommandTest.php` covers:
-
-- active local gateway identity requirement
-- post-input path eligibility and path matrix behavior
-- `node_new.host` required for every gateway request
-- already-provisioned convergence without reprovisioning
-- missing gateway-row materialization outside `node:new`
-- compatible drift and incomplete-gateway handoff to `doctor --family=node --restore`
-- reset outside `node:new`
-- client enrollment without SSH, including forbidden-input behavior
-- app-role provisioning over SSH
-- development TLD persistence and TLD mapping creation
-- compatible adoption
-- incompatible record failures before side effects
-
-Renderer tests own exact output shape.
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI gateway-context `node:new` payload forwarding plus first-gateway bootstrap and gateway-bootstrap-unavailable handling. |
+| `apps/gateway/tests/Feature/Http/Api/NodeStoreControllerTest.php` | Gateway-caller node creation authority, app-node provisioning/adoption, gateway-context execution, and validation envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeStoreStreamControllerTest.php` | Gateway streamed node creation and SSE creation frames. |

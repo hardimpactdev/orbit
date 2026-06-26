@@ -183,11 +183,12 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Local trust contract: configured endpoint resolution, missing gateway failure, root CA fetch, PEM validation, trust-store side effect, metadata persistence, idempotent already-trusted success, and the no-write guarantees listed below. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php` | Local gateway settings read failures before network or trust-store side effects, including actionable `node.local_config_read_failed` reasons and human prose. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php` | JSON renderer selection, success envelope, trust DTO shape, every `error.code` value, error metadata, and `--json` forcing non-interactive mode. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php` | Human renderer progress tree, trusted success prose, already-trusted success prose, gateway fetch failure prose, unsupported-platform prose, and trust-store failure prose. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | CLI `gateway:trust` endpoint resolution, missing gateway failure, root CA fetch, PEM validation, trust-store side effects, named gateway persistence, `trusted`/`already_trusted` statuses, and no `/api/me` identity verification. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | JSON `gateway:trust` success envelopes for `trusted` and `already_trusted`, no-gateway validation, gateway unavailable, invalid material, and unsupported-platform failures. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php` | Human `gateway:trust` progress tree, trusted/already-trusted footers, missing-gateway prose, gateway-unavailable prose, and unsupported-platform prose. |
 
 `GatewayTrustCommandTest.php` also verifies that the command performs no
 gateway config writes, no `/api/me` verification, no public gateway override,
 and exposes no public `--export` option.
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

@@ -52,9 +52,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php` | JSON and human output, missing node validation, and role payload fields. |
+| `apps/cli/tests/Feature/Commands/Node/NodeRoleListCommandTest.php` | CLI default-node resolution, human and JSON list output. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRoleListControllerTest.php` | Gateway role list authorization, list shape, and not-found handling. |
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_node-role-list_output-render_human.md`](6.1_node-role-list_output-render_human.md#test-mapping)
+- [`6.2_node-role-list_output-render_json.md`](6.2_node-role-list_output-render_json.md#test-mapping)
 
 ## Failure Semantics
 

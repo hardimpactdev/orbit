@@ -87,10 +87,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessStartCommandTest.php` | Context resolution, grant authorization, process selection, runtime-unit derivation, successful start, durable event recording, partial bulk failure, and authorization failure (full scope below). |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessStartInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessStartControllerTest.php` | Gateway process:start runtime action authorization, selected process execution, durable event recording, partial runtime failure data, unsupported-runtime validation, and authorization failures. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | CLI process:start app/workspace/node context forwarding, optional process selection, all-process selection when `[name]` is omitted, JSON success output, and validation before gateway contact. |
 
-`ProcessStartCommandTest` covers context resolution, self-grant allowance,
+`ProcessStartControllerTest.php` and `ProcessWriteCommandTest.php` cover context resolution, self-grant allowance,
 missing-grant denial, named and all-process selection, process-order execution,
 runtime-unit derivation, successful start, durable started event recording,
 partial bulk failure reporting, no configuration mutation, no direct

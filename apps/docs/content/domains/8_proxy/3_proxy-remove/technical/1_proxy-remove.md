@@ -91,5 +91,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveCommandTest.php` | Command contract for input validation, gateway authorization, destructive consent, custom-only removal, owned-route denial, cleanup failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, route ownership checks, destructive consent mapping, and proxy route entity mapping. |
+| `apps/gateway/tests/Feature/Http/Api/ProxyRouteMutationControllerTest.php` | Gateway proxy route removal authorization, custom route deletion, destructive consent requirement, and mutation API shape. |
+| `apps/cli/tests/Feature/Commands/Proxy/ProxyWriteCommandTest.php` | CLI `proxy:remove` force consent handling, interactive confirmation, DELETE forwarding, JSON success envelope, and gateway error passthrough. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | In-memory proxy route intent DTOs, custom-only removal, destructive consent mapping, cleanup warnings, ownership checks, and authorization. |
