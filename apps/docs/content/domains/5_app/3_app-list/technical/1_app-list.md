@@ -115,7 +115,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppListCommandTest.php` | CLI command contract: JSON envelope, node filter forwarding, unsupported environment filter guard, human output, gateway-unavailable failure, and WireGuard-specific failure mapping. |
-| `apps/gateway/tests/E2E/Read/AppListTest.php` | Real read-only `app:list --json` against registered apps until the E2E harness moves to `apps/e2e`. |
+| `apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php` | Gateway app list API: authorization, node filter, workspace payload, and empty result shape. |
 
 Renderer-specific test mapping lives in:
 

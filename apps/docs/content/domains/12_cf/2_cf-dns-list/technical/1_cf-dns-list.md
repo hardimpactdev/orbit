@@ -70,5 +70,11 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php` | Command contract for authorization denial, zone resolution, provider authorization, gateway forwarding, provider failures, and no Orbit state writes. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareReadCommandsTest.php` | CLI GET forwarding to `/api/cloudflare/zones/{zone}/dns`, JSON success envelope with zone metadata, required-zone validation before gateway contact, `authorization_failed` passthrough, and `gateway_unreachable_wireguard` surfacing. |
+
+There is no gateway-side coverage for this command contract: authorization denial at the gateway API, zone resolution, provider authorization, provider failures, and guards that prove Orbit state is not written remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-dns-list_output-render_human.md`](6.1_cf-dns-list_output-render_human.md#test-mapping)
+- [`6.2_cf-dns-list_output-render_json.md`](6.2_cf-dns-list_output-render_json.md#test-mapping)

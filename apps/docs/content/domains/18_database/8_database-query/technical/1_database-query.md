@@ -87,5 +87,7 @@ with [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseQueryCommandTest.php` | Target resolution, ambiguity handling, read/write classification, SQLite locality handoff, and failure codes. |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php` | JSON envelope shape, row/result metadata, and exhaustive documented error codes. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | SQL and target validation, query payload posting, strict JSON stdout, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Target resolution, ambiguity errors, read/write permission separation, SQLite locality handoff, and unattached-connection failures. |
+| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php` | Read/write SQL classification for documented statement classes. |
+| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php` | SQLite dispatch through `internal:database-query-local` without credential leakage. |

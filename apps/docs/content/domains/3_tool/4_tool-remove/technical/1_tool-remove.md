@@ -85,7 +85,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolRemoveCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, destructive consent when applicable, and doctor handoff behavior. |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolRemoveJsonRendererTest.php` | JSON renderer success, validation failure shape, implicit JSON consent, and gateway error preservation. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:remove` destructive consent (`--json`, `--force`, interactive prompt), DELETE forwarding, and gateway error envelope pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/ToolRemoveControllerTest.php` | Gateway API consent-source handling, explicit target requirement, authorization failure, and streaming removal consent. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

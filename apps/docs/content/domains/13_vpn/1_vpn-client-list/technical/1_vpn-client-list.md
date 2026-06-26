@@ -83,5 +83,6 @@ runtime drift, and node reachability drift.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientListCommandTest.php` | Command contract: grant denial, non-gateway SSH execution to the active `vpn` role node, VPN-role runtime backend execution, backend authentication, TOTP handling, empty list success, node peer classification, and read-only behavior. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php` | Human and JSON renderer output, empty state, classified client rows, and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI `vpn-client:list` gateway request forwarding, TOTP query propagation, human and JSON renderer output, empty state, classified client rows, and gateway error envelope passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Gateway VPN API activity logging, runtime-unavailable failures, read-grant enforcement, and fake-backend routing. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Active node peer classification by name and address. |

@@ -65,5 +65,7 @@ app health checks that may incorporate deployment pipeline validity.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php` | Command contract for production app lookup, authorization, ordered step listing, empty list behavior, read-only side-effect boundary, failure codes, and app-doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, app selector resolution, ordered list rules, and deploy-step entity mapping. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php` | CLI `deploy:step-list` GET forwarding, JSON envelope and metadata, human table output with ordered step cells, empty list behavior, missing-app validation before gateway contact, and gateway `authorization_failed` and `app.not_found` passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php` | Gateway authorized empty deployment-step listing for callers with `deploy:read`. |
+
+Coverage gaps until focused tests land: production-app eligibility, read-only side-effect boundary proof, exhaustive documented `error.code` values, and app-doctor handoff behavior.

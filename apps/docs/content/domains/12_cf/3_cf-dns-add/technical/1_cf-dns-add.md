@@ -75,5 +75,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php` | Command contract for authorization denial, zone inference, A/AAAA validation, idempotent equivalent records, conflicting records, provider authorization, and no Orbit configuration writes. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST payload forwarding to the gateway DNS endpoint and required `name`/`content` validation before gateway contact. |
+
+There is no gateway-side coverage for this command contract: authorization denial, zone inference, A/AAAA validation, idempotent equivalent records, conflicting records, provider authorization, and guards that prove Orbit configuration is not written incorrectly remain coverage gaps. CLI forwarding and input validation are covered by the linked CLI test above.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-dns-add_output-render_human.md`](6.1_cf-dns-add_output-render_human.md#test-mapping)
+- [`6.2_cf-dns-add_output-render_json.md`](6.2_cf-dns-add_output-render_json.md#test-mapping)

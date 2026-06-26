@@ -70,5 +70,6 @@ schedule registry reads.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | Command contract for filter validation, gateway authorization, read-only boundary, run-history summary inclusion, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, filter rules, and schedule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php` | CLI filter forwarding, JSON envelope shape, human table with last-run summary, empty states, and gateway/WireGuard failure passthrough. |
+
+There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.

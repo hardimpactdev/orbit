@@ -77,5 +77,6 @@ active `vpn` role.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php` | Command contract: grant denial, non-gateway SSH, runtime execution, TOTP, disablement, idempotent success, missing-client failure, node-peer protection, and no node writes. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI `vpn-client:disable` gateway request forwarding, interactive name prompt, human and JSON renderer output, idempotent already-disabled shape, and gateway error envelope passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Gateway disable endpoint success behavior, shared VPN API runtime-unavailable behavior, and write-grant enforcement for VPN write requests. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Active node peer protection from write commands and idempotent disable results. |

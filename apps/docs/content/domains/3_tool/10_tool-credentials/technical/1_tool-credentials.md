@@ -70,5 +70,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolCredentialsCommandTest.php` | CLI target resolution, interactive tool prompt, human credential rendering, JSON gateway payload passthrough, local validation, and gateway/WireGuard failure passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ToolCredentialsControllerTest.php` | Gateway credential reads, grant enforcement, agent self-request rejection, and authorization failures. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

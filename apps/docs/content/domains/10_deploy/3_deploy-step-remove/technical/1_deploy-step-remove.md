@@ -74,5 +74,8 @@ deployment policy when reporting `app.deployment_pipeline_invalid`.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php` | Command contract for production app lookup, grant denial before side effects, authorization, step lookup, destructive consent, policy removal, history preservation, failure codes, and app-doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, step lookup by id or title, destructive consent mapping, reorder rules, and removed step entity mapping. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php` | CLI `deploy:step-remove` destructive-consent gate before gateway contact, DELETE payload with `destructive_consent`, and JSON removed-step envelope with `history_preserved` metadata. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php` | Interactive app and step prompts plus destructive confirmation before DELETE. |
+| `apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php` | Gateway step removal and order compaction after deletion. |
+
+Coverage gaps until focused tests land: production-app eligibility, grant denial before side effects, step lookup failures, exhaustive documented `error.code` values, and app-doctor handoff behavior.

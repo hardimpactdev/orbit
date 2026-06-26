@@ -80,4 +80,7 @@ materialize that intent into target `.env` files later.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php` | Driver validation, slug uniqueness, encrypted credential handling, and side-effect boundaries. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | CLI payload posting, pre-gateway validation, secret omission, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway create persistence, credential encryption, validation envelopes, and invalid node selectors. |
+
+Slug-collision and exhaustive documented create error codes remain coverage gaps until focused gateway tests land.

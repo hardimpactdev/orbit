@@ -71,5 +71,6 @@ own PHP runtime health for app and workspace artifacts.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Php/PhpListCommandTest.php` | Target resolution, caller authorization, gateway read behavior, `--live` image inspection boundary, and failure codes. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeViewTest.php` | PHP runtime view DTO shape, supported and available-image version mapping, and app/workspace inheritance reporting. |
+| `apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php` | CLI target resolution, filter forwarding, `--live` flag forwarding, human and JSON renderer selection, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Gateway authorization, runtime view reads, hidden-node denial, and structured success/error envelopes. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Inherited workspace view mapping and PHP runtime view DTO shape. |

@@ -72,5 +72,11 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddCommandTest.php` | Command contract for authorization denial, app lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and no app/proxy mutations. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI POST forwarding to `/api/cloudflare/cache-rules/{app}` and JSON success envelope passthrough. |
+
+There is no gateway-side coverage for this command contract: authorization denial, app lookup, zone resolution, cache rule convergence, provider authorization, provider failures, and app/proxy mutation guards remain coverage gaps. CLI forwarding and envelope passthrough are covered by the linked CLI test above.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-cache-rule-add_output-render_human.md`](6.1_cf-cache-rule-add_output-render_human.md#test-mapping)
+- [`6.2_cf-cache-rule-add_output-render_json.md`](6.2_cf-cache-rule-add_output-render_json.md#test-mapping)

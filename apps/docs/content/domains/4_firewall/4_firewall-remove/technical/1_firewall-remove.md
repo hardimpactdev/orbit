@@ -83,5 +83,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, destructive consent, side-effect boundaries, idempotent absence, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php` | Shared in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and firewall-rule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php` | CLI `firewall:remove` destructive consent handling, forced DELETE forwarding, JSON success envelope, human progress output, idempotent absence prose, and gateway error passthrough. |
+| `apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php` | Interactive `firewall:remove` destructive confirmation prompt before contacting the gateway. |
+| `apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php` | Gateway firewall remove mutation authorization, destructive consent, DELETE request handling, protected-rule rejection, and mutation envelopes. |
+
+Coverage for the in-memory firewall command DTO shape, target resolution rules, baseline policy validation, and mapping from rules to entities is not currently linked; keep it as a gap until focused tests land.

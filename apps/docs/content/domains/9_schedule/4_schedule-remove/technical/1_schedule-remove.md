@@ -87,5 +87,6 @@ schedule removal attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveCommandTest.php` | Command contract for lookup, filter validation, gateway authorization, destructive consent, cleanup failure codes, history retention, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, lookup rules, destructive consent mapping, and removed schedule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI destructive consent enforcement, DELETE payload with scheduler-pickup metadata, and interactive confirmation before removal. |
+
+There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.

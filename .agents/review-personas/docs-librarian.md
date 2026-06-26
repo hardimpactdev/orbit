@@ -82,6 +82,13 @@ current review into a broad sweep.
 - The implementation report names the docs changed and why.
 - Tests cover the behavior described by the docs, or the report explains why no
   test is applicable.
+- For command linked-test remediation, changed commands do not silently
+  under-claim existing coverage; a command with real CLI, gateway, or unit
+  coverage must not ship empty `linked_test_files`.
+- For command linked-test remediation, cited tests do not over-claim coverage:
+  a `linked_test_files` row must name only behavior exercised by the cited test
+  body. If the behavior is not exercised, narrow the row or record an explicit
+  coverage gap.
 - If a Claude documenter/librarian worker produced docs and a Grok worker
   implemented code, Codex reconciled the two outputs before commit.
 - The docs contract was accepted before parallel code work relied on it.

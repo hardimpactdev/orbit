@@ -119,8 +119,5 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Activity/ActivityShowCommandTest.php` | Gateway-history detail behavior, id validation, not-found behavior, gateway-side authorization behavior, related-entry visibility, read-only guarantee, no live probes, and no repair side effects. |
-| `apps/gateway/tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php` | TTY selection, prompt behavior when `id` is missing, prompt ID, label, primitive, validation, prompt abort behavior, and `--json` opt-out. |
-| `apps/gateway/tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php` | No-prompt selection without a TTY, `--json` forcing non-interactive mode, missing-id failure, invalid-id failure, and no prompt rendering. |
-| `apps/gateway/tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php` | JSON renderer selection, success envelope, activity detail DTO shape, related entry shape, every `error.code` value, and `--json` forcing non-interactive mode. |
-| `apps/gateway/tests/Feature/Commands/Activity/ActivityShowHumanRendererTest.php` | Human renderer detail view, related activity rendering, no-progress-tree behavior, validation failure prose, not-found prose, gateway failure prose, authorization failure prose, and absence of JSON envelopes in human mode. |
+| `apps/cli/tests/Feature/Commands/Activity/ActivityShowCommandTest.php` | CLI detail/related rendering, id validation, gateway error pass-through, and read-only guarantee. |
+| `apps/gateway/tests/Feature/Http/Api/ActivityShowControllerTest.php` | Gateway authorization and activity detail API behavior. |

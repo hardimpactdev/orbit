@@ -139,8 +139,12 @@ Required implementation test coverage:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Doctor/DatabaseConnectionsFamilyDoctorContractTest.php` | Database-family dispatch, issue codes, restore map, adopt map, rollout adoption semantics, denied restore/adopt cases, and scope filtering. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php` | In-memory `.env` diff behavior, supported-prefix parsing, unverifiable groups, same-node WireGuard self-route diagnostics, and exclusion of unrelated `.env` keys from drift. |
 | `apps/gateway/tests/Unit/Services/Nodes/NodeWireGuardSelfRouteProbeTest.php` | Read-only Linux/macOS WireGuard self-route diagnostics used by database and process doctors. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php` | `.env` rewrite behavior, mapped-prefix updates, preservation of unrelated keys/comments, and no deletion without explicit target mapping. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php` | Supported-prefix adoption, existing app/workspace rollout adoption, connection/target upsert behavior, and encrypted credential storage for passwords. |
+
+No current routine feature test exercises database-family doctor dispatch, the
+full issue-code map, restore/adopt map routing, denied restore/adopt cases, or
+scope filtering end to end. Keep those as explicit coverage gaps until a focused
+contract test for the database doctor family lands.

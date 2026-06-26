@@ -76,5 +76,17 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php` | Command contract for authorization denial, zone resolution, address-record eligibility, destructive consent, `--force`, provider authorization, provider failures, and no Orbit configuration deletion. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | JSON missing-`--force` validation, forced DELETE forwarding with `destructive_consent`, and removed-record success envelope. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human removal progress tree and success output with `--force`. |
+
+There is no gateway-side coverage for this command contract: authorization denial, zone resolution, address-record eligibility, provider authorization, provider failures, and guards that prove Orbit configuration is not deleted incorrectly remain coverage gaps. CLI forwarding and renderer output are covered by the linked CLI tests above.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_cf-dns-remove_input-mode_interactive.md`](5.1_cf-dns-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_cf-dns-remove_input-mode_non-interactive.md`](5.2_cf-dns-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-dns-remove_output-render_human.md`](6.1_cf-dns-remove_output-render_human.md#test-mapping)
+- [`6.2_cf-dns-remove_output-render_json.md`](6.2_cf-dns-remove_output-render_json.md#test-mapping)

@@ -200,12 +200,9 @@ slice.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppNewCommandTest.php` | Signature validation, input resolution logic, collision checks, source-creation failure before gateway registry writes, successful gateway registry writes, and warning payload shape for `success.meta.warnings[]`. |
-| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation path: access-policy authorization, source creation through gateway-owned `RemoteShell`, registry configuration write after source success, and structured success/error envelopes. |
-| `apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php` | Internal action logic, default value assignment, and resolution chain. |
-| `apps/gateway/tests/E2E/Ephemeral/AppNewTest.php` | End-to-end creation of a development app with source directory creation. |
-| `apps/gateway/tests/E2E/Ephemeral/AppNewProductionTest.php` | End-to-end creation of a production app with domain activation. |
-| `apps/gateway/tests/E2E/Ephemeral/AppNewRepoTest.php` | End-to-end creation from a git repository. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI pre-gateway validation, stream payload forwarding, and gateway error pass-through. |
+| `apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php` | Interactive node/name prompts and slug validation with `--json`. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation: authorized POST creates source and registry, `app.source_creation_failed`, and warning payloads. |
 
 Context-specific behavior and test mapping live in:
 

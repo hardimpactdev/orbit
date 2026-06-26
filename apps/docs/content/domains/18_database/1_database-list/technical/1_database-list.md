@@ -79,7 +79,9 @@ The gateway API emits an activity entry for successful and failed list requests.
 
 ## Test Mapping
 
+Required split contract tests:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php` | Filter combinations, scope validation, authorization handoff, and side-effect boundaries. |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php` | JSON envelope shape, entity list shape, and validation failure payload. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php` | CLI GET forwarding with filters, app/workspace scope validation before gateway contact, authorization pass-through, JSON sensitive-field omission, and human table/empty-state output. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway list authorization, entity shape, password omission, and inactive-caller rejection. |

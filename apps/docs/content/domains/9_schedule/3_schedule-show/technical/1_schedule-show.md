@@ -74,5 +74,6 @@ schedule detail reads.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php` | Command contract for schedule lookup, filter validation, gateway authorization, read-only boundary, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php` | Shared schedule DTO shape, lookup rules, and schedule entity mapping. |
+| `apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php` | CLI schedule lookup and filter forwarding, validation before gateway contact, interactive name selection, `schedule.not_found` passthrough, and WireGuard failure surfacing. |
+
+There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.

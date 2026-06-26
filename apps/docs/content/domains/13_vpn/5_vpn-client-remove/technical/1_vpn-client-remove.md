@@ -87,7 +87,5 @@ detection and safe node-peer cleanup.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php` | Command contract: grant denial, SSH execution, TOTP, missing-client failure, node-peer protection, destructive consent, backend deletion, and no node cleanup. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php` | Interactive confirmation prompt, `--force` bypass, declined confirmation failure before side effects, and prompt abort behavior. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php` | Non-interactive missing-`--force` failure, `--json` forcing non-interactive mode, and no prompts. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI `vpn-client:remove` destructive consent (`--force`, interactive prompt), gateway DELETE forwarding, human and JSON renderer output, and gateway error envelope passthrough. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Active node peer protection from write commands. |

@@ -23,5 +23,4 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppNewOnGatewayNodeContractTest.php` | Gateway-peer authorization of `app:new`: gateway accepts the request, writes app configuration, applies app-role artifacts via `RemoteShell`, and produces the same observable result as the operator-caller path. |
-| `apps/gateway/tests/E2E/Ephemeral/AppNewGatewayLocalTest.php` | Real-environment smoke coverage of `app:new` invoked from a gateway-role peer, asserting the resulting app configuration and node artifacts match the operator-caller path. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API path writes registry and applies via mocked `RemoteShell`. |

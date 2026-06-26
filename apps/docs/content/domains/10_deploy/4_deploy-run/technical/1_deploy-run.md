@@ -138,15 +138,9 @@ deployment status when reporting `app.latest_deployment_failed` or
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php` | Command contract covering the deploy-run lifecycle; see detail below. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Container routing for PHP/Composer/Artisan steps, host path translation, built-in warmup steps, and HTTP warmup behavior. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, ordered step selection, app source path execution context, timeout metadata, execution context metadata, status taxonomy, captured output mapping, and latest deployment status mapping. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php` | CLI `deploy:run` detached stream POST to `/api/deploy/run`, missing-app validation before gateway contact, and gateway authorization error passthrough. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php` | Interactive app prompt before foreground stream POST with `detach=false`. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php` | Malformed deploy-run progress-stream frame handling. |
+| `apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php` | Gateway deploy execution routing for PHP/Composer/Artisan commands, host working-directory and environment context, built-in warmup steps, HTTP warmup paths, warmup skip on user-step failure, and failed-run status when warmup fails. |
 
-`DeployCommandTest.php` covers production app lookup, grant denial before
-side effects, authorization, empty pipeline failure, run creation,
-ordered step execution through the gateway from the app source path, timeout
-enforcement, metadata exposure, and progress-tree rendering.
-
-It also covers streamed client progress, single-route stream negotiation,
-step-failure stop behavior, latest deployment status updates, detached handoff,
-failure codes, and app-doctor handoff behavior.
+Coverage gaps until focused tests land: production-app eligibility, grant denial before side effects, empty-pipeline failure, run-history creation semantics, timeout enforcement, progress-tree rendering, foreground success summaries beyond the completion footer, exhaustive documented `error.code` values, step-failure stop behavior, history-write failures, latest-deployment status updates, and app-doctor handoff behavior.

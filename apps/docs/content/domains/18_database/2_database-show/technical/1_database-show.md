@@ -68,4 +68,5 @@ The command reads family state only. Drift and repair stay with
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php` | Resolution, not-found behavior, authorization handoff, and side-effect boundaries. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php` | CLI GET forwarding for the slug path, required-connection validation, sensitive-field omission, and human detail rendering. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway show API shape, not-found envelope, authorization, and password omission. |

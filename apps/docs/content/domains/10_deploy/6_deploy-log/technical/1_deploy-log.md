@@ -74,5 +74,9 @@ health checks and may reference latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Deploy/DeployLogCommandTest.php` | Command contract: production app lookup; authorization; run lookup; step and line filtering; stored-output reads; read-only boundary; no live SSH or process manager log reads; failure codes; app-doctor handoff. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, per-step output shape, run-to-app ownership validation, step lookup rules, line filtering, and stored output mapping. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php` | Interactive app and run prompts before GET to `/api/deploy/log/{run}`. |
+| `apps/cli/tests/Feature/Commands/LogStreamCommandTest.php` | Human `deploy:log` output with `--step` and `--lines` query forwarding and captured stdout/stderr grouping. |
+
+There is no gateway-side coverage for this mapped surface; linked CLI tests cover only the mapped assertions above. Remaining behavior stays a coverage gap until focused tests land.
+
+Coverage gaps until focused tests land: production-app eligibility, authorization, run and step lookup failures, JSON renderer behavior, read-only boundary proof, exhaustive documented `error.code` values, and app-doctor handoff behavior.

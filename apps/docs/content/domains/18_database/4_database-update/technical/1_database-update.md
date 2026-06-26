@@ -65,4 +65,7 @@ materializes changed mapped values into target `.env` files.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php` | Update validation, slug collision, secret replacement and clearing, and side-effect boundaries. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | PATCH payload forwarding, mutable-field validation before gateway contact, and password-clearing payload support. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway update persistence, credential clearing, and invalid node selectors. |
+
+Slug-collision handling remains a coverage gap until a focused gateway test lands.

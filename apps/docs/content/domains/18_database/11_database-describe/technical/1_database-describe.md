@@ -68,4 +68,8 @@ convergence stay with [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseDescribeCommandTest.php` | Target resolution, ambiguity handling, table lookup, SQLite locality, and metadata failure codes. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php` | CLI GET forwarding for target, table, and connection query parameters, required-table validation, and describe human/JSON rendering. |
+
+There is no gateway-side coverage for this mapped surface; linked CLI tests cover only the mapped assertions above. Remaining behavior stays a coverage gap until focused tests land.
+
+Gateway describe resolution, ambiguity handling, SQLite locality, and metadata failure codes remain coverage gaps until focused gateway tests land.

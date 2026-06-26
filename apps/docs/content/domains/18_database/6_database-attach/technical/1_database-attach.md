@@ -76,4 +76,5 @@ to write the mapped prefix into the target `.env` file.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php` | Target-scope validation, prefix conflicts, and no immediate `.env` rewrite. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | Target-scope validation, attach payload posting, and conflicting scope rejection. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway attach persistence, invalid scope envelope, and no immediate `.env` rewrite. |

@@ -124,6 +124,6 @@ verified and repaired by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Php/PhpUseCommandTest.php` | Target-scope resolution, mutual exclusion validation, version support and image-availability validation, gateway configuration writes, runtime/proxy application boundaries, and failure codes. |
-| `apps/gateway/tests/Feature/Commands/Php/PhpUseCallerRoleTest.php` | Gateway-applied authorization for the resolved app or workspace target, including denial when the authenticated WireGuard identity is not authorized to manage the target. |
-| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeSelectionTest.php` | Runtime selection DTO shape, app/workspace target modeling, inheritance behavior, and app/workspace/proxy partial-application warning mapping. |
+| `apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php` | CLI posts version selections for app/workspace targets, inherit semantics, mutual exclusion validation, and gateway error pass-through. |
+| `apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php` | Gateway authorization for resolved app or workspace targets, including hidden-node denial. |
+| `apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php` | Runtime selection and `view()` selection/inheritance behavior. |

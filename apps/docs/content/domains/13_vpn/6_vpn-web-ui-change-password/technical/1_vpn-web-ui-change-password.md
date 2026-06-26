@@ -94,7 +94,5 @@ but it does not rotate the VPN web UI password.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php` | Command contract: grant denial, non-gateway SSH, runtime execution, TOTP, password validation, destructive consent, credential update, session invalidation, redaction, and non-goals. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php` | Interactive password prompt, confirmation prompt, `--force` bypass, validation retry, declined confirmation failure before side effects, and prompt abort behavior. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php` | Non-interactive missing password failure, missing `--force` failure, `--json` forcing non-interactive mode, no prompts, and secret redaction in errors. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php` | Human and JSON renderer output and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI `vpn-web-ui:change-password` gateway request forwarding, password validation before gateway contact, destructive consent, interactive prompts, secret redaction, human and JSON renderer output, and gateway error envelope passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Shared VPN API runtime-unavailable behavior and write-grant enforcement for VPN write requests. |

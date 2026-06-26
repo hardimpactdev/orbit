@@ -72,7 +72,21 @@ owns app-domain health.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php` | Command contract for authorization denial, zone resolution, destructive consent, `--force`, provider authorization, provider failures, and no origin/proxy artifact mutation. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human disable progress tree and success output. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | JSON missing-consent `--force` validation and destructive disable gateway forwarding. |
+
+There is no gateway-side coverage for this command contract: authorization denial, zone resolution, provider authorization, provider failures, and origin/proxy artifact mutation checks remain coverage gaps. CLI forwarding and renderer output are covered by the linked CLI tests above.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_cf-ssl-disable_input-mode_interactive.md`](5.1_cf-ssl-disable_input-mode_interactive.md#test-mapping)
+- [`5.2_cf-ssl-disable_input-mode_non-interactive.md`](5.2_cf-ssl-disable_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-ssl-disable_output-render_human.md`](6.1_cf-ssl-disable_output-render_human.md#test-mapping)
+- [`6.2_cf-ssl-disable_output-render_json.md`](6.2_cf-ssl-disable_output-render_json.md#test-mapping)

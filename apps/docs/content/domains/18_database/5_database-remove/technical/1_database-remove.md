@@ -68,4 +68,5 @@ drift review belongs with [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php` | Destructive consent, mapping cascade semantics, and removal failure codes. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | Destructive consent, force-required validation, delete payload, and removal success. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway remove with force, mapping cascade, missing-consent envelope, and activity logging without secrets. |

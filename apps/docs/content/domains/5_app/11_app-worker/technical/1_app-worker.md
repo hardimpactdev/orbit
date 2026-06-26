@@ -241,7 +241,7 @@ contract does not include it and no env consumer reads
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php` | Action validation, app resolution, show/enable/disable state mutations, readiness failure leaves state unchanged, and the `app.not_found` and `app.worker_unsupported_runtime` paths. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI show/enable/disable human and JSON output. |
 | `apps/gateway/tests/Feature/Http/Api/AppWorkerControllerTest.php` | API surface for `show`, `enable`, `disable`; HTTP status mapping; `app:worker` vs `app:read` permission split; `app.not_found` 404; readiness failure 422. |
 | `apps/gateway/tests/Unit/Services/Apps/AppWorkerReadinessTest.php` | Probe token vocabulary and false-positive guards: bare composer.json, missing vendor, comment-only configuration (line and block), and the trailing-comment positive case. |
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App-dev thread-pool config, worker env vars, worker block shapes, document-root paths, and spec-hash changes. |

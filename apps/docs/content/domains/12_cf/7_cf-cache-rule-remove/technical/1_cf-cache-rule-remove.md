@@ -80,5 +80,17 @@ remains owned by [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php` | Command contract for authorization denial, app lookup, zone resolution, matching rule removal, missing rule failure, destructive consent, `--force`, provider authorization, and no app/proxy mutations. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human removal progress tree and success output with `--force`. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | JSON missing-consent `--force` validation and destructive DELETE forwarding with `destructive_consent`. |
+
+There is no gateway-side coverage for this command contract: authorization denial, app lookup, zone resolution, matching rule removal, missing rule failure, provider authorization, provider failures, and app/proxy mutation guards remain coverage gaps. CLI forwarding and renderer output are covered by the linked CLI tests above.
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_cf-cache-rule-remove_input-mode_interactive.md`](5.1_cf-cache-rule-remove_input-mode_interactive.md#test-mapping)
+- [`5.2_cf-cache-rule-remove_input-mode_non-interactive.md`](5.2_cf-cache-rule-remove_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-cache-rule-remove_output-render_human.md`](6.1_cf-cache-rule-remove_output-render_human.md#test-mapping)
+- [`6.2_cf-cache-rule-remove_output-render_json.md`](6.2_cf-cache-rule-remove_output-render_json.md#test-mapping)

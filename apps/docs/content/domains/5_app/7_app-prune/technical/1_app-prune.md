@@ -142,7 +142,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php` | Stale workspace identification, dry-run logic, delegation to workspace removal semantics, database skipping behavior, and lock acquisition. |
-| `apps/gateway/tests/Feature/Commands/Apps/AppPruneCommandTest.php` | CLI contract: arguments, options, destructive consent, interactive prompts, renderer selection, `workspace:remove` warning propagation, and warning payload shape for `success.meta.warnings[]`. |
-| `apps/gateway/tests/Feature/Http/Api/AppPruneControllerTest.php` | Gateway API authorization with `app:prune`, dry-run response shape, and structured authorization failures. |
-| `apps/gateway/tests/E2E/Ephemeral/AppPruneTest.php` | End-to-end execution with real agent IDE adapters (mocked or ephemeral) and node-side artifact verification. |
+| `apps/gateway/tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php` | Stale workspace identification, dry-run logic, configured-adapter failure, explicit adapter selection, and delegated workspace removal outcome. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI prune POST, interactive destructive consent, human/json output, and dry-run tree. |
+| `apps/gateway/tests/Feature/Http/Api/AppPruneControllerTest.php` | Gateway API authorization, dry-run response shape, and structured authorization failures. |
+
+Database skipping, lock acquisition, and warning payload shape remain coverage
+gaps until focused tests land.

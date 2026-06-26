@@ -74,5 +74,8 @@ app health checks that may incorporate latest deployment status through
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php` | Command contract for production app lookup, authorization, ordered run listing, empty history behavior, default limit and cap behavior, read-only side-effect boundary, failure codes, and app-doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-run DTO shape, app selector resolution, newest-first ordering, limit validation, and run entity mapping. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php` | CLI `deploy:history` GET forwarding, `--limit` query forwarding, JSON run envelope and metadata, human newest-first table output, empty-history output, missing-app validation before gateway contact, gateway limit validation passthrough, and `authorization_failed`, `deploy.production_app_required`, and WireGuard failure passthrough. |
+
+There is no gateway-side coverage for this mapped surface; linked CLI tests cover only the mapped assertions above. Remaining behavior stays a coverage gap until focused tests land.
+
+Coverage gaps until focused tests land: default limit and cap behavior, read-only side-effect boundary proof, exhaustive documented `error.code` values, and app-doctor handoff behavior.

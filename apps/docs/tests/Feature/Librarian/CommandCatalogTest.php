@@ -151,34 +151,17 @@ it('scopes command catalog authorization metadata to controller class and action
         ->toBe(['*']);
 });
 
-it('keeps remediated linked test file paths on disk under the repository root', function (): void {
+it('keeps linked test file paths on disk under the repository root', function (): void {
     $catalog = app(CommandCatalogBuilder::class)->build();
     $repoRoot = realpath(base_path('../..'));
 
     expect($repoRoot)->toBeString();
 
-    $remediatedFamilies = [
-        'agent-ide',
-        'cf-cache',
-        'cf-zone',
-        'doctor',
-        'gateway',
-        'node',
-        'process',
-        'proxy',
-        'update',
-        'workspace',
-        'workspace-setup-step',
-        'workspace-teardown-step',
-    ];
+    $commands = $catalog['commands'];
 
-    $commands = array_filter(
-        $catalog['commands'],
-        fn (array $command): bool => $command['name'] === 'tool:install'
-        || in_array($command['family'], $remediatedFamilies, strict: true),
-    );
-
-    expect($commands)->not->toBeEmpty();
+    expect($commands)
+        ->toBeArray()
+        ->not->toBeEmpty();
 
     $missing = [];
 
@@ -193,7 +176,7 @@ it('keeps remediated linked test file paths on disk under the repository root', 
     }
 
     expect($missing)->toBeEmpty(
-        'Remediated command catalog linked_test_files must reference existing repository files. Missing paths: '
+        'Command catalog linked_test_files must reference existing repository files. Missing paths: '
             .implode(', ', $missing),
     );
 });

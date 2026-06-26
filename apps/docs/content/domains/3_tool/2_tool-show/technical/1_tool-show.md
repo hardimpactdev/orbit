@@ -85,6 +85,6 @@ tool registry reads.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolShowCommandTest.php` | Command contract for input validation, gateway authorization, target resolution, side-effect boundaries, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php` | JSON renderer contract for live/non-live observed state, gateway request propagation, remote inspection failure, and gateway error preservation. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolShowCommandTest.php` | CLI target resolution, `--live` query forwarding, human detail rendering, JSON envelope passthrough, local validation, and gateway/WireGuard failure passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php` | Gateway tool registry reads by tool/node, app selector resolution, not-found and unsupported-tool failures, hidden selector rejection, and authorization failures. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

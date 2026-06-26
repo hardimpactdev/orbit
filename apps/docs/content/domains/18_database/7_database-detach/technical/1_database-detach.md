@@ -72,4 +72,7 @@ state until reviewed through [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php` | Target-scope validation, mapping-not-found behavior, and no immediate `.env` rewrite. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | Workspace detach payload posting and target-scope validation. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway detach result shape and no immediate `.env` rewrite. |
+
+Mapping-not-found handling remains a coverage gap until a focused gateway test lands.

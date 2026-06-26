@@ -67,4 +67,7 @@ convergence stay with [`database-doctor.md`](../../database-doctor.md).
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php` | Target resolution, ambiguity handling, SQLite locality, and schema inspection failure codes. |
+| `apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php` | CLI GET forwarding for target and connection query parameters, required-target validation, and schema human/JSON rendering. |
+| `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Gateway metadata API execution for table listing and SQLite locality handoff. |
+
+Ambiguity handling, schema-endpoint-specific behavior, and metadata failure codes remain coverage gaps until focused gateway tests land.

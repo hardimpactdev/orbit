@@ -84,5 +84,8 @@ policy when reporting `app.deployment_pipeline_invalid`.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php` | Command contract for input validation, production-app eligibility, grant denial before side effects, authorization, deployment policy write, order insertion, timeout metadata, retention metadata, failure codes, and app-doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php` | Deploy-step DTO shape, production app resolution, order insertion rules, timeout validation, retention validation, and deploy-step entity mapping. |
+| `apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php` | CLI `deploy:step-add` POST payload forwarding, local validation before gateway contact for missing command and invalid timeout, JSON success envelope, and human success summaries. |
+| `apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php` | Gateway deployment-step listing, `deploy:step` grant denial before side effects, and authorized step creation for app-dev callers. |
+| `apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php` | Gateway order insertion, retention persistence, and order compaction after step removal. |
+
+Coverage gaps until focused tests land: production-app eligibility, `app.not_found`, exhaustive documented `error.code` values, order insertion through the CLI surface, timeout and retention gateway validation beyond local CLI checks, and app-doctor handoff behavior.

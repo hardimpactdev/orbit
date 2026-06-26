@@ -31,5 +31,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppNewOnOperatorNodeContractTest.php` | Operator-caller behavior for `app:new`: input gathering, gateway HTTPS POST forwarding, gateway-driven SSH apply routing, progress-stream consumption for human and JSON renderers, missing-gateway failure shape, and absence of direct workload SSH. |
-| `apps/gateway/tests/E2E/Ephemeral/AppNewOperatorForwardingTest.php` | Real-environment smoke coverage proving `app:new` invoked from an operator node forwards to the gateway over WireGuard and produces the expected JSON envelope without writing durable state locally. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | Operator CLI posts to gateway stream endpoint without local workload SSH. |
+| `apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php` | Stream request shape and gateway stream consumption for operator-caller paths. |
+
+There is no gateway-side coverage for this on-client mapping: operator-caller behavior lives in `apps/cli`. Gateway API behavior is mapped in the command contract file.

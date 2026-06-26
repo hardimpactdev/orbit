@@ -66,5 +66,12 @@ owns app-domain health.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php` | Command contract for authorization denial, zone resolution, strict default, full mode, flexible refusal, provider authorization, provider failures, and no origin-certificate mutation. |
-| `apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php` | Human and JSON renderer output, including every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php` | Human progress tree, default strict-mode success output, and JSON renderer selection for a strict success envelope. |
+| `apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php` | CLI `cf-ssl:enable` PUT forwarding for explicit full-mode payloads. |
+
+There is no gateway-side coverage for this command contract: authorization denial, zone resolution, provider authorization, provider failures, and refusal of flexible mode remain coverage gaps. No linked test proves that origin certificates stay unchanged. CLI rendering and forwarding behavior are covered by the linked CLI tests above.
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_cf-ssl-enable_output-render_human.md`](6.1_cf-ssl-enable_output-render_human.md#test-mapping)
+- [`6.2_cf-ssl-enable_output-render_json.md`](6.2_cf-ssl-enable_output-render_json.md#test-mapping)

@@ -19,4 +19,6 @@ an operator identity.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php` | Verification of gateway client request and identity propagation. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI register POST payload and gateway client request forwarding. |
+
+There is no gateway-side coverage for this on-client mapping: operator-caller behavior lives in `apps/cli`. Gateway API behavior is mapped in the command contract file.

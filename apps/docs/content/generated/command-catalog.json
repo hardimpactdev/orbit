@@ -36,9 +36,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Activity/ActivityListCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ActivityListControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -91,11 +90,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php"
+                "apps/cli/tests/Feature/Commands/Activity/ActivityShowCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ActivityShowControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -379,8 +375,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppAgentIdeControllerTest.php"
             ],
             "p4_mapping": {
@@ -685,7 +680,6 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppListCommandTest.php",
-                "apps/gateway/tests/E2E/Read/AppListTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppListControllerTest.php"
             ],
             "p4_mapping": {
@@ -795,19 +789,9 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
-                "apps/gateway/tests/E2E/Ephemeral/AppNewGatewayLocalTest.php",
-                "apps/gateway/tests/E2E/Ephemeral/AppNewOperatorForwardingTest.php",
-                "apps/gateway/tests/E2E/Ephemeral/AppNewProductionTest.php",
-                "apps/gateway/tests/E2E/Ephemeral/AppNewRepoTest.php",
-                "apps/gateway/tests/E2E/Ephemeral/AppNewTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppNewCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppNewHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppNewJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppNewNonInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppNewOnGatewayNodeContractTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppNewOnOperatorNodeContractTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
-                "apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php"
+                "apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -862,10 +846,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/E2E/Ephemeral/AppPruneTest.php",
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Actions/Apps/PruneAppWorkspacesActionTest.php",
-                "apps/gateway/tests/Feature/Commands/AppPruneCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppPruneCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppPruneControllerTest.php"
             ],
             "p4_mapping": {
@@ -925,12 +907,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/E2E/Ephemeral/AppProductionActivationTest.php",
-                "apps/gateway/tests/E2E/Ephemeral/AppRegistrationTest.php",
-                "apps/gateway/tests/Feature/Actions/Apps/RegisterAppActionTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/RegisterAppJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Apps/AppEnactmentServiceTest.php"
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Actions/Apps/EnactAppRuntimeTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppRegisterControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -984,16 +963,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/E2E/Ephemeral/AppRemoveTest.php",
-                "apps/gateway/tests/Feature/Actions/Apps/RemoveAppActionTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRemoveInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppNonInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php",
-                "apps/gateway/tests/Unit/Concerns/ResolvesAppFromPathTest.php"
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppRemoveControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1032,13 +1003,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRootCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRootHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRootInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRootJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppRootNonInteractiveInputModeTest.php",
-                "apps/gateway/tests/Unit/Actions/Apps/UpdateAppRootActionTest.php"
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppRootControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1117,11 +1083,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Apps/AppShowCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppShowHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppShowInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppShowJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Apps/AppShowNonInteractiveInputModeTest.php"
+                "apps/cli/tests/Feature/Commands/App/AppShowCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppShowControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -1292,7 +1255,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php",
+                "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppWorkerControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php",
                 "apps/gateway/tests/Unit/Services/Apps/AppWorkerReadinessTest.php",
@@ -1334,8 +1297,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1374,9 +1337,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1465,8 +1427,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1504,8 +1466,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareReadCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1545,9 +1506,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1586,9 +1546,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1627,8 +1586,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php",
+                "apps/cli/tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1720,9 +1679,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseAddJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -1823,9 +1781,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1865,9 +1822,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseDescribeCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1916,9 +1871,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -1957,9 +1911,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -2017,8 +1970,10 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php",
+                "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php",
+                "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -2073,9 +2028,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveJsonRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2115,7 +2069,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2160,9 +2114,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseShowJsonRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2202,8 +2155,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Database/DatabaseReadCommandsTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseTablesCommandTest.php"
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2258,9 +2210,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateJsonRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2299,10 +2250,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -2358,10 +2306,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/LogStreamCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2401,11 +2347,9 @@
                 "stream_json": true
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunInteractiveInputTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunNonInteractiveInputTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php",
+                "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Deploy/DeployRunStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
                 "apps/gateway/tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
             ],
             "p4_mapping": {
@@ -2464,12 +2408,10 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddInteractiveInputTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddNonInteractiveInputTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -2523,9 +2465,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Deploy/DeployReadCommandsTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+                "apps/gateway/tests/Feature/Http/Api/DeployControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -2580,12 +2520,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveInteractiveInputTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveNonInteractiveInputTest.php",
-                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Deploy/DeployWriteCommandsTest.php",
+                "apps/gateway/tests/Feature/Actions/Deploy/DeployStepActionsTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2762,10 +2699,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2810,10 +2746,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -2851,9 +2786,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Firewall/FirewallListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallListJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+                "apps/gateway/tests/Feature/Http/Api/FirewallRuleListControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -2906,10 +2839,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Firewall/FirewallInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Firewall/FirewallWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/FirewallRuleMutationControllerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -4079,10 +4011,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Php/PhpListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpListHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpListJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeViewTest.php"
+                "apps/cli/tests/Feature/Commands/Php/PhpListCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -4139,13 +4070,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Php/PhpUseCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpUseCallerRoleTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpUseCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpUseInteractiveInputTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpUseJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Php/PhpUseNonInteractiveInputTest.php",
-                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php",
-                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeSelectionTest.php"
+                "apps/gateway/tests/Feature/Http/Api/PhpRuntimeControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeManagerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -4915,12 +4841,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddInteractiveInputTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddNonInteractiveInputTest.php",
-                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -4971,10 +4892,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -5029,10 +4947,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5073,12 +4988,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveInteractiveInputTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveJsonRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveNonInteractiveInputTest.php",
-                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5118,10 +5028,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunHumanRendererTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5161,10 +5068,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleReadCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowJsonRendererTest.php",
-                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5204,8 +5108,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolCredentialsCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolCredentialsControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
@@ -5308,8 +5212,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolListJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolListCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolListControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
@@ -5365,8 +5269,8 @@
                 "stream_json": true
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
@@ -5423,8 +5327,7 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolRemoveControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
@@ -5467,8 +5370,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolShowCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolShowCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolShowControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
@@ -5511,8 +5414,9 @@
                 "stream_json": true
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
             "p4_mapping": {
@@ -5687,8 +5591,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php",
+                "apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5727,8 +5632,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php",
+                "apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5765,8 +5671,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php",
+                "apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {
@@ -5821,8 +5728,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php",
+                "apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php",
                 "apps/gateway/tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php"
             ],
             "p4_mapping": {
@@ -5878,10 +5786,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php",
+                "apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": null,
@@ -5921,10 +5827,8 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php",
-                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php"
+                "apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php",
+                "apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php"
             ],
             "p4_mapping": {
                 "sdk_request": {

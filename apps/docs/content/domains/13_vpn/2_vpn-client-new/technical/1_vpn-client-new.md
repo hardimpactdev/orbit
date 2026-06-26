@@ -98,6 +98,7 @@ role.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php` | Command contract: grant denial, SSH execution to the active `vpn` role node, TOTP handling, duplicate name failure, node name collision, config inclusion. No node records, grants, DNS, or proxy side effects. |
-| `apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php` | Human and JSON renderer output, config rendering, and every documented `error.code` value. |
+| `apps/cli/tests/Feature/Commands/Vpn/VpnCommandsTest.php` | CLI `vpn-client:new` gateway request forwarding, interactive name prompt, validation before gateway contact, human and JSON renderer output, config rendering, and gateway error envelope passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/VpnControllerActivityTest.php` | Shared VPN API activity logging, runtime-unavailable behavior, fake-backend list routing, and write-grant enforcement for create requests. |
+| `apps/gateway/tests/Unit/Services/Vpn/VpnClientManagerTest.php` | Refusal to create clients with active node names. |
 | `apps/gateway/tests/Unit/Services/Vpn/WgEasyVpnBackendTest.php` | Wg-easy adapter normalization of generated client configs to `DNS = <wireguard-server-ip>`. |
