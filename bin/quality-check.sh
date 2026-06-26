@@ -453,18 +453,10 @@ quality_check_progress_all_complete() {
     return 0
 }
 
-quality_check_progress_start_ticker() {
+quality_check_progress_spawn_ticker() {
     local tick=0
 
-    if ! quality_check_progress_enabled; then
-        return
-    fi
-
-    PROGRESS_TREE_LINES="$(quality_check_progress_tree_line_count)"
-    quality_check_progress_draw_tree 0 pending 1
-    printf '\e[?25l'
-    PROGRESS_CURSOR_HIDDEN=1
-
+    rm -f "$LOG_DIR/progress.stop"
     (
         while [ ! -f "$LOG_DIR/progress.stop" ]; do
             if quality_check_progress_all_complete; then
@@ -478,6 +470,18 @@ quality_check_progress_start_ticker() {
         done
     ) &
     PROGRESS_TICKER_PID=$!
+}
+
+quality_check_progress_start_ticker() {
+    if ! quality_check_progress_enabled; then
+        return
+    fi
+
+    PROGRESS_TREE_LINES="$(quality_check_progress_tree_line_count)"
+    quality_check_progress_draw_tree 0 pending 1
+    printf '\e[?25l'
+    PROGRESS_CURSOR_HIDDEN=1
+    quality_check_progress_spawn_ticker
 }
 
 quality_check_progress_stop_ticker() {
@@ -505,6 +509,25 @@ quality_check_progress_render_final() {
     printf '\e[?25h'
     PROGRESS_CURSOR_HIDDEN=0
     echo
+}
+
+quality_check_progress_render_pending() {
+    if ! quality_check_progress_enabled; then
+        return
+    fi
+
+    if [ -n "$PROGRESS_TICKER_PID" ]; then
+        quality_check_progress_stop_ticker
+    fi
+
+    if [ "$PROGRESS_TREE_LINES" -eq 0 ]; then
+        PROGRESS_TREE_LINES="$(quality_check_progress_tree_line_count)"
+    else
+        printf '\e[%sA' "$PROGRESS_TREE_LINES"
+    fi
+
+    quality_check_progress_draw_tree 0 pending 0
+    quality_check_progress_spawn_ticker
 }
 
 quality_check_progress_area_label_count() {
@@ -627,17 +650,15 @@ quality_check_progress_state_self_test() {
     rm -rf "$LOG_DIR"
 }
 
-APP_CHECK_LABELS=(
+APP_BEFORE_PACKAGE_CHECK_LABELS=(
     gateway_mago_analyze
     gateway_mago_lint
     gateway_rector
     gateway_mago_format
-    gateway_pest
     cli_mago_analyze
     cli_mago_lint
     cli_rector
     cli_mago_format
-    cli_pest
     docs_lint
     docs_testing
     docs_references
@@ -653,6 +674,11 @@ APP_CHECK_LABELS=(
     reverb_mago_analyze
     reverb_mago_lint
     reverb_mago_format
+)
+
+APP_REMAINING_CHECK_LABELS=(
+    gateway_pest
+    cli_pest
 )
 
 PACKAGE_BACKGROUND_CHECK_LABELS=(
@@ -816,7 +842,8 @@ run_bg reverb_mago_analyze bin/orbit-gateway-vendor-bin mago --workspace ../reve
 run_bg reverb_mago_lint bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
 run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
 
-wait_for_bg_labels "${APP_CHECK_LABELS[@]}"
+wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"
+quality_check_progress_render_pending
 
 run_bg core_mago_analyze bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
 run_bg core_mago_lint bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
@@ -830,6 +857,7 @@ run_bg sdk_mago_format bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"'
 run_bg sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --compact'
 
 wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"
+wait_for_bg_labels "${APP_REMAINING_CHECK_LABELS[@]}"
 
 # The core progress tests intentionally fork short-lived ticker children. Keep
 # this lane out of the background fan-out so unrelated Pest suites cannot

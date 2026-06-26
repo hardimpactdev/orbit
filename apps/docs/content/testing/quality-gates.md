@@ -27,9 +27,10 @@ summaries as before.
 In the tree, every row for an area starts as queued. It changes to running when
 the scheduler starts the first real subgate for that area, then remains running
 while later owned subgates are still pending. A row never returns to queued
-after running; it settles only to passed or failed. App rows are admitted before
-package rows so package checks do not appear to run while the app phase still
-owns the background worker pool.
+after running; it settles only to passed or failed. Package rows are admitted
+after the fast app checks have passed, while the long gateway and CLI Pest lanes
+may still be running. Core Pest still waits until other Pest lanes finish before
+it runs.
 
 Redirected or non-TTY runs skip the live tree so CI logs stay free of ANSI
 cursor repainting. `NO_COLOR` removes color from the tree but keeps the live
@@ -115,9 +116,10 @@ composer quality-gate:final-check
 
 The final check wraps the analyzer and highlights stale evidence, latest gate
 exits that were non-zero, and local baseline observations that remain
-warning-only. Without explicit `--gate` arguments, it analyzes the gates that
-already have artifacts in this worktree. It does not warn about missing E2E
-lanes that were not run.
+warning-only. Without explicit `--gate` arguments, it analyzes only default
+gates that are not E2E, such as `docs-lint` and `quality-check`. E2E artifacts
+are reviewed only when their gates are passed explicitly, so stale Docker or
+Incus artifacts do not create default final-check warnings.
 
 Feature finalization also reads existing artifacts instead of rerunning lanes.
 The merge/cleanup gate derives the required proof from the branch diff.
@@ -135,10 +137,13 @@ commits or slow timings.
 
 Evidence is stale when the latest artifact exceeds the configured max-age
 window or was captured for a different Git commit than the current worktree
-`HEAD`. The final check does not rerun `composer quality-check`, Pest, Docker
-E2E, Incus E2E, or provider provision lanes. When no timing artifacts exist, it
-exits successfully and reports that timing regression analysis was skipped so
-the feature owner can decide whether another gate run is needed.
+`HEAD`. By default, final-check uses `docs-lint` and `quality-check`; Docker
+and Incus E2E artifacts are checked only when their gates are passed explicitly.
+The final check does not rerun
+`composer quality-check`, Pest, Docker E2E, Incus E2E, or provider provision
+lanes. When no timing artifacts exist, it exits successfully and reports that
+timing regression analysis was skipped so the feature owner can decide whether
+another gate run is needed.
 
 ## Failure and timing triage
 

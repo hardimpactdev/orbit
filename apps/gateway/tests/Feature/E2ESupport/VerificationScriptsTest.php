@@ -21,6 +21,17 @@ function quality_check_script_position(string $script, string $needle): int
     return $position;
 }
 
+function quality_check_script_last_position(string $script, string $needle): int
+{
+    $position = strrpos($script, $needle);
+
+    if ($position === false) {
+        throw new RuntimeException("Expected quality-check script to contain [{$needle}].");
+    }
+
+    return $position;
+}
+
 /**
  * @return list<string>
  */
@@ -307,8 +318,10 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
 
     expect($script)
         ->toContain('librarian:lint')
-        ->toContain('APP_CHECK_LABELS=(')
+        ->toContain('APP_BEFORE_PACKAGE_CHECK_LABELS=(')
+        ->toContain('APP_REMAINING_CHECK_LABELS=(')
         ->toContain('PACKAGE_BACKGROUND_CHECK_LABELS=(')
+        ->toContain('quality_check_progress_render_pending')
         ->toContain('BACKGROUND_CHECK_LABELS=(')
         ->toContain('--path=testing')
         ->toContain('--group=references')
@@ -366,7 +379,8 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
     $script = quality_check_script_source();
     $backgroundLabels = quality_check_background_labels(script: $script);
     $waitedBackgroundLabels = [
-        ...quality_check_script_labels(script: $script, arrayName: 'APP_CHECK_LABELS'),
+        ...quality_check_script_labels(script: $script, arrayName: 'APP_BEFORE_PACKAGE_CHECK_LABELS'),
+        ...quality_check_script_labels(script: $script, arrayName: 'APP_REMAINING_CHECK_LABELS'),
         ...quality_check_script_labels(script: $script, arrayName: 'PACKAGE_BACKGROUND_CHECK_LABELS'),
     ];
     $declaredBackgroundLabels = quality_check_script_labels(script: $script, arrayName: 'BACKGROUND_CHECK_LABELS');
@@ -392,6 +406,11 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
         ->toBe($expectedAggregationLabels)
         ->and($aggregationLabels)
         ->toHaveCount(count(array_unique($aggregationLabels)))
+        ->and(quality_check_script_labels(script: $script, arrayName: 'APP_REMAINING_CHECK_LABELS'))
+        ->toBe([
+            'gateway_pest',
+            'cli_pest',
+        ])
         ->and(quality_check_script_labels(script: $script, arrayName: 'PACKAGE_BACKGROUND_CHECK_LABELS'))
         ->toBe([
             'core_mago_analyze',
@@ -411,9 +430,17 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
         ->and(quality_check_script_position(script: $script, needle: 'run_bg reverb_mago_format'))
         ->toBeLessThan(quality_check_script_position(
             script: $script,
-            needle: 'wait_for_bg_labels "${APP_CHECK_LABELS[@]}"',
+            needle: 'wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"',
         ))
-        ->and(quality_check_script_position(script: $script, needle: 'wait_for_bg_labels "${APP_CHECK_LABELS[@]}"'))
+        ->and(quality_check_script_position(
+            script: $script,
+            needle: 'wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"',
+        ))
+        ->toBeLessThan(quality_check_script_last_position(
+            script: $script,
+            needle: 'quality_check_progress_render_pending',
+        ))
+        ->and(quality_check_script_last_position(script: $script, needle: 'quality_check_progress_render_pending'))
         ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg core_mago_analyze'))
         ->and(quality_check_script_position(script: $script, needle: 'run_bg sdk_pest'))
         ->toBeLessThan(quality_check_script_position(
@@ -423,6 +450,14 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
         ->and(quality_check_script_position(
             script: $script,
             needle: 'wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"',
+        ))
+        ->toBeLessThan(quality_check_script_position(
+            script: $script,
+            needle: 'wait_for_bg_labels "${APP_REMAINING_CHECK_LABELS[@]}"',
+        ))
+        ->and(quality_check_script_position(
+            script: $script,
+            needle: 'wait_for_bg_labels "${APP_REMAINING_CHECK_LABELS[@]}"',
         ))
         ->toBeLessThan(quality_check_script_position(script: $script, needle: 'record_subgate_start core_pest'));
 });
@@ -530,9 +565,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/reverb' => 'Running',
     ]);
 
-    $appsPassed = array_merge($appsRunning, [
-        'apps/gateway' => 'Passed',
-        'apps/cli' => 'Passed',
+    $fastAppsPassed = array_merge($appsRunning, [
         'apps/docs' => 'Passed',
         'apps/e2e' => 'Passed',
         'apps/reverb' => 'Passed',
@@ -541,11 +574,13 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
     $acceptedChunksPath = quality_check_progress_chunks_path([
         quality_check_progress_frame($queued),
         quality_check_progress_frame($appsRunning),
-        quality_check_progress_frame(array_merge($appsPassed, [
+        quality_check_progress_frame(array_merge($fastAppsPassed, [
             'packages/core' => 'Running',
             'packages/sdk' => 'Running',
         ])),
-        quality_check_progress_frame(array_merge($appsPassed, [
+        quality_check_progress_frame(array_merge($fastAppsPassed, [
+            'apps/gateway' => 'Passed',
+            'apps/cli' => 'Passed',
             'packages/core' => 'Passed',
             'packages/sdk' => 'Passed',
         ]), 'Quality checks passed'),
@@ -602,7 +637,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
     expect($earlyPackage->isSuccessful())
         ->toBeFalse()
         ->and($earlyPackage->getErrorOutput())
-        ->toContain('packages/core was Running before app areas completed');
+        ->toContain('packages/core was Running before fast app areas completed');
 });
 
 it('maps every aggregate subgate to a quality-check progress area', function (): void {

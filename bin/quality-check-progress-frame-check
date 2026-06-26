@@ -22,11 +22,9 @@ function quality_check_progress_areas(): array
 /**
  * @return list<string>
  */
-function quality_check_progress_app_areas(): array
+function quality_check_progress_fast_app_areas(): array
 {
     return [
-        'apps/gateway',
-        'apps/cli',
         'apps/docs',
         'apps/e2e',
         'apps/reverb',
@@ -41,6 +39,17 @@ function quality_check_progress_package_areas(): array
     return [
         'packages/core',
         'packages/sdk',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function quality_check_progress_long_app_areas(): array
+{
+    return [
+        'apps/gateway',
+        'apps/cli',
     ];
 }
 
@@ -133,7 +142,8 @@ function quality_check_progress_extract_frames(string $transcript): array
 function quality_check_progress_validate_frames(array $frames): array
 {
     $areas = quality_check_progress_areas();
-    $appAreas = quality_check_progress_app_areas();
+    $fastAppAreas = quality_check_progress_fast_app_areas();
+    $longAppAreas = quality_check_progress_long_app_areas();
     $packageAreas = quality_check_progress_package_areas();
     $sequences = array_fill_keys($areas, []);
     $errors = [];
@@ -141,11 +151,18 @@ function quality_check_progress_validate_frames(array $frames): array
 
     foreach ($frames as $frame) {
         $runningRows = 0;
-        $appAreasCompleted = true;
+        $fastAppAreasCompleted = true;
+        $longAppAreasAdmitted = true;
 
-        foreach ($appAreas as $area) {
+        foreach ($fastAppAreas as $area) {
             if (! in_array($frame[$area], ['Passed', 'Failed'], true)) {
-                $appAreasCompleted = false;
+                $fastAppAreasCompleted = false;
+            }
+        }
+
+        foreach ($longAppAreas as $area) {
+            if ($frame[$area] === 'Queued') {
+                $longAppAreasAdmitted = false;
             }
         }
 
@@ -176,15 +193,15 @@ function quality_check_progress_validate_frames(array $frames): array
         }
 
         foreach ($packageAreas as $area) {
-            if ($frame[$area] === 'Running' && ! $appAreasCompleted) {
-                $errors[] = "{$area} was Running before app areas completed";
+            if ($frame[$area] === 'Running' && (! $fastAppAreasCompleted || ! $longAppAreasAdmitted)) {
+                $errors[] = "{$area} was Running before fast app areas completed";
             }
         }
 
         $maxRunningRows = max($maxRunningRows, $runningRows);
 
-        if ($runningRows > count($appAreas)) {
-            $errors[] = 'more than '.count($appAreas).' rows were Running in one frame';
+        if ($runningRows > 5) {
+            $errors[] = 'more than 5 rows were Running in one frame';
         }
     }
 

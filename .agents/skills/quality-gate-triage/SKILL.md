@@ -135,10 +135,12 @@ classification because it defaults to the broad `quality-check` gate.
 Before a worktree merge, run `composer quality-gate:final-check` when timing
 artifacts exist or when the feature owner needs to know that timing evidence is
 missing. This final check wraps the analyzer and, without explicit `--gate`
-arguments, analyzes the gates that already have artifacts in the current
-worktree. It highlights stale evidence, latest gate exits that were non-zero,
-and local baseline observations that remain warning-only. It still does not
-rerun expensive gates or warn about E2E lanes that were not run.
+arguments, analyzes default non-E2E local gates such as `docs-lint` and
+`quality-check`. Pass Docker or Incus E2E gates explicitly when reviewing those
+artifacts, otherwise stale provider artifacts must not create default final
+check warnings. It highlights stale evidence, latest gate exits that were
+non-zero, and local baseline observations that remain warning-only. It still
+does not rerun expensive gates or warn about E2E lanes that were not run.
 
 Worktree-local timing artifacts are disposable. After a worktree is removed or a
 branch is merged, the primary checkout's `.orbit/quality-gates/` may contain

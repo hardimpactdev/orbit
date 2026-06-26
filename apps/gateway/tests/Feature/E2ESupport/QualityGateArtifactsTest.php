@@ -719,7 +719,7 @@ it('final-check skips timing analysis when no quality gate artifacts exist', fun
     }
 });
 
-it('final-check discovers existing e2e gate artifacts when no explicit gate is passed', function (): void {
+it('final-check ignores existing e2e gate artifacts unless an explicit e2e gate is passed', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-final-e2e-'.bin2hex(random_bytes(6));
     mkdir($artifactDir, 0700, true);
 
@@ -736,6 +736,19 @@ it('final-check discovers existing e2e gate artifacts when no explicit gate is p
         'subgates' => [],
     ], JSON_THROW_ON_ERROR));
 
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100000Z-current.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:05:00Z',
+        'duration_seconds' => 300,
+        'exit_code' => 0,
+        'git' => ['branch' => 'quality-gate-final-check', 'commit' => trim(exec('git rev-parse HEAD') ?: 'unknown')],
+        'subgates' => ['gateway_pest' => 0],
+    ], JSON_THROW_ON_ERROR));
+
     try {
         $process = new Process([
             PHP_BINARY,
@@ -747,6 +760,24 @@ it('final-check discovers existing e2e gate artifacts when no explicit gate is p
         expect($process->getExitCode())
             ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
+            ->toContain('recent run: gate=quality-check')
+            ->not->toContain('recent run: gate=e2e-docker')
+            ->not->toContain('latest [e2e-docker] artifact')
+            ->not->toContain('latest gate [e2e-docker]')->toContain(
+                'Final check did not rerun quality-check or E2E lanes',
+            );
+
+        $explicit = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-final-check'),
+            "--artifact-dir={$artifactDir}",
+            '--gate=e2e-docker',
+        ], repo_path());
+        $explicit->run();
+
+        expect($explicit->getExitCode())
+            ->toBe(0, $explicit->getErrorOutput())
+            ->and($explicit->getOutput())
             ->toContain('recent run: gate=e2e-docker')
             ->not->toContain('missing evidence: no artifact found for gate [quality-check]')
             ->not->toContain('missing evidence: no artifact found for gate [e2e-incus]')->toContain(
@@ -1032,7 +1063,10 @@ it('documents quality gate artifact and analyzer commands', function (): void {
 
     expect($qualityGatesProse)
         ->toContain(
-            'In the tree, every row for an area starts as queued. It changes to running when the scheduler starts the first real subgate for that area, then remains running while later owned subgates are still pending. A row never returns to queued after running; it settles only to passed or failed. App rows are admitted before package rows so package checks do not appear to run while the app phase still owns the background worker pool.',
+            'In the tree, every row for an area starts as queued. It changes to running when the scheduler starts the first real subgate for that area, then remains running while later owned subgates are still pending. A row never returns to queued after running; it settles only to passed or failed. Package rows are admitted after the fast app checks have passed, while the long gateway and CLI Pest lanes may still be running. Core Pest still waits until other Pest lanes finish before it runs.',
+        )
+        ->toContain(
+            'Without explicit `--gate` arguments, it analyzes only default gates that are not E2E, such as `docs-lint` and `quality-check`. E2E artifacts are reviewed only when their gates are passed explicitly, so stale Docker or Incus artifacts do not create default final-check warnings.',
         );
 });
 

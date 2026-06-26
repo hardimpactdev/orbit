@@ -27,7 +27,15 @@ try {
     }
 
     if ($gates === []) {
-        $gates = existing_gates($artifactDir);
+        $gates = default_final_check_gates($artifactDir);
+
+        if ($gates === []) {
+            fwrite(STDOUT, 'Timing evidence: no default final-check artifacts found.'.PHP_EOL);
+            fwrite(STDOUT, 'E2E timing artifacts require an explicit --gate option.'.PHP_EOL);
+            fwrite(STDOUT, PHP_EOL.'Final check did not rerun quality-check or E2E lanes.'.PHP_EOL);
+
+            exit(0);
+        }
     }
 
     $analyzer = run_analyzer($artifactDir, $gates, $maxAgeHours);
@@ -126,7 +134,7 @@ function artifact_count(string $artifactDir): int
 /**
  * @return list<string>
  */
-function existing_gates(string $artifactDir): array
+function default_final_check_gates(string $artifactDir): array
 {
     if (! is_dir($artifactDir)) {
         return [];
@@ -147,7 +155,7 @@ function existing_gates(string $artifactDir): array
 
         $gate = trim($decoded['gate']);
 
-        if ($gate !== '') {
+        if ($gate !== '' && ! is_e2e_gate($gate)) {
             $gates[] = $gate;
         }
     }
@@ -169,6 +177,16 @@ function existing_gates(string $artifactDir): array
     });
 
     return $gates;
+}
+
+function is_e2e_gate(string $gate): bool
+{
+    return in_array($gate, [
+        'e2e',
+        'e2e-docker',
+        'e2e-docker-canary',
+        'e2e-incus',
+    ], true);
 }
 
 /**
