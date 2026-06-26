@@ -148,6 +148,14 @@ paths. Review `chunks.jsonl` for cadence, liveness, skipped frames, and delayed
 first output; visible indicator changes for a 300ms blinker should usually be
 near 0.30s apart, allowing normal scheduler noise. Review `transcript.txt` for
 final human shape, wrapping, ANSI framing, and missing progress states. For
+progress state machines, extract the row states from recorded frames and assert
+the semantic transition contract mechanically: no active row may return to an
+idle or queued state, no terminal row may return to a non-terminal state, and no
+row may be shown as active before the command scheduler has admitted that unit
+of work. Prefer a reusable frame analyzer when the command has one, such as
+`bin/quality-check-progress-frame-check` for `composer quality-check`. Do not
+accept a transcript that only proves both glyphs appeared or only shows the
+settled final frame when the bug concerns in-progress transitions. For
 bordered output, inspect the full final frame after stripping ANSI and reject
 any line that is wider than the panel, has more than one right border, lacks the
 expected right border, or places user-facing content directly against the border

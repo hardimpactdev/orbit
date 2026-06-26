@@ -45,9 +45,59 @@ function quality_check_script_labels(string $script, string $arrayName): array
 function quality_check_background_labels(string $script): array
 {
     $backgroundLabelMatches = [];
-    preg_match_all('/^run_bg (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
+    preg_match_all('/^\s*run_bg (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
 
     return array_values(array_unique($backgroundLabelMatches['label']));
+}
+
+/**
+ * @param list<string> $frames
+ */
+function quality_check_progress_chunks_path(array $frames): string
+{
+    $directory = sys_get_temp_dir().'/orbit-quality-check-progress-'.bin2hex(random_bytes(6));
+    mkdir($directory, 0777, true);
+
+    $chunks = collect($frames)
+        ->map(fn (string $frame, int $index): string => json_encode([
+            'elapsed' => round($index * 0.3, 1),
+            'delta' => $index === 0 ? 0.0 : 0.3,
+            'bytes' => strlen($frame),
+            'text' => $frame,
+        ], JSON_THROW_ON_ERROR))
+        ->implode(PHP_EOL);
+
+    file_put_contents("{$directory}/chunks.jsonl", $chunks.PHP_EOL);
+
+    return "{$directory}/chunks.jsonl";
+}
+
+/**
+ * @param array<string, string> $states
+ */
+function quality_check_progress_frame(array $states, string $footer = 'Working...'): string
+{
+    $lines = [
+        '  ┌  Running quality checks',
+    ];
+
+    foreach ([
+        'apps/gateway',
+        'apps/cli',
+        'apps/docs',
+        'apps/e2e',
+        'apps/reverb',
+        'packages/core',
+        'packages/sdk',
+    ] as $area) {
+        $lines[] = '  │';
+        $lines[] = sprintf('  ○  %-15s %s', $area, $states[$area]);
+    }
+
+    $lines[] = '  │';
+    $lines[] = "  └  {$footer}";
+
+    return implode(PHP_EOL, $lines).PHP_EOL;
 }
 
 it('keeps ephemeral e2e on the Incus backend separate from default pest tests', function (): void {
@@ -257,8 +307,9 @@ it('keeps the aggregate quality gate static subgates complete', function (): voi
 
     expect($script)
         ->toContain('librarian:lint')
-        ->toContain('STATIC_CHECK_LABELS=(')
-        ->toContain('LONG_RUNNING_PEST_LABELS=(')
+        ->toContain('APP_CHECK_LABELS=(')
+        ->toContain('PACKAGE_BACKGROUND_CHECK_LABELS=(')
+        ->toContain('BACKGROUND_CHECK_LABELS=(')
         ->toContain('--path=testing')
         ->toContain('--group=references')
         ->toContain('mago analyze')
@@ -315,9 +366,10 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
     $script = quality_check_script_source();
     $backgroundLabels = quality_check_background_labels(script: $script);
     $waitedBackgroundLabels = [
-        ...quality_check_script_labels(script: $script, arrayName: 'STATIC_CHECK_LABELS'),
-        ...quality_check_script_labels(script: $script, arrayName: 'LONG_RUNNING_PEST_LABELS'),
+        ...quality_check_script_labels(script: $script, arrayName: 'APP_CHECK_LABELS'),
+        ...quality_check_script_labels(script: $script, arrayName: 'PACKAGE_BACKGROUND_CHECK_LABELS'),
     ];
+    $declaredBackgroundLabels = quality_check_script_labels(script: $script, arrayName: 'BACKGROUND_CHECK_LABELS');
     $aggregationLabels = quality_check_script_labels(script: $script, arrayName: 'CHECK_LABELS');
     $expectedAggregationLabels = [
         ...$backgroundLabels,
@@ -326,6 +378,7 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
 
     sort($backgroundLabels);
     sort($waitedBackgroundLabels);
+    sort($declaredBackgroundLabels);
     sort($aggregationLabels);
     sort($expectedAggregationLabels);
 
@@ -333,30 +386,44 @@ it('keeps aggregate quality gate labels complete and ordered', function (): void
         ->toBe($backgroundLabels)
         ->and($waitedBackgroundLabels)
         ->toHaveCount(count(array_unique($waitedBackgroundLabels)))
+        ->and($declaredBackgroundLabels)
+        ->toBe($backgroundLabels)
         ->and($aggregationLabels)
         ->toBe($expectedAggregationLabels)
         ->and($aggregationLabels)
         ->toHaveCount(count(array_unique($aggregationLabels)))
-        ->and(quality_check_script_labels(script: $script, arrayName: 'LONG_RUNNING_PEST_LABELS'))
+        ->and(quality_check_script_labels(script: $script, arrayName: 'PACKAGE_BACKGROUND_CHECK_LABELS'))
         ->toBe([
-            'cli_pest',
-            'gateway_pest',
-            'docs_pest',
+            'core_mago_analyze',
+            'sdk_mago_analyze',
+            'core_mago_lint',
+            'sdk_mago_lint',
+            'core_rector',
+            'sdk_rector',
+            'core_mago_format',
+            'sdk_mago_format',
             'sdk_pest',
         ])
-        ->and(quality_check_script_position(script: $script, needle: 'for label in "${STATIC_CHECK_LABELS[@]}"'))
+        ->and(quality_check_script_position(script: $script, needle: 'run_bg gateway_pest'))
+        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg cli_mago_analyze'))
+        ->and(quality_check_script_position(script: $script, needle: 'run_bg cli_pest'))
+        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg docs_lint'))
+        ->and(quality_check_script_position(script: $script, needle: 'run_bg reverb_mago_format'))
         ->toBeLessThan(quality_check_script_position(
             script: $script,
-            needle: 'for label in "${LONG_RUNNING_PEST_LABELS[@]}"',
+            needle: 'wait_for_bg_labels "${APP_CHECK_LABELS[@]}"',
         ))
-        ->and(quality_check_script_position(script: $script, needle: 'run_bg gateway_pest'))
-        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg sdk_pest'))
+        ->and(quality_check_script_position(script: $script, needle: 'wait_for_bg_labels "${APP_CHECK_LABELS[@]}"'))
+        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg core_mago_analyze'))
         ->and(quality_check_script_position(script: $script, needle: 'run_bg sdk_pest'))
         ->toBeLessThan(quality_check_script_position(
             script: $script,
-            needle: 'for label in "${STATIC_CHECK_LABELS[@]}"',
+            needle: 'wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"',
         ))
-        ->and(quality_check_script_position(script: $script, needle: 'for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
+        ->and(quality_check_script_position(
+            script: $script,
+            needle: 'wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"',
+        ))
         ->toBeLessThan(quality_check_script_position(script: $script, needle: 'record_subgate_start core_pest'));
 });
 
@@ -397,22 +464,21 @@ it('renders a TTY progress tree for aggregate quality-check areas', function ():
         ->toContain('packages/sdk')
         ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST')
         ->and($scriptPosition('quality_check_progress_start_ticker'))
-        ->toBeLessThan($scriptPosition('run_bg docs_lint'))
+        ->toBeLessThan($scriptPosition('run_bg gateway_mago_analyze'))
         ->and($scriptPosition('quality_check_progress_stop_ticker'))
         ->toBeLessThan($scriptPosition('print_log "$label"'))
         ->and($scriptPosition('quality_check_progress_render_final'))
         ->toBeLessThan($scriptPosition('print_log "$label"'));
 });
 
-it('shows aggregate quality gate areas running only while an owned subgate is active', function (): void {
+it('keeps admitted aggregate quality-check areas running between owned subgates', function (): void {
     $script = quality_check_script_source();
 
     expect($script)
         ->toContain('quality_check_label_running')
         ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST')
-        ->toContain('local active=0')
-        ->toContain('if quality_check_label_running "$label"; then')
-        ->toContain('if [ "$active" -gt 0 ]; then')
+        ->toContain('record_area_admitted')
+        ->toContain('quality_check_area_admitted "$area"')
         ->toContain('record_subgate_running core_pest')
         ->toContain('clear_subgate_running core_pest');
 
@@ -436,11 +502,107 @@ it('shows aggregate quality gate areas running only while an owned subgate is ac
         ->all();
 
     expect($lines)->toBe([
-        'completed-plus-queued=waiting',
+        'initial=waiting',
+        'admitted-completed-subgate=running',
         'active=running',
-        'completed-plus-queued-after-active=waiting',
+        'admitted-after-active=running',
+        'completed=passed',
         'background-count=1',
     ]);
+});
+
+it('checks recorded quality-check PTY frames for monotonic area progress', function (): void {
+    $queued = [
+        'apps/gateway' => 'Queued',
+        'apps/cli' => 'Queued',
+        'apps/docs' => 'Queued',
+        'apps/e2e' => 'Queued',
+        'apps/reverb' => 'Queued',
+        'packages/core' => 'Queued',
+        'packages/sdk' => 'Queued',
+    ];
+
+    $appsRunning = array_merge($queued, [
+        'apps/gateway' => 'Running',
+        'apps/cli' => 'Running',
+        'apps/docs' => 'Running',
+        'apps/e2e' => 'Running',
+        'apps/reverb' => 'Running',
+    ]);
+
+    $appsPassed = array_merge($appsRunning, [
+        'apps/gateway' => 'Passed',
+        'apps/cli' => 'Passed',
+        'apps/docs' => 'Passed',
+        'apps/e2e' => 'Passed',
+        'apps/reverb' => 'Passed',
+    ]);
+
+    $acceptedChunksPath = quality_check_progress_chunks_path([
+        quality_check_progress_frame($queued),
+        quality_check_progress_frame($appsRunning),
+        quality_check_progress_frame(array_merge($appsPassed, [
+            'packages/core' => 'Running',
+            'packages/sdk' => 'Running',
+        ])),
+        quality_check_progress_frame(array_merge($appsPassed, [
+            'packages/core' => 'Passed',
+            'packages/sdk' => 'Passed',
+        ]), 'Quality checks passed'),
+    ]);
+
+    $accepted = new Process([
+        PHP_BINARY,
+        repo_path('bin/quality-check-progress-frame-check'),
+        $acceptedChunksPath,
+    ]);
+    $accepted->mustRun();
+
+    expect($accepted->getOutput())
+        ->toContain('quality-check progress frames: passed')
+        ->toContain('max_running_rows=5')
+        ->toContain('apps/gateway: Queued -> Running -> Passed')
+        ->toContain('packages/core: Queued -> Running -> Passed');
+
+    $bounceChunksPath = quality_check_progress_chunks_path([
+        quality_check_progress_frame($queued),
+        quality_check_progress_frame(array_merge($queued, [
+            'apps/gateway' => 'Running',
+        ])),
+        quality_check_progress_frame($queued),
+    ]);
+
+    $bounce = new Process([
+        PHP_BINARY,
+        repo_path('bin/quality-check-progress-frame-check'),
+        $bounceChunksPath,
+    ]);
+    $bounce->run();
+
+    expect($bounce->isSuccessful())
+        ->toBeFalse()
+        ->and($bounce->getErrorOutput())
+        ->toContain('apps/gateway returned to Queued after Running');
+
+    $earlyPackageChunksPath = quality_check_progress_chunks_path([
+        quality_check_progress_frame($queued),
+        quality_check_progress_frame(array_merge($queued, [
+            'apps/gateway' => 'Running',
+            'packages/core' => 'Running',
+        ])),
+    ]);
+
+    $earlyPackage = new Process([
+        PHP_BINARY,
+        repo_path('bin/quality-check-progress-frame-check'),
+        $earlyPackageChunksPath,
+    ]);
+    $earlyPackage->run();
+
+    expect($earlyPackage->isSuccessful())
+        ->toBeFalse()
+        ->and($earlyPackage->getErrorOutput())
+        ->toContain('packages/core was Running before app areas completed');
 });
 
 it('maps every aggregate subgate to a quality-check progress area', function (): void {

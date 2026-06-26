@@ -169,6 +169,36 @@ clear_subgate_running() {
     rm -f "$LOG_DIR/$label.running"
 }
 
+quality_check_area_marker_path() {
+    local area="$1"
+    local safe_area="${area//\//_}"
+
+    echo "$LOG_DIR/area_${safe_area}.admitted"
+}
+
+record_area_admitted() {
+    local area="$1"
+
+    : >"$(quality_check_area_marker_path "$area")"
+}
+
+record_label_area_admitted() {
+    local label="$1"
+    local area
+
+    area="$(quality_check_label_area "$label" || true)"
+
+    if [ -n "$area" ]; then
+        record_area_admitted "$area"
+    fi
+}
+
+quality_check_area_admitted() {
+    local area="$1"
+
+    [ -f "$(quality_check_area_marker_path "$area")" ]
+}
+
 PROGRESS_AREAS=(
     apps/gateway
     apps/cli
@@ -271,7 +301,6 @@ quality_check_label_running() {
 quality_check_area_row_state() {
     local area="$1"
     local total=0
-    local active=0
     local completed=0
     local failures=0
     local label
@@ -286,10 +315,6 @@ quality_check_area_row_state() {
         fi
 
         total=$((total + 1))
-
-        if quality_check_label_running "$label"; then
-            active=$((active + 1))
-        fi
 
         if [ -f "$LOG_DIR/$label.exit" ]; then
             completed=$((completed + 1))
@@ -316,7 +341,7 @@ quality_check_area_row_state() {
         return
     fi
 
-    if [ "$active" -gt 0 ]; then
+    if quality_check_area_admitted "$area"; then
         echo running
         return
     fi
@@ -541,6 +566,7 @@ quality_check_progress_self_test() {
 
 quality_check_progress_state_self_test() {
     local state
+    local label
     local sleeper_pid
     local ticker_pid
     local worker_pid
@@ -548,11 +574,16 @@ quality_check_progress_state_self_test() {
     LOG_DIR="$(mktemp -d)"
     touch "$LOG_DIR/progress.stop"
 
+    state="$(quality_check_area_row_state apps/gateway)"
+    echo "initial=${state}"
+
+    record_area_admitted apps/gateway
     record_subgate_start gateway_mago_analyze
     echo 0 >"$LOG_DIR/gateway_mago_analyze.exit"
     state="$(quality_check_area_row_state apps/gateway)"
-    echo "completed-plus-queued=${state}"
+    echo "admitted-completed-subgate=${state}"
 
+    record_area_admitted apps/cli
     record_subgate_start cli_mago_analyze
     record_subgate_running cli_mago_analyze
     (sleep 1) &
@@ -568,7 +599,16 @@ quality_check_progress_state_self_test() {
     echo 0 >"$LOG_DIR/cli_mago_analyze.exit"
 
     state="$(quality_check_area_row_state apps/cli)"
-    echo "completed-plus-queued-after-active=${state}"
+    echo "admitted-after-active=${state}"
+
+    for label in "${CHECK_LABELS[@]}"; do
+        if [ "$(quality_check_label_area "$label" || true)" = "apps/cli" ]; then
+            echo 0 >"$LOG_DIR/$label.exit"
+        fi
+    done
+
+    state="$(quality_check_area_row_state apps/cli)"
+    echo "completed=${state}"
 
     (sleep 1) &
     ticker_pid=$!
@@ -587,43 +627,80 @@ quality_check_progress_state_self_test() {
     rm -rf "$LOG_DIR"
 }
 
-STATIC_CHECK_LABELS=(
+APP_CHECK_LABELS=(
+    gateway_mago_analyze
+    gateway_mago_lint
+    gateway_rector
+    gateway_mago_format
+    gateway_pest
+    cli_mago_analyze
+    cli_mago_lint
+    cli_rector
+    cli_mago_format
+    cli_pest
     docs_lint
     docs_testing
     docs_references
-    gateway_mago_analyze
-    cli_mago_analyze
     docs_mago_analyze
-    reverb_mago_analyze
-    core_mago_analyze
-    sdk_mago_analyze
-    e2e_mago_analyze
-    gateway_mago_lint
-    cli_mago_lint
     docs_mago_lint
-    reverb_mago_lint
-    core_mago_lint
-    sdk_mago_lint
-    e2e_mago_lint
-    gateway_rector
-    cli_rector
     docs_rector
-    core_rector
-    sdk_rector
-    e2e_rector
-    gateway_mago_format
-    cli_mago_format
     docs_mago_format
-    reverb_mago_format
-    core_mago_format
-    sdk_mago_format
+    docs_pest
+    e2e_mago_analyze
+    e2e_mago_lint
+    e2e_rector
     e2e_mago_format
+    reverb_mago_analyze
+    reverb_mago_lint
+    reverb_mago_format
 )
 
-LONG_RUNNING_PEST_LABELS=(
-    cli_pest
+PACKAGE_BACKGROUND_CHECK_LABELS=(
+    core_mago_analyze
+    sdk_mago_analyze
+    core_mago_lint
+    sdk_mago_lint
+    core_rector
+    sdk_rector
+    core_mago_format
+    sdk_mago_format
+    sdk_pest
+)
+
+BACKGROUND_CHECK_LABELS=(
+    gateway_mago_analyze
+    gateway_mago_lint
+    gateway_rector
+    gateway_mago_format
     gateway_pest
+    cli_mago_analyze
+    cli_mago_lint
+    cli_rector
+    cli_mago_format
+    cli_pest
+    docs_lint
+    docs_testing
+    docs_references
+    docs_mago_analyze
+    docs_mago_lint
+    docs_rector
+    docs_mago_format
     docs_pest
+    e2e_mago_analyze
+    e2e_mago_lint
+    e2e_rector
+    e2e_mago_format
+    reverb_mago_analyze
+    reverb_mago_lint
+    reverb_mago_format
+    core_mago_analyze
+    core_mago_lint
+    core_rector
+    core_mago_format
+    sdk_mago_analyze
+    sdk_mago_lint
+    sdk_rector
+    sdk_mago_format
     sdk_pest
 )
 
@@ -682,6 +759,7 @@ run_bg() {
     local pid
 
     wait_for_bg_slot
+    record_label_area_admitted "$label"
     record_subgate_start "$label"
     (
         record_subgate_running "$label"
@@ -697,62 +775,66 @@ run_bg() {
     eval "${label}_PID=$pid"
 }
 
+wait_for_bg_labels() {
+    local label
+
+    for label in "$@"; do
+        wait_for_bg_label "$label"
+    done
+}
+
 quality_check_progress_start_ticker
+
+run_bg gateway_mago_analyze bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium
+run_bg gateway_mago_lint bin/orbit-gateway-vendor-bin mago lint "${MAGO_LINT_ARGS[@]}"
+run_bg gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
+run_bg gateway_mago_format bin/orbit-gateway-vendor-bin mago format "${MAGO_FORMAT_ARGS[@]}"
+bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
+run_bg gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
+
+run_bg cli_mago_analyze bash -lc 'cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium'
+run_bg cli_mago_lint bash -lc 'cd apps/cli && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg cli_mago_format bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+run_bg cli_pest bin/orbit-cli-pest --exclude-group=slow --compact
 
 run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=domains
 run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=testing
 run_bg docs_references bin/orbit-docs-artisan librarian:lint --format=agent --group=references
-
-run_bg gateway_mago_analyze bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium
-run_bg cli_mago_analyze bash -lc 'cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium'
 run_bg docs_mago_analyze bash -lc 'cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium'
-run_bg reverb_mago_analyze bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
-run_bg core_mago_analyze bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
-run_bg sdk_mago_analyze bash -lc 'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium'
-run_bg e2e_mago_analyze bash -lc 'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium'
-
-run_bg gateway_mago_lint bin/orbit-gateway-vendor-bin mago lint "${MAGO_LINT_ARGS[@]}"
-run_bg cli_mago_lint bash -lc 'cd apps/cli && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
 run_bg docs_mago_lint bash -lc 'cd apps/docs && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg reverb_mago_lint bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
-run_bg core_mago_lint bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg sdk_mago_lint bash -lc 'cd packages/sdk && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg e2e_mago_lint bash -lc 'cd apps/e2e && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-
-run_bg gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
-run_bg cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 run_bg docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-
-run_bg gateway_mago_format bin/orbit-gateway-vendor-bin mago format "${MAGO_FORMAT_ARGS[@]}"
-run_bg cli_mago_format bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
 run_bg docs_mago_format bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
-run_bg core_mago_format bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-run_bg sdk_mago_format bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-run_bg e2e_mago_format bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-
-run_bg cli_pest bin/orbit-cli-pest --exclude-group=slow --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
 
-bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
-run_bg gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
+run_bg e2e_mago_analyze bash -lc 'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium'
+run_bg e2e_mago_lint bash -lc 'cd apps/e2e && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg e2e_mago_format bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
 
+run_bg reverb_mago_analyze bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
+run_bg reverb_mago_lint bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
+run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
+
+wait_for_bg_labels "${APP_CHECK_LABELS[@]}"
+
+run_bg core_mago_analyze bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
+run_bg core_mago_lint bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg core_mago_format bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+
+run_bg sdk_mago_analyze bash -lc 'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium'
+run_bg sdk_mago_lint bash -lc 'cd packages/sdk && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg sdk_mago_format bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
 run_bg sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --compact'
 
-for label in "${STATIC_CHECK_LABELS[@]}"; do
-    wait_for_bg_label "$label"
-done
-
-for label in "${LONG_RUNNING_PEST_LABELS[@]}"; do
-    wait_for_bg_label "$label"
-done
+wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"
 
 # The core progress tests intentionally fork short-lived ticker children. Keep
 # this lane out of the background fan-out so unrelated Pest suites cannot
 # deliver process-group signals to the core Pest parent.
+record_area_admitted packages/core
 record_subgate_start core_pest
 record_subgate_running core_pest
 ( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )

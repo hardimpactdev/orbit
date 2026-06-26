@@ -1,0 +1,242 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * @return list<string>
+ */
+function quality_check_progress_areas(): array
+{
+    return [
+        'apps/gateway',
+        'apps/cli',
+        'apps/docs',
+        'apps/e2e',
+        'apps/reverb',
+        'packages/core',
+        'packages/sdk',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function quality_check_progress_app_areas(): array
+{
+    return [
+        'apps/gateway',
+        'apps/cli',
+        'apps/docs',
+        'apps/e2e',
+        'apps/reverb',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function quality_check_progress_package_areas(): array
+{
+    return [
+        'packages/core',
+        'packages/sdk',
+    ];
+}
+
+function quality_check_progress_chunks_path(string $argument): string
+{
+    if (is_dir($argument)) {
+        return rtrim($argument, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'chunks.jsonl';
+    }
+
+    return $argument;
+}
+
+function quality_check_progress_plain_text(string $text): string
+{
+    $text = preg_replace('/\x1B\[[0-?]*[ -\/]*[@-~]/', '', $text) ?? $text;
+    $text = preg_replace('/\x1B\][^\x07]*(?:\x07|\x1B\\\\)/', '', $text) ?? $text;
+
+    return str_replace("\r", '', $text);
+}
+
+function quality_check_progress_read_transcript(string $chunksPath): string
+{
+    $chunks = file($chunksPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    if ($chunks === false) {
+        throw new RuntimeException("Unable to read chunks file [{$chunksPath}].");
+    }
+
+    $transcript = '';
+
+    foreach ($chunks as $lineNumber => $line) {
+        $chunk = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+
+        if (! is_array($chunk) || ! array_key_exists('text', $chunk) || ! is_string($chunk['text'])) {
+            throw new RuntimeException(sprintf(
+                'Chunk line %d does not contain a text field.',
+                $lineNumber + 1,
+            ));
+        }
+
+        $transcript .= $chunk['text'];
+    }
+
+    return quality_check_progress_plain_text($transcript);
+}
+
+/**
+ * @return list<array<string, string>>
+ */
+function quality_check_progress_extract_frames(string $transcript): array
+{
+    $areas = quality_check_progress_areas();
+    $frames = [];
+    $currentFrame = null;
+
+    foreach (preg_split('/\R/', $transcript) ?: [] as $line) {
+        if (str_contains($line, 'Running quality checks')) {
+            if (is_array($currentFrame) && count($currentFrame) === count($areas)) {
+                $frames[] = $currentFrame;
+            }
+
+            $currentFrame = [];
+
+            continue;
+        }
+
+        if (! is_array($currentFrame)) {
+            continue;
+        }
+
+        foreach ($areas as $area) {
+            if (preg_match('/'.preg_quote($area, '/').'\s+(Queued|Running|Passed|Failed)\b/', $line, $matches) === 1) {
+                $currentFrame[$area] = $matches[1];
+            }
+        }
+    }
+
+    if (is_array($currentFrame) && count($currentFrame) === count($areas)) {
+        $frames[] = $currentFrame;
+    }
+
+    return $frames;
+}
+
+/**
+ * @param list<array<string, string>> $frames
+ *
+ * @return array{errors: list<string>, sequences: array<string, list<string>>, max_running_rows: int}
+ */
+function quality_check_progress_validate_frames(array $frames): array
+{
+    $areas = quality_check_progress_areas();
+    $appAreas = quality_check_progress_app_areas();
+    $packageAreas = quality_check_progress_package_areas();
+    $sequences = array_fill_keys($areas, []);
+    $errors = [];
+    $maxRunningRows = 0;
+
+    foreach ($frames as $frame) {
+        $runningRows = 0;
+        $appAreasCompleted = true;
+
+        foreach ($appAreas as $area) {
+            if (! in_array($frame[$area], ['Passed', 'Failed'], true)) {
+                $appAreasCompleted = false;
+            }
+        }
+
+        foreach ($areas as $area) {
+            $state = $frame[$area];
+
+            if ($state === 'Running') {
+                $runningRows++;
+            }
+
+            $previousStates = $sequences[$area];
+            $lastState = $previousStates === [] ? null : $previousStates[array_key_last($previousStates)];
+
+            if ($lastState !== $state) {
+                $sequences[$area][] = $state;
+            }
+
+            if ($state === 'Queued' && in_array('Running', $sequences[$area], true)) {
+                $errors[] = "{$area} returned to Queued after Running";
+            }
+
+            if (
+                in_array($state, ['Queued', 'Running'], true)
+                && (in_array('Passed', $sequences[$area], true) || in_array('Failed', $sequences[$area], true))
+            ) {
+                $errors[] = "{$area} changed to {$state} after a terminal state";
+            }
+        }
+
+        foreach ($packageAreas as $area) {
+            if ($frame[$area] === 'Running' && ! $appAreasCompleted) {
+                $errors[] = "{$area} was Running before app areas completed";
+            }
+        }
+
+        $maxRunningRows = max($maxRunningRows, $runningRows);
+
+        if ($runningRows > count($appAreas)) {
+            $errors[] = 'more than '.count($appAreas).' rows were Running in one frame';
+        }
+    }
+
+    return [
+        'errors' => array_values(array_unique($errors)),
+        'sequences' => $sequences,
+        'max_running_rows' => $maxRunningRows,
+    ];
+}
+
+try {
+    $argument = $argv[1] ?? null;
+
+    if ($argument === null) {
+        throw new RuntimeException('Usage: bin/quality-check-progress-frame-check <capture-dir|chunks.jsonl>');
+    }
+
+    $chunksPath = quality_check_progress_chunks_path($argument);
+
+    if (! is_file($chunksPath)) {
+        throw new RuntimeException("Missing chunks file [{$chunksPath}].");
+    }
+
+    $frames = quality_check_progress_extract_frames(quality_check_progress_read_transcript($chunksPath));
+
+    if ($frames === []) {
+        throw new RuntimeException("No complete quality-check progress frames found in [{$chunksPath}].");
+    }
+
+    $result = quality_check_progress_validate_frames($frames);
+
+    if ($result['errors'] !== []) {
+        fwrite(STDERR, "quality-check progress frames: failed\n");
+
+        foreach ($result['errors'] as $error) {
+            fwrite(STDERR, "- {$error}\n");
+        }
+
+        exit(1);
+    }
+
+    echo "quality-check progress frames: passed\n";
+    echo 'frames_seen='.count($frames).PHP_EOL;
+    echo 'max_running_rows='.$result['max_running_rows'].PHP_EOL;
+
+    foreach (quality_check_progress_areas() as $area) {
+        echo "{$area}: ".implode(' -> ', $result['sequences'][$area]).PHP_EOL;
+    }
+
+    exit(0);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+
+    exit(1);
+}

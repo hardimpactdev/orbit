@@ -2,10 +2,10 @@
 
 Status: recurring
 First seen: 2026-06-20
-Last seen: 2026-06-24
-Last reviewed: 2026-06-24
-Source worktree: main; doctor-progress-scheduler
-Source commit: none
+Last seen: 2026-06-26
+Last reviewed: 2026-06-26
+Source worktree: main; doctor-progress-scheduler; quality-check-progress-monotonic
+Source commit: dc44eb42487a5687ea54b9dc85b0ee68c9eefd53
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, .agents/skills/cli-output-pty-capture/SKILL.md, .agents/skills/implementing-features/SKILL.md, .agents/review-personas/cli-command.md
 Guardrail change: pending loop-hardening-session-guardrails commit
@@ -89,6 +89,15 @@ Both also now require bordered-output review to strip ANSI, inspect the whole
 visible final frame, reject right-border collisions and terminal auto-wrap, and
 reject duplicated full detail text in summary rows.
 
+The 2026-06-26 `composer quality-check` regression repeated the semantic-frame
+part of this signal. A prior PTY-backed review accepted progress output after
+checking that rows moved from queued to running, but it did not mechanically
+assert every row sequence. The next change reintroduced `Running -> Queued ->
+Running` alternation, and an earlier monotonic-only fix hid package wait time as
+`Running`. The missing reviewer check was not another visual screenshot; it was
+a reusable frame analyzer that rejects forbidden state transitions and early
+area admission.
+
 ## Verification
 
 `rg -n "PTY frame analysis|before human|before asking the user|human UX review|same Solo terminal|decorated|stale|maximum visible width|issue caps|summary placement|right border|bordered output|duplicates a full issue" HARNESS.md .agents/skills/cli-output-pty-capture/SKILL.md .agents/skills/implementing-features/SKILL.md .agents/review-personas/cli-command.md harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md`
@@ -107,6 +116,12 @@ not inspect semantic row shape and width. If a reviewer inspects PTY artifacts
 but still misses panel overflow, right-border collisions, terminal auto-wrap, or
 duplicated detail text in summary rows, move the check from prose into a small
 reusable transcript analyzer or command-renderer invariant test.
+
+For progress state machines, the reusable analyzer or invariant test must parse
+recorded frames into per-row state sequences. It must reject active-to-idle
+regressions such as `Running -> Queued`, terminal-to-nonterminal regressions,
+and rows marked active before the scheduler has admitted the corresponding
+work.
 
 ## Curation Notes
 
