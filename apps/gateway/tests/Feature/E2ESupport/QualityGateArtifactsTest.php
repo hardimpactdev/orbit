@@ -1010,6 +1010,7 @@ it('keeps source-prepared e2e artifact capture out of provider provision scripts
 
 it('documents quality gate artifact and analyzer commands', function (): void {
     $qualityGates = (string) file_get_contents(repo_path('apps/docs/content/testing/quality-gates.md'));
+    $qualityGatesProse = preg_replace('/\s+/', ' ', $qualityGates) ?? $qualityGates;
 
     expect($qualityGates)
         ->toContain('.orbit/quality-gates/')
@@ -1028,6 +1029,11 @@ it('documents quality gate artifact and analyzer commands', function (): void {
         ->toContain('`HEAD`')
         ->toContain('timing phase')
         ->toContain('warning-only');
+
+    expect($qualityGatesProse)
+        ->toContain(
+            'In the tree, every row for an area starts as queued, moves to running once one of its subgates starts, and does not return to queued while later subgates for that area are still waiting.',
+        );
 });
 
 it('promotes the latest successful quality-check artifact into a local baseline file', function (): void {

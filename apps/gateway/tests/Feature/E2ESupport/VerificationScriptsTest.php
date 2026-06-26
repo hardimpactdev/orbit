@@ -404,20 +404,19 @@ it('renders a TTY progress tree for aggregate quality-check areas', function ():
         ->toBeLessThan($scriptPosition('print_log "$label"'));
 });
 
-it('marks aggregate quality gate areas running only while one of their labels is active', function (): void {
+it('marks aggregate quality gate areas running monotonically after any owned subgate starts', function (): void {
     $script = quality_check_script_source();
 
     expect($script)
         ->toContain('quality_check_label_running')
         ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST')
         ->toContain('local active=0')
+        ->toContain('local started=0')
         ->toContain('if quality_check_label_running "$label"; then')
-        ->toContain('if [ "$active" -gt 0 ]; then')
+        ->toContain('started=$((started + 1))')
+        ->toContain('if [ "$active" -gt 0 ] || [ "$started" -gt 0 ]; then')
         ->toContain('record_subgate_running core_pest')
-        ->toContain('clear_subgate_running core_pest')
-        ->not->toContain('local started=0')
-        ->not->toContain('started=$((started + 1))')
-        ->not->toContain('if [ "$started" -gt 0 ]; then');
+        ->toContain('clear_subgate_running core_pest');
 
     $process = new Process(
         [
@@ -439,9 +438,9 @@ it('marks aggregate quality gate areas running only while one of their labels is
         ->all();
 
     expect($lines)->toBe([
-        'completed-plus-queued=waiting',
+        'completed-plus-queued=running',
         'active=running',
-        'completed-plus-queued-after-active=waiting',
+        'completed-plus-queued-after-active=running',
         'background-count=1',
     ]);
 });
