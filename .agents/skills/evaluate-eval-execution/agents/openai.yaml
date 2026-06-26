@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evaluate Eval Execution"
+  short_description: "Review Orbit eval run quality"
+  default_prompt: "Use $evaluate-eval-execution to judge whether an Orbit eval run was trustworthy and useful."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Execute Eval"
+  short_description: "Run isolated Orbit eval trials"
+  default_prompt: "Use $execute-eval to run Orbit eval trials and capture structured evidence."

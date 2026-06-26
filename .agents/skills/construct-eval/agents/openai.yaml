@@ -1,0 +1,4 @@
+interface:
+  display_name: "Construct Eval"
+  short_description: "Design structured Orbit eval cases"
+  default_prompt: "Use $construct-eval to design Orbit eval cases from docs, traces, and failure modes."
