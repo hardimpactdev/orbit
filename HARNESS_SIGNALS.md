@@ -21,10 +21,12 @@ should become guidance or enforcement.
 
 ## Guardrail Target Selection
 
-- Treat raw `.orbit` artifacts, session transcripts, scratchpads, and reviewer
-  comments as candidate signals only. They do not become durable guardrails
-  until the post-feature analyzer reviews the completed loop and the
-  orchestrator adjudicates that recommendation against session context.
+- Treat raw `.orbit` artifacts, persisted `.orbit/sessions/` archives, session
+  transcripts, scratchpads, and reviewer comments as candidate signals only.
+  They do not become durable guardrails until the post-feature analyzer reviews the completed loop and the orchestrator adjudicates that recommendation against session context.
+  Session archives are trace evidence for post-feature analysis and future eval
+  construction; `harness-signals/` remains curated distilled learning and
+  guardrail history, not raw session storage.
 - Promote a candidate only when all of these are true:
   - A concrete mistake, late catch, expensive diagnosis, or high-risk near miss
     happened.
@@ -56,7 +58,9 @@ should become guidance or enforcement.
   name the durable coverage instead of creating a duplicate record.
 - Fix only the current diff when the signal is local and unlikely to recur.
 - Create or update a `harness-signals/` record when the signal should remain
-  searchable across worktrees.
+  searchable across worktrees. Do not copy raw session archives from
+  `.orbit/sessions/` into `harness-signals/`; distill the lesson into a curated
+  record instead.
 - Update a skill when the signal is about workflow, command usage, ownership,
   verification, or environment setup.
 - Update a reviewer persona when the signal is about post-test review criteria,

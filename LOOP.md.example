@@ -4,9 +4,14 @@ This is the committed current-slice template. For non-trivial active work, copy
 it to `.orbit/loop.md`, keep that local copy focused on the active slice, and
 do not commit `.orbit/`.
 
-When a feature has multiple slices, rewrite `.orbit/loop.md` at the start of
-each slice. Keep durable feature history, slice outcomes, and ordering in the
-feature scratchpad. Keep code history in Git.
+When a feature has multiple slices, archive the completed active `.orbit/`
+session into the persistent project archive home before rewriting
+`.orbit/loop.md` at the start of the next slice. The default archive home is
+the primary checkout's `.orbit/sessions/<timestamp-feature-slug>/`; do not
+leave the soon-to-be-removed feature worktree as the only copy. Copy every
+active `.orbit/` entry except `.orbit/sessions/`. Keep durable feature history,
+slice outcomes, and ordering in the feature scratchpad and session archives.
+Keep code history in Git.
 
 ## Feature Context
 
@@ -73,14 +78,21 @@ from scattered artifacts.
 
 ## Final Distillation
 
-Fill this before commit, merge-back, or final completion reporting for any
-non-trivial feature loop. Use `not applicable` only for truly tiny local changes
-with no workers, reviewer findings, retained terminal/PTY evidence, quality
-gate artifacts, or human steering.
+Fill this before commit, merge-back, session archive, or final completion
+reporting for any non-trivial feature loop. Use `not applicable` only for truly
+tiny local changes with no workers, reviewer findings, retained terminal/PTY
+evidence, quality gate artifacts, or human steering.
 
 This section is the canonical local final packet. Scratchpads, reviewer output,
 and final reports should point back here instead of becoming parallel final
-packets.
+packets. After the slice or feature loop is complete, archive the active
+`.orbit/` session into the persistent project archive home before worktree
+cleanup or before rewriting `.orbit/loop.md` for a new slice. The default
+archive home is the primary checkout's
+`.orbit/sessions/<timestamp-feature-slug>/`. Preserve every active `.orbit/`
+entry except `.orbit/sessions/`, including `loop.md`, `.orbit/evidence/`,
+`.orbit/quality-gates/`, and future metadata or manifests when tooling exists.
+`harness-signals/` remains curated distilled learning, not raw session storage.
 
 Keep the exact Markdown bullet-label shape below.
 `bin/orbit-feature-finalization-check` uses those list labels as the mechanical
