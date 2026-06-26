@@ -84,10 +84,22 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php` | Add success, role validation including the `vpn` and `agent` rejection paths, tld validation, conflict validation, and configured-caller forwarding. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php` | Exactly one top-level `success` key on add success and exactly one top-level `error` key on add validation failure. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI role:add post, render, and validation before gateway contact. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php` | Gateway role add, reconverge behavior, and gateway-role rejection. |
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_node-role-add_input-mode_interactive.md`](5.1_node-role-add_input-mode_interactive.md#test-mapping)
+- [`5.2_node-role-add_input-mode_non-interactive.md`](5.2_node-role-add_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_node-role-add_output-render_human.md`](6.1_node-role-add_output-render_human.md#test-mapping)
+- [`6.2_node-role-add_output-render_json.md`](6.2_node-role-add_output-render_json.md#test-mapping)
 
 ## Failure Semantics
 

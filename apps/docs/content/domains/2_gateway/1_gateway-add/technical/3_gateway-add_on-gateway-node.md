@@ -36,4 +36,5 @@ The JSON renderer returns the same message with `error.code:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-host denial before input resolution, prompts, local writes, forwarding, or side effects. Renderer tests own human and JSON formatting. |
+
+There is no gateway-side coverage for this deferred mapping: no current routine gateway test proves this documented behavior. Keep it as a coverage gap until a focused test lands.

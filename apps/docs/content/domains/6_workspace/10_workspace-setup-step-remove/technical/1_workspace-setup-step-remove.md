@@ -176,10 +176,9 @@ setup-step removal attempts.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php` | Atomic delete + order-compaction within `(app, phase=setup)`, refusal to remove a `phase=teardown` step, and rejection of step records that do not belong to the resolved app. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Input resolution, `--step` validation, step-not-found handling, destructive consent (`--force` and `--json` interaction), and runtime-lock absence (full scope below). |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php` | Gateway forwarding and `workspace:write` authorization failures before any side effects. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php` | Real gateway delete against a registered app with steps, verification of contiguous renumbering, JSON envelope alignment, and confirmation that an in-flight `workspace:setup` run continues using its start-of-run snapshot. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/WorkspaceStepActionsTest.php` | Setup-step removal and order compaction. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceStepDeleteControllerTest.php` | Gateway setup-step delete response, remaining count, and contiguous sort order. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStepMutationCommandTest.php` | CLI setup-step removal consent, DELETE forwarding, human hints, step-not-found prose, and JSON success. |
 
 `WorkspaceSetupStepRemoveCommandTest` covers:
 

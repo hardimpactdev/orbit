@@ -168,22 +168,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Gateway-side contract: node visibility validation for choose and set sub-actions, active development node resolution, gateway-unavailable failure, and local-only write guarantee. |
-| `apps/cli/tests/Feature/Commands/Node/NodeDefaultCommandTest.php` | Command contract (see scope below). |
-| `apps/cli/tests/Feature/Commands/Node/NodeDefaultNonInteractiveInputModeTest.php` | Non-interactive input contract, including exact JSON validation output for mutually exclusive `name` and `--clear`. |
-| `apps/cli/tests/Feature/Commands/Node/NodeDefaultJsonRendererTest.php` | JSON envelope shape, show success with default, show empty state, set success payload, clear success payload with `was_set`, every error code, and enum values. |
-| `apps/cli/tests/Feature/Commands/Node/NodeDefaultHumanRendererTest.php` | Human renderer selection, choose prompt result prose, show prose, set confirmation prose, clear confirmation prose, empty-state prose, and exact error messages. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultCommandTest.php` | Interactive choose, show/set/clear sub-actions, mutually exclusive input rejection, gateway-unavailable failures, local-only write guarantee, human renderer prose, and JSON envelope shape. |
 
-`NodeDefaultCommandTest` covers:
-
-- interactive choose from authorized development app-role choices;
-- show with and without default in non-interactive mode;
-- set with positional `name`;
-- set with invalid/non-development node;
-- clear with and without existing default;
-- mutually exclusive input rejection;
-- gateway-unavailable failures for choose/set;
-- local write guarantee (no gateway mutation, no grant creation).
+There is no gateway-side coverage for this command-local mapping: `node:default` mutates local CLI configuration only and does not call gateway mutation endpoints.
 
 Input-mode-specific test mapping lives in:
 

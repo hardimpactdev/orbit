@@ -33,4 +33,7 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnOperatorNodeTest.php` | Operator-caller forwarding to the gateway, identity propagation, local-context resolution before forwarding, and progress streaming back to the local TTY. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client setup stream request payload, caller cwd forwarding, and local validation. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Gateway-authored setup progress, JSON terminal frames, and stream failure handling. |
+
+There is no gateway-side coverage for this client-forwarding path: request construction and stream handling live in `apps/cli`; gateway setup orchestration is mapped in the gateway-node and command-level contracts. Documented error.code values and warning payload shape are not exhaustively asserted by the linked CLI tests unless the rows above name them explicitly.

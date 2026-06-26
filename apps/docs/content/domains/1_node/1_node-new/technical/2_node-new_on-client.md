@@ -115,24 +115,8 @@ When a gateway is configured:
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeNewOnOperatorNodeContractTest.php` | Operator-node caller behavior across input, bootstrap, and forwarding paths; see detail below. |
-| `apps/gateway/tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php` | Real-node smoke coverage for first-gateway bootstrap from an operator node; see detail below. |
-| `apps/gateway/tests/E2E/Ephemeral/NodeNewOperatorForwardingTest.php` | Real-node smoke coverage for operator-node execution after `gateway:add`, proving gateway convergence or adoption, workload-role creation, and client enrollment are forwarded to the gateway over WireGuard instead of applied locally. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:new forwarding and validation before gateway contact. |
 
-`NodeNewOnOperatorNodeContractTest.php` covers post-input path eligibility,
-first-gateway bootstrap eligibility, complete local onboarding for the
-initiating CLI named by `node_new.operator_name`, initial gateway endpoint seeded
-from `node_new.host`, gateway-connected forwarding for
-convergence/adoption/workload-role creation/client enrollment, forwarded host
-and TLD input, missing-gateway failure for non-bootstrap requests, and no
-durable node state written locally outside first-gateway onboarding.
-
-`NodeNewGatewayBootstrapTest.php` exercises the flow from a client with
-no gateway configured, including SSH bootstrap, explicit initiating
-client name, initiating client identity installation, gateway
-endpoint/trust storage from the bootstrap host, `/api/me` verification, and no
-follow-up `gateway:add` requirement.
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

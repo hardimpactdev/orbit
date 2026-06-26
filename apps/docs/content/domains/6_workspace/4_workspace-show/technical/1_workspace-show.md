@@ -142,7 +142,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php` | Command contract: input resolution, ambiguity handling via `--app`, gateway forwarding, workspace lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceShowControllerTest.php` | Gateway workspace lookup, path-prefix resolution, canonical entity shape, ambiguity handling, registry_only metadata, and authorization failures. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceShowCommandTest.php` | CLI show request forwarding, human detail layout, JSON payload passthrough, and not-found error handling. |
 
 Input-mode-specific test mapping lives in:
 

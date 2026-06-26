@@ -87,10 +87,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessStopCommandTest.php` | Command contract for `process:stop` behavior; see detail below. |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessStopInputContractTest.php` | Required inputs, app and workspace resolution, optional process selection, all-process selection when `[name]` is omitted, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessStopControllerTest.php` | Gateway process:stop runtime action authorization, selected process execution, durable event recording, partial runtime failure data, unsupported-runtime validation, and authorization failures. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | CLI process:stop app/workspace/node context forwarding, optional process selection, all-process selection when `[name]` is omitted, JSON success output, and validation before gateway contact. |
 
-`ProcessStopCommandTest.php` covers context resolution, grant authorization,
+`ProcessStopControllerTest.php` and `ProcessWriteCommandTest.php` cover context resolution, grant authorization,
 missing-grant denial, named and all-process selection, process-order
 execution, runtime-unit derivation, successful stop, durable stopped event
 recording, partial bulk failure reporting, no configuration mutation, no direct

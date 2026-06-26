@@ -195,17 +195,9 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php` | Command contract for `node:remove` lifecycle; see detail below. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS cleanup warning contract across gateway-local, gateway API, and forwarded client rendering paths. |
-| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Node access integration: deletion of node, related grants, and WireGuard peer in one flow; success when peer is already absent; gateway-node rejection. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnOperatorNodeContractTest.php` | Operator-node caller behavior: configured callers forward over HTTPS, unconfigured callers fail before side effects, forwarded requests require a covering grant, and no SSH-to-gateway path is used. |
-
-`NodeRemoveCommandTest.php` covers node removal, grant cleanup, WireGuard peer
-teardown, warning payload shape for partial detach, DNS mapping cleanup,
-client forwarding, self-removal, grant denial, node-not-found as
-validation failure, gateway-node refusal, interactive confirmation,
-non-interactive missing-`--force` failure, `--force` success, and downstream
-state non-blocking.
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI delete forwarding, force gating, human and JSON renderer output, and lifecycle validation before gateway contact. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveControllerTest.php` | Gateway remove authorization, force removal, self-removal denial, and delete envelopes. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRemoveDevelopmentDnsWarningTest.php` | Development DNS warning payload when removing development app-role nodes. |
 
 Input-mode-specific test mapping lives in:
 
@@ -217,7 +209,8 @@ Renderer-specific test mapping lives in:
 - [`6.1_node-remove_output-render_human.md`](6.1_node-remove_output-render_human.md#test-mapping)
 - [`6.2_node-remove_output-render_json.md`](6.2_node-remove_output-render_json.md#test-mapping)
 
-Role-specific test mapping lives in:
+Deployment-context-specific test mapping lives in:
 
 - [`2_node-remove_on-client.md`](2_node-remove_on-client.md#test-mapping)
 - [`3_node-remove_on-gateway-node.md`](3_node-remove_on-gateway-node.md#test-mapping)
+Destructive consent coverage note: routine tests cover only the mapped `--force`, destructive consent, or confirmation paths above; prompt-only variants and operator forwarding stay as coverage gaps when no path is listed.

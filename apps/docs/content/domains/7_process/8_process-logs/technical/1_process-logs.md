@@ -90,10 +90,12 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessLogsCommandTest.php` | Command contract for `process:logs` behavior; see detail below. |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php` | Required inputs, app and workspace resolution, process resolution, line count validation, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessLogControllerTest.php` | Gateway bounded process log reads for app, workspace, and node contexts, managed-service metadata, unsupported-runtime validation, authorization failures, and log read failures. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessLogStreamControllerTest.php` | Gateway follow-stream log output for authorized process log reads. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php` | CLI `process:logs` bounded and follow-mode requests, node context forwarding, human output, JSON bounded output, and gateway/WireGuard failure passthrough. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessLogsCommandTest.php` | CLI `process:logs` missing-name validation, invalid line-count validation, and `--json` plus `--follow` rejection before opening gateway requests. |
 
-`ProcessLogsCommandTest.php` covers context resolution, grant authorization,
+`ProcessLogControllerTest.php`, `ProcessLogStreamControllerTest.php`, and `ProcessLogsCommandTest.php` cover context resolution, grant authorization,
 missing-grant denial, bounded log reads, follow-mode streaming, line
 count validation, `--json` with `--follow` rejection, no configuration mutation,
 no direct backend log read, log read failure, and authorization failure.

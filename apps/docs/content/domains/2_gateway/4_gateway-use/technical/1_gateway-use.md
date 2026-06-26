@@ -62,4 +62,6 @@ Human output reports the selected gateway name and endpoint.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayUseCommandTest.php` | Command contract: active gateway persistence, validation, unknown name failure, and no gateway API contact. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewaySelectionCommandTest.php` | CLI `gateway:use` active gateway persistence, unknown gateway failure, JSON selected-gateway envelope, and human success/error prose without gateway API contact. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

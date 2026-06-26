@@ -133,7 +133,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeShowCommandTest.php` | Command contract: input resolution, default fallback chain, caller authorization resolution, node lookup, authorization check, registry-only read behavior, no live probe invocation, read-only guarantee, and failure semantics. |
+| `apps/cli/tests/Feature/Commands/Node/NodeShowCommandTest.php` | CLI default resolution, human field rendering, JSON envelope output, and missing-name validation. |
+| `apps/gateway/tests/Feature/Http/Api/NodeShowControllerTest.php` | Gateway registry read, not-found handling, and authorization failures. |
 
 Input-mode-specific test mapping lives in:
 

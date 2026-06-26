@@ -39,7 +39,9 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Scope resolution, mutually exclusive flag rejection, family-key validation, and gateway authorization failures. |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Family scope validation against the target node's active-role category set, including process-family support for every role-bearing node. |
+| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | Mutually exclusive flag rejection, unsupported family rejection, and authorization failure handling at the CLI boundary. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway verify scope enforcement and authorization failures before probes run. |

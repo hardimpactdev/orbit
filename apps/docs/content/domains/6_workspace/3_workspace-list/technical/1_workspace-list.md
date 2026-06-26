@@ -132,9 +132,10 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListCommandTest.php` | Command contract: listing all visible workspaces, app filtering, node filtering, combined filters, gateway-unavailable failure, invalid filter validation, authorization failure, and read-only guarantee. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListJsonRendererTest.php` | JSON envelope shape, success payload with workspace array, sort ordering, filter error JSON shape, and lifecycle status taxonomy. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListHumanRendererTest.php` | Human renderer selection, table grouping by app within node, success prose, filter error prose, and authorization failure prose. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceListControllerTest.php` | Gateway workspace registry visibility, app/node filters, entity shape, validation failures, and authorization failures. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceListCommandTest.php` | CLI workspace listing filter forwarding, grouped human output, empty state, JSON envelope, and gateway error passthrough. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceListCommandTest.php` | JSON workspace list envelope and workspace entity passthrough. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceListCommandTest.php` | Human workspace table grouping, headers, empty-state prose, and missing-cell rendering. |
 
 Renderer-specific test mapping lives in:
 

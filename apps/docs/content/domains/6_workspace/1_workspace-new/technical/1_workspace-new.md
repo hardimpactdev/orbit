@@ -205,10 +205,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php` | Input resolution, name/slug validation, reserved-`main` rejection, per-app collision rejection, `--php-version` validation, gateway write, driver dispatch and adapter id capture, `success.meta.warnings[]` shape, and shared exit-status behavior. |
-| `apps/gateway/tests/E2E/WorkspaceNewTest.php` | End-to-end workspace creation against a real node: worktree creation, runtime container artifact installation, workspace-owned proxy route, and inherited runtime unit rendering as systemd process units. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceStoreControllerTest.php` | Gateway workspace creation, validation, authorization, duplicate-name failures, supported PHP-version handling, and documented error.code values. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Client-side workspace:new validation and gateway stream request payload. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Workspace stream consumption, terminal JSON frame handling, human progress rendering, and malformed stream failures. |
 
 Role-specific behavior and test mapping live in:
 
 - [`2_workspace-new_on-client.md`](2_workspace-new_on-client.md)
 - [`3_workspace-new_on-gateway-node.md`](3_workspace-new_on-gateway-node.md)
+
+Linked routine tests do not exhaustively assert every warning payload shape for `success.meta.warnings[]`; current coverage is limited to the rows above.

@@ -132,6 +132,5 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Gateway-local execution for the node family, drift-detected exit semantics, restore/adopt action rendering, mutually exclusive flag rejection, unsupported family rejection, and `--node=<other>` cross-targeting from a gateway peer. |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set for gateway and other role-bearing targets, universal process-family support for role-bearing nodes, and family scope validation. |
-| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-node probe scoping, restore action suppression, action failure recording, and family dispatch through the gateway-local runner path. |
+| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | Gateway-node doctor invocation, scope forwarding, and rendered output from gateway context. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway verify authorization, scope validation, and diagnostic payload responses. |

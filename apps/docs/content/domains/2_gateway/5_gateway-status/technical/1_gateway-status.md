@@ -84,4 +84,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayStatusCommandTest.php` | Command contract: GET `/api/status`, human output renders `gateway` field only, JSON envelope shape with full response data and `meta.endpoint`, `gateway_unreachable_wireguard` on connection failure, `gateway_unavailable` on HTTP error, and exit codes. |
+| `apps/gateway/tests/Feature/Http/Api/GatewayStatusControllerTest.php` | Gateway `/api/status` route registration, unauthenticated availability, and canonical success envelope shape. |
+| `apps/cli/tests/Feature/Commands/GatewayStatusCommandTest.php` | CLI `gateway:status` human rendering for flat status fields and gateway-unavailable prose. |
+| `apps/cli/tests/Feature/PublicCommandForwardingTest.php` | API-backed `gateway:status` forwarding, JSON success envelope with `success.meta.endpoint`, and gateway/WireGuard failure envelopes. |

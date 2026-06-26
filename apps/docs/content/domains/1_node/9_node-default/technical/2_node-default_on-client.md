@@ -96,9 +96,8 @@ Node 'app-1' not found or not visible.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Client-context choose, show, set, and clear behavior; configured vs unconfigured CLI for choose/set; stale default handling. |
-| `apps/cli/tests/Feature/Commands/Node/NodeDefaultOnClientTest.php` | Configured-client local-only show/clear behavior, choose/set without identity preflight, gateway choices for choose, gateway validation for set, and no gateway configuration mutation. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultCommandTest.php` | Local show and clear behavior plus set validation through mocked gateway list reads. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

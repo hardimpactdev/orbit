@@ -83,5 +83,6 @@ The gateway API endpoint emits an activity entry for successful and failed regis
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Proxy/ProxyListCommandTest.php` | Command contract for filter validation, node filter validation, gateway authorization, no-live-probe behavior, and doctor handoff behavior. |
+| `apps/gateway/tests/Feature/Http/Api/ProxyRouteListControllerTest.php` | Gateway proxy route listing, route visibility filtering, filter metadata, validation failures, and authorization failures. |
+| `apps/cli/tests/Feature/Commands/Proxy/ProxyListCommandTest.php` | CLI `proxy:list` JSON envelope, filter forwarding, human table output, empty states, and gateway/WireGuard failure passthrough. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteQueryTest.php` | In-memory proxy route visibility filtering, filter semantics, node filter semantics, and proxy route entity mapping. |

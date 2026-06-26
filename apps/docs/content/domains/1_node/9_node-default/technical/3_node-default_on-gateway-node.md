@@ -31,9 +31,8 @@ validation and gateway-unavailable failures as other operator hosts.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php` | Gateway-host deployment context: no gateway-side default-node route, local-only config write guarantee. |
-| `apps/cli/tests/Feature/Commands/Node/NodeDefaultOnGatewayHostTest.php` | Gateway-host execution edits local CLI config and does not call gateway-side default-node routes. |
+| `apps/cli/tests/Feature/Commands/Node/NodeDefaultCommandTest.php` | Local-only default-node configuration with no gateway default routes. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

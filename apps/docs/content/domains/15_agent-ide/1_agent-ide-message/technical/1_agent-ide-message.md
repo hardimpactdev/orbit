@@ -165,7 +165,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | Target resolution (explicit app, workspace, cwd); caller authorization behavior; authorization failures; adapter resolution; stdin delivery; no-adapter failure; no-session failure; adapter delivery failure; accepted delivery success; read-only guarantee; no session creation. |
+| `apps/cli/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php` | CLI target resolution, stdin delivery, validation before gateway contact, human and JSON renderer output, and gateway error passthrough. |
+| `apps/gateway/tests/Feature/Http/Api/AgentIdeMessageControllerTest.php` | Gateway delivery authorization, adapter diagnostics, accepted delivery success, and authorization denial. |
 
 Input-mode-specific test mapping lives in:
 

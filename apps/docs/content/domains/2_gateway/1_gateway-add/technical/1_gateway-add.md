@@ -175,14 +175,14 @@ Required split contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddInputContractTest.php` | Command contract: input resolution, side-effect boundaries, local settings persistence, CA trust installation, no local node registry mirror creation, idempotent convergence, and gateway API verification. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddInteractiveInputModeTest.php` | Interactive input mode: TTY selection, `--json` opt-out, gateway IP derivation, prompt when derivation is ambiguous, prompt validation and retry. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php` | Non-interactive input mode: no-prompt selection, `--json` forcing non-interactive mode, missing `gateway_ip` failure when derivation is ambiguous, invalid value failures. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php` | JSON renderer: envelope shape, verified gateway and local-node references without role fields, `added` and `converged` success payloads, error codes, and enum values. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php` | Human renderer: progress tree shape, success and failure prose, converged message, and next-step guidance. |
-| `apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php` | Gateway-local host rejection before prompts or side effects, and non-gateway local onboarding behavior. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayAddCommandTest.php` | CLI `gateway:add` validation, CA fetch and trust installation, `/api/me` identity checks, local settings persistence, named gateway storage, and added/converged JSON statuses. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayAddCommandTest.php` | Non-interactive `gateway:add` validation for missing or invalid gateway IPs, `--json` error envelopes, and WireGuard-derived gateway IPs. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayAddCommandTest.php` | JSON `gateway:add` success envelopes for `added` and `converged`, validation failures, identity failures, gateway unavailable failures, and invalid CA/trust-store failures. |
+| `apps/cli/tests/Feature/Commands/Gateway/GatewayAddCommandTest.php` | Human `gateway:add` progress tree, added/converged footers, validation prose, and gateway-unavailable prose. |
 
 Context-specific behavior and test mapping live in:
 
 - [`2_gateway-add_on-client.md`](2_gateway-add_on-client.md)
 - [`3_gateway-add_on-gateway-node.md`](3_gateway-add_on-gateway-node.md)
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.

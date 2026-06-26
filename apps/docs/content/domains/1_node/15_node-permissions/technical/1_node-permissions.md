@@ -149,7 +149,19 @@ mutations.
 
 ## Test Mapping
 
+Primary test owners:
+
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsCommandTest.php` | Mode selection, authorization, read/replace/add/remove semantics, missing-grant create-or-fail rules, mode conflicts, exhaustive `error.code` coverage, JSON envelope, and warning payload shape under `success.meta.warnings[]`. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php` | Exactly one top-level `success` key on success and exactly one top-level `error` key on failure. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI permissions mode selection, render output, and validation before gateway contact. |
+| `apps/gateway/tests/Feature/Http/Api/NodePermissionsControllerTest.php` | Gateway read, replace, add, remove, and authorization handling. |
+
+Input-mode-specific test mapping lives in:
+
+- [`5.1_node-permissions_input-mode_interactive.md`](5.1_node-permissions_input-mode_interactive.md#test-mapping)
+- [`5.2_node-permissions_input-mode_non-interactive.md`](5.2_node-permissions_input-mode_non-interactive.md#test-mapping)
+
+Renderer-specific test mapping lives in:
+
+- [`6.1_node-permissions_output-render_human.md`](6.1_node-permissions_output-render_human.md#test-mapping)
+- [`6.2_node-permissions_output-render_json.md`](6.2_node-permissions_output-render_json.md#test-mapping)

@@ -99,8 +99,10 @@ This action requires the node:revoke permission on a grant to the gateway.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php` | Configured operator-node forwarding, no SSH fallback, forwarded payload, `node:revoke` authorization, self-lockout, destructive consent, and result rendering. |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:revoke forwarding and rendered output. |
+
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.
+
+Destructive consent coverage note: routine tests cover only the mapped `--force`, destructive consent, or confirmation paths above; prompt-only variants and operator forwarding stay as coverage gaps when no path is listed.

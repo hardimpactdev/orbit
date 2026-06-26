@@ -98,5 +98,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Proxy/ProxyAddCommandTest.php` | Command contract for input validation, mutually exclusive route shape, gateway authorization, target resolution, replacement consent, failure codes, and doctor handoff behavior. |
-| `apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php` | Shared in-memory proxy command DTO shape, custom-route entity mapping, route ownership conflict detection, and target resolution rules. |
+| `apps/gateway/tests/Feature/Http/Api/ProxyRouteMutationControllerTest.php` | Gateway proxy route creation authorization, custom upstream route intent, non-custom domain conflict denial, and mutation API shape. |
+| `apps/cli/tests/Feature/Commands/Proxy/ProxyWriteCommandTest.php` | CLI `proxy:add` upstream and redirect payloads, local default node resolution, required node validation, mutually exclusive target validation, and gateway error passthrough. |
+| `apps/cli/tests/Feature/Commands/Proxy/ProxyInteractiveInputModeTest.php` | Interactive `proxy:add` custom upstream prompt before contacting the gateway. |
+| `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteIntentTest.php` | In-memory proxy route intent DTOs, replacement consent, ownership conflicts, custom-route removal intent, authorization, and app-owned domain rejection. |

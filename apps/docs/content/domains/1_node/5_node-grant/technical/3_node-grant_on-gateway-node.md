@@ -53,9 +53,6 @@ execution.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php` | Gateway-local grant creation, idempotence, policy enforcement, and node-not-found validation. |
-| `apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php` | Integration: grant creation and idempotence. |
+| `apps/gateway/tests/Feature/Http/Api/NodeGrantControllerTest.php` | Gateway-local grant authorization, idempotence, validation failures, self-grants, elevated-grant consent, and normalized permissions. |

@@ -177,9 +177,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php` | Command contract: setting an adapter, clearing with `none`, idempotent convergence, unsupported adapter rejection, node-not-found validation, grant denial, non-gateway forwarding, no downstream warning payloads, and read-only guarantees. |
-
-Read-only guarantees mean no SSH and no session creation during the command.
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI set, clear, and converged rendering plus validation before gateway contact. |
+| `apps/gateway/tests/Feature/Http/Api/NodeAgentIdeControllerTest.php` | Gateway grant, validation, not-found, and unsupported adapter handling. |
 
 Input-mode-specific test mapping lives in:
 
@@ -190,3 +189,4 @@ Renderer-specific test mapping lives in:
 
 - [`6.1_node-agent-ide_output-render_human.md`](6.1_node-agent-ide_output-render_human.md#test-mapping)
 - [`6.2_node-agent-ide_output-render_json.md`](6.2_node-agent-ide_output-render_json.md#test-mapping)
+Warning payload coverage note: linked tests cover only the mapped warning payload shape assertions above; remaining variants of the warning payload stay as coverage gaps until focused tests land.

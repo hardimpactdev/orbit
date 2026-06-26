@@ -227,8 +227,7 @@ family doctor — not a removal failure.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Actions/Workspaces/RemoveWorkspaceActionTest.php` | Phase A atomic configuration removal, Phase B step ordering, `--keep-files` worktree preservation, partial cleanup warnings, and teardown step execution. |
-| `apps/gateway/tests/Feature/Concerns/ResolveWorkspaceFromCwdTest.php` | CWD-to-workspace resolution, self-targeting detection, and unresolved-CWD failure. |
-| `apps/gateway/tests/Unit/Actions/Workspaces/TeardownStepRunnerTest.php` | Teardown step ordering and execution environment. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveCommandTest.php` | Gateway forwarding and `workspace:remove` authorization failures before any side effects. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspaceRemoveTest.php` | End-to-end `workspace:remove` flow with SSH artifact cleanup, `--keep-files`, `--force`, JSON envelope validation, and warning payload shape for `success.meta.warnings[]`. |
+| `apps/gateway/tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php` | Gateway workspace removal intent, destructive consent via force, keep_files metadata, authorization failure, and removed action payload. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | CLI remove validation, destructive consent, DELETE forwarding, JSON success, human progress, and gateway error passthrough. |
+
+The linked CLI test covers drift warning payload rendering for the human footer; the full gateway warning payload shape is not exhaustively asserted by routine tests.

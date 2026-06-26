@@ -27,4 +27,4 @@ This contract defines behavior when `workspace:setup` is invoked from a
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnGatewayNodeTest.php` | Gateway local orchestration without HTTPS forwarding, owning-node target eligibility, gateway-owned SSH path resolution, and `RemoteShell`-based artifact application. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Gateway setup orchestration, lifecycle transition, proxy/process side effects, setup-step execution, and mocked remote shell behavior. |

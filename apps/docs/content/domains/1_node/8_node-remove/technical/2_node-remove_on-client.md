@@ -90,15 +90,10 @@ This node is not authorized for 'node:remove' on '<target>'.
 
 ## Test Mapping
 
-Primary test owners:
-
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnOperatorNodeContractTest.php` | Operator-node caller forwarding, grant authorization, destructive consent, and result rendering (full list below). |
+| `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | Client-context node:remove forwarding and rendered output. |
 
-`NodeRemoveOnOperatorNodeContractTest` covers operator-node caller forwarding over
-HTTPS (no SSH-to-gateway path), forwarded payload, grant authorization
-failures, self-removal detection by WireGuard identity, destructive
-consent for self-removal and normal removal, no local-settings cleanup on
-self-removal, gateway-unavailable and authorization failures, and result
-rendering.
+There is no gateway-side coverage for this command-local mapping: input handling and renderer behavior live in `apps/cli`. Gateway API behavior is mapped in the command contract file when a gateway-side surface exists.
+
+Destructive consent coverage note: routine tests cover only the mapped `--force`, destructive consent, or confirmation paths above; prompt-only variants and operator forwarding stay as coverage gaps when no path is listed.
