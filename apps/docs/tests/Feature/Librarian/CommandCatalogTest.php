@@ -50,7 +50,13 @@ it('builds a command catalog from the live CLI surface and docs registries', fun
         ->not->toContain('help');
 
     expect($catalog['commands']['tool:install']['linked_test_files'])
-        ->toContain('apps/gateway/tests/Feature/Commands/Tools/ToolInstallCommandTest.php');
+        ->toContain('apps/cli/tests/Feature/Commands/StreamsGatewayProgressTest.php')
+        ->toContain('apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php')
+        ->toContain('apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php')
+        ->toContain('apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php')
+        ->toContain('apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php')
+        ->not->toContain('apps/gateway/tests/Feature/Commands/Tools/ToolInstallCommandTest.php')
+        ->not->toContain('apps/gateway/tests/Feature/Commands/Tools/ToolInstallJsonRendererTest.php');
 
     expect($catalog['registries'])
         ->toHaveKeys(['error_codes', 'warning_codes', 'entity_schemas', 'shared_options', 'state_families']);
@@ -143,6 +149,28 @@ it('scopes command catalog authorization metadata to controller class and action
 
     expect($catalog['commands']['update:all']['p4_mapping']['authorization_permission'])
         ->toBe(['*']);
+});
+
+it('keeps generated tool:install linked test file paths on disk under the repository root', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+    $repoRoot = realpath(base_path('../..'));
+
+    expect($repoRoot)->toBeString();
+
+    $missing = [];
+
+    foreach ($catalog['commands']['tool:install']['linked_test_files'] as $path) {
+        if (is_file("{$repoRoot}/{$path}")) {
+            continue;
+        }
+
+        $missing[] = $path;
+    }
+
+    expect($missing)->toBeEmpty(
+        'tool:install linked_test_files must reference existing repository files. Missing paths: '
+            .implode(', ', $missing),
+    );
 });
 
 it('keeps the committed command catalog in sync with the generated catalog', function (): void {

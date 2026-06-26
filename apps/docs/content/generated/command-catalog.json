@@ -5327,8 +5327,9 @@
                 "stream_json": true
             },
             "linked_test_files": [
-                "apps/gateway/tests/Feature/Commands/Tools/ToolInstallCommandTest.php",
-                "apps/gateway/tests/Feature/Commands/Tools/ToolInstallJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/StreamsGatewayProgressTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
             ],
