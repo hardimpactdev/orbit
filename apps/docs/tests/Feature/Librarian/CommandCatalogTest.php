@@ -110,6 +110,162 @@ it('maps unambiguous command endpoints to SDK and gateway implementation surface
         ]);
 });
 
+it('maps double-quoted interpolated gateway paths to truthful P4 metadata', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+
+    expect($catalog['commands']['activity:show']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Activity\\ShowActivityRequest',
+                'path' => 'packages/sdk/src/Requests/Activity/ShowActivityRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'GET',
+                'uri' => '/api/activity/{id}',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\ActivityShowController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/ActivityShowController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => ['activity:read'],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Activity\\ActivityShowResponse',
+                'path' => 'packages/sdk/src/Responses/Activity/ActivityShowResponse.php',
+            ],
+        ]);
+
+    expect($catalog['commands']['app:show']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Apps\\ShowAppRequest',
+                'path' => 'packages/sdk/src/Requests/Apps/ShowAppRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'GET',
+                'uri' => '/api/apps/{app}',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\AppShowController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/AppShowController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => ['app:read'],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Apps\\AppShowResponse',
+                'path' => 'packages/sdk/src/Responses/Apps/AppShowResponse.php',
+            ],
+        ]);
+
+    expect($catalog['commands']['node:show']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Nodes\\ShowNodeRequest',
+                'path' => 'packages/sdk/src/Requests/Nodes/ShowNodeRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'GET',
+                'uri' => '/api/nodes/{name}',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\NodeShowController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/NodeShowController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => [],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Nodes\\NodeShowResponse',
+                'path' => 'packages/sdk/src/Responses/Nodes/NodeShowResponse.php',
+            ],
+        ]);
+});
+
+it('keeps truthful P4 mappings for php:use, process:add, update:all, and deploy:log', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+
+    expect($catalog['commands']['php:use']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Php\\UsePhpRuntimeRequest',
+                'path' => 'packages/sdk/src/Requests/Php/UsePhpRuntimeRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'POST',
+                'uri' => '/api/php/use',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\PhpUseController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/PhpUseController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => [],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Php\\PhpRuntimeUseResponse',
+                'path' => 'packages/sdk/src/Responses/Php/PhpRuntimeUseResponse.php',
+            ],
+        ]);
+
+    expect($catalog['commands']['process:add']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Processes\\AddProcessRequest',
+                'path' => 'packages/sdk/src/Requests/Processes/AddProcessRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'POST',
+                'uri' => '/api/processes',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\ProcessStoreController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/ProcessStoreController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => ['process:add'],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Processes\\ProcessAddResponse',
+                'path' => 'packages/sdk/src/Responses/Processes/ProcessAddResponse.php',
+            ],
+        ]);
+
+    expect($catalog['commands']['update:all']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => null,
+            'gateway_route' => [
+                'method' => 'POST',
+                'uri' => '/api/update/all/start',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\UpdateAllStartController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/UpdateAllStartController.php',
+                'action' => '__invoke',
+            ],
+            'authorization_permission' => ['*'],
+            'response_dto' => null,
+        ]);
+
+    expect($catalog['commands']['deploy:log']['p4_mapping'])
+        ->toMatchArray([
+            'sdk_request' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Requests\\Deploy\\ShowDeployLogRequest',
+                'path' => 'packages/sdk/src/Requests/Deploy/ShowDeployLogRequest.php',
+            ],
+            'gateway_route' => [
+                'method' => 'GET',
+                'uri' => '/api/deploy/log/{run}',
+            ],
+            'gateway_controller' => [
+                'class' => 'App\\Http\\Controllers\\Api\\DeployController',
+                'path' => 'apps/gateway/app/Http/Controllers/Api/DeployController.php',
+                'action' => 'log',
+            ],
+            'authorization_permission' => ['deploy:read'],
+            'response_dto' => [
+                'class' => 'Orbit\\Sdk\\Laravel\\Responses\\Deploy\\DeployResponse',
+                'path' => 'packages/sdk/src/Responses/Deploy/DeployResponse.php',
+            ],
+        ]);
+});
+
 it('keeps local-only and partially parsed command mappings null', function (): void {
     $catalog = app(CommandCatalogBuilder::class)->build();
 

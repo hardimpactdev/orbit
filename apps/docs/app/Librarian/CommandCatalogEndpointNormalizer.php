@@ -15,6 +15,7 @@ final readonly class CommandCatalogEndpointNormalizer
     {
         $uri = trim($uri);
         $uri = preg_replace(pattern: '/\{\$([A-Za-z_][A-Za-z0-9_]*)\}/', replacement: '{$1}', subject: $uri) ?? $uri;
+        $uri = preg_replace(pattern: '/(?<!\{)\$([A-Za-z_][A-Za-z0-9_]*)/', replacement: '{$1}', subject: $uri) ?? $uri;
 
         if (! str_starts_with($uri, '/')) {
             $uri = "/{$uri}";
@@ -26,6 +27,7 @@ final readonly class CommandCatalogEndpointNormalizer
     public function normalizePhpEndpointExpression(string $expression): ?string
     {
         $expression = $this->replacePhpPropertyPlaceholders($expression);
+        $expression = $this->replaceLocalVariablePlaceholders($expression);
 
         if (preg_match('/[()?:]/', $expression) === 1) {
             return null;
@@ -38,6 +40,17 @@ final readonly class CommandCatalogEndpointNormalizer
         }
 
         return $this->normalizeApiUri($uri);
+    }
+
+    private function replaceLocalVariablePlaceholders(string $expression): string
+    {
+        return (
+            preg_replace_callback(
+                pattern: '/(?<!\{)\$([A-Za-z_][A-Za-z0-9_]*)/',
+                callback: static fn (array $match): string => '{'.$match[1].'}',
+                subject: $expression,
+            ) ?? $expression
+        );
     }
 
     private function replacePhpPropertyPlaceholders(string $expression): string

@@ -2310,11 +2310,26 @@
                 "apps/cli/tests/Feature/Commands/LogStreamCommandTest.php"
             ],
             "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
+                "sdk_request": {
+                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Deploy\\ShowDeployLogRequest",
+                    "path": "packages/sdk/src/Requests/Deploy/ShowDeployLogRequest.php"
+                },
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/deploy/log/{run}"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\DeployController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/DeployController.php",
+                    "action": "log"
+                },
+                "authorization_permission": [
+                    "deploy:read"
+                ],
+                "response_dto": {
+                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Deploy\\DeployResponse",
+                    "path": "packages/sdk/src/Responses/Deploy/DeployResponse.php"
+                }
             }
         },
         "deploy:run": {

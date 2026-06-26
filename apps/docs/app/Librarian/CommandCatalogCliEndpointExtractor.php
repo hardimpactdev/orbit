@@ -15,11 +15,13 @@ final readonly class CommandCatalogCliEndpointExtractor
      */
     public function endpoints(string $source): array
     {
-        $gatewayCallEndpoints = $this->gatewayCallEndpoints($source);
+        $staticEndpoints = $this->staticGatewayCallEndpoints($source);
+        $concatenatedEndpoints = $this->concatenatedGatewayCallEndpoints($source);
+        $parsedGatewayCallCount = count($staticEndpoints) + count($concatenatedEndpoints);
 
         return [
-            ...$gatewayCallEndpoints,
-            ...$this->unparsedGatewayCallMarkers($source, count($gatewayCallEndpoints)),
+            ...$this->uniqueEndpoints([...$staticEndpoints, ...$concatenatedEndpoints]),
+            ...$this->unparsedGatewayCallMarkers($source, $parsedGatewayCallCount),
             ...$this->streamToolActionEndpoints($source),
             ...$this->streamToolBulkActionEndpoints($source),
             ...$this->streamProgressEndpoints($source),
@@ -27,13 +29,51 @@ final readonly class CommandCatalogCliEndpointExtractor
     }
 
     /**
+     * @param  list<array{method: string, uri: string}>  $endpoints
      * @return list<array{method: string, uri: string}>
      */
-    private function gatewayCallEndpoints(string $source): array
+    private function uniqueEndpoints(array $endpoints): array
+    {
+        $unique = [];
+
+        foreach ($endpoints as $endpoint) {
+            $key = $this->normalizer->endpointKey($endpoint['method'], $endpoint['uri']);
+            $unique[$key] = $endpoint;
+        }
+
+        return array_values($unique);
+    }
+
+    /**
+     * @return list<array{method: string, uri: string}>
+     */
+    private function staticGatewayCallEndpoints(string $source): array
     {
         $matches = [];
         preg_match_all(
-            '/->gateway(Get|PostWithIdleTicks|Post|Put|Patch|Delete)\(\s*([\'"])(\/api\/[^\'"]+)\2\s*(?:,|\))/s',
+            '/->gateway(Get|PostWithIdleTicks|Post|Put|Patch|Delete)\(\s*([\'"])(\/api\/[^\'"]+)\2(?!\s*\.\s*\$)\s*(?:,|\))/s',
+            $source,
+            $matches,
+            PREG_SET_ORDER,
+        );
+
+        return array_map(
+            fn (array $match): array => [
+                'method' => $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]),
+                'uri' => $this->normalizer->normalizeApiUri($match[3]),
+            ],
+            $matches,
+        );
+    }
+
+    /**
+     * @return list<array{method: string, uri: string}>
+     */
+    private function concatenatedGatewayCallEndpoints(string $source): array
+    {
+        $matches = [];
+        preg_match_all(
+            '/->gateway(Get|PostWithIdleTicks|Post|Put|Patch|Delete)\(\s*([\'"])(\/api\/[^\'"]+)\2\s*\.\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*(?:,|\))/s',
             $source,
             $matches,
             PREG_SET_ORDER,
@@ -42,11 +82,9 @@ final readonly class CommandCatalogCliEndpointExtractor
         $endpoints = [];
 
         foreach ($matches as $match) {
-            $method = $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]);
-
             $endpoints[] = [
-                'method' => $method,
-                'uri' => $this->normalizer->normalizeApiUri($match[3]),
+                'method' => $match[1] === 'PostWithIdleTicks' ? 'POST' : strtoupper($match[1]),
+                'uri' => $this->normalizer->normalizeApiUri($match[3].'{'.$match[4].'}'),
             ];
         }
 
