@@ -17,6 +17,7 @@ final class RemoteShellMetadata
         'ORBIT_OPERATION_ID',
         'ORBIT_PHP_VERSION',
         'ORBIT_PROXY_DOMAIN',
+        'ORBIT_PROXY_RUNTIME_UPSTREAM',
         'ORBIT_PROXY_SUFFIX',
         'ORBIT_RELEASE_PATH',
         'ORBIT_REQUEST_ID',

@@ -6,6 +6,7 @@ namespace App\Services\Proxy;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -62,6 +63,106 @@ final readonly class ProxyRouteRenderer
     public function sourceHash(ProxyRoute $route): string
     {
         return hash('sha256', $this->render($route));
+    }
+
+    public function renderManagedPhpRuntimeIntent(ProxyRoute $route): string
+    {
+        $this->normalizeManagedPhpRuntimeConfig($route);
+
+        return $this->render($route);
+    }
+
+    public function managedPhpRuntimeIntentSourceHash(ProxyRoute $route): string
+    {
+        return hash('sha256', $this->renderManagedPhpRuntimeIntent($route));
+    }
+
+    private function normalizeManagedPhpRuntimeConfig(ProxyRoute $route): void
+    {
+        if ($this->usesIngressPlacement($route) || ! in_array($route->kind, ['app', 'workspace'], true)) {
+            return;
+        }
+
+        $route->loadMissing('app.node', 'workspace');
+
+        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
+            $this->normalizeWorkspacePhpRuntimeConfig($route);
+
+            return;
+        }
+
+        $this->normalizeAppPhpRuntimeConfig($route);
+    }
+
+    private function normalizeWorkspacePhpRuntimeConfig(ProxyRoute $route): void
+    {
+        $route->workspace?->loadMissing('app');
+        $workspace = $route->workspace;
+        $app = $workspace?->app;
+
+        if (! $workspace instanceof Workspace || ! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
+            return;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $config['runtime_upstream'] = "http://orbit-ws-{$app->name}-{$workspace->name}";
+
+        if (! $this->innerTlsPolicy->appliesToWorkspace($workspace)) {
+            unset($config['runtime_upstream_tls']);
+            $config['php_socket'] = null;
+            $route->config = $config;
+
+            return;
+        }
+
+        $node = $app->node ?? $route->node;
+
+        if (! $node instanceof Node) {
+            return;
+        }
+
+        $config['runtime_upstream'] =
+            "https://orbit-ws-{$app->name}-{$workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+            $node,
+            $this->innerTlsPolicy->workspaceRouteDomain($workspace),
+        );
+        $config['php_socket'] = null;
+        $route->config = $config;
+    }
+
+    private function normalizeAppPhpRuntimeConfig(ProxyRoute $route): void
+    {
+        $app = $route->app;
+
+        if (! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
+            return;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $config['runtime_upstream'] = 'http://orbit-app-'.$app->name.':'.AppRuntimeContainerRenderer::InternalPort;
+
+        if (! $this->innerTlsPolicy->appliesToApp($app)) {
+            unset($config['runtime_upstream_tls']);
+            $config['php_socket'] = null;
+            $route->config = $config;
+
+            return;
+        }
+
+        $node = $route->node ?? $app->node;
+
+        if (! $node instanceof Node) {
+            return;
+        }
+
+        $config['runtime_upstream'] = 'https://orbit-app-'.$app->name.':'.AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+            $node,
+            $this->innerTlsPolicy->appRouteDomain($app),
+        );
+        $config['php_socket'] = null;
+        $route->config = $config;
     }
 
     public function renderIngress(ProxyRoute $route): string
@@ -183,7 +284,7 @@ final readonly class ProxyRouteRenderer
         $bind = $backendArtifact['bind'] ?? null;
         $documentRoot = $backendArtifact['document_root'] ?? null;
         $runtimeUpstream = $backendArtifact['runtime_upstream'] ?? null;
-        $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
+        $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], strict: true);
         $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Php;
         $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
 
@@ -791,39 +892,41 @@ final readonly class ProxyRouteRenderer
      */
     private function deriveRuntimeUpstreamTls(ProxyRoute $route): ?array
     {
-        $route->loadMissing('app.node', 'workspace', 'node');
+        $route->loadMissing(['app.node', 'workspace.app.node', 'node']);
 
-        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
-            if (! $this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+        $workspace = $route->workspace;
+
+        if ($route->kind === 'workspace' && $workspace instanceof Workspace) {
+            if (! $this->innerTlsPolicy->appliesToWorkspace($workspace)) {
                 return null;
             }
 
-            if (! $route->app instanceof App) {
+            $app = $workspace->app;
+
+            if (! $app instanceof App) {
                 return null;
             }
 
-            $node = $route->app->node ?? $route->node;
+            $node = $app->node;
 
-            if ($node === null) {
+            if (! $node instanceof Node) {
                 return null;
             }
 
             return $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
                 $node,
-                $this->innerTlsPolicy->workspaceRouteDomain($route->workspace),
+                $this->innerTlsPolicy->workspaceRouteDomain($workspace),
             );
         }
 
-        if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
-            $node = $route->node ?? $route->app?->node;
+        $app = $route->app;
 
-            if ($node === null) {
-                return null;
-            }
+        if ($app instanceof App && $this->innerTlsPolicy->appliesToApp($app)) {
+            $node = $route->node;
 
             return $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
                 $node,
-                $this->innerTlsPolicy->appRouteDomain($route->app),
+                $this->innerTlsPolicy->appRouteDomain($app),
             );
         }
 

@@ -106,6 +106,20 @@ it('allows proxy route suffix metadata used by doctor probes', function (): void
     ));
 });
 
+it('allows proxy runtime upstream metadata used by doctor probes', function (): void {
+    Process::fake(['*' => Process::result(output: "ok\n")]);
+    Process::preventStrayProcesses();
+
+    new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_PROXY_RUNTIME_UPSTREAM"', [
+        'metadata' => ['ORBIT_PROXY_RUNTIME_UPSTREAM' => 'http://orbit-app-docs:8080'],
+    ]);
+
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        'export ORBIT_PROXY_RUNTIME_UPSTREAM=',
+    ));
+});
+
 it('allows wg-easy database path metadata used by vpn state commands', function (): void {
     Process::fake();
 
