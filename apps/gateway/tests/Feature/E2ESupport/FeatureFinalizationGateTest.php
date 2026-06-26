@@ -296,7 +296,7 @@ it('blocks non-docs finalization when quality-check evidence is missing', functi
         - Loop outcome:
           - complete
         - Required verification:
-          - Retained topology proof: not applicable - no production PHP diff
+          - Retained topology proof: not applicable - no topology-relevant PHP diff
           - `composer quality-check`: not applicable - shell script only
         - Accepted durable updates:
           - bin/example changed repository tooling.
@@ -326,7 +326,7 @@ it('blocks non-docs finalization when quality-check evidence is missing', functi
     }
 });
 
-it('blocks production php finalization when retained topology proof is not applicable', function (): void {
+it('blocks topology-relevant php finalization when retained topology proof is not applicable', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 
@@ -335,7 +335,7 @@ it('blocks production php finalization when retained topology proof is not appli
         - Loop outcome:
           - complete
         - Required verification:
-          - Retained topology proof: not applicable - production PHP diff
+          - Retained topology proof: not applicable - topology-relevant PHP diff
           - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - apps/gateway/app/Example.php changed production behavior.
@@ -365,13 +365,56 @@ it('blocks production php finalization when retained topology proof is not appli
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('production PHP diff requires Retained topology proof');
+            ->toContain('topology-relevant PHP diff requires Retained topology proof');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
 });
 
-it('allows production php finalization with artifact-backed quality-check and retained topology proof', function (): void {
+it('allows docs app php finalization with artifact-backed quality-check and no retained topology proof', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - docs-app catalog generator PHP has no retained topology target
+          - `composer quality-check`: passed - composer quality-check
+        - Accepted durable updates:
+          - apps/docs/app/Librarian/Example.php changed docs-app catalog tooling.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'apps/docs/app/Librarian/Example.php',
+        contents: "<?php\n\ndeclare(strict_types=1);\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'quality-check',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('allows topology-relevant php finalization with artifact-backed quality-check and retained topology proof', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 

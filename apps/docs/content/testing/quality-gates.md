@@ -117,14 +117,18 @@ already have artifacts in this worktree. It does not warn about missing E2E
 lanes that were not run.
 
 Feature finalization also reads existing artifacts instead of rerunning lanes.
-The merge/cleanup gate derives the required proof from the branch diff:
-docs-only diffs need a successful `docs-lint` or broader `quality-check`
-artifact, other diffs need a successful `quality-check` artifact, and
-production PHP diffs also need `Retained topology proof` to be `passed`. The
-retained topology row must name the topology id/kind, inspected roles or nodes,
-exact command, and captured terminal/session or artifact evidence. Use
-`composer quality-gate:final-check` to review warnings for stale commits or
-slow timings.
+The merge/cleanup gate derives the required proof from the branch diff.
+Docs-only diffs need a successful `docs-lint` or broader `quality-check`
+artifact. Any non-docs diff needs a successful `quality-check` artifact.
+
+For PHP files, the hook applies one more rule. If the PHP file is outside
+`apps/docs/` and outside tests, the final packet also needs
+`Retained topology proof: passed`. PHP under `apps/docs/` is docs tooling and
+does not need retained topology proof unless the slice also changes topology
+behavior. The retained topology row must name the topology id/kind, inspected
+roles or nodes, exact command, and captured terminal/session or artifact
+evidence. Use `composer quality-gate:final-check` to review warnings for stale
+commits or slow timings.
 
 Evidence is stale when the latest artifact exceeds the configured max-age
 window or was captured for a different Git commit than the current worktree

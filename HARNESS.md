@@ -220,10 +220,12 @@ If the feature required a lane and it is blocked, the feature outcome is
 `blocked`; do not write `complete` with a deferred verification follow-up.
 Docs-only diffs can satisfy the gate with a successful `composer docs-lint` or
 broader `composer quality-check` artifact. Other diffs require successful
-`composer quality-check` artifact evidence. Production PHP diffs additionally
-require retained topology proof to be `passed`. A passed retained topology row
-names the topology id/kind, checkout roles or inspected nodes, exact command,
-and captured terminal/session or artifact evidence. Stale-commit and
+`composer quality-check` artifact evidence. Topology-relevant PHP diffs
+additionally require retained topology proof to be `passed`; docs-app tooling
+PHP under `apps/docs/` is excluded unless the slice also changes topology
+behavior. A passed retained topology row names the topology id/kind, checkout
+roles or inspected nodes, exact command, and captured terminal/session or
+artifact evidence. Stale-commit and
 timing-threshold warnings remain the job of
 `composer quality-gate:final-check` and the quality-gate triage skill.
 
@@ -500,9 +502,9 @@ honest: focused Pest, docs-lint, static checks, or PTY proof when the slice
 changes terminal behavior. Do not spend E2E on feature slices by default. The
 finalization gate derives the feature-level proof from the final
 branch diff: docs-only changes need docs-lint evidence, non-docs changes need
-quality-check evidence, and production PHP changes need retained topology proof.
-Run retained topology proof when the active slice cannot be judged without real
-topology behavior.
+quality-check evidence, and topology-relevant PHP changes need retained
+topology proof. Run retained topology proof when the active slice cannot be
+judged without real topology behavior.
 
 When retained topology proof is required for acceptance and cannot be completed,
 the feature loop halts if the blocker cannot be resolved inside the current

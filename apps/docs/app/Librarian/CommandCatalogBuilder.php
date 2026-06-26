@@ -11,6 +11,7 @@ final readonly class CommandCatalogBuilder
         private OrbitCommandDocs $docs,
         private CommandDocsRegistry $registry,
         private CommandCatalogDocsIndex $docsIndex,
+        private CommandCatalogP4MappingIndex $p4MappingIndex,
     ) {}
 
     /**
@@ -114,13 +115,7 @@ final readonly class CommandCatalogBuilder
             'docs' => $docs,
             'public_options_documented' => $this->publicOptionsDocumented($command, $docs),
             'linked_test_files' => $directory === null ? [] : $this->docsIndex->linkedTestFiles($directory),
-            'p4_mapping' => [
-                'sdk_request' => null,
-                'gateway_route' => null,
-                'gateway_controller' => null,
-                'authorization_permission' => null,
-                'response_dto' => null,
-            ],
+            'p4_mapping' => $this->p4MappingIndex->forCommand($command),
         ];
     }
 
