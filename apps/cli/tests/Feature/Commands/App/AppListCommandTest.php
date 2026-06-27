@@ -35,7 +35,8 @@ describe('app:list', function (): void {
             ->and($decoded['success'])
             ->toHaveKey('meta')
             ->and($decoded['success']['meta'])
-            ->toBe([])
+            ->toBeArray()
+            ->toBeEmpty()
             ->and($decoded['success']['data']['apps'][0]['name'])
             ->toBe('orbit-docs');
     });
