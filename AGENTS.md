@@ -15,6 +15,12 @@ For compact root-start routing, LLM agents can read the generated monorepo unit
 map at [`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json).
 It is a routing aid, not product authority.
 
+For repository searches, prefer default `rg` from the root or scoped
+`rg <pattern> <owned-path>` searches. Do not start with `find .`,
+`rg -uu`, or broad hidden-file scans from the root; they include stale
+worktrees and generated/cache artifacts that are intentionally outside the
+normal agent search surface. See [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md).
+
 ## Repository Shape
 
 - The repository root is orchestration only: root Composer scripts, `bin/`

@@ -29,6 +29,20 @@ navigation aid, not product authority.
 7. For disposable Solo agents, capture needed output, verify the artifact, then
    stop or delete the process in a separate command.
 
+## Search Route
+
+- Use default `rg` from the repository root, or scope searches to the owning
+  path from `apps/docs/content/generated/monorepo-unit-map.json`.
+- Avoid `find .`, `rg -uu`, `rg --hidden --no-ignore`, and broad glob scans
+  from the root unless the task explicitly needs ignored or generated files.
+- When ignored files are needed, name the owned path and exclusions explicitly,
+  for example `rg --hidden --glob '!/.worktrees/**' --glob '!vendor/**'
+  <pattern> <owned-path>`.
+- Treat `.worktrees/`, `.orbit/`, `vendor/`, `node_modules/`, build outputs,
+  app storage, caches, and retained artifacts as search exclusions by default.
+  Open generated artifacts only when the route calls for them, such as the
+  command catalog, monorepo unit map, or harness signal index.
+
 ## Verification Route
 
 - Docs-only contract or docs-lint work: focused docs Pest/Mago when applicable,

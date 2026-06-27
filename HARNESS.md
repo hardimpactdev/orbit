@@ -135,6 +135,42 @@ Start at the monorepo root and read in this order:
 14. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
    E2E lanes across apps/packages
 
+## Search Hygiene
+
+Searches should follow the same routing discipline as implementation work:
+start broad only across the current checkout's tracked source surface, then
+narrow to the owning app/package or generated index that answers the question.
+
+Use default `rg` from the repository root for normal discovery. It respects the
+repo ignore rules that keep stale worktrees, `.orbit/` session state, vendor
+trees, build outputs, app storage, caches, and retained artifacts out of the
+ordinary agent search path. Prefer scoped searches once the owner is known:
+
+```bash
+rg -n "<pattern>" AGENTS.md HARNESS.md apps/docs/content .agents/skills
+rg -n "<pattern>" apps/cli packages/sdk
+```
+
+Avoid `find .`, `rg -uu`, `rg --hidden --no-ignore`, broad `**/*` globbing,
+and unrestricted hidden-file scans from the repository root unless the task
+explicitly needs ignored or generated files. Those commands can traverse stale
+feature worktrees and historical artifacts, which wastes tokens and can point
+agents at code that is not part of the active checkout.
+
+When ignored files are genuinely part of the question, name both the owned path
+and the exclusions explicitly:
+
+```bash
+rg --hidden --glob '!/.worktrees/**' --glob '!/.orbit/**' \
+  --glob '!vendor/**' --glob '!node_modules/**' "<pattern>" <owned-path>
+```
+
+Generated LLM-facing artifacts are allowed when they are the intended route:
+`apps/docs/content/generated/command-catalog.json`,
+`apps/docs/content/generated/monorepo-unit-map.json`, and
+`harness-signals/index.json`. Open them deliberately instead of letting a
+catch-all search mix generated contracts with source code.
+
 Session plans and specs stay at `docs/superpowers/`. They are not product
 authority and are not the durable harness.
 
