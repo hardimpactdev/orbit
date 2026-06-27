@@ -1,6 +1,6 @@
 ---
 name: orbit-cli-development
-description: Use when creating or changing Orbit CLI commands, output contracts, or executor behavior in apps/cli.
+description: Use when working in apps/cli on Orbit Laravel Zero commands, executor behavior, JSON envelopes, prompts, flags, or operator-facing output contracts.
 ---
 
 # Orbit CLI Development
@@ -34,7 +34,7 @@ From the repo root:
 ```bash
 bin/orbit-cli-pest --compact --filter=<CommandFamily>
 bin/orbit-cli-pest --compact
-cd apps/cli && vendor/bin/pint --dirty --format agent
+cd apps/cli && vendor/bin/mago format --check
 ```
 
 CLI behavior that touches integrated topology also needs the retained ingress VM

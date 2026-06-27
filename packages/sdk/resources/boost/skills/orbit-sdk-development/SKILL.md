@@ -1,6 +1,6 @@
 ---
 name: orbit-sdk-development
-description: Use when changing the Orbit gateway API SDK, request objects, or Laravel SDK bindings in packages/sdk.
+description: Use when working in packages/sdk on Orbit gateway API request objects, Saloon connectors, Laravel SDK bindings, mocks, or client contract drift between gateway and CLI.
 ---
 
 # Orbit SDK Development
@@ -12,8 +12,8 @@ and `apps/cli`.
 ## When To Use
 
 - Editing code under `packages/sdk/src/`.
-- Adding or changing gateway API request objects, connectors, mocks, or Laravel
-  service bindings.
+- Adding or changing gateway API request objects, Saloon connectors, mocks, or
+  Laravel service bindings.
 - Aligning SDK request shapes with gateway API contracts.
 
 ## Boundaries

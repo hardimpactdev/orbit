@@ -1,6 +1,6 @@
 ---
 name: orbit-core-development
-description: Use when changing shared Orbit contracts, helpers, or cross-application primitives in packages/core.
+description: Use when working in packages/core on shared Orbit contracts, DTOs, enums, progress streaming, HTTP envelopes, security helpers, or cross-application primitives.
 ---
 
 # Orbit Core Development

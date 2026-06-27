@@ -24,6 +24,8 @@
         "spatie-laravel-php",
         "spatie-security",
         "spatie-version-control",
-        "orbit-cli-development"
+        "orbit-cli-development",
+        "orbit-docs-development",
+        "orbit-gateway-development"
     ]
 }

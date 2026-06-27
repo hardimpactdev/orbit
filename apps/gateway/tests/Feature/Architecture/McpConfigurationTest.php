@@ -96,7 +96,9 @@ it('tracks monorepo boost packages and skills in gateway boost json', function (
         ->toContain('librarian')
         ->toContain('orbit-core-development')
         ->toContain('orbit-sdk-development')
-        ->toContain('orbit-cli-development');
+        ->toContain('orbit-cli-development')
+        ->toContain('orbit-gateway-development')
+        ->toContain('orbit-docs-development');
 });
 
 it('keeps Laravel Boost installed only in the gateway app', function (): void {
@@ -124,6 +126,8 @@ it('keeps expected monorepo boost skill directories at the repo root', function 
         '.agents/skills/orbit-core-development/SKILL.md',
         '.agents/skills/orbit-sdk-development/SKILL.md',
         '.agents/skills/orbit-cli-development/SKILL.md',
+        '.agents/skills/orbit-gateway-development/SKILL.md',
+        '.agents/skills/orbit-docs-development/SKILL.md',
     ] as $skillPath) {
         expect(repo_path($skillPath))->toBeFile();
     }
@@ -272,7 +276,59 @@ it('provides first-party boost skill sources in orbit packages', function (): vo
         ->and(repo_path('packages/sdk/resources/boost/skills/orbit-sdk-development/SKILL.md'))
         ->toBeFile()
         ->and(repo_path('apps/gateway/.ai/skills/orbit-cli-development/SKILL.md'))
+        ->toBeFile()
+        ->and(repo_path('apps/gateway/.ai/skills/orbit-gateway-development/SKILL.md'))
+        ->toBeFile()
+        ->and(repo_path('apps/gateway/.ai/skills/orbit-docs-development/SKILL.md'))
         ->toBeFile();
+});
+
+it('keeps first-party boost skill descriptions routed by app and package boundary', function (): void {
+    $skills = [
+        'apps/gateway/.ai/skills/orbit-cli-development/SKILL.md' => [
+            'description: Use when working in apps/cli',
+            'Laravel Zero',
+            'JSON envelopes',
+            'prompts',
+            'executor',
+        ],
+        'apps/gateway/.ai/skills/orbit-gateway-development/SKILL.md' => [
+            'description: Use when working in apps/gateway',
+            'gateway HTTP/API',
+            'provisioning',
+            'database.sqlite',
+            'bin/orbit-gateway-pest',
+        ],
+        'apps/gateway/.ai/skills/orbit-docs-development/SKILL.md' => [
+            'description: Use when working in apps/docs',
+            'apps/docs/content',
+            'Librarian',
+            'docs-lint',
+            'command catalog',
+        ],
+        'packages/core/resources/boost/skills/orbit-core-development/SKILL.md' => [
+            'description: Use when working in packages/core',
+            'DTOs',
+            'progress streaming',
+            'HTTP envelopes',
+            'cross-application primitives',
+        ],
+        'packages/sdk/resources/boost/skills/orbit-sdk-development/SKILL.md' => [
+            'description: Use when working in packages/sdk',
+            'gateway API request objects',
+            'Saloon connectors',
+            'Laravel SDK bindings',
+            'client contract drift',
+        ],
+    ];
+
+    foreach ($skills as $skillPath => $needles) {
+        $skill = file_get_contents(repo_path($skillPath)) ?: '';
+
+        foreach ($needles as $needle) {
+            expect($skill)->toContain($needle);
+        }
+    }
 });
 
 it('keeps the project-owned orbit skill aligned with current CLI stream-json guidance and signatures', function (): void {
