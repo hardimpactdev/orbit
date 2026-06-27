@@ -1004,7 +1004,9 @@ it('keeps docs-lint artifact capture wired into the docs lint script', function 
         ->toContain('--command="composer docs-lint"')
         ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --path=domains')
         ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --path=testing')
-        ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --group=references');
+        ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --group=references')
+        ->toContain('bin/orbit-docs-artisan orbit:command-catalog --check')
+        ->toContain('bin/orbit-docs-artisan orbit:monorepo-unit-map --check');
 });
 
 it('keeps source-prepared e2e artifact capture out of provider provision scripts', function (): void {
