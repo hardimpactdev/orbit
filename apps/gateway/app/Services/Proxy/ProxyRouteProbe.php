@@ -55,7 +55,11 @@ final readonly class ProxyRouteProbe
             return new ProbeSnapshot([]);
         }
 
-        $public = $this->inspectRouteFile($route->node, $route->domain);
+        $public = $this->inspectRouteFile(
+            $route->node,
+            $route->domain,
+            runtimeUpstream: $this->runtimeUpstreamForProbe($route),
+        );
 
         if (! $this->usesIngressPlacement($route)) {
             return new ProbeSnapshot([
@@ -103,12 +107,17 @@ final readonly class ProxyRouteProbe
     /**
      * @return array<string, mixed>
      */
-    private function inspectRouteFile(Node $node, string $domain, bool $backend = false): array
-    {
+    private function inspectRouteFile(
+        Node $node,
+        string $domain,
+        bool $backend = false,
+        ?string $runtimeUpstream = null,
+    ): array {
         $script = <<<'BASH'
             set -euo pipefail
             domain="$ORBIT_PROXY_DOMAIN"
             suffix="${ORBIT_PROXY_SUFFIX:-}"
+            upstream="${ORBIT_PROXY_RUNTIME_UPSTREAM:-}"
             path="/etc/caddy/sites/${domain}${suffix}.caddy"
             exists=0
             hash=""
@@ -116,6 +125,8 @@ final readonly class ProxyRouteProbe
             key=""
             cert_exists=0
             key_exists=0
+            runtime_reachable=""
+            runtime_error=""
 
             if [ -f "$path" ]; then
                 exists=1
@@ -124,9 +135,20 @@ final readonly class ProxyRouteProbe
                 key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$path")
                 [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
                 [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+
+                if [ -n "$upstream" ]; then
+                    probe_output=$(docker exec orbit-caddy wget -S -O /dev/null -T 3 "$upstream" 2>&1 || true)
+
+                    case "$probe_output" in
+                        *HTTP/*) runtime_reachable=1 ;;
+                        *) runtime_reachable=0 ;;
+                    esac
+
+                    runtime_error=$(printf '%s' "$probe_output" | tail -n 1 | base64 | tr -d '\n')
+                fi
             fi
 
-            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists" "$runtime_reachable" "$runtime_error"
             BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
@@ -134,16 +156,21 @@ final readonly class ProxyRouteProbe
             'metadata' => [
                 'ORBIT_PROXY_DOMAIN' => $domain,
                 'ORBIT_PROXY_SUFFIX' => $backend ? '.backend' : '',
+                'ORBIT_PROXY_RUNTIME_UPSTREAM' => $runtimeUpstream ?? '',
             ],
         ]);
 
-        $parts = explode("\t", trim($result->stdout), 6);
+        $parts = explode("\t", trim($result->stdout), limit: 8);
 
-        if (count($parts) !== 6) {
+        if (count($parts) < 6) {
             return [];
         }
 
-        [$exists, $hash, $cert, $key, $certExists, $keyExists] = $parts;
+        [$exists, $hash, $cert, $key, $certExists, $keyExists, $runtimeReachable, $runtimeError] = array_pad(
+            $parts,
+            length: 8,
+            value: '',
+        );
 
         return [
             'route_exists' => $exists === '1',
@@ -152,6 +179,9 @@ final readonly class ProxyRouteProbe
             'key_path' => $key,
             'cert_exists' => $certExists === '1',
             'key_exists' => $keyExists === '1',
+            'runtime_upstream' => $runtimeUpstream,
+            'runtime_upstream_reachable' => $runtimeReachable === '' ? null : $runtimeReachable === '1',
+            'runtime_probe_error' => $runtimeError === '' ? null : base64_decode($runtimeError, true),
         ];
     }
 
@@ -517,6 +547,34 @@ final readonly class ProxyRouteProbe
     }
 
     /**
+     * @param  array<string, mixed>  $observed
+     * @return list<DriftEntry>
+     */
+    private function checkRuntimeUpstreamReality(ProxyRoute $route, array $observed): array
+    {
+        if (! $this->shouldProbeRuntimeUpstream($route)) {
+            return [];
+        }
+
+        if (($observed['runtime_upstream_reachable'] ?? null) !== false) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.runtime_unreachable',
+                kind: DriftKind::Divergent,
+                summary: "Proxy route {$route->domain} cannot reach its runtime upstream from orbit-caddy.",
+                detail: [
+                    'runtime_upstream' => $observed['runtime_upstream'] ?? $this->runtimeUpstreamForProbe($route),
+                    'probe_error' => $observed['runtime_probe_error'] ?? null,
+                ],
+            ),
+        ];
+    }
+
+    /**
      * @return list<DriftEntry>
      */
     private function checkOwnerEligibility(ProxyRoute $route): array
@@ -699,7 +757,7 @@ final readonly class ProxyRouteProbe
             ];
         }
 
-        return [];
+        return $this->checkRuntimeUpstreamReality($route, $observed);
     }
 
     /**
@@ -1096,12 +1154,16 @@ final readonly class ProxyRouteProbe
 
     private function expectedSourceHash(ProxyRoute $route): string
     {
-        if ($this->usesIngressPlacement($route) || ! in_array($route->kind, ['app', 'workspace'], true)) {
+        if ($this->usesIngressPlacement($route) || ! in_array($route->kind, ['app', 'workspace'], strict: true)) {
             return is_string($route->source_hash) ? $route->source_hash : '';
         }
 
         try {
-            return $this->renderer()->sourceHash($route);
+            $route->loadMissing(['app.node', 'workspace.app.node', 'node']);
+            $expected = $route->replicate();
+            $expected->setRelations($route->getRelations());
+
+            return $this->renderer()->managedPhpRuntimeIntentSourceHash($expected);
         } catch (Throwable) {
             return is_string($route->source_hash) ? $route->source_hash : '';
         }
@@ -1110,5 +1172,25 @@ final readonly class ProxyRouteProbe
     private function renderer(): ProxyRouteRenderer
     {
         return $this->renderer ?? app(ProxyRouteRenderer::class);
+    }
+
+    private function shouldProbeRuntimeUpstream(ProxyRoute $route): bool
+    {
+        return $this->runtimeUpstreamForProbe($route) !== null;
+    }
+
+    private function runtimeUpstreamForProbe(ProxyRoute $route): ?string
+    {
+        if ($this->usesIngressPlacement($route) || ! in_array($route->kind, ['app', 'workspace'], strict: true)) {
+            return null;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+
+        if (! array_key_exists('runtime_upstream', $config) || ! is_string($config['runtime_upstream'])) {
+            return null;
+        }
+
+        return $config['runtime_upstream'] !== '' ? $config['runtime_upstream'] : null;
     }
 }

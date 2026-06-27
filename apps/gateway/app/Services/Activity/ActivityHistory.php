@@ -15,11 +15,18 @@ use Spatie\Activitylog\Models\Activity;
 final class ActivityHistory
 {
     /**
-     * @param  array{app: string|null, node: string|null, effect: string|null, correlation: string|null, limit: int}  $filters
+     * @var list<string>
+     */
+    private const array INTERNAL_LOG_NAMES = [
+        'remote_shell',
+    ];
+
+    /**
+     * @param  array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool, limit: int}  $filters
      * @return array{
      *     activities: list<array<string, mixed>>,
      *     meta: array{
-     *         filters: array{app: string|null, node: string|null, effect: string|null, correlation: string|null},
+     *         filters: array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool},
      *         limit: int,
      *         count: int,
      *         has_more: bool
@@ -28,25 +35,30 @@ final class ActivityHistory
      */
     public function list(array $filters): array
     {
-        $query = Activity::query()
-            ->with(['causer', 'subject'])
-            ->when($filters['effect'] !== null, fn (Builder $query): Builder => $query->where(
-                'properties->type',
-                $filters['effect'],
-            ))
-            ->when($filters['correlation'] !== null, fn (Builder $query): Builder => $query->where(
-                'batch_uuid',
-                $filters['correlation'],
-            ))
-            ->when($filters['node'] !== null, fn (Builder $query): Builder => $this->applyNodeFilter(
-                $query,
-                $filters['node'],
-            ))
-            ->when($filters['app'] !== null, fn (Builder $query): Builder => $this->applyAppFilter(
-                $query,
-                $filters['app'],
-            ))
-            ->orderByDesc('id');
+        /** @var Builder<Activity> $query */
+        $query = Activity::query()->with(['causer', 'subject']);
+
+        if (! $filters['include_internal']) {
+            $query = $this->applyInternalVisibilityFilter($query);
+        }
+
+        if ($filters['effect'] !== null) {
+            $query->where('properties->type', $filters['effect']);
+        }
+
+        if ($filters['correlation'] !== null) {
+            $query->where('batch_uuid', $filters['correlation']);
+        }
+
+        if ($filters['node'] !== null) {
+            $query = $this->applyNodeFilter($query, $filters['node']);
+        }
+
+        if ($filters['app'] !== null) {
+            $query = $this->applyAppFilter($query, $filters['app']);
+        }
+
+        $query->orderByDesc('id');
 
         $rows = $query
             ->limit($filters['limit'] + 1)
@@ -65,6 +77,7 @@ final class ActivityHistory
                     'node' => $filters['node'],
                     'effect' => $filters['effect'],
                     'correlation' => $filters['correlation'],
+                    'include_internal' => $filters['include_internal'],
                 ],
                 'limit' => $filters['limit'],
                 'count' => $activities->count(),
@@ -124,6 +137,27 @@ final class ActivityHistory
                 'effect' => $related->properties->get('type'),
             ])
             ->all();
+    }
+
+    /**
+     * @param  Builder<Activity>  $query
+     * @return Builder<Activity>
+     */
+    private function applyInternalVisibilityFilter(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('log_name')
+                        ->orWhereNotIn('log_name', self::INTERNAL_LOG_NAMES);
+                })
+                ->where(function (Builder $query): void {
+                    $query
+                        ->whereNull('properties->lane')
+                        ->orWhere('properties->lane', '<>', 'internal');
+                });
+        });
     }
 
     /**

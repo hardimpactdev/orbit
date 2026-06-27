@@ -21,6 +21,7 @@ final class ActivityListCommand extends GatewayCommand
         {--node= : Filter by node}
         {--effect= : Filter by effect (read|write|destructive)}
         {--correlation= : Filter by correlation UUID}
+        {--include-internal : Include internal backend transport activity}
         {--limit=25 : Max rows to return}
         {--json}';
 
@@ -135,7 +136,7 @@ final class ActivityListCommand extends GatewayCommand
     }
 
     /**
-     * @return array{app: string|null, node: string|null, effect: string|null, correlation: string|null, limit: int}|null
+     * @return array{app: string|null, node: string|null, effect: string|null, correlation: string|null, include_internal: bool|null, limit: int}|null
      */
     private function validatedFilters(): ?array
     {
@@ -188,6 +189,7 @@ final class ActivityListCommand extends GatewayCommand
             'node' => $node,
             'effect' => $effect,
             'correlation' => $correlation,
+            'include_internal' => $this->option('include-internal') === true ? true : null,
             'limit' => $normalizedLimit,
         ];
     }

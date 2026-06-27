@@ -12,7 +12,7 @@ ties entries from the same operation together.
 ## Usage
 
 ```bash
-orbit activity:list [--app=<app>] [--node=<node>] [--effect=<effect>] [--correlation=<uuid>] [--limit=<count>] [--json]
+orbit activity:list [--app=<app>] [--node=<node>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
 ```
 
 ## Examples
@@ -24,6 +24,7 @@ orbit activity:list --node=app-1 --limit=50
 orbit activity:list --effect=destructive
 orbit activity:list --effect=destructive --node=app-1
 orbit activity:list --correlation=9f7307e8-38b2-45b8-9b94-cfc341456b85
+orbit activity:list --include-internal
 orbit activity:list --json
 ```
 
@@ -33,6 +34,9 @@ orbit activity:list --json
 - `--node`: Limit results to activity associated with the recorded node name.
 - `--effect`: Limit results to one effect: `read`, `write`, or `destructive`.
 - `--correlation`: Limit results to one correlated operation.
+- `--include-internal`: Include internal backend transport activity such as
+  remote shell audit rows. Hidden by default by internal lane/channel markers,
+  not by effect alone.
 - `--limit`: Maximum number of entries to return. Defaults to `25`.
 - `--json`: Output JSON.
 

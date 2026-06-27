@@ -15,6 +15,7 @@
                 "node",
                 "effect",
                 "correlation",
+                "include-internal",
                 "limit",
                 "json"
             ],

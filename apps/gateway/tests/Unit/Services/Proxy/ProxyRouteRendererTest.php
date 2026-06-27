@@ -935,6 +935,7 @@ describe('ProxyRouteRenderer', function (): void {
         $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'document_root' => 'public',
+            'runtime_config' => ['proxy_transport' => 'https'],
         ]);
         $route = ProxyRoute::factory()
             ->for($node, 'node')
@@ -959,7 +960,7 @@ describe('ProxyRouteRenderer', function (): void {
                 ],
             ]);
 
-        $content = new ProxyRouteRenderer()->render($route);
+        $content = new ProxyRouteRenderer()->renderManagedPhpRuntimeIntent($route);
 
         expect($content)
             ->toContain('docs.test {')

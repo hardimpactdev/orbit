@@ -5,12 +5,14 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -56,7 +58,7 @@ describe('ProxyRouteProbe interface', function (): void {
         expect($probe->key())->toBe('proxy')->and($probe->label())->toBe('Proxy');
     });
 
-    it('returns an empty foundation snapshot before live backend probing is added', function (): void {
+    it('returns an empty snapshot when route context is not probeable', function (): void {
         $route = new ProxyRoute(['domain' => 'docs.test']);
 
         expect(
@@ -715,6 +717,56 @@ describe('proxy backend and TLS reality', function (): void {
             ]);
     });
 
+    it('detects unreachable runtime upstreams behind otherwise expected app routes', function (): void {
+        $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'document_root' => 'public',
+            'runtime_config' => ['proxy_transport' => 'http'],
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                    ],
+                ],
+            ]);
+        $expectedHash = new ProxyRouteRenderer()->sourceHash($route);
+        $route->forceFill(['source_hash' => $expectedHash])->save();
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
+            'docs.test' => [
+                'route_exists' => true,
+                'route_hash' => $expectedHash,
+                'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+                'runtime_upstream' => 'http://orbit-app-docs:8080',
+                'runtime_upstream_reachable' => false,
+                'runtime_probe_error' => 'wget: bad address orbit-app-docs',
+            ],
+        ]));
+
+        expect(proxyProbeIssue($drift, key: 'proxy.runtime_unreachable')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, key: 'proxy.runtime_unreachable')?->detail)
+            ->toMatchArray([
+                'runtime_upstream' => 'http://orbit-app-docs:8080',
+                'probe_error' => 'wget: bad address orbit-app-docs',
+            ]);
+    });
+
     it('accepts default app-dev PHP route artifacts that use HTTP runtime upstream intent', function (): void {
         $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
         $app = App::factory()->for($node, 'node')->create([
@@ -749,6 +801,7 @@ describe('proxy backend and TLS reality', function (): void {
                 'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
                 'cert_exists' => true,
                 'key_exists' => true,
+                'runtime_upstream_reachable' => true,
             ],
         ]));
 
@@ -759,6 +812,80 @@ describe('proxy backend and TLS reality', function (): void {
             ->and($issue)
             ->toBeNull();
     });
+
+    it(
+        'reports proxy.route_mismatch when an app-dev route still carries stale inner-TLS upstream config but the app now opts into HTTP runtime proxy transport',
+        function (): void {
+            $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
+            $app = App::factory()->for($node, 'node')->create([
+                'name' => 'nckrtl',
+                'runtime' => AppRuntimeKind::Php,
+                'document_root' => 'public',
+                'runtime_config' => ['proxy_transport' => 'http'],
+            ]);
+            $route = ProxyRoute::factory()
+                ->for($node, 'node')
+                ->for($app, 'app')
+                ->create([
+                    'domain' => 'nckrtl.test',
+                    'owner_type' => 'app',
+                    'kind' => 'app',
+                    'config' => [
+                        'document_root' => '/home/nckrtl/apps/nckrtl/public',
+                        'runtime_upstream' => 'https://orbit-app-nckrtl:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort,
+                        'runtime_upstream_tls' => [
+                            'trusted_by_gateway_ca' => true,
+                            'ca_path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                            'server_name' => 'nckrtl.test',
+                        ],
+                        'php_socket' => null,
+                        'tls' => [
+                            'cert_path' => '/home/nckrtl/.config/orbit/certs/nckrtl.test.crt',
+                            'key_path' => '/home/nckrtl/.config/orbit/certs/nckrtl.test.key',
+                        ],
+                    ],
+                ]);
+
+            $renderer = new ProxyRouteRenderer;
+            $staleInnerTlsCaddy = $renderer->render($route);
+            $staleInnerTlsHash = hash('sha256', $staleInnerTlsCaddy);
+            $route->forceFill(['source_hash' => $staleInnerTlsHash])->save();
+
+            expect($staleInnerTlsCaddy)
+                ->toContain('reverse_proxy https://orbit-app-nckrtl:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
+                ->and($staleInnerTlsCaddy)
+                ->toContain('tls_trust_pool file '.AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath)
+                ->and($route->config['runtime_upstream'] ?? null)
+                ->toStartWith('https://');
+
+            $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
+                'nckrtl.test' => [
+                    'route_exists' => true,
+                    'route_hash' => $staleInnerTlsHash,
+                    'cert_path' => '/home/nckrtl/.config/orbit/certs/nckrtl.test.crt',
+                    'key_path' => '/home/nckrtl/.config/orbit/certs/nckrtl.test.key',
+                    'cert_exists' => true,
+                    'key_exists' => true,
+                ],
+            ]));
+
+            $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
+            $expectedHash = $renderer->managedPhpRuntimeIntentSourceHash($route);
+            $expectedCaddy = $renderer->renderManagedPhpRuntimeIntent($route);
+
+            expect($issue?->kind)
+                ->toBe(DriftKind::Divergent)
+                ->and($issue?->detail['expected_hash'] ?? null)
+                ->toBe($expectedHash)
+                ->and($issue?->detail['observed_hash'] ?? null)
+                ->toBe($staleInnerTlsHash)
+                ->and($expectedHash)
+                ->not->toBe($staleInnerTlsHash)->and($expectedCaddy)->toContain(
+                    'reverse_proxy http://orbit-app-nckrtl:8080',
+                )->and($expectedCaddy)
+                ->not->toContain('tls_trust_pool file '.AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath);
+        },
+    );
 
     it('detects missing Orbit-managed TLS material', function (): void {
         $node = createTestAppHostNode();

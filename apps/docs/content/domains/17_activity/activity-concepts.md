@@ -161,6 +161,17 @@ These rules govern which activity rows a caller may read.
 - **Activity visibility:** Gateway-owned authorization filter that controls
   which activity rows and correlated entries a caller may read. Visibility
   is computed against the caller's WireGuard-resolved node identity.
+- **Internal activity visibility:** Backend transport audit rows such as remote
+  shell execution history are durable but hidden from default `activity:list`
+  output. Default filtering uses internal lane, channel, or event markers such
+  as `properties.lane = internal` and the `remote_shell` activity channel, not
+  effect alone. Operators inspect internal rows with
+  `activity:list --include-internal` or the gateway `include_internal=true`
+  query parameter. Internal rows still use the public effect vocabulary
+  (`read`, `write`, `destructive`). Remote shell audit records a conservative
+  `write` effect because execution may mutate node state, and carries separate
+  backend classification fields such as `lane = internal` and
+  `category = remote_execution` without exposing raw scripts, stdin, or stdout.
 - **Filter denial versus empty:** When a caller filters by an entity it
   cannot see, the gateway returns an authorization failure rather than an
   empty result. This prevents leaking the existence of hidden activity

@@ -709,6 +709,7 @@ Source: [Activity Concepts](domains/17_activity/activity-concepts.md).
 - **Loggable emission**
 - **Logging failure handling**
 - **Activity visibility**
+- **Internal activity visibility**
 - **Filter denial versus empty**
 - **Activity-domain boundaries**
 - **Activity is not metrics**

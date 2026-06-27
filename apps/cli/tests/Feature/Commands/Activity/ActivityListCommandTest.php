@@ -21,6 +21,48 @@ describe('activity:list', function (): void {
             ->toHaveKey('data');
     });
 
+    it('forwards include-internal to the gateway when requested', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'activities' => [
+                [
+                    'id' => 99,
+                    'effect' => 'write',
+                    'type' => 'remote_shell.run',
+                ],
+            ],
+        ], [
+            'filters' => [
+                'include_internal' => true,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'activity:list', [
+            '--include-internal' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return (
+                $request->method() === 'GET'
+                && str_contains($url, '/api/activity')
+                && str_contains($url, 'include_internal=1')
+            );
+        });
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['activities'][0]['type'])
+            ->toBe('remote_shell.run')
+            ->and($decoded['success']['data']['activities'][0]['effect'])
+            ->toBe('write')
+            ->and($decoded['success']['meta']['filters']['include_internal'])
+            ->toBeTrue();
+    });
+
     it('forwards filters and preserves gateway metadata in JSON mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'activities' => [
