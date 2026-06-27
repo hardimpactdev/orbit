@@ -197,11 +197,11 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Doctor/ToolsFamilyDoctorContractTest.php` | Tools-family dispatch, probe-layer selection, tool issue codes, tool fix map, tool adopt map, denied fix/adopt cases, and scope filtering as it affects tool probes. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for tool family scope, tool drift reporting, and restore behavior. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php` | In-memory tool probe diff behavior (scope below). |
-| `apps/gateway/tests/E2E/Read/ToolsDoctorTest.php` | Real read-only `doctor --family=tool --json` against nodes with managed and observational tool rows. |
-| `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --restore` repair of safe managed tool drift. |
-| `apps/gateway/tests/E2E/Ephemeral/ToolsDoctorAdoptTest.php` | Real `doctor --family=tool --adopt` for compatible selected observed tool adoption. |
+| `apps/e2e/tests/Feature/Commands/Ephemeral/ToolsDoctorFixTest.php` | Real `doctor --family=tool --restore` repair of safe managed tool drift. |
+
+No current E2E test is mapped for tool-family read-only or adopt coverage.
 
 `ToolsProbeTest` covers registry configuration, node eligibility, capability
 presence, version/configuration/credential drift, and adoption

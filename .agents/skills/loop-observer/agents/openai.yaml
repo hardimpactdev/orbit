@@ -1,0 +1,4 @@
+interface:
+  display_name: "Loop Observer"
+  short_description: "Measure LLM loop friction live"
+  default_prompt: "Use $loop-observer while another agent implements a feature through implementing-features; stay read-only and report friction."

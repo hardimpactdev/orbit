@@ -151,11 +151,11 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Doctor/WorkspacesFamilyDoctorContractTest.php` | Workspaces-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, related-family handoff, and scope filtering. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for workspace family scope and workspace drift reporting. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspacesProbeTest.php` | In-memory workspace probe diff behavior; see detail below. |
-| `apps/gateway/tests/E2E/Read/WorkspacesDoctorTest.php` | Real read-only `doctor --family=workspace --json` against registered workspaces. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorFixTest.php` | Real `doctor --family=workspace --restore` repair of safe workspace runtime drift. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspacesDoctorAdoptTest.php` | Real `doctor --family=workspace --adopt` for compatible selected workspace path adoption and supported runtime configuration adoption. |
+| `apps/e2e/tests/Feature/Commands/Ephemeral/WorkspacesDoctorTest.php` | Real workspace doctor coverage against registered workspaces. |
+
+No current E2E test is mapped for workspace-family fix or adopt coverage.
 
 `WorkspacesProbeTest.php` covers registry configuration, parent app eligibility,
 source path, workspace path policy, PHP runtime, runtime container configuration,

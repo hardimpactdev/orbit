@@ -1,0 +1,700 @@
+{
+    "schema_version": 1,
+    "generated_from": "harness-signals/YYYY-*.md",
+    "entry_count": 29,
+    "entries": [
+        {
+            "path": "harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md",
+            "title": "CLI UX Needs PTY Analysis Before Human Review",
+            "status": "recurring",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/skills/cli-output-pty-capture/SKILL.md",
+                ".agents/skills/implementing-features/SKILL.md",
+                ".agents/review-personas/cli-command.md"
+            ],
+            "guardrail_change": "pending loop-hardening-session-guardrails commit",
+            "related_signals": [
+                "harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "cli",
+                "pty",
+                "cadence",
+                "terminal-ux",
+                "retained-vm",
+                "review"
+            ],
+            "signal_summary": "Agents repeatedly claimed terminal UX work was complete before proving the real TTY behavior. Human review then found issues that timed PTY evidence should have caught first: stale runtime binaries, weak glyph-only checks, missing...",
+            "reappearance_check": "If a future CLI report asks the user to inspect human output without prior PTY artifact analysis, keep this record `recurring` and tighten the CLI reviewer report template or implementation skill guidance. Also keep it `recurring` if..."
+        },
+        {
+            "path": "harness-signals/2026-06-23-docs-librarian-persona-needed.md",
+            "title": "Docs Librarian Persona Needed",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                ".agents/review-personas/docs-librarian.md",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current docs/librarian slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-review-scope-changed-files.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "documentation",
+                "librarian",
+                "review-persona",
+                "claude"
+            ],
+            "signal_summary": "Orbit feature work often starts with documentation alignment, and the user already uses Claude for valuable docs-drift analysis. The harness needed a focused docs/librarian reviewer and a documenter-worker path without turning every docs...",
+            "reappearance_check": "If documentation alignment is skipped, or if code proceeds from an unstable docs contract, mark this record `recurring` and tighten the feature workflow gate."
+        },
+        {
+            "path": "harness-signals/2026-06-23-e2e-substrate-failure-triage.md",
+            "title": "E2E Substrate Failures Need Triage Before Code Blame",
+            "status": "guarded",
+            "signal_type": "e2e-failure",
+            "guardrail_target": [
+                ".agents/skills/implementing-features/SKILL.md",
+                "HARNESS.md"
+            ],
+            "guardrail_change": "existing E2E readiness guidance and current root routing",
+            "related_signals": [],
+            "superseded_by": null,
+            "tags": [
+                "e2e",
+                "incus",
+                "docker",
+                "provider-pool"
+            ],
+            "signal_summary": "Historical E2E runs exposed substrate failures that looked like product failures at first glance: unavailable Docker capacity, Incus provider setup, SSH/auth drift, missing bootstrapped dependencies, or shared lease-pool waits.",
+            "reappearance_check": "If agents still misclassify substrate failures, move this from documentation into Slice 8 by adding agent-native failure hints to the E2E preflight or lane failure output."
+        },
+        {
+            "path": "harness-signals/2026-06-23-ephemeral-signals-lose-recurrence-context.md",
+            "title": "Ephemeral Signals Lose Recurrence Context",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                "harness-signals/",
+                "LOOP.md",
+                "HARNESS_SIGNALS.md",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current harness signal ledger slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-guardrail-target-terminology.md",
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "signal-ledger",
+                "compound-engineering",
+                "recurrence"
+            ],
+            "signal_summary": "The user pointed out that signals should not all be ephemeral. Across ten worktrees, recurring signals are useful evidence: they show whether a guardrail worked, whether the same issue is reappearing, and whether the guardrail needs to...",
+            "reappearance_check": "If agents keep reporting signals only in final prose without adding or updating records, make signal-ledger checks part of a reviewer persona or static docs check."
+        },
+        {
+            "path": "harness-signals/2026-06-23-guardrail-target-terminology.md",
+            "title": "Guardrail Target Terminology Was Clearer Than Sink",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                "LOOP.md",
+                "HARNESS_SIGNALS.md"
+            ],
+            "guardrail_change": "3eecf1c4",
+            "related_signals": [],
+            "superseded_by": null,
+            "tags": [
+                "terminology",
+                "harness-signals",
+                "loop-engineering"
+            ],
+            "signal_summary": "The initial feedback-loop docs used \"sink\" as the destination for a distilled signal. The user pointed out that loop engineering is about creating guardrails, and that \"guardrail target\" better communicates both guidance and prevention.",
+            "reappearance_check": "If \"sink\" reappears in harness docs, treat it as terminology drift and replace it unless the context is unrelated to the feedback-loop model."
+        },
+        {
+            "path": "harness-signals/2026-06-23-handoff-needs-next-step.md",
+            "title": "Handoff Needs Next Step",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current handoff guardrail slice",
+            "related_signals": [],
+            "superseded_by": null,
+            "tags": [
+                "handoff",
+                "reporting",
+                "loop-engineering"
+            ],
+            "signal_summary": "The user pointed out that completion reports should include the next slice or next concrete step. The orchestrator should not make the user ask what comes after a finished loop-engineering slice.",
+            "reappearance_check": "If a future completion report omits the next slice or next concrete step, mark this record `recurring` and tighten the relevant report template or reviewer persona."
+        },
+        {
+            "path": "harness-signals/2026-06-23-json-envelope-assumptions.md",
+            "title": "JSON Envelope Assumptions Hide Real Command Results",
+            "status": "guarded",
+            "signal_type": "command-contract",
+            "guardrail_target": [
+                ".agents/review-personas/cli-command.md"
+            ],
+            "guardrail_change": "current CLI reviewer persona slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "cli",
+                "json",
+                "command-contract",
+                "reviewer-persona"
+            ],
+            "signal_summary": "Agents repeatedly risked reading command JSON as a flat payload when important results were nested under fields such as `success.data.*`. That can make a passing command look incomplete or hide the exact node, version, or activity...",
+            "reappearance_check": "If this affects another command implementation or release report, mark this record `recurring`, add the command and result shape here, and consider a deterministic command-contract test for the affected command."
+        },
+        {
+            "path": "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md",
+            "title": "Manual Loop Was Not Wired Into Feature Execution",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                ".agents/skills/implementing-features/SKILL.md",
+                "HARNESS.md",
+                "LOOP.md.example",
+                "HARNESS_SIGNALS.md",
+                ".agents/review-personas/post-feature-distillation.md",
+                ".codex/hooks.json",
+                ".claude/settings.json",
+                "bin/orbit-codex-pre-tool-use-hook"
+            ],
+            "guardrail_change": "38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; loop-hardening-session-guardrails; pending pre-merge-finalization-hook commit",
+            "related_signals": [],
+            "superseded_by": null,
+            "tags": [
+                "implementing-features",
+                "workflow",
+                "loop-engineering"
+            ],
+            "signal_summary": "The root loop docs were useful, but a new feature implementation could still skip them because `.agents/skills/implementing-features/SKILL.md` did not yet require reading or reporting harness signals. The same pattern reappeared after...",
+            "reappearance_check": "If future implementation reports omit durable signal triage or the post-feature session review summary, keep this record `recurring` and first verify whether `bin/orbit-feature-finalization-check` was run before merge or cleanup. Treat..."
+        },
+        {
+            "path": "harness-signals/2026-06-23-release-boundaries-require-explicit-approval.md",
+            "title": "Release Boundaries Require Explicit Approval",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                "release workflow"
+            ],
+            "guardrail_change": "current root goal contract and release routing row",
+            "related_signals": [
+                "harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "release",
+                "approval-boundary",
+                "live-node"
+            ],
+            "signal_summary": "Release work can slide from candidate verification into merge, push, tag, publish, or live fleet mutation if the approval boundary is not written down before work starts.",
+            "reappearance_check": "If release work again crosses into unapproved merge, tag, publish, or live mutation, mark this record `recurring` and tighten the release skill itself."
+        },
+        {
+            "path": "harness-signals/2026-06-23-review-persona-needs-workflow-hook.md",
+            "title": "Review Persona Needs Workflow Hook",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current reviewer-persona initiation slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-json-envelope-assumptions.md",
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "reviewer-persona",
+                "implementing-features",
+                "workflow"
+            ],
+            "signal_summary": "The first CLI reviewer persona existed and was discoverable through root routing, but the implementation workflow did not yet explicitly initiate it. That made the persona too passive: future agents could skip it unless they manually...",
+            "reappearance_check": "If a future implementation skips an applicable reviewer persona, mark this record `recurring` and move the persona invocation into a stricter pre-commit check or reviewer gate."
+        },
+        {
+            "path": "harness-signals/2026-06-23-review-scope-changed-files.md",
+            "title": "Routine Review Scope Is Changed Files",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/review-personas/docs-librarian.md"
+            ],
+            "guardrail_change": "current review-scope slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-solo-role-matrix-needed.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "review",
+                "scope",
+                "documentation",
+                "librarian"
+            ],
+            "signal_summary": "The user clarified that routine review should inspect changed files and cited evidence, not constantly review the entire project. Project-wide patterns are context for judging the diff, while full audits are separate tasks.",
+            "reappearance_check": "If a routine reviewer expands into a broad project audit without the user asking for one, mark this record `recurring` and add the changed-files rule to the specific reviewer persona that drifted."
+        },
+        {
+            "path": "harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md",
+            "title": "Runtime Proof Is Different From Repo Proof",
+            "status": "recurring",
+            "signal_type": "live-node",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/skills/implementing-features/SKILL.md",
+                ".agents/review-personas/cli-command.md",
+                "release workflow"
+            ],
+            "guardrail_change": "current root routing and existing CLI retained-VM gate; source-launcher proof tightened in doctor-issue-resource-labels",
+            "related_signals": [],
+            "superseded_by": null,
+            "tags": [
+                "live-node",
+                "runtime-user",
+                "release-candidate",
+                "cli"
+            ],
+            "signal_summary": "Several Orbit fixes were correct in the repository but still needed proof from the installed runtime surface: the actual launcher path, runtime user, retained VM, live gateway, or deployed node. Static tests alone did not prove that the...",
+            "reappearance_check": "If an implementation report claims completion from repo tests while the bug is reported on a runtime surface, if retained VM proof does not name the launcher path, or if human-renderer proof uses only host-wrapped one-shot `incus exec`..."
+        },
+        {
+            "path": "harness-signals/2026-06-23-signal-ledger-needs-curation.md",
+            "title": "Signal Ledger Needs Curation",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                "harness-signals/README.md",
+                "harness-signals/_template.md",
+                "LOOP.md",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current signal curation slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-ephemeral-signals-lose-recurrence-context.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "signal-ledger",
+                "curation",
+                "compound-engineering"
+            ],
+            "signal_summary": "The user pointed out that durable signals can grow without bound. If old or overlapping signals stay in the ledger, they make feature development harder by adding noise and stale guidance.",
+            "reappearance_check": "If the ledger becomes noisy again, run a focused curation pass over the matching records. If that keeps happening, add a review-persona check or lightweight script that flags stale, redundant, or long-unreviewed records."
+        },
+        {
+            "path": "harness-signals/2026-06-23-solo-role-matrix-needed.md",
+            "title": "Solo Role Matrix Needed",
+            "status": "guarded",
+            "signal_type": "review-comment",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current Solo role matrix slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-review-persona-needs-workflow-hook.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "solo",
+                "roles",
+                "orchestration",
+                "mini"
+            ],
+            "signal_summary": "The user clarified that Orbit's harness should use Solo intentionally: the feature owner can run in any capable LLM surface, including Codex CLI, the Codex app, Claude, or another app. Spawned subagents and retained verification...",
+            "reappearance_check": "If future slices spawn workers without clear ownership, treat `mini` as shared mutable capacity, or imply that feature orchestration must happen in Solo or in one specific LLM app, mark this record `recurring` and tighten the worker..."
+        },
+        {
+            "path": "harness-signals/2026-06-23-worker-commit-boundary.md",
+            "title": "Worker Commit Boundary",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "this commit",
+            "related_signals": [
+                "harness-signals/2026-06-23-solo-role-matrix-needed.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "solo",
+                "worker-boundary",
+                "commit",
+                "implementation-skill"
+            ],
+            "signal_summary": "A Solo implementation worker created the feature commit before the feature owner finished independent review and broad verification. The commit stayed on the feature branch and did not merge or push, so repo state remained recoverable...",
+            "reappearance_check": "If a worker commits again without an explicit feature-owner handoff, mark this record `recurring` and tighten the worker prompt or Solo dispatch wrapper rather than treating it as a one-off correction."
+        },
+        {
+            "path": "harness-signals/2026-06-23-worker-first-diff-checkpoint.md",
+            "title": "Worker First Diff Checkpoint",
+            "status": "recurring",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current worktree",
+            "related_signals": [
+                "harness-signals/2026-06-23-solo-role-matrix-needed.md",
+                "harness-signals/2026-06-23-worker-commit-boundary.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "solo",
+                "worker-boundary",
+                "implementation-skill",
+                "discovery"
+            ],
+            "signal_summary": "A Solo Codex implementation worker received a narrow worktree, ownership set, TDD instruction, and verification contract for the quality-gate final-check slice. It read the expected guidance, then continued broad discovery and did not...",
+            "reappearance_check": "If a future worker with a clear owned slice keeps searching without producing a first diff or explicit missing-context blocker after one correction, do not keep prompting. Stand down the worker and require a timed test-only..."
+        },
+        {
+            "path": "harness-signals/2026-06-23-worktree-target-before-editing.md",
+            "title": "Worktree Target Must Be Confirmed Before Editing",
+            "status": "recurring",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                "LOOP.md.example",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "current root routing and loop-state slice",
+            "related_signals": [
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "worktree",
+                "ownership",
+                "implementation"
+            ],
+            "signal_summary": "Historic Orbit sessions show that agents can inspect the right worktree but still edit from the wrong checkout, or report from `main` while the reviewable work is in `.worktrees/<branch>`.",
+            "reappearance_check": "If this happens again after the hard pre-edit check, tighten the worker prompt template further or add a small wrapper command for worktree-scoped Solo agent launches."
+        },
+        {
+            "path": "harness-signals/2026-06-24-bounded-reviewer-verdict-needed.md",
+            "title": "Bounded Reviewer Verdict Needed",
+            "status": "recurring",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "quality-e2e-lane-timing-baseline",
+            "related_signals": [
+                "harness-signals/2026-06-23-review-persona-needs-workflow-hook.md",
+                "harness-signals/2026-06-23-worker-first-diff-checkpoint.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "solo",
+                "review",
+                "claude",
+                "quality-gate",
+                "timing"
+            ],
+            "signal_summary": "A Claude review agent was required for a quality-gate timing iteration. The first Claude reviewer inspected the changed diff and related test body, then spent more than a minute reasoning without returning a findings-first verdict. A...",
+            "reappearance_check": "If a future required reviewer takes too long on a small changed-files-only review, first distinguish active reading/generation from idle or waiting state, then follow the skill guardrail. If exact diff commands still do not keep reviews..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-cli-pest-parallel-bootstrap-blocker.md",
+            "title": "CLI Pest Parallel Bootstrap Blocker",
+            "status": "guarded",
+            "signal_type": "failed-check",
+            "guardrail_target": [
+                "bin/orbit-cli-pest-quality",
+                "bin/quality-check.sh",
+                "apps/docs/content/testing/quality-gates.md"
+            ],
+            "guardrail_change": "quality-e2e-lane-timing-baseline",
+            "related_signals": [],
+            "superseded_by": null,
+            "tags": [
+                "quality-gate",
+                "cli",
+                "pest",
+                "paratest",
+                "timing"
+            ],
+            "signal_summary": "While optimizing quality-gate timings, the CLI Pest lane remained the largest serial Pest lane. A direct attempt to run it through Pest parallelization failed before tests started: ```bash bin/orbit-cli-pest --exclude-group=slow...",
+            "reappearance_check": "If a future agent tries to reduce `cli_pest` by adding `--parallel`, first solve the CLI ParaTest bootstrap failure in a dedicated slice, then prove full-suite runtime and exit-code behavior. Do not wire `--parallel` into..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-codex-hook-best-effort-finalization-check.md",
+            "title": "Codex Hook Best-Effort Finalization Check",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                "AGENTS.md",
+                ".agents/skills/implementing-features/SKILL.md",
+                ".codex/hooks.json",
+                "bin/orbit-codex-pre-tool-use-hook",
+                "bin/orbit-feature-finalization-check"
+            ],
+            "guardrail_change": "explicit finalization gate and Codex hook dogfood hardening",
+            "related_signals": [
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "finalization",
+                "codex-hook",
+                "merge-boundary",
+                "loop-engineering"
+            ],
+            "signal_summary": "A feature orchestrator intentionally tried to dogfood the merge-boundary guard while `.orbit/loop.md` still had pending final-distillation state. The primary Mini checkout was on `main` and ran: ```bash git merge...",
+            "reappearance_check": "If a future feature merges or cleans up with pending final-distillation state, first ask whether `bin/orbit-feature-finalization-check` was run explicitly. Do not assume the Codex hook should have caught it. If the explicit check was..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-cold-worktree-quality-gate-cache.md",
+            "title": "Cold Worktree Quality Gate Cache",
+            "status": "guarded",
+            "signal_type": "failed-check",
+            "guardrail_target": [
+                ".agents/skills/quality-gate-triage/SKILL.md",
+                "apps/docs/content/testing/quality-gates.md"
+            ],
+            "guardrail_change": "cold-cache timing triage guidance",
+            "related_signals": [
+                "harness-signals/2026-06-24-stale-quality-gate-artifact-commit.md",
+                "harness-signals/2026-06-24-subgate-baseline-jitter-floor.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "quality-gate",
+                "timing",
+                "cache",
+                "worktree"
+            ],
+            "signal_summary": "A fresh implementation worktree produced a slow `composer quality-check` artifact and timing warnings for many subgates. Initial triage misread the run as a scheduler over-parallelization regression because a later run with...",
+            "reappearance_check": "If `composer quality-check` reports a broad timing regression in a fresh worktree, first inspect app/package-local cache state. If evidence is still ambiguous, rerun the same quality-check command once after warm-up. Do not use a..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-multi-slice-feature-scratchpad-pre-dispatch.md",
+            "title": "Multi-Slice Feature Scratchpad Must Exist Before Dispatch",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "AGENTS.md",
+                "HARNESS.md",
+                "LOOP.md.example",
+                ".agents/skills/implementing-features/SKILL.md"
+            ],
+            "guardrail_change": "multi-slice roadmap scratchpad pre-dispatch gate",
+            "related_signals": [
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md",
+                "harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "scratchpad",
+                "roadmap",
+                "multi-slice",
+                "pre-dispatch",
+                "loop-engineering"
+            ],
+            "signal_summary": "During the Mago baseline cleanup dogfood run, the feature orchestrator started a multi-slice feature from a source scratchpad in NMBP project 4, created `.orbit/loop.md`, prepared the Mini worktree, and spawned an implementation worker...",
+            "reappearance_check": "If a future multi-slice implementation reaches worker dispatch without a linked feature roadmap scratchpad, or with a cross-project scratchpad that only links the source without mirroring the roadmap substance, treat the slice as..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-parallelize-independent-slices.md",
+            "title": "Parallelize Independent Slices",
+            "status": "recurring",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "AGENTS.md",
+                "HARNESS.md",
+                "LOOP.md.example",
+                ".agents/skills/implementing-features/SKILL.md",
+                ".agents/skills/quality-gate-triage/SKILL.md"
+            ],
+            "guardrail_change": "parallelization gate and worker-plan dependency scan",
+            "related_signals": [
+                "harness-signals/2026-06-23-solo-role-matrix-needed.md",
+                "harness-signals/2026-06-23-worker-first-diff-checkpoint.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "parallelization",
+                "solo-workers",
+                "quality-gate",
+                "orchestration"
+            ],
+            "signal_summary": "During quality-gate optimization, the orchestrator serialized work across in-memory/Pest, Docker E2E, and Incus E2E even though those lanes have separate systems, provider resources, and optimization targets. This delayed feedback and...",
+            "reappearance_check": "If a future orchestrator serializes independent slices or provider lanes without naming a dependency, shared mutable state, provider capacity conflict, or merge order reason, mark this signal recurring and tighten the worker-plan prompt..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md",
+            "title": "Raw Contract Dropped During Slicing",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                ".agents/skills/implementing-features/SKILL.md",
+                ".agents/review-personas/cli-command.md"
+            ],
+            "guardrail_change": "pending loop-hardening-session-guardrails commit",
+            "related_signals": [
+                "harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md",
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "contract",
+                "slicing",
+                "prompt",
+                "cli",
+                "review"
+            ],
+            "signal_summary": "During the doctor progress/fleet panel feature, the user provided concrete expected output examples and later had to point out that the spawned feature orchestrator prompt did not include all of that raw context. The implementation then...",
+            "reappearance_check": "If a future implementation prompt omits concrete user examples or a reviewer accepts a mismatch with a raw sample as a follow-up without a prior explicit deferral, keep this record `recurring` and tighten the Done Contract template or..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-stale-quality-gate-artifact-commit.md",
+            "title": "Stale Quality Gate Artifact Commit",
+            "status": "guarded",
+            "signal_type": "failed-check",
+            "guardrail_target": [
+                "bin/quality-gate-analyze",
+                "bin/quality-gate-final-check",
+                "apps/docs/content/testing/quality-gates.md"
+            ],
+            "guardrail_change": "artifact commit mismatch final-check warning",
+            "related_signals": [
+                "harness-signals/2026-06-24-cold-worktree-quality-gate-cache.md",
+                "harness-signals/2026-06-24-subgate-baseline-jitter-floor.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "quality-gate",
+                "timing",
+                "artifacts",
+                "final-check"
+            ],
+            "signal_summary": "After rebasing `quality-e2e-lane-timing-baseline`, `composer quality-gate:final-check` reported no warnings even though the latest `quality-check`, Docker E2E, and Incus E2E artifacts were captured for older commits than the current...",
+            "reappearance_check": "If final-check again accepts stale artifacts after a rebase or commit, verify whether the artifact includes a full `git.commit` value. If it does and no warning appears, tighten `quality-gate-analyze`; if the metadata is missing..."
+        },
+        {
+            "path": "harness-signals/2026-06-24-subgate-baseline-jitter-floor.md",
+            "title": "Subgate Baseline Jitter Floor",
+            "status": "guarded",
+            "signal_type": "failed-check",
+            "guardrail_target": [
+                "bin/quality-gate-analyze",
+                "bin/quality-gate-final-check",
+                "apps/docs/content/testing/quality-gates.md"
+            ],
+            "guardrail_change": "one-second absolute floor for subgate timing warnings",
+            "related_signals": [
+                "harness-signals/2026-06-24-stale-quality-gate-artifact-commit.md",
+                "harness-signals/2026-06-24-cold-worktree-quality-gate-cache.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "quality-gate",
+                "timing",
+                "baseline",
+                "final-check"
+            ],
+            "signal_summary": "After capturing local quality-gate baselines, `composer quality-gate:final-check` emitted subgate timing warnings for tiny differences such as `0.3s` to `0.5s`. Those warnings were technically above the percentage threshold, but they...",
+            "reappearance_check": "If final-check again reports noisy sub-second subgate warnings, inspect `write_subgate_duration_warnings()` in `bin/quality-gate-analyze` and confirm that the absolute delta is still applied after the percentage threshold."
+        },
+        {
+            "path": "harness-signals/2026-06-25-e2e-sync-gateway-stale-container.md",
+            "title": "Retained Incus `--sync` Leaves Gateway Container Serving Stale Code",
+            "status": "guarded",
+            "signal_type": "e2e-failure",
+            "guardrail_target": [
+                ".agents/skills/implementing-features/SKILL.md (Retained Incus Inspection Gate)"
+            ],
+            "guardrail_change": "58ffe687 follow-up \u2014 post-`--sync` gateway-container restart step",
+            "related_signals": [
+                "2026-06-23-e2e-substrate-failure-triage.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "e2e",
+                "incus",
+                "retained-topology",
+                "sync",
+                "gateway",
+                "substrate"
+            ],
+            "signal_summary": "During retained-Incus re-verification of a gateway change, `composer e2e:incus -- --sync --id=<id>` was used to push fresh worktree code into a source-mounted topology. After the sync, every gateway call returned `gateway_unavailable...",
+            "reappearance_check": "If a gateway call 500s immediately after `composer e2e:incus --sync`, restart the gateway lease containers on the gateway VM first, then re-test. Only after a restart still 500s should the change itself be suspected. Stronger fix..."
+        },
+        {
+            "path": "harness-signals/2026-06-25-preserve-feature-worktrees-for-post-analysis.md",
+            "title": "Preserve Feature Worktrees For Post-Analysis",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "AGENTS.md",
+                "HARNESS.md",
+                ".agents/skills/implementing-features/SKILL.md",
+                "bin/orbit-feature-finalization-check"
+            ],
+            "guardrail_change": "merge finalization now preserves completed feature worktrees and branches until post-feature signal audit",
+            "related_signals": [
+                "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md",
+                "harness-signals/2026-06-24-codex-hook-best-effort-finalization-check.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "finalization",
+                "worktrees",
+                "post-feature-review",
+                "loop-engineering"
+            ],
+            "signal_summary": "After three Mini-driven bugfix todos landed, the completed worktrees had already been removed. That made it harder to double-check `.orbit/loop.md`, local evidence, reviewer output, terminal artifacts, and harness-signal adjudication...",
+            "reappearance_check": "If a future completed feature worktree is removed before signal audit, first check whether the user explicitly approved cleanup. If not, inspect whether the feature owner read the current implementation skill and whether the cleanup..."
+        },
+        {
+            "path": "harness-signals/2026-06-25-required-verification-finalization-gap.md",
+            "title": "Required Verification Finalization Gap",
+            "status": "guarded",
+            "signal_type": "agent-mistake",
+            "guardrail_target": [
+                "HARNESS.md",
+                "LOOP.md.example",
+                ".agents/skills/implementing-features/SKILL.md",
+                "bin/orbit-codex-pre-tool-use-hook"
+            ],
+            "guardrail_change": "required verification rows are now part of the finalization gate; required proof is derived from the branch diff; docs-lint and quality-check proof require matching quality-gate artifacts; retained topology proof replaces Durable E2E as the topology gate",
+            "related_signals": [
+                "harness-signals/2026-06-24-codex-hook-best-effort-finalization-check.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "finalization",
+                "e2e",
+                "verification",
+                "loop-engineering"
+            ],
+            "signal_summary": "A loop improver allowed a feature report to treat the implementation as complete even though end-to-end proof was not performed. The user caught the gap after reviewing `solo://proj/4/process/loopimprover-php-use--618`: the final summary...",
+            "reappearance_check": "If a future loop marks a feature complete with skipped docs-lint, retained topology proof, or `composer quality-check`, inspect `.orbit/loop.md` and the branch diff first. If the required verification rows or artifacts are absent or..."
+        }
+    ]
+}

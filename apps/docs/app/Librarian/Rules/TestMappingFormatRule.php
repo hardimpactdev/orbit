@@ -11,6 +11,19 @@ use HardImpact\Librarian\Linting\GroupedRule;
 
 final readonly class TestMappingFormatRule implements GroupedRule
 {
+    /**
+     * @var list<string>
+     */
+    private const array ADMITTED_TEST_ROOTS = [
+        'apps/cli/tests/',
+        'apps/gateway/tests/',
+        'apps/docs/tests/',
+        'apps/e2e/tests/',
+        'apps/reverb/tests/',
+        'packages/core/tests/',
+        'packages/sdk/tests/',
+    ];
+
     public function __construct(
         private OrbitCommandDocs $docs,
     ) {}
@@ -68,12 +81,29 @@ final readonly class TestMappingFormatRule implements GroupedRule
         }
 
         $findings = [];
+        $hasGatewayTestRow = false;
 
         foreach ($rows as $row) {
-            if (! str_starts_with($row['path'], 'apps/gateway/tests/')) {
+            if (str_starts_with($row['path'], 'apps/gateway/tests/')) {
+                $hasGatewayTestRow = true;
+            }
+
+            $isAdmittedTestPath = false;
+
+            foreach (self::ADMITTED_TEST_ROOTS as $root) {
+                if (! str_starts_with($row['path'], $root)) {
+                    continue;
+                }
+
+                $isAdmittedTestPath = true;
+
+                break;
+            }
+
+            if (! $isAdmittedTestPath) {
                 $findings[] = $this->finding(
                     $file,
-                    "Mapped test path must live under apps/gateway/tests/: {$row['path']}.",
+                    "Mapped test path must live under an admitted Orbit test root: {$row['path']}.",
                 );
             }
 
@@ -84,6 +114,13 @@ final readonly class TestMappingFormatRule implements GroupedRule
             if (str_word_count($row['coverage']) < 5) {
                 $findings[] = $this->finding($file, "Mapped test coverage is too vague for {$row['path']}.");
             }
+        }
+
+        if (! $hasGatewayTestRow && ! $this->declaresNoGatewayCoverage($section)) {
+            $findings[] = $this->finding(
+                $file,
+                'Test Mapping must include at least one table row with an `apps/gateway/tests/...Test.php` path and coverage description, or state why there is no gateway-side coverage.',
+            );
         }
 
         if ($this->containsMissingFileInstruction($section)) {
@@ -98,10 +135,13 @@ final readonly class TestMappingFormatRule implements GroupedRule
 
     private function section(string $contents, string $heading): string
     {
+        /** @var array{section?: string} $matches */
+        $matches = [];
+
         if (
             preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
         ) {
-            return $matches['section'];
+            return $matches['section'] ?? '';
         }
 
         return '';
@@ -115,9 +155,12 @@ final readonly class TestMappingFormatRule implements GroupedRule
         $rows = [];
 
         foreach (explode("\n", $section) as $line) {
+            /** @var array{path?: string, coverage?: string} $matches */
+            $matches = [];
+
             if (
                 preg_match(
-                    '/^\|\s*`(?<path>apps\/gateway\/tests\/[^`]+\.php)`\s*\|\s*(?<coverage>.+?)\s*\|$/',
+                    '/^\|\s*`(?<path>[^`]+)`\s*\|\s*(?<coverage>.+?)\s*\|$/',
                     $line,
                     $matches,
                 ) !== 1
@@ -126,8 +169,8 @@ final readonly class TestMappingFormatRule implements GroupedRule
             }
 
             $rows[] = [
-                'path' => $matches['path'],
-                'coverage' => trim($matches['coverage']),
+                'path' => trim($matches['path'] ?? ''),
+                'coverage' => trim($matches['coverage'] ?? ''),
             ];
         }
 

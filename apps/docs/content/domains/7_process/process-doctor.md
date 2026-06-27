@@ -179,15 +179,13 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Doctor/ProcessesFamilyDoctorContractTest.php` | Processes-family contract for the global doctor command (see breakdown below). |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for process family scope and process drift reporting. |
 | `apps/gateway/tests/Unit/Services/Processes/ProcessesProbeTest.php` | In-memory probe diff behavior for the processes family (see breakdown below). |
-| `apps/gateway/tests/E2E/Read/ProcessesDoctorTest.php` | Real read-only `doctor --family=process --json` on a topology with host systemd process runtime units. |
-| `apps/gateway/tests/E2E/Ephemeral/ProcessesDoctorFixTest.php` | Real `doctor --family=process --restore` repair of missing or divergent process runtime artifacts and lifecycle event notifier material. |
 
-`ProcessesFamilyDoctorContractTest` covers processes-family dispatch,
-probe-layer selection, process issue codes, the process fix map, denied
-process adopt cases, and scope filtering for process probes. It also asserts
-that `process.runtime_backend_unavailable` short-circuits downstream layers.
+No current E2E test is mapped for process-family doctor coverage.
+
+`DoctorRunControllerTest` covers process-family API scope, process drift
+reporting, and the `process.runtime_backend_unavailable` short-circuit.
 
 `ProcessesProbeTest` covers registry configuration, node/app/workspace owner
 validation, app and workspace expansion, and process manager availability.

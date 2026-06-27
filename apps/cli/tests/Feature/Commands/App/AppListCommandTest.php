@@ -30,7 +30,15 @@ describe('app:list', function (): void {
             ),
         );
 
-        expect($exitCode)->toBe(0)->and($decoded['success']['data']['apps'][0]['name'])->toBe('orbit-docs');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success'])
+            ->toHaveKey('meta')
+            ->and($decoded['success']['meta'])
+            ->toBeArray()
+            ->toBeEmpty()
+            ->and($decoded['success']['data']['apps'][0]['name'])
+            ->toBe('orbit-docs');
     });
 
     it('does not expose the retired environment filter', function (): void {

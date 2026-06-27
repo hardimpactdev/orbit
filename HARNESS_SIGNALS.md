@@ -48,10 +48,10 @@ should become guidance or enforcement.
   - ordinary feature work that belongs in the active diff, not the harness
 - Reject or mark `already-covered` when any promotion condition is missing.
   A final review that creates no durable guardrail is a valid loop result.
-- Search `harness-signals/` before treating a durable signal as new. If a
-  related signal is already `guarded` and the issue reappears, mark or treat the
-  signal as `recurring` and evaluate whether the guardrail target needs to be
-  tightened.
+- Search `harness-signals/index.json` and then matching `harness-signals/`
+  records before treating a durable signal as new. If a related signal is
+  already `guarded` and the issue reappears, mark or treat the signal as
+  `recurring` and evaluate whether the guardrail target needs to be tightened.
 - Also check whether a later slice already absorbed the lesson in current code,
   tests, product or harness docs, skills, personas, static checks, or command
   failure messages. If it did, classify the candidate as `already-covered` and

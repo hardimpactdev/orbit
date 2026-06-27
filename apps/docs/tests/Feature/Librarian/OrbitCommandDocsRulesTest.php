@@ -46,6 +46,7 @@ use App\Librarian\Rules\SignatureOptionConsistencyRule;
 use App\Librarian\Rules\TechnicalSlotSemanticsRule;
 use App\Librarian\Rules\TechnicalTestMappingRule;
 use App\Librarian\Rules\TestMappingFormatRule;
+use App\Librarian\Rules\TestMappingPathExistsRule;
 use HardImpact\Librarian\Docs\DocsConfig;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
@@ -109,6 +110,7 @@ beforeEach(function (): void {
         RoleCompanionCoverageRule::class,
         TechnicalTestMappingRule::class,
         TestMappingFormatRule::class,
+        TestMappingPathExistsRule::class,
         DoctorRelationshipReferenceRule::class,
         NonStateDomainHandoffRule::class,
         ReaderAddressRule::class,
@@ -390,7 +392,7 @@ it('allows deployment companion subsets without app-role companion contracts', f
         ."## Test Mapping\n\n"
         ."| Path | Coverage |\n"
         ."| --- | --- |\n"
-        ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers optional deployment-context companion slots. |\n";
+        ."| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers optional deployment-context companion slots. |\n";
 
     writeOrbitDocsFile(
         $this->docsRoot,
@@ -470,6 +472,30 @@ it('reports test mapping sections without a path coverage table', function (): v
             'severity' => 'error',
             'rule' => 'command_docs.test_mapping_format',
             'message' => 'Test Mapping must include a "| Path | Coverage |" table.',
+        ]);
+});
+
+it('reports test mapping paths that do not exist on disk', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/MissingContractTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'references',
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
+            'severity' => 'error',
+            'rule' => 'command_docs.test_mapping_path_exists',
+            'message' => 'Mapped test path does not exist in the repository: apps/gateway/tests/Feature/Librarian/MissingContractTest.php.',
         ]);
 });
 
@@ -979,7 +1005,7 @@ it('reports renderer files without primitive references', function (): void {
 it('accepts the show detail renderer primitive reference', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\n## Primitive\n\n- Detail: [Show detail](../../../../ux/commands/details/show-detail.md)\n\n## Progress Tree\n\nNo progress tree. The command is a registry read expected to complete below one second.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers show-detail primitive references. |\n",
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\n- Detail: [Show detail](../../../../ux/commands/details/show-detail.md)\n\n## Progress Tree\n\nNo progress tree. The command is a registry read expected to complete below one second.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers show-detail primitive references. |\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1243,7 +1269,7 @@ it('reports canonical failure semantics that restate common failures', function 
 it('reports human renderer files without progress tree sections', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers human renderer documentation mapping for node commands. |\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1483,7 +1509,7 @@ it('skips legacy-narrative terms inside output sample fences', function (): void
 it('skips option mentions inside output sample fences for option consistency', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\nFailure output sample:\n\n```text\nentry point did not respond to --version\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\nFailure output sample:\n\n```text\nentry point did not respond to --version\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers human renderer documentation mapping for node commands. |\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1497,7 +1523,7 @@ it('skips option mentions inside output sample fences for option consistency', f
 it('still flags prose option mentions outside the canonical signature', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\nPass --version to inspect the runtime.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\nPass --version to inspect the runtime.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers human renderer documentation mapping for node commands. |\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1513,7 +1539,7 @@ it('still flags prose option mentions outside the canonical signature', function
 it('accepts a test mapping that declares no gateway-side coverage', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewCommandTest.php` | Human renderer output coverage for the node command surface. |\n\nThere is no gateway-side coverage for this renderer: public command ownership lives in `apps/cli`.\n",
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewStreamCommandTest.php` | Human renderer output coverage for the node command surface. |\n\nThere is no gateway-side coverage for this renderer: public command ownership lives in `apps/cli`.\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', ['--format' => 'agent']);
@@ -1522,10 +1548,30 @@ it('accepts a test mapping that declares no gateway-side coverage', function ():
     expect(findingsForRule($payload, 'command_docs.test_mapping_format'))->toBe([]);
 });
 
+it('reports malformed non-gateway test mapping paths', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewStreamCommandSpec.php` | Human renderer output coverage for the node command surface. |\n\nThere is no gateway-side coverage for this renderer: public command ownership lives in `apps/cli`.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', ['--format' => 'agent']);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    $matchingFindings = findingsForRule(payload: $payload, rule: 'command_docs.test_mapping_format');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings)
+        ->not
+        ->toBeEmpty()
+        ->and($matchingFindings[0]['message'])
+        ->toContain('Test.php');
+});
+
 it('still requires a gateway test row when no coverage declaration exists', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewCommandTest.php` | Human renderer output coverage for the node command surface. |\n",
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewStreamCommandTest.php` | Human renderer output coverage for the node command surface. |\n",
     );
 
     $exitCode = Artisan::call('librarian:lint', ['--format' => 'agent']);
@@ -1544,7 +1590,7 @@ function makeOrbitLibrarianDocsFixture(): string
 {
     $path = sys_get_temp_dir().'/orbit-librarian-'.bin2hex(random_bytes(6));
 
-    mkdir($path, 0777, true);
+    mkdir(directory: $path, permissions: 0777, recursive: true);
     writeOrbitDocsFile(
         $path,
         'config/librarian-command-docs/state_families.php',
@@ -1587,8 +1633,8 @@ function writeOrbitCommandDocsFamily(
     bool $validCommandDirectory = true,
     string $publicCommandPage = "# `orbit node:new`\n\n[Technical](technical/1_node-new.md)\n\n## Usage\n\nUse it.\n\n## Arguments and options\n\nNone.\n",
     ?string $canonicalContract = null,
-    string $humanRendererContract = "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n○ Create node intent\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers human renderer documentation mapping for node commands. |\n",
-    string $jsonRendererContract = "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers json renderer documentation mapping for node commands. |\n",
+    string $humanRendererContract = "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n○ Create node intent\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers human renderer documentation mapping for node commands. |\n",
+    string $jsonRendererContract = "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers json renderer documentation mapping for node commands. |\n",
 ): void {
     $canonicalContract ??= validOrbitCanonicalContract();
 
@@ -1647,7 +1693,7 @@ function validOrbitCanonicalContract(
         ."## Test Mapping\n\n"
         ."| Path | Coverage |\n"
         ."| --- | --- |\n"
-        ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers canonical technical contract mapping for node commands. |\n"
+        ."| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers canonical technical contract mapping for node commands. |\n"
         .$extra
     );
 }
@@ -1673,7 +1719,7 @@ function validOrbitNodeDoctorContract(): string
         ."## Test Mapping\n\n"
         ."| Path | Coverage |\n"
         ."| --- | --- |\n"
-        ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers node doctor relationship mapping for node commands. |\n"
+        ."| `apps/gateway/tests/Feature/E2ESupport/QualityGateArtifactsTest.php` | Covers node doctor relationship mapping for node commands. |\n"
     );
 }
 
@@ -1682,7 +1728,7 @@ function writeOrbitDocsFile(string $root, string $path, string $contents): void
     $fullPath = "{$root}/{$path}";
 
     if (! is_dir(dirname($fullPath))) {
-        mkdir(dirname($fullPath), 0777, true);
+        mkdir(directory: dirname($fullPath), permissions: 0o777, recursive: true);
     }
 
     file_put_contents($fullPath, $contents);
@@ -1699,3 +1745,132 @@ function findingsForRule(array $payload, string $rule): array
         fn (array $finding): bool => $finding['rule'] === $rule,
     ));
 }
+
+function use_json_metadata_shape_rule_only(): void
+{
+    config()->set('librarian.rules', [
+        \App\Librarian\Rules\JsonMetadataShapeRule::class,
+    ]);
+}
+
+it('reports json examples with empty object metadata', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {}, \"meta\": {}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
+            'line' => 11,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 documents empty metadata at success.meta as an object; use an empty array [] to match the shared JSON envelope contract.',
+        ]);
+});
+
+it('allows empty array metadata in json examples', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {}, \"meta\": []}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule(payload: $payload, rule: 'command_docs.json_metadata_shape'))
+        ->toBeEmpty();
+});
+
+it('allows non-empty object metadata in json examples', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {}, \"meta\": {\"warnings\": []}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule(payload: $payload, rule: 'command_docs.json_metadata_shape'))
+        ->toBeEmpty();
+});
+
+it('scans general product docs outside json renderer contracts for empty metadata objects', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/3_tool/catalog/mailpit.md',
+        contents: "# Mailpit\n\n```json\n{\"error\": {\"code\": \"tool.not_found\", \"message\": \"Missing tool.\", \"meta\": {}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains/3_tool/catalog/mailpit.md',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/3_tool/catalog/mailpit.md',
+            'line' => 3,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 documents empty metadata at error.meta as an object; use an empty array [] to match the shared JSON envelope contract.',
+        ]);
+});
+
+it('reports stream json frame examples with empty object metadata', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/README.md',
+        contents: "# Shared contracts\n\n```json\n{\"event\":\"progress\",\"data\":{\"message\":\"Checking\"}}\n{\"event\":\"error\",\"error\":{\"code\":\"gateway_stream_error\",\"message\":\"Gateway progress stream failed.\",\"meta\":{}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains/README.md',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/README.md',
+            'line' => 3,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 documents empty metadata at error.meta as an object; use an empty array [] to match the shared JSON envelope contract.',
+        ]);
+});

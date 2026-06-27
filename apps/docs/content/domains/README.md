@@ -398,11 +398,16 @@ that command-specific shape in their renderer contract.
 | Field | Required when | Meaning |
 | --- | --- | --- |
 | `success.data` | Success. | Command-specific payload. Use an empty object only when a successful JSON response intentionally has no structured result. |
-| `success.meta` | Success, when useful. | Optional machine-readable execution context that is not the payload, such as selected scope, pagination, warnings, or resolved entity references. |
+| `success.meta` | Success. | Always present. Machine-readable execution context that is not the payload, such as selected scope, pagination, warnings, or resolved entity references. |
 | `error.code` | Failure. | Stable machine-readable failure code. Required on every failure. |
 | `error.message` | Failure. | Human-readable failure message. Automation must not parse this field. |
-| `error.meta` | Failure. | Machine-readable failure context. Required on every failure; use an empty object only when no stable context exists. |
+| `error.meta` | Failure. | Always present. Machine-readable failure context. |
 | `error.data` | Failure, only when documented. | Optional command-specific diagnostic or partial-result payload, such as `doctor` issues after drift was found. |
+
+The shared `JsonEnvelope` helper always includes `success.meta` and
+`error.meta`. Empty metadata currently serializes as `[]` because the helper
+stores it as an empty PHP array. When metadata is a non-empty associative array,
+the emitted JSON uses an object.
 
 `error.meta` replaces loose failure details. Use it only for stable facts
 automation needs to classify or recover from a failure, such as `field`,
@@ -422,7 +427,7 @@ progress stream opens use the normal JSON error envelope and do not include an
 ```json
 {"event":"tree","data":{"title":"Working","steps":[]}}
 {"event":"step","data":{"key":"apply","status":"running"}}
-{"event":"complete","success":{"data":{},"meta":{}}}
+{"event":"complete","success":{"data":{},"meta":[]}}
 ```
 
 Non-terminal frames use `event=tree` or `event=step` with the gateway progress
@@ -431,7 +436,7 @@ command's normal JSON success payload under `success`. Terminal failure frames
 use `event=error` with a canonical error object:
 
 ```json
-{"event":"error","error":{"code":"gateway_stream_error","message":"Gateway progress stream failed.","meta":{}}}
+{"event":"error","error":{"code":"gateway_stream_error","message":"Gateway progress stream failed.","meta":[]}}
 ```
 
 If the stream transport fails after any progress frame has been emitted, the
@@ -661,7 +666,7 @@ Command docs may reference these suite layers:
 | --- | --- |
 | `apps/gateway/tests/Unit/` | In-memory behavior for pure services, probes, DTOs, and value objects. |
 | `apps/gateway/tests/Feature/` | Command contract tests in the Laravel app context. Prefer these for input/output contracts, side-effect boundaries, and persisted state. |
-| `apps/gateway/tests/E2E/` | Real VM tests that create, alter, or destroy disposable hosts, identities, or state. These require explicit ephemeral infrastructure configuration from [testing docs](../testing/README.md). |
+| `apps/e2e/tests/` | Real VM tests that create, alter, or destroy disposable hosts, identities, or state. These require explicit ephemeral infrastructure configuration from [testing docs](../testing/README.md). |
 
 E2E tests prove the contract works through real process, network, and node
 boundaries. They should remain smoke-level and must not replace the primary

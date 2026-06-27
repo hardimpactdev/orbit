@@ -131,8 +131,7 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Doctor/ProxyFamilyDoctorContractTest.php` | Proxy-family dispatch, probe-layer selection, proxy issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering as it affects proxy probes. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for proxy family scope, proxy drift reporting, and restore behavior. |
 | `apps/gateway/tests/Unit/Services/Proxy/ProxyRouteProbeTest.php` | In-memory proxy probe diff behavior for registry configuration, owner eligibility, node eligibility, conflict boundaries, missing routes, mismatched routes, TLS drift, and selected extra routes in adoption scope. |
-| `apps/gateway/tests/E2E/Read/ProxyDoctorTest.php` | Real read-only `doctor --family=proxy --json` against nodes with managed proxy routes. |
-| `apps/gateway/tests/E2E/Ephemeral/ProxyDoctorFixTest.php` | Real `doctor --family=proxy --restore` repair of safe managed proxy and TLS drift. |
-| `apps/gateway/tests/E2E/Ephemeral/ProxyDoctorAdoptTest.php` | Real `doctor --family=proxy --adopt` for compatible selected custom route adoption. |
+
+No current E2E test is mapped for proxy-family doctor coverage.

@@ -562,6 +562,37 @@ it('keeps the committed command catalog in sync with the generated catalog', fun
     expect(file_get_contents($path))->toBe($expected);
 });
 
+it('passes the freshness check for the committed command catalog', function (): void {
+    $exitCode = Artisan::call('orbit:command-catalog', [
+        '--check' => true,
+    ]);
+
+    expect($exitCode)->toBe(0);
+    expect(Artisan::output())->toContain('Orbit command catalog is up to date.');
+});
+
+it('fails the freshness check when the committed command catalog is stale', function (): void {
+    $builder = app(CommandCatalogBuilder::class);
+    $path = base_path('content/generated/command-catalog.json');
+    $original = file_get_contents($path);
+
+    try {
+        file_put_contents(filename: $path, data: "{\"schema_version\":0}\n");
+
+        $exitCode = Artisan::call('orbit:command-catalog', [
+            '--check' => true,
+        ]);
+
+        expect($exitCode)->toBe(1);
+        expect(Artisan::output())->toContain('Orbit command catalog is stale.');
+    } finally {
+        file_put_contents(
+            filename: $path,
+            data: $original === false ? $builder->toJson($builder->build()) : $original,
+        );
+    }
+});
+
 it('can regenerate the committed command catalog through the docs app command', function (): void {
     $exitCode = Artisan::call('orbit:command-catalog');
 

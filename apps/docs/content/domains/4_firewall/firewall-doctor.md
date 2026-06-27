@@ -90,12 +90,12 @@ Required test files:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Doctor/FirewallFamilyDoctorContractTest.php` | Firewall-family dispatch, probe-layer selection, issue codes, fix map, adopt map, denied fix/adopt cases, and scope filtering for firewall probes. |
-| `apps/gateway/tests/Unit/Services/Firewall/FirewallProbeTest.php` | In-memory firewall probe diff behavior (see breakdown below). |
-| `apps/gateway/tests/E2E/Read/FirewallDoctorTest.php` | Real read-only `doctor --family=firewall_rule --json` against nodes with managed firewall rules. |
-| `apps/gateway/tests/E2E/Ephemeral/FirewallDoctorFixTest.php` | Real `doctor --family=firewall_rule --restore` repair of safe managed firewall drift. |
-| `apps/gateway/tests/E2E/Ephemeral/FirewallDoctorAdoptTest.php` | Real `doctor --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for firewall family scope and firewall drift reporting. |
+| `apps/gateway/tests/Unit/Services/Firewall/FirewallRuleProbeTest.php` | In-memory firewall probe diff behavior (see breakdown below). |
+| `apps/e2e/tests/Feature/Commands/FirewallDoctorAdoptTest.php` | Real `doctor --family=firewall_rule --adopt` for compatible selected observed firewall rule adoption. |
 
-`FirewallProbeTest.php` covers registry configuration, node eligibility,
+No current E2E test is mapped for firewall-family read-only or restore coverage.
+
+`FirewallRuleProbeTest.php` covers registry configuration, node eligibility,
 baseline policy boundaries, missing rules, mismatched rules, extra rules in
 adoption scope, and exclusion of node/proxy/app drift from firewall issue codes.

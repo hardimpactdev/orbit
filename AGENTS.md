@@ -3,10 +3,23 @@
 Orbit is a command-first PHP/Laravel monorepo for local development,
 provisioning, hosting workflows, and node orchestration.
 
+For the first five-minute route through repo work, read
+[`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md) before opening deeper harness docs.
+
 Orbit is an LLM-first monorepo. Repo development harness guidance lives at the
 root; see [`HARNESS.md`](HARNESS.md) for scope, agent discovery path, and how
 the harness differs from the feedback loop. Product behavior contracts remain in
 `apps/docs/content/`.
+
+For compact root-start routing, LLM agents can read the generated monorepo unit
+map at [`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json).
+It is a routing aid, not product authority.
+
+For repository searches, prefer default `rg` from the root or scoped
+`rg <pattern> <owned-path>` searches. Do not start with `find .`,
+`rg -uu`, or broad hidden-file scans from the root; they include stale
+worktrees and generated/cache artifacts that are intentionally outside the
+normal agent search surface. See [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md).
 
 ## Repository Shape
 

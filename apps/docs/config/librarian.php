@@ -26,6 +26,7 @@ use App\Librarian\Rules\ExitStatusPolicyRule;
 use App\Librarian\Rules\FamilyCommandPrefixRule;
 use App\Librarian\Rules\HumanRendererProgressTreeRule;
 use App\Librarian\Rules\InputModeContractRule;
+use App\Librarian\Rules\JsonMetadataShapeRule;
 use App\Librarian\Rules\JsonRendererEnvelopeRule;
 use App\Librarian\Rules\JsonRendererExampleRule;
 use App\Librarian\Rules\JsonWarningShapeRule;
@@ -50,6 +51,7 @@ use App\Librarian\Rules\SignatureOptionConsistencyRule;
 use App\Librarian\Rules\TechnicalSlotSemanticsRule;
 use App\Librarian\Rules\TechnicalTestMappingRule;
 use App\Librarian\Rules\TestMappingFormatRule;
+use App\Librarian\Rules\TestMappingPathExistsRule;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
 use HardImpact\Librarian\Linting\Rules\DocumentComplexityRule;
@@ -100,6 +102,7 @@ return [
         InputModeContractRule::class,
         DestructiveConsentRule::class,
         JsonRendererExampleRule::class,
+        JsonMetadataShapeRule::class,
         JsonWarningShapeRule::class,
         RendererPrimitiveReferenceRule::class,
         CanonicalTechnicalContractRule::class,
@@ -122,6 +125,7 @@ return [
         RoleCompanionCoverageRule::class,
         TechnicalTestMappingRule::class,
         TestMappingFormatRule::class,
+        TestMappingPathExistsRule::class,
         DoctorRelationshipReferenceRule::class,
         NonStateDomainHandoffRule::class,
         ReaderAddressRule::class,

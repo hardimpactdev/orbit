@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Librarian\CommandCatalogBuilder;
+use App\Librarian\MonorepoUnitMapBuilder;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 
@@ -46,3 +47,49 @@ Artisan::command(
         return self::SUCCESS;
     },
 )->purpose('Generate the agent-readable Orbit command contract catalog');
+
+Artisan::command(
+    'orbit:monorepo-unit-map {--check : Fail when the committed monorepo unit map is stale} {--unit= : Print one unit entry as JSON without writing the map}',
+    function (MonorepoUnitMapBuilder $builder): int {
+        $unitId = $this->option('unit');
+
+        if (is_string($unitId) && $unitId !== '') {
+            $map = $builder->build();
+            $entry = $map['units'][$unitId] ?? null;
+
+            if (! is_array($entry)) {
+                $this->error("Unit `{$unitId}` was not found in the Orbit monorepo unit map.");
+
+                return self::FAILURE;
+            }
+
+            $this->getOutput()->write($builder->toJson($entry));
+
+            return self::SUCCESS;
+        }
+
+        if ($this->option('check')) {
+            if ($builder->isFresh()) {
+                $this->info('Orbit monorepo unit map is up to date.');
+
+                return self::SUCCESS;
+            }
+
+            $this->error('Orbit monorepo unit map is stale. Run `php artisan orbit:monorepo-unit-map` from apps/docs.');
+
+            return self::FAILURE;
+        }
+
+        try {
+            $path = $builder->write();
+        } catch (\RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->info("Wrote {$path}.");
+
+        return self::SUCCESS;
+    },
+)->purpose('Generate the agent-readable Orbit monorepo unit map');
