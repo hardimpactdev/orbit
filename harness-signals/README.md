@@ -40,8 +40,22 @@ Good candidates:
 
 ## Before Starting Work
 
-Agents do not need to read every record. Search the ledger with concrete terms
-from the task, changed area, or failure:
+Agents do not need to read every record. Start with the generated metadata index
+for quick routing, then open only the records that match the task:
+
+```bash
+bin/orbit-harness-signal-index
+rg -n '"path"|"title"|"tags"|"signal_summary"' harness-signals/index.json
+```
+
+Use `harness-signals/index.json` to scan titles, statuses, tags, guardrail
+targets, and short summaries before opening full records. When a candidate
+record looks relevant, open that file next. If the index is missing or stale,
+regenerate it with `bin/orbit-harness-signal-index --write`; `composer docs-lint`
+runs `bin/orbit-harness-signal-index --check` with the other generated
+LLM-facing artifacts.
+
+For deeper search across record bodies, use ripgrep on the ledger itself:
 
 ```bash
 rg -n "doctor|e2e|worktree|guardrail|runtime user" harness-signals

@@ -1006,7 +1006,85 @@ it('keeps docs-lint artifact capture wired into the docs lint script', function 
         ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --path=testing')
         ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --group=references')
         ->toContain('bin/orbit-docs-artisan orbit:command-catalog --check')
-        ->toContain('bin/orbit-docs-artisan orbit:monorepo-unit-map --check');
+        ->toContain('bin/orbit-docs-artisan orbit:monorepo-unit-map --check')
+        ->toContain('bin/orbit-harness-signal-index --check');
+});
+
+it('keeps the harness signal index reachable from docs-lint and the index script', function (): void {
+    $indexPath = repo_path('harness-signals/index.json');
+    $scriptPath = repo_path('bin/orbit-harness-signal-index');
+    $knownRecord = repo_path('harness-signals/2026-06-23-worker-first-diff-checkpoint.md');
+
+    expect($scriptPath)
+        ->toBeFile()
+        ->and(is_executable($scriptPath))
+        ->toBeTrue()
+        ->and($knownRecord)
+        ->toBeFile();
+
+    $generateProcess = new Process([$scriptPath], repo_path());
+    $generateProcess->run();
+
+    expect($generateProcess->getExitCode())->toBe(0, $generateProcess->getErrorOutput());
+
+    $generated = json_decode($generateProcess->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($generated)
+        ->toHaveKey('schema_version', 1)
+        ->toHaveKey('generated_from', 'harness-signals/YYYY-*.md')
+        ->toHaveKey('entry_count')
+        ->toHaveKey('entries')
+        ->and($generated['entry_count'])
+        ->toBeGreaterThan(0)
+        ->and($generated['entries'])
+        ->toBeArray();
+
+    foreach ($generated['entries'] as $entry) {
+        expect(strlen((string) ($entry['signal_summary'] ?? '')))
+            ->toBeLessThanOrEqual(240)
+            ->and(strlen((string) ($entry['reappearance_check'] ?? '')))
+            ->toBeLessThanOrEqual(240);
+    }
+
+    $knownEntry = collect($generated['entries'])
+        ->firstWhere('path', 'harness-signals/2026-06-23-worker-first-diff-checkpoint.md');
+
+    expect($knownEntry)
+        ->toBeArray()
+        ->toHaveKey('title', 'Worker First Diff Checkpoint')
+        ->toHaveKey('status', 'recurring')
+        ->toHaveKey('signal_type', 'agent-mistake')
+        ->toHaveKey('guardrail_target')
+        ->toHaveKey('guardrail_change')
+        ->toHaveKey('related_signals')
+        ->toHaveKey('superseded_by')
+        ->toHaveKey('tags')
+        ->toHaveKey('signal_summary')
+        ->toHaveKey('reappearance_check')
+        ->and($knownEntry['guardrail_target'])
+        ->toContain('.agents/skills/implementing-features/SKILL.md')
+        ->and($knownEntry['related_signals'])
+        ->toContain('harness-signals/2026-06-23-solo-role-matrix-needed.md');
+
+    $semicolonEntry = collect($generated['entries'])
+        ->firstWhere('path', 'harness-signals/2026-06-23-worker-commit-boundary.md');
+
+    expect($semicolonEntry['guardrail_target'])
+        ->toContain('HARNESS.md')
+        ->toContain('.agents/skills/implementing-features/SKILL.md')
+        ->not->toContain('HARNESS.md; .agents/skills/implementing-features/SKILL.md');
+
+    $checkProcess = new Process([$scriptPath, '--check'], repo_path());
+    $checkProcess->run();
+
+    if (! is_file($indexPath)) {
+        expect($checkProcess->getExitCode())->toBe(1, $checkProcess->getErrorOutput());
+
+        return;
+    }
+
+    expect($checkProcess->getExitCode())->toBe(0, $checkProcess->getErrorOutput());
+    expect($checkProcess->getOutput())->toContain('Harness signal index is up to date');
 });
 
 it('keeps source-prepared e2e artifact capture out of provider provision scripts', function (): void {

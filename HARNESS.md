@@ -117,8 +117,9 @@ Start at the monorepo root and read in this order:
    absence in a fresh checkout as a product gap
 6. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
 7. **`harness-signals/`**: curated signal records to search for prior
-   occurrences, guardrail changes, and recurrence checks; not raw session
-   archives under `.orbit/sessions/`
+   occurrences, guardrail changes, and recurrence checks; start with
+   `harness-signals/index.json` when present, then open matching records; not
+   raw session archives under `.orbit/sessions/`
 8. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
 9. **`.agents/review-personas/`**: focused review checklists activated by the
