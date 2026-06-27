@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Librarian\CommandCatalogBuilder;
 use App\Librarian\CommandCatalogCliEndpointExtractor;
+use App\Librarian\CommandCatalogVerificationHints;
 use Illuminate\Support\Facades\Artisan;
 
 it('builds a command catalog from the live CLI surface and docs registries', function (): void {
@@ -595,4 +596,118 @@ it('fails clearly when printing an unknown command catalog entry', function (): 
 
     expect($exitCode)->toBe(1);
     expect(Artisan::output())->toContain('Command `missing:nope` was not found in the Orbit command catalog.');
+});
+
+describe('verification hints', function (): void {
+    it('derives command-safe pest wrappers for CLI linked tests', function (): void {
+        $catalog = app(CommandCatalogBuilder::class)->build();
+        $hints = $catalog['commands']['deploy:log']['verification_hints'];
+
+        $cliHint = collect($hints)->firstWhere(
+            'repo_test_path',
+            'apps/cli/tests/Feature/Commands/LogStreamCommandTest.php',
+        );
+
+        expect($cliHint)->toMatchArray([
+            'repo_test_path' => 'apps/cli/tests/Feature/Commands/LogStreamCommandTest.php',
+            'working_directory' => 'apps/cli',
+            'runner' => 'bin/orbit-cli-pest',
+            'runner_test_path' => 'tests/Feature/Commands/LogStreamCommandTest.php',
+            'suggested_command' => 'bin/orbit-cli-pest --compact tests/Feature/Commands/LogStreamCommandTest.php',
+        ]);
+
+        expect($cliHint['suggested_command'])->not->toContain('apps/cli/tests');
+    });
+
+    it('derives command-safe pest wrappers for gateway linked tests', function (): void {
+        $catalog = app(CommandCatalogBuilder::class)->build();
+        $hints = $catalog['commands']['process:logs']['verification_hints'];
+
+        $gatewayHint = collect($hints)->firstWhere(
+            'repo_test_path',
+            'apps/gateway/tests/Feature/Http/Api/ProcessLogControllerTest.php',
+        );
+
+        expect($gatewayHint)->toMatchArray([
+            'repo_test_path' => 'apps/gateway/tests/Feature/Http/Api/ProcessLogControllerTest.php',
+            'working_directory' => 'apps/gateway',
+            'runner' => 'bin/orbit-gateway-pest',
+            'runner_test_path' => 'tests/Feature/Http/Api/ProcessLogControllerTest.php',
+            'suggested_command' => 'bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ProcessLogControllerTest.php',
+        ]);
+
+        expect($gatewayHint['suggested_command'])->not->toContain('apps/gateway/tests');
+    });
+
+    it('derives command-safe pest wrappers for docs linked tests', function (): void {
+        $hints = app(CommandCatalogVerificationHints::class)->forLinkedTestFiles([
+            'apps/docs/tests/Feature/Librarian/CommandCatalogTest.php',
+        ]);
+
+        expect($hints)->toHaveCount(1);
+        expect($hints[0])->toMatchArray([
+            'repo_test_path' => 'apps/docs/tests/Feature/Librarian/CommandCatalogTest.php',
+            'working_directory' => 'apps/docs',
+            'runner' => 'bin/orbit-docs-pest',
+            'runner_test_path' => 'tests/Feature/Librarian/CommandCatalogTest.php',
+            'suggested_command' => 'bin/orbit-docs-pest --compact tests/Feature/Librarian/CommandCatalogTest.php',
+        ]);
+
+        expect($hints[0]['suggested_command'])->not->toContain('apps/docs/tests');
+    });
+
+    it('derives command-safe pest wrappers for SDK linked tests', function (): void {
+        $hints = app(CommandCatalogVerificationHints::class)->forLinkedTestFiles([
+            'packages/sdk/tests/Unit/Requests/Processes/ShowProcessLogsRequestTest.php',
+        ]);
+
+        expect($hints)->toHaveCount(1);
+        expect($hints[0])->toMatchArray([
+            'repo_test_path' => 'packages/sdk/tests/Unit/Requests/Processes/ShowProcessLogsRequestTest.php',
+            'working_directory' => 'packages/sdk',
+            'runner' => 'vendor/bin/pest',
+            'runner_test_path' => 'tests/Unit/Requests/Processes/ShowProcessLogsRequestTest.php',
+            'suggested_command' => 'cd packages/sdk && vendor/bin/pest --compact tests/Unit/Requests/Processes/ShowProcessLogsRequestTest.php',
+        ]);
+
+        expect($hints[0]['suggested_command'])->not->toContain('packages/sdk/tests');
+    });
+
+    it('does not emit runnable verification hints for E2E linked tests', function (): void {
+        $catalog = app(CommandCatalogBuilder::class)->build();
+
+        expect($catalog['commands']['dns:list']['linked_test_files'])
+            ->toContain(
+                'apps/e2e/tests/Feature/Commands/DnsListTest.php',
+            );
+
+        $hints = $catalog['commands']['dns:list']['verification_hints'];
+
+        expect($hints)->toHaveCount(1);
+        expect(collect($hints)->pluck('repo_test_path'))
+            ->not
+            ->toContain(
+                'apps/e2e/tests/Feature/Commands/DnsListTest.php',
+            );
+        expect($hints[0]['suggested_command'])
+            ->toBe(
+                'bin/orbit-cli-pest --compact tests/Feature/Commands/Dns/DnsListCommandTest.php',
+            );
+
+        expect(app(CommandCatalogVerificationHints::class)->forLinkedTestFile(
+            'apps/e2e/tests/Feature/Commands/DnsListTest.php',
+        ))->toBeNull();
+    });
+
+    it('keeps linked_test_files unchanged while adding verification_hints', function (): void {
+        $catalog = app(CommandCatalogBuilder::class)->build();
+
+        expect($catalog['commands']['deploy:log']['linked_test_files'])->toBe([
+            'apps/cli/tests/Feature/Commands/Deploy/DeployInteractiveInputModeTest.php',
+            'apps/cli/tests/Feature/Commands/LogStreamCommandTest.php',
+        ]);
+
+        expect($catalog['commands']['deploy:log']['verification_hints'])->toHaveCount(2);
+        expect($catalog['commands']['deploy:log']['verification_hints'][0])->toHaveKey('repo_test_path');
+    });
 });

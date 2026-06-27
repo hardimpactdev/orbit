@@ -101,6 +101,9 @@ final readonly class CommandCatalogBuilder
     {
         $docs = $this->docsIndex->docsEntry($command, $directory);
 
+        $linkedTestFiles = $directory === null ? [] : $this->docsIndex->linkedTestFiles($directory);
+        $verificationHints = new CommandCatalogVerificationHints;
+
         return [
             'name' => $command->name,
             'slug' => $command->slug(),
@@ -114,7 +117,8 @@ final readonly class CommandCatalogBuilder
             'destructive_consent' => null,
             'docs' => $docs,
             'public_options_documented' => $this->publicOptionsDocumented($command, $docs),
-            'linked_test_files' => $directory === null ? [] : $this->docsIndex->linkedTestFiles($directory),
+            'linked_test_files' => $linkedTestFiles,
+            'verification_hints' => $verificationHints->forLinkedTestFiles($linkedTestFiles),
             'p4_mapping' => $this->p4MappingIndex->forCommand($command),
         ];
     }
