@@ -44,7 +44,7 @@ Example JSON shape:
         }
       }
     },
-    "meta": {}
+    "meta": []
   }
 }
 ```

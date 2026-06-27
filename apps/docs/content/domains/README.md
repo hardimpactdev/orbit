@@ -427,7 +427,7 @@ progress stream opens use the normal JSON error envelope and do not include an
 ```json
 {"event":"tree","data":{"title":"Working","steps":[]}}
 {"event":"step","data":{"key":"apply","status":"running"}}
-{"event":"complete","success":{"data":{},"meta":{}}}
+{"event":"complete","success":{"data":{},"meta":[]}}
 ```
 
 Non-terminal frames use `event=tree` or `event=step` with the gateway progress
@@ -436,7 +436,7 @@ command's normal JSON success payload under `success`. Terminal failure frames
 use `event=error` with a canonical error object:
 
 ```json
-{"event":"error","error":{"code":"gateway_stream_error","message":"Gateway progress stream failed.","meta":{}}}
+{"event":"error","error":{"code":"gateway_stream_error","message":"Gateway progress stream failed.","meta":[]}}
 ```
 
 If the stream transport fails after any progress frame has been emitted, the

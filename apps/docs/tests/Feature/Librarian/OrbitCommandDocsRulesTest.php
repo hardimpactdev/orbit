@@ -1745,3 +1745,132 @@ function findingsForRule(array $payload, string $rule): array
         fn (array $finding): bool => $finding['rule'] === $rule,
     ));
 }
+
+function use_json_metadata_shape_rule_only(): void
+{
+    config()->set('librarian.rules', [
+        \App\Librarian\Rules\JsonMetadataShapeRule::class,
+    ]);
+}
+
+it('reports json examples with empty object metadata', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {}, \"meta\": {}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
+            'line' => 11,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 documents empty metadata at success.meta as an object; use an empty array [] to match the shared JSON envelope contract.',
+        ]);
+});
+
+it('allows empty array metadata in json examples', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {}, \"meta\": []}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule(payload: $payload, rule: 'command_docs.json_metadata_shape'))
+        ->toBeEmpty();
+});
+
+it('allows non-empty object metadata in json examples', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily(
+        root: $this->docsRoot,
+        jsonRendererContract: "# JSON Renderer\n\n## Primitive\n\nNone. JSON renderer.\n\n## Envelope\n\nUses [the shared JSON Envelope](../../../README.md#json-envelope) for success and error responses.\n\n```json\n{\"success\": {\"data\": {}, \"meta\": {\"warnings\": []}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForRule(payload: $payload, rule: 'command_docs.json_metadata_shape'))
+        ->toBeEmpty();
+});
+
+it('scans general product docs outside json renderer contracts for empty metadata objects', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/3_tool/catalog/mailpit.md',
+        contents: "# Mailpit\n\n```json\n{\"error\": {\"code\": \"tool.not_found\", \"message\": \"Missing tool.\", \"meta\": {}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains/3_tool/catalog/mailpit.md',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/3_tool/catalog/mailpit.md',
+            'line' => 3,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 documents empty metadata at error.meta as an object; use an empty array [] to match the shared JSON envelope contract.',
+        ]);
+});
+
+it('reports stream json frame examples with empty object metadata', function (): void {
+    use_json_metadata_shape_rule_only();
+    writeOrbitCommandDocsFamily($this->docsRoot);
+    writeOrbitDocsFile(
+        root: $this->docsRoot,
+        path: 'docs/domains/README.md',
+        contents: "# Shared contracts\n\n```json\n{\"event\":\"progress\",\"data\":{\"message\":\"Checking\"}}\n{\"event\":\"error\",\"error\":{\"code\":\"gateway_stream_error\",\"message\":\"Gateway progress stream failed.\",\"meta\":{}}}\n```\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', [
+        '--format' => 'agent',
+        '--path' => 'docs/domains/README.md',
+        '--group' => 'contracts',
+    ]);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
+            'path' => 'docs/domains/README.md',
+            'line' => 3,
+            'severity' => 'error',
+            'rule' => 'command_docs.json_metadata_shape',
+            'message' => 'JSON example 1 documents empty metadata at error.meta as an object; use an empty array [] to match the shared JSON envelope contract.',
+        ]);
+});

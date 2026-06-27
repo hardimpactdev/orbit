@@ -26,6 +26,7 @@ use App\Librarian\Rules\ExitStatusPolicyRule;
 use App\Librarian\Rules\FamilyCommandPrefixRule;
 use App\Librarian\Rules\HumanRendererProgressTreeRule;
 use App\Librarian\Rules\InputModeContractRule;
+use App\Librarian\Rules\JsonMetadataShapeRule;
 use App\Librarian\Rules\JsonRendererEnvelopeRule;
 use App\Librarian\Rules\JsonRendererExampleRule;
 use App\Librarian\Rules\JsonWarningShapeRule;
@@ -101,6 +102,7 @@ return [
         InputModeContractRule::class,
         DestructiveConsentRule::class,
         JsonRendererExampleRule::class,
+        JsonMetadataShapeRule::class,
         JsonWarningShapeRule::class,
         RendererPrimitiveReferenceRule::class,
         CanonicalTechnicalContractRule::class,
