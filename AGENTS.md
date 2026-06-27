@@ -8,6 +8,10 @@ root; see [`HARNESS.md`](HARNESS.md) for scope, agent discovery path, and how
 the harness differs from the feedback loop. Product behavior contracts remain in
 `apps/docs/content/`.
 
+For compact root-start routing, LLM agents can read the generated monorepo unit
+map at [`apps/docs/content/generated/monorepo-unit-map.json`](apps/docs/content/generated/monorepo-unit-map.json).
+It is a routing aid, not product authority.
+
 ## Repository Shape
 
 - The repository root is orchestration only: root Composer scripts, `bin/`

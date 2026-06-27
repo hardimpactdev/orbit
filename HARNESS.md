@@ -108,25 +108,28 @@ Start at the monorepo root and read in this order:
 1. **`AGENTS.md`**: repo shape, authority chain, verification commands,
    worktree workflow
 2. **`HARNESS.md`**: this file; repo harness anchor
-3. **`LOOP.md.example`**: local loop-state template; copy it to
+3. **`apps/docs/content/generated/monorepo-unit-map.json`**: compact
+   machine-readable app/package routing facts for LLM agents; not product
+   authority
+4. **`LOOP.md.example`**: local loop-state template; copy it to
    `.orbit/loop.md` for non-trivial active work
-4. **`.orbit/loop.md`**: current slice state when present; never treat
+5. **`.orbit/loop.md`**: current slice state when present; never treat
    absence in a fresh checkout as a product gap
-5. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
-6. **`harness-signals/`**: curated signal records to search for prior
+6. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
+7. **`harness-signals/`**: curated signal records to search for prior
    occurrences, guardrail changes, and recurrence checks; not raw session
    archives under `.orbit/sessions/`
-7. **`.agents/skills/`**: domain procedures activated just-in-time per change
+8. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
-8. **`.agents/review-personas/`**: focused review checklists activated by the
+9. **`.agents/review-personas/`**: focused review checklists activated by the
    routing table after implementation evidence exists
-9. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
+10. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
    changes and reversals
-10. **`apps/docs/content/`**: product authority (behavior contracts, not
+11. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-11. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+12. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-12. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
+13. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
    E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
