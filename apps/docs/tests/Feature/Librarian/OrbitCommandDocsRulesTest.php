@@ -1548,6 +1548,26 @@ it('accepts a test mapping that declares no gateway-side coverage', function ():
     expect(findingsForRule($payload, 'command_docs.test_mapping_format'))->toBe([]);
 });
 
+it('reports malformed non-gateway test mapping paths', function (): void {
+    writeOrbitCommandDocsFamily(
+        $this->docsRoot,
+        humanRendererContract: "# Human Renderer\n\n## Primitive\n\nNone. No human renderer primitive.\n\n## Progress Tree\n\n```text\n┌ Creating Node\n○ Resolve target\n└ Working...\n```\n\n## Test Mapping\n\n| Path | Coverage |\n| --- | --- |\n| `apps/cli/tests/Feature/Commands/Node/NodeNewStreamCommandSpec.php` | Human renderer output coverage for the node command surface. |\n\nThere is no gateway-side coverage for this renderer: public command ownership lives in `apps/cli`.\n",
+    );
+
+    $exitCode = Artisan::call('librarian:lint', ['--format' => 'agent']);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    $matchingFindings = findingsForRule(payload: $payload, rule: 'command_docs.test_mapping_format');
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings)
+        ->not
+        ->toBeEmpty()
+        ->and($matchingFindings[0]['message'])
+        ->toContain('Test.php');
+});
+
 it('still requires a gateway test row when no coverage declaration exists', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
@@ -1570,7 +1590,7 @@ function makeOrbitLibrarianDocsFixture(): string
 {
     $path = sys_get_temp_dir().'/orbit-librarian-'.bin2hex(random_bytes(6));
 
-    mkdir($path, 0777, true);
+    mkdir(directory: $path, permissions: 0777, recursive: true);
     writeOrbitDocsFile(
         $path,
         'config/librarian-command-docs/state_families.php',
