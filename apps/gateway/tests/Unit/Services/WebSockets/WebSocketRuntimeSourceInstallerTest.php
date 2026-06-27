@@ -83,7 +83,7 @@ it('ships a bootable Laravel Reverb source artifact without committed vendor fil
 
     expect($composer['require'])->toMatchArray([
         'php' => '^8.5',
-        'laravel/framework' => '13.7.0',
+        'laravel/framework' => '^13.0',
         'laravel/reverb' => '^1.10',
     ]);
 });

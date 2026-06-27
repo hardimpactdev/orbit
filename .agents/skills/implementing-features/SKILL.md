@@ -104,6 +104,79 @@ approves bypassing the Solo worker lane. Small orchestration-only edits,
 conflict resolution after review, and mechanical formatting fixes are acceptable
 only when they do not replace the tracked worker loop.
 
+## Codex App To Solo Orchestrator Handoff
+
+When implementation starts from the Codex app or another non-Solo-visible
+discussion surface, the app session is a handoff owner by default. Its job is to
+turn the crystallized request into a Solo-tracked implementation loop, not to
+stay as the long-running feature owner.
+
+Use this mode unless the user explicitly asks the current app session to keep
+watching or to bypass the Solo orchestrator handoff:
+
+1. Preserve the raw user feature contract, acceptance criteria, explicit
+   deferrals, and source thread pointer in the feature scratchpad or the
+   handoff prompt.
+2. Prepare the dedicated worktree with `bin/orbit-prepare-worktree`.
+3. Spawn a Solo-managed Codex orchestrator for the same Solo project.
+4. Record the Solo project id, orchestrator process id/name, worktree path,
+   branch, source thread pointer, and prompt/scratchpad pointer in the feature
+   scratchpad and `.orbit/loop.md` when that file exists.
+5. Send the Solo Codex orchestrator a complete implementation prompt.
+6. After prompt delivery and a visible first checkpoint or explicit delivery
+   blocker, report the handoff result and stop. Resume only if the user asks for
+   watcher or recovery work.
+
+The Solo Codex orchestrator continues this same skill from Orchestrator Role.
+It owns `.orbit/loop.md`, worker planning, implementation delegation, review,
+verification, finalization, merge-back, and cleanup. It must spawn
+implementation, documenter, reviewer, analyzer, and retained-terminal lanes
+from inside Solo so descendant processes are linked under its
+`parent_process_id`. That Solo process tree is the telemetry root for session
+token extraction and post-analysis.
+
+Use this prompt shape:
+
+```text
+<prepend the agent_instructions returned by Solo spawn_agent>
+
+You are the Solo-managed Codex feature orchestrator for one Orbit
+implementation loop. Continue .agents/skills/implementing-features/SKILL.md
+from Orchestrator Role.
+
+Solo identity:
+- Solo project id: <project id>
+- Orchestrator process id: <process id returned by Solo>
+- Source discussion: <Codex thread id/transcript pointer or none>
+- Feature scratchpad: <solo://... or none>
+
+Worktree:
+<absolute path to .worktrees/<branch-name>>
+
+Branch:
+<branch-name>
+
+Raw feature contract:
+<paste the crystallized request, acceptance examples, transcripts, screenshots,
+negative examples, and explicit deferrals>
+
+Rules:
+- First prove `pwd`, `git status --short --branch`, and the active Solo process
+  identity before broad reads or edits.
+- Keep all implementation work inside the assigned worktree.
+- Treat this process id as the telemetry root. Record it in `.orbit/loop.md`
+  and the feature scratchpad, then spawn all child workers/reviewers/terminals
+  from inside Solo so they inherit this process as `parent_process_id`.
+- Fill the active Done Contract before implementation worker dispatch.
+- Follow the normal Solo worker, TDD, review, verification, finalization,
+  merge-back, and cleanup gates in this skill without weakening them.
+- Do not ask the source Codex app session to keep coordinating unless delivery,
+  Solo identity, or worktree setup is blocked.
+
+Report the first checkpoint with the recorded process id, worktree, branch,
+Done Contract location, candidate worker plan, and any blocker.
+```
+
 ## Solo Implementation Delegation
 
 Discover the available Solo implementation worker for the current environment
@@ -250,11 +323,12 @@ evidence exists.
 
 First write a small local packet under `.orbit/evidence/` or the final section
 of `.orbit/loop.md`. Do not commit the packet. Include objective, final diff or
-commit, verification results, worker/reviewer ids or summaries, terminal or PTY
-artifacts, quality-gate evidence, human corrections, and factual orchestrator
-steering notes. Include the Codex thread id or transcript path for the feature
-orchestrator when available, plus Solo scratchpads or process ids needed to
-inspect worker and reviewer reports.
+commit, verification results, the Solo orchestrator process id when the feature
+was handed off from the Codex app, worker/reviewer ids or summaries, terminal or
+PTY artifacts, quality-gate evidence, human corrections, and factual
+orchestrator steering notes. Include the Codex thread id or transcript path for
+the feature orchestrator when available, plus Solo scratchpads or process ids
+needed to inspect worker and reviewer reports.
 
 Spawn a fresh Solo-managed analyzer as Claude Opus at medium effort: discover
 the enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
@@ -267,6 +341,25 @@ whether the loop was performed properly and classifies guardrail decisions as
 `correct-noop`, `missed`, `redundant`, `wrong-target`, or `defer`. It must not
 steer live work, edit code, update `harness-signals/`, change skills, approve
 merge, or run cleanup.
+
+The analyzer prompt must start with a checkout-proof block before any file
+reads or review:
+
+```text
+cd <absolute worktree path>
+pwd
+git branch --show-current
+git status --short --branch
+```
+
+Require the analyzer to print `CHECKOUT_PROOF` with the resulting path, branch,
+and status before reading the packet or diff. The feature owner must inspect that
+proof before trusting the analyzer report. If the proof is missing or points at
+`~/orbit`, `main`, or any checkout other than the assigned worktree, interrupt
+once with the exact proof commands and require a verdict from already gathered
+evidence after the proof. If the analyzer still does not produce a verdict,
+close or replace it, record the analyzer lane as blocked, and continue only from
+defensible direct evidence.
 
 The feature owner accepts, rejects, or defers the analyzer recommendation using
 full session context. A durable guardrail is allowed only when the candidate has
@@ -567,7 +660,12 @@ command address/output transcript.
    and mirrored roadmap contents are recorded. Do not route through retired
    orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
-3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
+3. If implementation started from the Codex app or another non-Solo-visible
+   discussion surface, use Codex App To Solo Orchestrator Handoff now. The
+   Solo-managed Codex orchestrator resumes this workflow from the assigned
+   worktree. The app handoff session stops after delivery and first-checkpoint
+   proof or an explicit delivery blocker.
+4. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
    `PRODUCT_DECISIONS.md`, relevant product docs under `apps/docs/content/**`,
    and relevant session context under `docs/superpowers/**`. Copy
@@ -579,8 +677,8 @@ command address/output transcript.
    slice outcomes in the feature scratchpad. The Done Contract must include raw
    acceptance examples or a precise pointer to them, plus explicit deferrals for
    any part of the user's request that is not in the current slice.
-4. Confirm owned files or domains and existing dirty work before editing.
-5. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
+5. Confirm owned files or domains and existing dirty work before editing.
+6. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
    verification lanes, owned files, provider resources, shared temp/state paths,
    and dependencies in `.orbit/loop.md`, the feature scratchpad, or the worker
    plan. A serial plan for isolated goals, slices, or lanes is incomplete unless
@@ -596,10 +694,10 @@ command address/output transcript.
    worker's owned files and run broad dirty-file tooling only after worker diffs
    are reconciled. Add a Claude documenter/librarian worker when documentation
    is substantial and the docs-owned surface is clear.
-6. If a Claude documenter/librarian worker is used, spawn it first or in
+7. If a Claude documenter/librarian worker is used, spawn it first or in
    parallel only after the docs-owned slice is explicit. The feature owner must
    inspect the docs result and accept the docs contract before code relies on it.
-7. Spawn the Solo implementation worker(s) with the worktree path, handoff,
+8. Spawn the Solo implementation worker(s) with the worktree path, handoff,
    owned scope, documentation authority, TDD requirement, focused verification,
    and the rule that workers must not commit, merge to `main`, or clean up the
    worktree unless the feature owner explicitly assigns that exact step. Require
@@ -607,7 +705,7 @@ command address/output transcript.
    If the agent starts in `~/orbit` or another checkout, stop it and relaunch
    through a Solo terminal that `cd`s into the assigned worktree before starting
    the agent.
-8. Monitor workers, inspect diffs, and send correction prompts until the
+9. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. Worker handoffs must
    request the complete owned outcome in one continuous feature loop: align docs
    when needed, create the first failing test or docs diff, implement the fix,
@@ -627,11 +725,11 @@ command address/output transcript.
    `.orbit/loop.md` and `HARNESS_SIGNALS.md`. If a reviewer or human points to
    behavior already present in the raw request, reclassify it as a blocking
    contract gap unless it was explicitly deferred before editing.
-9. Align documentation inside this worktree when the handoff identifies missing
+10. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
    owns the related behavior.
-10. For every failed verification, review comment, human correction, docs
+11. For every failed verification, review comment, human correction, docs
    conflict, setup problem, or agent mistake encountered during the slice,
    search `harness-signals/` for related prior records, then decide whether it
    is local cleanup or a durable harness signal. If the search returns stale,
@@ -641,17 +739,17 @@ command address/output transcript.
    signal record and update the smallest guardrail target in the same worktree.
    If it is durable but broader than the slice, report a scoped follow-up
    instead of expanding ownership.
-11. Check whether the project-owned Orbit skill under `.agents/skills/orbit/**` is
+12. Check whether the project-owned Orbit skill under `.agents/skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-12. Ensure the implementation worker followed TDD (see Test-Driven Development
+13. Ensure the implementation worker followed TDD (see Test-Driven Development
     below): failing Pest tests first, literal failing output captured, then
     implementation. A narrative claim that a test failed is not sufficient when
     the failure was used to prove red.
-13. Keep the smallest working vertical slice that makes the tests pass.
-14. For CLI command behavior, run retained topology proof from this worktree
+14. Keep the smallest working vertical slice that makes the tests pass.
+15. For CLI command behavior, run retained topology proof from this worktree
     when the behavior touches topology, VM runtime, or operator-visible command
     execution. For human rendering, progress, prompts, or streaming output, run
     CLI reviewer PTY frame analysis before user inspection. Give the user a
@@ -662,12 +760,12 @@ command address/output transcript.
     directory and label older artifacts as stale in the report. If this cannot
     be completed, report the blocker explicitly instead of widening the release
     path.
-15. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+16. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-16. Run focused in-memory verification for the active slice. For multi-slice
+17. Run focused in-memory verification for the active slice. For multi-slice
     features, do not spend prepared E2E on every internal slice by default. Run
     retained topology proof as the feature-level topology gate when the final
     branch diff needs real topology evidence. When retained topology proof is
@@ -676,7 +774,7 @@ command address/output transcript.
     clean up, or run final loop-improvement extraction while required retained
     topology proof is still blocked; record the blocker, owner, and unblock
     condition in `.orbit/loop.md` and the report.
-17. Run the applicable reviewer persona from the `HARNESS.md` routing table once
+18. Run the applicable reviewer persona from the `HARNESS.md` routing table once
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
@@ -692,34 +790,39 @@ command address/output transcript.
     to a follow-up when the Done Contract already names the deferral.
     For small changed-files-only reviews, prompt the reviewer for a
     blockers-first verdict (`No blockers` or file/line blockers) before optional
-    suggestions. Include the exact diff command and base the reviewer should
-    inspect, such as `git diff HEAD -- <owned files>` for an uncommitted
-    post-review fix, instead of leaving the reviewer to choose a broad branch
-    comparison. Give Claude and comparable reviewers minute-scale read time when
-    the output shows active file reads, tool use, or generation; do not
-    interrupt productive review work just because it exceeds a short Solo wait
-    deadline. Interrupt once with a verdict-only prompt only when the reviewer
-    is clearly waiting for input, idle after loading context, or generating
-    without useful progress for an extended window. If it still does not return,
-    close or replace that reviewer and record the process finding through
-    `harness-signals/` before proceeding only on defensible direct evidence.
+    suggestions. Every reviewer prompt must begin with the same checkout-proof
+    block required for post-feature analyzers: `cd <absolute worktree path>`,
+    `pwd`, `git branch --show-current`, and `git status --short --branch`.
+    Require a `CHECKOUT_PROOF` line before the reviewer reads files or returns a
+    verdict. Include the exact diff command and base the reviewer should inspect,
+    such as `git diff HEAD -- <owned files>` for an uncommitted post-review fix,
+    instead of leaving the reviewer to choose a broad branch comparison. Give
+    Claude and comparable reviewers minute-scale read time when the output shows
+    active file reads, tool use, or generation; do not interrupt productive
+    review work just because it exceeds a short Solo wait deadline. Interrupt
+    once with a proof-and-verdict prompt only when the reviewer is in the wrong
+    checkout, clearly waiting for input, idle after loading context, or
+    generating without useful progress for an extended window. If it still does
+    not return, close or replace that reviewer and record the process finding
+    through `harness-signals/` before proceeding only on defensible direct
+    evidence.
     Reviewer findings fixed before merge are normal feature-loop work. Promote
     them to loop improvements only when the review process itself missed a
     recurring class of issue, or existing reviewer guidance would not catch the
     same issue next time.
-18. Do not run artifact-backed E2E verification. If the user manually runs an
+19. Do not run artifact-backed E2E verification. If the user manually runs an
     artifact-backed E2E command, record the provided output or existing
     `.orbit/quality-gates/` artifact.
-19. Do not run provider provision gates. If the user manually runs a provider
+20. Do not run provider provision gates. If the user manually runs a provider
     provision command, record the provided output or existing artifact and keep
     it separate from the retained topology feature gate.
-20. If PHP changed, run:
+21. If PHP changed, run:
 
    ```bash
    vendor/bin/mago format --check
    ```
 
-21. Before reporting completion, run the verification gate implied by the final
+22. Before reporting completion, run the verification gate implied by the final
     diff:
 
    ```bash
@@ -734,7 +837,7 @@ command address/output transcript.
     quality-check evidence, and production PHP diffs also need retained
     topology proof. Do not rerun expensive gates from the finalization check.
 
-22. Before committing or reporting completion, inspect the timing evidence
+23. Before committing or reporting completion, inspect the timing evidence
     already produced by the applicable gates:
 
    ```bash
@@ -750,7 +853,7 @@ command address/output transcript.
     without rerunning the gates. Retained topology proof is recorded in
     `.orbit/loop.md` or `.orbit/evidence/`; the finalization hook validates the
     row status but does not run topology commands.
-23. Before committing or reporting completion, run a Post-Feature Session
+24. Before committing or reporting completion, run a Post-Feature Session
     Review. Treat `.orbit/loop.md` as the canonical local final packet and
     point it at the feature thread or handoff, Solo worker sessions, reviewer
     output, retained terminal or PTY evidence when applicable, verification
@@ -791,18 +894,18 @@ command address/output transcript.
     archive the completed active `.orbit/` state into the persistent project
     archive home before cleanup and before any later `.orbit/loop.md` rewrite.
     Copy every active `.orbit/` entry except `.orbit/sessions/`.
-24. Commit the verified worktree changes on the worktree branch.
-25. Merge the branch back into `main` from the primary `~/orbit` checkout by
+25. Commit the verified worktree changes on the worktree branch.
+26. Merge the branch back into `main` from the primary `~/orbit` checkout by
     following `HARNESS.md` merge and cleanup boundaries. Leave `~/orbit` on
     updated `main`. Preserve unrelated dirty files in `~/orbit`; if they
     overlap with the merge, stop for direction instead of discarding them.
-26. If release was explicitly agreed or specifically discussed as part of the
+27. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
     the release artifacts are accepted, run `doctor` again, compare the before
     and after results, and either fix regressions immediately or record scoped
     follow-up tasks for intentional migration work.
-27. When the user confirms live topology behavior or explicitly says the
+28. When the user confirms live topology behavior or explicitly says the
     feature is complete, run feature completion cleanup: archive the feature
     scratchpad, close or resolve related Solo todos, and stand down related
     Solo agents or retained terminals. If the completed active `.orbit/` session
@@ -955,7 +1058,10 @@ Raw contract:
 - Explicit deferrals: <deferred request parts with reason/owner, or none>
 
 Solo implementation delegation:
-- Worker(s): <model/tool, name/process id, and owned scope>
+- Orchestrator: <model/tool, name/process id, Solo project id, parent/source
+  thread pointer, or not handed off>
+- Worker(s): <model/tool, name/process id, parent process id when available,
+  and owned scope>
 - Corrections requested: <summary or none>
 
 Documenter/librarian delegation:
