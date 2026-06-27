@@ -74,4 +74,6 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessEventStreamCommandTest.php` | Internal stream contract, scope filters, resume behavior, initial snapshot, durable event streaming, unverifiable snapshot items, pre-stream error envelopes, terminal `process.event_stream_failed` frames, authorization failure, and no process configuration mutation. |
+
+No executable gateway test currently maps this internal stream contract. Add
+coverage before changing or implementing `process-event:stream` behavior.

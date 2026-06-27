@@ -50,6 +50,7 @@ use App\Librarian\Rules\SignatureOptionConsistencyRule;
 use App\Librarian\Rules\TechnicalSlotSemanticsRule;
 use App\Librarian\Rules\TechnicalTestMappingRule;
 use App\Librarian\Rules\TestMappingFormatRule;
+use App\Librarian\Rules\TestMappingPathExistsRule;
 use HardImpact\Librarian\Linting\Rules\BulletComplexityRule;
 use HardImpact\Librarian\Linting\Rules\CompoundNounStackRule;
 use HardImpact\Librarian\Linting\Rules\DocumentComplexityRule;
@@ -122,6 +123,7 @@ return [
         RoleCompanionCoverageRule::class,
         TechnicalTestMappingRule::class,
         TestMappingFormatRule::class,
+        TestMappingPathExistsRule::class,
         DoctorRelationshipReferenceRule::class,
         NonStateDomainHandoffRule::class,
         ReaderAddressRule::class,

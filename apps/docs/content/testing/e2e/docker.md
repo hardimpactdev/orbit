@@ -256,15 +256,15 @@ through the Composer script. Add `--sequential-tests` when the selected tests
 should stay in one Pest process:
 
 ```bash
-composer test:e2e:docker -- --sequential-tests apps/gateway/tests/E2E/AppListTest.php
+composer test:e2e:docker -- --sequential-tests apps/e2e/tests/Feature/Commands/AppListTest.php
 
 composer test:e2e:docker -- --sequential-tests \
-  apps/gateway/tests/E2E/AppListTest.php \
-  apps/gateway/tests/E2E/NodeListTopologyTest.php
+  apps/e2e/tests/Feature/Commands/AppListTest.php \
+  apps/e2e/tests/Feature/Commands/NodeListTopologyTest.php
 
 composer test:e2e:docker -- --sequential-tests \
   --filter='lists apps' \
-  apps/gateway/tests/E2E/AppListTest.php
+  apps/e2e/tests/Feature/Commands/AppListTest.php
 ```
 
 Each Pest worker gets a non-overlapping Docker subnet from the `10.90.N.0/24`
