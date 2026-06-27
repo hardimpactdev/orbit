@@ -84,6 +84,11 @@ Responsibilities:
   contract before code relies on it, or when ownership is genuinely independent.
 - Monitor worker output, inspect diffs, ask for corrections, and keep unrelated
   dirty files untouched.
+- When a Solo worker, reviewer, analyzer, or disposable terminal is no longer
+  needed, serialize cleanup: capture required output or summary evidence,
+  verify the artifact exists and is non-empty or record why no output is
+  expected, then stop or delete the process in a separate command. Never run
+  output capture and process deletion in parallel.
 - Run or require the verification gates and independently read the results.
 - Run applicable reviewer personas from `HARNESS.md` after implementation
   evidence exists. For documentation-heavy changes, use

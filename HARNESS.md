@@ -107,30 +107,32 @@ Start at the monorepo root and read in this order:
 
 1. **`AGENTS.md`**: repo shape, authority chain, verification commands,
    worktree workflow
-2. **`HARNESS.md`**: this file; repo harness anchor
-3. **`apps/docs/content/generated/monorepo-unit-map.json`**: compact
+2. **`AGENT_FAST_PATH.md`**: first five-minute route for request type,
+   required skill, worktree/eval route, and verification lane
+3. **`HARNESS.md`**: this file; repo harness anchor
+4. **`apps/docs/content/generated/monorepo-unit-map.json`**: compact
    machine-readable app/package routing facts for LLM agents; not product
    authority
-4. **`LOOP.md.example`**: local loop-state template; copy it to
+5. **`LOOP.md.example`**: local loop-state template; copy it to
    `.orbit/loop.md` for non-trivial active work
-5. **`.orbit/loop.md`**: current slice state when present; never treat
+6. **`.orbit/loop.md`**: current slice state when present; never treat
    absence in a fresh checkout as a product gap
-6. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
-7. **`harness-signals/`**: curated signal records to search for prior
+7. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
+8. **`harness-signals/`**: curated signal records to search for prior
    occurrences, guardrail changes, and recurrence checks; start with
    `harness-signals/index.json` when present, then open matching records; not
    raw session archives under `.orbit/sessions/`
-8. **`.agents/skills/`**: domain procedures activated just-in-time per change
+9. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
-9. **`.agents/review-personas/`**: focused review checklists activated by the
+10. **`.agents/review-personas/`**: focused review checklists activated by the
    routing table after implementation evidence exists
-10. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
+11. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
    changes and reversals
-11. **`apps/docs/content/`**: product authority (behavior contracts, not
+12. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-12. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+13. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-13. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
+14. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
    E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
@@ -152,6 +154,11 @@ back to `.orbit/loop.md` instead of replacing it. Do not commit the packet.
 Add candidate signals to `.orbit/loop.md` as they appear. The final review
 should classify an already-collected packet, not reconstruct the session from
 scattered artifacts after the fact.
+
+Solo process cleanup is serialized evidence work: capture required output or
+summary evidence, verify the artifact exists and is non-empty or record why no
+output is expected, then stop or delete the process in a separate command. Do
+not run output capture and process deletion in parallel.
 
 Run a fresh-context post-feature analyzer from that packet when the feature had
 implementation workers, reviewer corrections, retained terminal/PTY evidence,
