@@ -65,6 +65,57 @@ Use `evidence` or `tests` consistently within a suite. Optional outcome-file
 checks; record formal `eval-trial.tracked_metrics` separately in the trial
 artifact.
 
+### Planning Eval Shape
+
+When the eval asks an agent to plan a feature rather than prove current
+coverage, split current evidence from files the agent would create. Do not use
+one `tests` array for both existing test evidence and proposed new test files.
+
+Prefer this shape for planning tasks:
+
+```json
+{
+  "existing_docs": [
+    {
+      "path": "apps/docs/content/domains/example.md",
+      "claim": "Current behavior this doc establishes"
+    }
+  ],
+  "existing_tests": [
+    {
+      "path": "apps/cli/tests/Feature/Commands/ExampleTest.php",
+      "claim": "Current behavior this test already proves",
+      "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/ExampleTest.php"
+    }
+  ],
+  "proposed_new_tests": [
+    {
+      "path": "apps/gateway/tests/Feature/Http/Api/ExampleControllerTest.php",
+      "claim": "New assertion the implementation should add",
+      "suggested_command_after_creation": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ExampleControllerTest.php"
+    }
+  ],
+  "proposed_new_files": [
+    {
+      "path": "apps/docs/content/domains/example/technical/new-contract.md",
+      "claim": "New docs surface the feature would create"
+    }
+  ]
+}
+```
+
+Path-existence checks apply to `existing_docs`, `existing_tests`, and other
+current evidence arrays. They do not apply to `proposed_new_tests` or
+`proposed_new_files`; instead, review those semantically for plausible
+ownership, naming, and command shape. If an agent presents a nonexistent path as
+current evidence, classify it as `nonexistent_path`. If it clearly labels the
+path as a proposed new file, do not count nonexistence as a citation failure.
+
+For verification commands, distinguish current checks from post-implementation
+checks when that affects scoring. A command targeting a proposed new test file
+can be a reasonable post-implementation command while still being unrunnable in
+the current checkout.
+
 Record in the `eval-trial` artifact:
 
 - `outcome_ref`: absolute path to the one outcome file
@@ -82,6 +133,7 @@ Run these before semantic scoring or aggregate claims. Record pass, fail, or not
 | Required keys | `trial_id`, `case_id`, `condition`, and the suite-required evidence fields are present |
 | Doc path existence | Every cited doc path exists in the assigned worktree |
 | Evidence/test path existence | Every cited evidence or test path exists exactly as written |
+| Planning proposed-file split | Planning outcomes keep existing evidence separate from proposed new docs, tests, or source files |
 | Duplicate paths | No repeated doc or evidence path inflates counts |
 | Near-miss paths | No cited path is a plausible but wrong sibling, such as `apps/cli/tests/Feature/GatewayCommandTest.php` when the real file is `apps/cli/tests/Feature/Commands/GatewayCommandTest.php` |
 | Stale artifact leakage | Cited docs or evidence do not point at retired paths, banned terms, or artifacts the case marked stale |
