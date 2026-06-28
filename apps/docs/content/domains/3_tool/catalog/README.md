@@ -104,6 +104,7 @@ remains documented for compatibility until it is removed or migrated.
 1. [`php`](php.md)
 2. [`mailpit`](mailpit.md)
 3. [`reverb`](reverb.md)
+4. [`claude-code`](claude-code.md)
 
 ### Agent IDE servers, operator tools, and autonomous agent tools
 
@@ -112,11 +113,11 @@ configuration, and first-party autonomous agents. Explicit tool targeting is
 constrained by the selected tool's supported operating systems, not by role
 membership.
 
-4. [`polyscope-server`](polyscope-server.md)
-5. [`opencode-server`](opencode-server.md)
-6. [`openclaw`](openclaw.md)
-7. [`hermes`](hermes.md)
-8. [`codex-app`](codex-app.md)
+5. [`polyscope-server`](polyscope-server.md)
+6. [`opencode-server`](opencode-server.md)
+7. [`openclaw`](openclaw.md)
+8. [`hermes`](hermes.md)
+9. [`codex-app`](codex-app.md)
 
 ## File Contract
 

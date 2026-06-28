@@ -27,6 +27,25 @@ it('points Codex Laravel Boost MCP at the relocated gateway artisan', function (
         ->not->toContain('cwd = ".."');
 });
 
+it('exposes the isolated Orbit docs QMD MCP endpoint in root agent configs', function (): void {
+    $claudeConfig = json_decode(
+        (string) file_get_contents(repo_path('.mcp.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $codexConfig = file_get_contents(repo_path('.codex/config.toml')) ?: '';
+
+    expect($claudeConfig['mcpServers']['qmd-orbit'] ?? null)
+        ->toBe([
+            'type' => 'http',
+            'url' => 'http://10.6.0.7:8182/mcp',
+        ])
+        ->and($codexConfig)
+        ->toContain('[mcp_servers.qmd-orbit]')
+        ->toContain('url = "http://10.6.0.7:8182/mcp"')
+        ->not->toContain('url = "http://10.6.0.7:8181/mcp"');
+});
+
 it('targets monorepo root agent artifacts from gateway boost config', function (): void {
     $repoRoot = realpath(repo_path());
     $codex = config('boost.agents.codex');

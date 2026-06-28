@@ -13,6 +13,7 @@ use App\Contracts\RemoteShellStream;
 use App\Contracts\RequestProfiler;
 use App\Contracts\SiteCertificateInstaller;
 use App\Contracts\StartsRemoteShellProcesses;
+use App\Contracts\ToolDefinition;
 use App\Contracts\UpdateAllGatewayStream;
 use App\Contracts\WorkspaceSourceDrivers;
 use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
@@ -58,6 +59,7 @@ use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
 use App\Tools\CaddyTool;
+use App\Tools\ClaudeCodeTool;
 use App\Tools\CodexAppTool;
 use App\Tools\ComposerTool;
 use App\Tools\DnsTool;
@@ -75,6 +77,7 @@ use App\Tools\PolyscopeServerTool;
 use App\Tools\ReverbTool;
 use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
@@ -111,13 +114,17 @@ class AppServiceProvider extends ServiceProvider
             verifier: $app->make(OperationTokenVerifier::class),
             secret: $this->operationTokenSigningKey(),
         ));
-        $this->app->singleton(GatewayConnector::class, function ($app): GatewayConnector {
+        $this->app->singleton(GatewayConnector::class, static function (Application $app): GatewayConnector {
             $settings = LocalGatewaySettings::current();
 
             return new GatewayConnector(
                 baseUrl: is_string($settings->gateway_url) ? $settings->gateway_url : null,
                 caPemPath: $settings->ca_pem_path,
-                correlationIdResolver: fn (): ?string => $app->make(ActivityLogCorrelation::class)->current(),
+                correlationIdResolver: static function () use ($app): ?string {
+                    $correlation = $app->make(ActivityLogCorrelation::class);
+
+                    return $correlation->current();
+                },
             );
         });
         $this->app->singleton(LocalResolver::class);
@@ -149,26 +156,32 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(
             ToolDefinitionRegistry::class,
-            fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([
-                $app->make(CaddyTool::class),
-                $app->make(DockerTool::class),
-                $app->make(VitePlusTool::class),
-                $app->make(PhpCliTool::class),
-                $app->make(GhTool::class),
-                $app->make(ComposerTool::class),
-                $app->make(DnsTool::class),
-                $app->make(PhpTool::class),
-                $app->make(MailpitTool::class),
-                $app->make(ReverbTool::class),
-                $app->make(SeaweedfsTool::class),
-                $app->make(NodeExporterTool::class),
-                $app->make(PolyscopeServerTool::class),
-                $app->make(OpenCodeServerTool::class),
-                $app->make(OpenClawTool::class),
-                $app->make(HermesTool::class),
-                $app->make(LaravelInstallerTool::class),
-                $app->make(CodexAppTool::class),
-            ]),
+            static function (Application $app): ToolDefinitionRegistry {
+                /** @var list<ToolDefinition> $definitions */
+                $definitions = [
+                    $app->make(CaddyTool::class),
+                    $app->make(DockerTool::class),
+                    $app->make(VitePlusTool::class),
+                    $app->make(PhpCliTool::class),
+                    $app->make(GhTool::class),
+                    $app->make(ComposerTool::class),
+                    $app->make(DnsTool::class),
+                    $app->make(PhpTool::class),
+                    $app->make(MailpitTool::class),
+                    $app->make(ReverbTool::class),
+                    $app->make(SeaweedfsTool::class),
+                    $app->make(NodeExporterTool::class),
+                    $app->make(PolyscopeServerTool::class),
+                    $app->make(OpenCodeServerTool::class),
+                    $app->make(OpenClawTool::class),
+                    $app->make(HermesTool::class),
+                    $app->make(LaravelInstallerTool::class),
+                    $app->make(CodexAppTool::class),
+                    $app->make(ClaudeCodeTool::class),
+                ];
+
+                return new ToolDefinitionRegistry($definitions);
+            },
         );
         $this->app->singleton(
             UpdateDriverRegistry::class,
@@ -214,7 +227,7 @@ class AppServiceProvider extends ServiceProvider
             rootPath: $this->orbitConfigPath(),
         ));
 
-        $this->app->bind(TrustStoreInstaller::class, function ($app): TrustStoreInstaller {
+        $this->app->bind(TrustStoreInstaller::class, static function (Application $app): TrustStoreInstaller {
             $platform = $app->make(LocalPlatform::class);
 
             return match ($platform->current()) {

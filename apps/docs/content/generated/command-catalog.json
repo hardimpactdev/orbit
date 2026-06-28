@@ -7764,6 +7764,7 @@
                 "app",
                 "node",
                 "tool-version",
+                "user",
                 "status",
                 "with-process",
                 "no-process",
@@ -7793,7 +7794,8 @@
                 "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolInstallControllerTest.php",
-                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
+                "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php"
             ],
             "verification_hints": [
                 {
@@ -7830,6 +7832,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Unit/Services/Tools/ToolCommandContractTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCommandContractTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolsProbeTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolsProbeTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolsProbeTest.php"
                 }
             ],
             "p4_mapping": {

@@ -21,6 +21,7 @@ and the node-exporter host binary on metrics/workload nodes. The
 
 - `mailpit`  -  local SMTP capture (Docker)
 - `reverb`  -  compatibility WebSocket service; prefer the `websocket` role for fleet realtime
+- `claude-code`  -  Anthropic Claude Code CLI runtime; no required node role; installs for the node default user and optional extra OS users via repeatable `--user`
 - `polyscope-server`  -  Polyscope headless coding-agent server
 - `opencode-server`  -  OpenCode HTTP server for programmatic LLM interaction
 - `openclaw`, `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
@@ -57,13 +58,14 @@ Provision a managed tool on a node.
 ```bash
 orbit tool:install <tool> [--app=<name>] [--node=<name>]
                    [--status=installed|running] [--tool-version=<v>]
-                   [--with-process] [--no-process] [--json|--stream-json]
+                   [--user=<name>] [--with-process] [--no-process] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
 | `--status` | `installed` | Desired capability state after install (`installed` or `running`). |
-| `--tool-version` |  -  | Version or version family to install (catalog-dependent). |
+| `--tool-version` |  -  | Version or installer channel to install (catalog-dependent); Claude Code accepts `latest`, `stable`, or a specific version. |
+| `--user` |  -  | `claude-code` only. Repeatable additional existing Linux OS user; fails for other tools. Additive install targeting, not account creation or a node-role gate. |
 | `--with-process` | on for service tools | Also configure the related service process. Default for tools that declare one. |
 | `--no-process` | off | Install the capability only; do not configure the related service process. |
 | `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
@@ -73,6 +75,7 @@ Examples:
 ```bash
 orbit tool:install opencode-server --node=beast --status=running
 orbit tool:install php --tool-version=8.4 --node=beast
+orbit tool:install claude-code --node=app-1 --user=agent
 ```
 
 ## `orbit tool:update [tool]`

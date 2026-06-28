@@ -373,6 +373,114 @@ describe('tool write commands', function (): void {
             ->toBe('reconfigured');
     });
 
+    it('rejects --user for non-claude-code installs before contacting the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope());
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'composer',
+            '--node' => 'app-1',
+            '--user' => ['agent'],
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('user')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('unsupported_field');
+    });
+
+    it('forwards empty user values for claude-code so the gateway can reject them', function (): void {
+        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope(
+            'validation_failed',
+            "Invalid install user ''.",
+            [
+                'field' => 'config.install_users',
+                'value' => '',
+                'reason' => 'unsupported_value',
+            ],
+        ), JSON_THROW_ON_ERROR), 422);
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'claude-code',
+            '--node' => 'app-1',
+            '--user' => [''],
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/claude-code/install'
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'status' => 'installed',
+                    'with_process' => true,
+                    'config' => [
+                        'install_users' => [''],
+                    ],
+                ]
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('config.install_users');
+    });
+
+    it('forwards repeatable user options as claude-code install config without runtime fields', function (): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => ['name' => 'claude-code', 'node' => 'app-1', 'state' => 'installed'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:install', [
+            'tool' => 'claude-code',
+            '--node' => 'app-1',
+            '--user' => ['agent', 'deploy'],
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/claude-code/install'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'status' => 'installed',
+                    'with_process' => true,
+                    'config' => [
+                        'install_users' => ['agent', 'deploy'],
+                    ],
+                ]
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['tool'])
+            ->not->toHaveKeys(['instance', 'version_family', 'runtime']);
+    });
+
     it('preserves gateway error envelopes for tool write commands', function (): void {
         fakeGatewayProgressStream(json_encode(fakeErrorEnvelope(
             'tool.unsupported_action',

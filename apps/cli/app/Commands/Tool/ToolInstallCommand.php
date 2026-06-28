@@ -14,6 +14,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
         {--tool-version= : Version or version family to install}
+        {--user=* : Additional OS user to install Claude Code for}
         {--status=installed : Desired state after install (installed|running)}
         {--with-process : Also configure the related service process (default for service tools)}
         {--no-process : Install the capability only; do not configure the related service process}
@@ -56,6 +57,12 @@ final class ToolInstallCommand extends ToolGatewayCommand
             return $payload;
         }
 
+        $installConfig = $this->installConfigPayload($tool);
+
+        if (is_int($installConfig)) {
+            return $installConfig;
+        }
+
         return $this->streamToolAction($tool, 'install', [
             ...$payload,
             ...$this->filledQuery([
@@ -63,6 +70,53 @@ final class ToolInstallCommand extends ToolGatewayCommand
             ]),
             'status' => $status,
             'with_process' => ! $this->option('no-process'),
+            ...($installConfig !== [] ? ['config' => $installConfig] : []),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>|int
+     */
+    private function installConfigPayload(string $tool): array|int
+    {
+        $users = $this->arrayOption('user');
+
+        if ($users === []) {
+            return [];
+        }
+
+        if ($tool !== 'claude-code') {
+            return $this->failValidation('user', '--user is only supported for claude-code installs.', [
+                'reason' => 'unsupported_field',
+            ]);
+        }
+
+        return [
+            'install_users' => $users,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function arrayOption(string $key): array
+    {
+        $value = $this->option($key);
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $items = [];
+
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                continue;
+            }
+
+            $items[] = $item;
+        }
+
+        return $items;
     }
 }

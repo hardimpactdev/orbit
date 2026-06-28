@@ -7,3 +7,6 @@ args = ["apps/gateway/artisan", "boost:mcp"]
 [mcp_servers.laravel-boost.env]
 APP_ENV = "local"
 APP_DEBUG = "true"
+
+[mcp_servers.qmd-orbit]
+url = "http://10.6.0.7:8182/mcp"

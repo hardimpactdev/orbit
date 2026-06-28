@@ -19,6 +19,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\RemoteSecretFile;
+use App\Tools\ClaudeCodeTool;
 
 final readonly class ToolInstaller
 {
@@ -34,6 +35,7 @@ final readonly class ToolInstaller
     ) {}
 
     /**
+     * @param  array<array-key, mixed>  $config
      * @return array<string, mixed>|ToolRegistryFailure
      */
     public function install(
@@ -47,6 +49,15 @@ final readonly class ToolInstaller
         ?string $instance = null,
         bool $withProcess = true,
     ): array|ToolRegistryFailure {
+        $normalizedConfig = [];
+
+        foreach ($config as $key => $value) {
+            $normalizedConfig[(string) $key] = $value;
+        }
+
+        /** @var array<string, mixed> $config */
+        $config = $normalizedConfig;
+
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
         }
@@ -86,6 +97,36 @@ final readonly class ToolInstaller
                 message: 'Tools do not support runnable service instances. Use process:add --service for runnable services.',
                 meta: ['reason' => 'unsupported_field'],
             );
+        }
+
+        $configFailure = app(ToolInstallConfigValidator::class)->validate($tool, $config);
+
+        if ($configFailure instanceof ToolRegistryFailure) {
+            return $configFailure;
+        }
+
+        if ($tool === 'claude-code') {
+            $nodeUser = is_string($targetNode->user) ? trim($targetNode->user) : '';
+            $defaultUser = preg_match(ClaudeCodeTool::USERNAME_PATTERN, $nodeUser) === 1 ? $nodeUser : 'orbit';
+
+            $installUsers = [];
+            $requestedUsers = $config['install_users'] ?? [];
+
+            if (is_array($requestedUsers)) {
+                foreach ($requestedUsers as $username) {
+                    if (! is_string($username) || preg_match(ClaudeCodeTool::USERNAME_PATTERN, $username) !== 1) {
+                        continue;
+                    }
+
+                    $installUsers[] = $username;
+                }
+            }
+
+            $config = [
+                'default_user' => $defaultUser,
+                'install_users' => array_values(array_unique($installUsers)),
+                ...($version !== null && trim($version) !== '' ? ['version' => trim($version)] : []),
+            ];
         }
 
         $script = $this->catalog->installScript($tool, $config);
