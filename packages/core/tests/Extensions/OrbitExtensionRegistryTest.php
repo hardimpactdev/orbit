@@ -22,8 +22,18 @@ describe(OrbitExtensionRegistry::class, function (): void {
     })->with([
         'cloudflare zone list' => ['cf-zone:list', 'cloudflare'],
         'codex app' => ['codex:app', 'codex'],
-        'solo projects' => ['solo:projects', 'solo'],
     ]);
+
+    it('does not advertise deferred solo command families', function (): void {
+        $solo = $this->registry->require('solo');
+
+        expect($solo->commands)
+            ->toBe([])
+            ->and($solo->permissions)
+            ->toBe([])
+            ->and($this->registry->extensionForCommand('solo:projects'))
+            ->toBeNull();
+    });
 
     it('returns null for commands that are not owned by an extension', function (): void {
         expect($this->registry->extensionForCommand('node:list'))->toBeNull();

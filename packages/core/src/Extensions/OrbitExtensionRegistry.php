@@ -67,19 +67,8 @@ final readonly class OrbitExtensionRegistry
                 slug: 'solo',
                 label: 'Solo',
                 description: 'Solo API command family through the Orbit gateway.',
-                commands: [
-                    'solo:projects',
-                    'solo:scratchpads',
-                    'solo:todos',
-                    'solo:agents',
-                ],
-                permissions: [
-                    'solo:*',
-                    'solo:projects',
-                    'solo:scratchpads',
-                    'solo:todos',
-                    'solo:agents',
-                ],
+                commands: [],
+                permissions: [],
                 gatewayRoutePrefixes: [
                     '/api/solo',
                 ],

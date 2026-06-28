@@ -6,6 +6,7 @@ namespace App\Services\Extensions;
 
 use App\Models\GatewayExtension;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Orbit\Core\Extensions\OrbitExtensionDefinition;
 use Orbit\Core\Extensions\OrbitExtensionRegistry;
 
@@ -19,6 +20,10 @@ final readonly class GatewayExtensionState
     {
         $this->registry->require($slug);
 
+        if (! Schema::hasTable('gateway_extensions')) {
+            return false;
+        }
+
         return GatewayExtension::query()
             ->where('slug', $slug)
             ->where('enabled', true)
@@ -28,6 +33,7 @@ final readonly class GatewayExtensionState
     public function enable(string $slug): GatewayExtension
     {
         $this->registry->require($slug);
+        $this->requireTable();
 
         $extension = GatewayExtension::query()->firstOrNew(['slug' => $slug]);
         $extension->enabled = true;
@@ -44,6 +50,7 @@ final readonly class GatewayExtensionState
     public function disable(string $slug): GatewayExtension
     {
         $this->registry->require($slug);
+        $this->requireTable();
 
         $extension = GatewayExtension::query()->firstOrNew(['slug' => $slug]);
         $extension->enabled = false;
@@ -58,17 +65,12 @@ final readonly class GatewayExtensionState
      */
     public function snapshot(): array
     {
-        /** @var array<string, GatewayExtension> $recordsBySlug */
-        $recordsBySlug = [];
-
-        foreach (GatewayExtension::query()->whereIn('slug', $this->registry->slugs())->get() as $record) {
-            $recordsBySlug[$record->slug] = $record;
-        }
+        $recordsBySlug = $this->recordsBySlug();
 
         return array_map(
             fn (OrbitExtensionDefinition $definition): array => $this->snapshotForDefinition(
                 $definition,
-                $this->recordForSlug($recordsBySlug, $definition->slug),
+                $recordsBySlug[$definition->slug] ?? null,
             ),
             $this->registry->all(),
         );
@@ -80,7 +82,7 @@ final readonly class GatewayExtensionState
     public function snapshotFor(string $slug): array
     {
         $definition = $this->registry->require($slug);
-        $record = GatewayExtension::query()->where('slug', $slug)->first();
+        $record = $this->recordsBySlug()[$slug] ?? null;
 
         return $this->snapshotForDefinition($definition, $record);
     }
@@ -101,22 +103,36 @@ final readonly class GatewayExtensionState
             'slug' => $definition->slug,
             'label' => $definition->label,
             'description' => $definition->description,
-            'enabled' => $record?->enabled ?? false,
+            'enabled' => $record->enabled ?? false,
             'enabled_at' => $record?->enabled_at?->toIso8601ZuluString(),
         ];
     }
 
     /**
-     * @param  array<array-key, mixed>  $recordsBySlug
+     * @return array<string, GatewayExtension>
      */
-    private function recordForSlug(array $recordsBySlug, string $slug): ?GatewayExtension
+    private function recordsBySlug(): array
     {
-        $record = $recordsBySlug[$slug] ?? null;
-
-        if (! $record instanceof GatewayExtension) {
-            return null;
+        if (! Schema::hasTable('gateway_extensions')) {
+            return [];
         }
 
-        return $record;
+        /** @var array<string, GatewayExtension> $recordsBySlug */
+        $recordsBySlug = [];
+        /** @var iterable<GatewayExtension> $records */
+        $records = GatewayExtension::query()->whereIn('slug', $this->registry->slugs())->get();
+
+        foreach ($records as $record) {
+            $recordsBySlug[$record->slug] = $record;
+        }
+
+        return $recordsBySlug;
+    }
+
+    private function requireTable(): void
+    {
+        if (! Schema::hasTable('gateway_extensions')) {
+            throw new GatewayExtensionStorageUnavailable;
+        }
     }
 }

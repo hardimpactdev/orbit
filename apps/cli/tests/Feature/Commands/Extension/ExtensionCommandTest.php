@@ -57,6 +57,10 @@ describe('extension commands', function (): void {
                 'local_enabled',
                 'gateway_enabled',
             ])
+            ->and($solo['commands'])
+            ->toBe([])
+            ->and($solo['permissions'])
+            ->toBe([])
             ->and($solo['local_enabled'])
             ->toBeTrue()
             ->and($solo['gateway_enabled'])
