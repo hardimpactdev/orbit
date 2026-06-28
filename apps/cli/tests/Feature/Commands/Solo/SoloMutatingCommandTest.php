@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Http;
 
 /**
  * @mago-expect lint:halstead
+ * @mago-expect lint:cyclomatic-complexity
  */
 describe('Solo mutating commands', function (): void {
     beforeEach(function (): void {
