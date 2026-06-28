@@ -120,6 +120,10 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
             $data['tools'] = $data['agentTools'];
         }
 
+        if (! array_key_exists('todo', $data) && isset($data['id'], $data['projectId'], $data['deleted'])) {
+            $data['todo'] = $data;
+        }
+
         return $data;
     }
 

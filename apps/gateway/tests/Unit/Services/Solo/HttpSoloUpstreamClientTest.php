@@ -115,3 +115,34 @@ it('maps solo discovery agent tools to the orbit tools key', function (): void {
         ->and($response->data['agentTools'][0]['name'] ?? null)
         ->toBe('Codex');
 });
+
+it('maps solo todo delete receipts to the orbit todo key', function (): void {
+    Http::fake([
+        '127.0.0.1:24678/api/projects/4/todos/175' => Http::response([
+            'ok' => true,
+            'requestId' => 'req-delete',
+            'data' => [
+                'id' => 175,
+                'projectId' => 4,
+                'deleted' => true,
+                'affectedTodoIds' => [],
+            ],
+        ]),
+    ]);
+
+    $node = Node::factory()->create(['name' => 'gateway']);
+    $target = new SoloUpstreamTarget(
+        node: $node,
+        url: 'http://127.0.0.1:24678/api',
+        identity: 'gateway',
+    );
+
+    $response = app(HttpSoloUpstreamClient::class)->delete($target, '/projects/4/todos/175', []);
+
+    expect($response->ok)
+        ->toBeTrue()
+        ->and($response->data['todo']['id'] ?? null)
+        ->toBe(175)
+        ->and($response->data['todo']['deleted'] ?? null)
+        ->toBeTrue();
+});
