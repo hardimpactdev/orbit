@@ -15,7 +15,7 @@ final readonly class SoloProxy
 
     public function tools(Node $node): SoloUpstreamResponse
     {
-        return $this->client->get($this->targets->gatewayTarget($node), '/tools');
+        return $this->client->get($this->targets->gatewayTarget($node), '/discovery');
     }
 
     public function projects(Node $node): SoloUpstreamResponse

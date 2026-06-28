@@ -12,7 +12,7 @@ final class SoloReadOperationCatalog
     public static function all(): array
     {
         return [
-            new SoloReadOperation(apiPath: 'tools', upstreamTemplate: '/tools', dataKey: 'tools'),
+            new SoloReadOperation(apiPath: 'tools', upstreamTemplate: '/discovery', dataKey: 'tools'),
             new SoloReadOperation(apiPath: 'projects', upstreamTemplate: '/projects', dataKey: 'projects'),
             new SoloReadOperation(apiPath: 'project/list', upstreamTemplate: '/projects', dataKey: 'projects'),
             new SoloReadOperation(

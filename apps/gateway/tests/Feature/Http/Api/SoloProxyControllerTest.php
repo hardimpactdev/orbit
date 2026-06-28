@@ -156,7 +156,7 @@ describe('Solo proxy API', function (): void {
         grant_solo_proxy_gateway_access($caller, $gateway, ['solo:*']);
         enable_solo_gateway_extension();
         $upstream = bind_solo_proxy_upstream(new FakeSoloUpstreamClient([
-            '/tools' => SoloUpstreamResponse::success(
+            '/discovery' => SoloUpstreamResponse::success(
                 data: ['tools' => [['name' => 'codex']]],
                 meta: ['source' => 'solo'],
             ),
@@ -170,7 +170,7 @@ describe('Solo proxy API', function (): void {
         expect($upstream->calls)
             ->toHaveCount(1)
             ->and($upstream->calls[0]['path'])
-            ->toBe('/tools')
+            ->toBe('/discovery')
             ->and($upstream->calls[0]['target']->node->is($gateway))
             ->toBeTrue()
             ->and($upstream->calls[0]['target']->url)
@@ -219,7 +219,7 @@ describe('Solo proxy API', function (): void {
         grant_solo_proxy_gateway_access($caller, $gateway, ['solo:*']);
         enable_solo_gateway_extension();
         bind_solo_proxy_upstream(new FakeSoloUpstreamClient([
-            '/tools' => SoloUpstreamResponse::success(data: ['unexpected' => true]),
+            '/discovery' => SoloUpstreamResponse::success(data: ['unexpected' => true]),
         ]));
 
         solo_proxy_request(method: 'GET', uri: '/api/solo/tools')
