@@ -242,6 +242,38 @@ describe('ToolsProbe', function (): void {
             ->toContain('command -v');
     });
 
+    it('probes Claude Code through the persisted default install user', function (): void {
+        $node = createToolsProbeAppHostNode(['user' => 'deploy']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'claude-code',
+            'config' => [
+                'default_user' => 'deploy',
+                'install_users' => ['agent'],
+            ],
+        ]);
+        $shell = new RecordingToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: toolsProbeCapabilityStdout('/home/deploy/.local/bin/claude', version: '2.1.89'),
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshot = $probe->introspect($tool);
+        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($input)
+            ->toMatchArray([
+                'binary' => '/home/deploy/.local/bin/claude',
+                'version_command' => "sudo -u 'deploy' -H bash -lc '/home/deploy/.local/bin/claude --version'",
+            ])
+            ->and($snapshot->get('claude-code'))
+            ->toMatchArray([
+                'installed' => true,
+                'path' => '/home/deploy/.local/bin/claude',
+                'version' => '2.1.89',
+            ]);
+    });
+
     it('does not contain host-lane php eval probe snippets', function (): void {
         expect(file_get_contents(app_path('Services/Tools/ToolsProbe.php')))->not->toContain('php -r');
     });
@@ -348,6 +380,28 @@ describe('ToolsProbe', function (): void {
                 'expected_version' => '2.8',
                 'observed_version' => 'Composer version 2.7.0',
             ]);
+    });
+
+    it('treats Claude Code channel targets as installer aliases instead of exact live versions', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'claude-code',
+            'expected_version' => 'stable',
+            'config' => [
+                'default_user' => 'orbit',
+                'install_users' => ['agent'],
+            ],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: toolsProbeCapabilityStdout('/home/orbit/.local/bin/claude', version: '2.1.181 (Claude Code)'),
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect($drift)->toBe([]);
     });
 
     it('does not emit tool.lifecycle_state_mismatch when a service-backed tool is stopped', function (): void {

@@ -14,7 +14,7 @@ MySQL or Redis are not tool installs; use `process:add --service=<identifier>` f
 ## Usage
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--json|--stream-json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--user=<name>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Examples
@@ -25,6 +25,8 @@ orbit tool:install composer --node=app-1 --tool-version=2.9.2
 orbit tool:install opencode-server --node=agent-1
 orbit tool:install composer --node=app-1 --json
 orbit tool:install composer --node=app-1 --stream-json
+orbit tool:install claude-code --node=app-1
+orbit tool:install claude-code --node=app-1 --user=agent
 ```
 
 ## Arguments and options
@@ -33,6 +35,13 @@ orbit tool:install composer --node=app-1 --stream-json
 - `--node`: Target node.
 - `--app`: Resolve the target node from an app.
 - `--tool-version`: Specific tool version supported by the tool definition.
+- `--user`: Repeatable additional Linux OS user for `claude-code` installs
+  only. Supplying `--user` for any other tool fails with `validation_failed`.
+  The node's stored default user (`nodes.user`, falling back to `orbit`) is
+  always installed; each `--user` value adds another Claude Code install scoped
+  to that existing OS user. The option does not create Linux accounts. Empty
+  values are rejected by gateway validation before row writes. This is additive
+  install targeting, not a node-role eligibility gate.
 - `--status`: Expected capability state after install. Defaults to
   `installed`; it does not create or start a process.
 - `--with-process`: Also configure the tool's related service process. This is

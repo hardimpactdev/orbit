@@ -21,6 +21,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Tools\ClaudeCodeTool;
 use InvalidArgumentException;
 use Throwable;
 
@@ -51,13 +52,13 @@ final readonly class ToolsProbe
             return new ProbeSnapshot([]);
         }
 
-        $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
+        $metadata = $this->probeMetadataForTool($tool);
 
         if (($metadata['probe'] ?? null) === 'docker_images') {
             return $this->withManagedFileProbes($tool, $this->introspectDockerImages($tool, $metadata));
         }
 
-        $binary = $metadata['binary'] ?? $tool->name;
+        $binary = is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
         $container = $this->expectedContainerName($tool) ?? $metadata['container'] ?? null;
@@ -110,14 +111,15 @@ final readonly class ToolsProbe
 
         foreach ($tools as $tool) {
             $tool->loadMissing('node');
+            $toolNode = $tool->node;
 
-            if (! $tool->node instanceof Node || $tool->name === '') {
+            if (! $toolNode instanceof Node || $tool->name === '') {
                 $snapshots[$tool->name] = new ProbeSnapshot([]);
 
                 continue;
             }
 
-            $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
+            $metadata = $this->probeMetadataForTool($tool);
 
             if (($metadata['probe'] ?? null) === 'docker_images') {
                 $snapshots[$tool->name] = $this->withManagedFileProbes($tool, $this->introspectDockerImages(
@@ -128,15 +130,15 @@ final readonly class ToolsProbe
                 continue;
             }
 
-            if ($node !== null && $node->id !== $tool->node->id) {
+            if ($node !== null && $node->id !== $toolNode->id) {
                 $snapshots[$tool->name] = $this->introspect($tool);
 
                 continue;
             }
 
-            $node = $tool->node;
+            $node = $toolNode;
             $batch[$tool->name] = [
-                'binary' => $metadata['binary'] ?? $tool->name,
+                'binary' => is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name,
                 'version_command' => is_string($metadata['version_command'] ?? null)
                     ? $metadata['version_command']
                     : '',
@@ -279,6 +281,67 @@ final readonly class ToolsProbe
             '__SERVICE__' => escapeshellarg($service),
             '__CONTAINER__' => escapeshellarg($container),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function probeMetadataForTool(NodeTool $tool): array
+    {
+        $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name) ?? [];
+
+        if ($tool->name !== 'claude-code') {
+            return $metadata;
+        }
+
+        $user = $this->claudeCodeProbeUser($tool);
+        $binary = $this->claudeCodeBinaryPath($user);
+
+        return [
+            ...$metadata,
+            'binary' => $binary,
+            'version_command' => sprintf(
+                'sudo -u %s -H bash -lc %s',
+                escapeshellarg($user),
+                escapeshellarg("{$binary} --version"),
+            ),
+        ];
+    }
+
+    private function claudeCodeProbeUser(NodeTool $tool): string
+    {
+        $config = is_array($tool->config) ? $tool->config : [];
+        $configuredUser = $this->normalizeClaudeCodeUsername($config['default_user'] ?? null);
+
+        if ($configuredUser !== null) {
+            return $configuredUser;
+        }
+
+        $nodeUser = $this->normalizeClaudeCodeUsername($tool->node instanceof Node ? $tool->node->user : null);
+
+        return $nodeUser ?? 'orbit';
+    }
+
+    private function claudeCodeBinaryPath(string $user): string
+    {
+        $home = $user === 'root' ? '/root' : "/home/{$user}";
+
+        return "{$home}/.local/bin/claude";
+    }
+
+    private function normalizeClaudeCodeUsername(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        if ($trimmed === '' || preg_match(ClaudeCodeTool::USERNAME_PATTERN, $trimmed) !== 1) {
+            return null;
+        }
+
+        return $trimmed;
     }
 
     /**
@@ -655,7 +718,13 @@ final readonly class ToolsProbe
 
         $version = is_string($observed['version'] ?? null) ? $observed['version'] : null;
 
-        if ($version === null || str_starts_with($version, (string) $tool->expected_version)) {
+        $expectedVersion = (string) $tool->expected_version;
+
+        if (
+            $version === null
+            || $this->usesFloatingVersionTarget($tool, $expectedVersion)
+            || str_starts_with($version, $expectedVersion)
+        ) {
             return [];
         }
 
@@ -672,6 +741,15 @@ final readonly class ToolsProbe
                 ],
             ),
         ];
+    }
+
+    private function usesFloatingVersionTarget(NodeTool $tool, string $expectedVersion): bool
+    {
+        if ($tool->name !== 'claude-code') {
+            return false;
+        }
+
+        return in_array(strtolower(trim($expectedVersion)), ['latest', 'stable'], true);
     }
 
     /**

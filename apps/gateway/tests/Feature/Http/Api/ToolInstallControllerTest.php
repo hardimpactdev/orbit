@@ -396,6 +396,239 @@ describe('ToolInstallController', function (): void {
         'redis',
     ]);
 
+    it('persists claude-code install config with node default user and sanitized additional users', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-claude-1',
+            'status' => 'active',
+            'user' => 'deploy',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/claude-code/install',
+            [
+                'node' => 'app-claude-1',
+                'config' => [
+                    'install_users' => ['agent', 'deploy', 'agent'],
+                ],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'claude-code')
+            ->assertJsonPath('success.data.tool.node', 'app-claude-1')
+            ->assertJsonPath('success.data.tool.state', 'installed');
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'claude-code')
+            ->firstOrFail();
+
+        expect($tool->config)
+            ->toBe([
+                'default_user' => 'deploy',
+                'install_users' => ['agent', 'deploy'],
+            ])
+            ->and($shell->scripts)
+            ->toHaveCount(1)
+            ->and($shell->scripts[0])
+            ->toContain("sudo -u 'deploy' -H bash -lc")
+            ->toContain("sudo -u 'agent' -H bash -lc")
+            ->toContain('https://claude.ai/install.sh')
+            ->toContain('claude --version');
+    });
+
+    it('falls back to orbit when claude-code install target node user is missing', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-claude-2',
+            'status' => 'active',
+            'user' => null,
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/claude-code/install',
+            [
+                'node' => 'app-claude-2',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response->assertOk();
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'claude-code')
+            ->firstOrFail();
+
+        expect($tool->config)
+            ->toBe([
+                'default_user' => 'orbit',
+                'install_users' => [],
+            ])
+            ->and($shell->scripts[0])
+            ->toContain("sudo -u 'orbit' -H bash -lc");
+    });
+
+    it('falls back to orbit when claude-code install target node user is unsafe', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-claude-unsafe-user',
+            'status' => 'active',
+            'user' => 'bad$user',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/claude-code/install',
+            [
+                'node' => 'app-claude-unsafe-user',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response->assertOk();
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'claude-code')
+            ->firstOrFail();
+
+        expect($tool->config)
+            ->toBe([
+                'default_user' => 'orbit',
+                'install_users' => [],
+            ])
+            ->and($shell->scripts[0])
+            ->toContain("sudo -u 'orbit' -H bash -lc")
+            ->not->toContain('bad$user');
+    });
+
+    it('rejects install users for non-claude-code tools before row writes or remote shell actions', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-install-api-claude-scope',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-claude-scope',
+                'config' => [
+                    'install_users' => ['agent'],
+                ],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'config.install_users')
+            ->assertJsonPath('error.meta.reason', 'unsupported_field');
+
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
+    });
+
+    it('rejects unsafe claude-code install users before row writes or remote shell actions', function (string $username): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-claude-3',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/claude-code/install',
+            [
+                'node' => 'app-claude-3',
+                'config' => [
+                    'install_users' => [$username],
+                ],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'config.install_users')
+            ->assertJsonPath('error.meta.reason', 'unsupported_value');
+
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
+    })->with([
+        'shell metacharacters' => ['agent;id'],
+        'path traversal' => ['../root'],
+        'empty string' => [''],
+    ]);
+
+    it('rejects install users for tools that do not support user-scoped installs before side effects', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create(['name' => 'app-install-api-users', 'status' => 'active']);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/composer/install',
+            [
+                'node' => 'app-install-api-users',
+                'config' => [
+                    'install_users' => ['agent'],
+                ],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'config.install_users')
+            ->assertJsonPath('error.meta.reason', 'unsupported_field');
+
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
+    });
+
     it('rejects update-only version intent before side effects', function (array $payload): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
