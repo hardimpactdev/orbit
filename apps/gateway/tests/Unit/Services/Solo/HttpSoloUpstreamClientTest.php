@@ -27,11 +27,13 @@ it('sends configured bearer tokens and normalizes solo success envelopes', funct
     ]);
 
     $node = Node::factory()->create(['name' => 'gateway']);
+    $token = bin2hex(random_bytes(16));
+
     $target = new SoloUpstreamTarget(
         node: $node,
         url: 'http://127.0.0.1:24678/api',
         identity: 'gateway',
-        bearerToken: 'secret-token',
+        bearerToken: $token,
     );
 
     $response = app(HttpSoloUpstreamClient::class)->get($target, '/projects');
@@ -43,7 +45,7 @@ it('sends configured bearer tokens and normalizes solo success envelopes', funct
 
     Http::assertSent(
         fn (Request $request): bool => (
-            $request->hasHeader('Authorization', 'Bearer secret-token')
+            $request->hasHeader('Authorization', "Bearer {$token}")
             && $request->hasHeader('X-Orbit-Node', 'gateway')
         ),
     );

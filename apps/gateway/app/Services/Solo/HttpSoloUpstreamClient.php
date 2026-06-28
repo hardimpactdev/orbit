@@ -7,6 +7,10 @@ namespace App\Services\Solo;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
+ */
 final class HttpSoloUpstreamClient implements SoloUpstreamClient
 {
     public function get(SoloUpstreamTarget $target, string $path): SoloUpstreamResponse

@@ -8,6 +8,9 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class SoloUpstreamTargetResolver
 {
     public function __construct(
