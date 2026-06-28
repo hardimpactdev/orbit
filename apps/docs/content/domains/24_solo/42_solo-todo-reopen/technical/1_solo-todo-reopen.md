@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:todo:reopen <todo> [--title=<title>] [--body=<body>] [--force] [--json]
+orbit solo:todo:reopen <todo> [--project=<project>] [--title=<title>] [--body=<body>] [--force] [--json]
 ```
 
 ## Input Contract

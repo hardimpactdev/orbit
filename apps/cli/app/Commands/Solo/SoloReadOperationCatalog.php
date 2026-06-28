@@ -77,14 +77,16 @@ final class SoloReadOperationCatalog
             ),
             new SoloReadOperationDefinition(
                 command: 'solo:todo:list',
-                signature: 'solo:todo:list {--json : Output JSON}',
+                signature: 'solo:todo:list {--project= : Project id or name} {--json : Output JSON}',
                 gatewayPath: '/api/solo/todo/list',
+                queryOptions: ['project' => 'project'],
             ),
             new SoloReadOperationDefinition(
                 command: 'solo:todo:show',
-                signature: 'solo:todo:show {todo? : Solo todo id} {--json : Output JSON}',
+                signature: 'solo:todo:show {todo? : Solo todo id} {--project= : Project id or name} {--json : Output JSON}',
                 gatewayPath: '/api/solo/todo/show',
                 requiredArguments: ['todo'],
+                queryOptions: ['project' => 'project'],
             ),
             new SoloReadOperationDefinition(
                 command: 'solo:service:list',

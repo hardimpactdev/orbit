@@ -120,6 +120,7 @@ describe('Solo mutating commands', function (): void {
 
         [$exitCode] = runCommand($this, command: 'solo:todo:delete', params: [
             'todo' => '42',
+            '--project' => '4',
             '--force' => true,
             '--json' => true,
         ]);
@@ -129,6 +130,29 @@ describe('Solo mutating commands', function (): void {
                 $request->method() === 'DELETE'
                 && str_contains($request->url(), '/api/solo/todo/delete')
                 && ($request->data()['todo'] ?? null) === '42'
+                && ($request->data()['project'] ?? null) === '4'
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('forwards project scope for project-scoped todo mutations', function (): void {
+        enable_solo_mutating_extension();
+        fakeGateway(fakeSuccessEnvelope(['todo' => ['id' => 42, 'title' => 'Check live Solo']]));
+
+        [$exitCode] = runCommand($this, command: 'solo:todo:create', params: [
+            'title' => 'Check live Solo',
+            '--project' => '4',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && str_contains($request->url(), '/api/solo/todo/create')
+                && ($request->data()['title'] ?? null) === 'Check live Solo'
+                && ($request->data()['project'] ?? null) === '4'
             ),
         );
 
@@ -303,13 +327,14 @@ function solo_mutating_command_params(string $command): array
             '--force' => true,
             '--json' => true,
         ],
-        'solo:todo:create' => ['title' => 'Check feature', '--json' => true],
-        'solo:todo:update' => ['todo' => '42', '--title' => 'Check feature', '--json' => true],
+        'solo:todo:create' => ['title' => 'Check feature', '--project' => '4', '--json' => true],
+        'solo:todo:update' => ['todo' => '42', '--project' => '4', '--title' => 'Check feature', '--json' => true],
         'solo:todo:complete', 'solo:todo:reopen', 'solo:todo:lock', 'solo:todo:unlock' => [
             'todo' => '42',
+            '--project' => '4',
             '--json' => true,
         ],
-        'solo:todo:delete' => ['todo' => '42', '--force' => true, '--json' => true],
+        'solo:todo:delete' => ['todo' => '42', '--project' => '4', '--force' => true, '--json' => true],
         'solo:todo:comment:add' => ['todo' => '42', '--body' => 'Done', '--json' => true],
         'solo:todo:comment:update' => ['comment' => '7', '--body' => 'Updated', '--json' => true],
         'solo:todo:comment:delete' => ['comment' => '7', '--force' => true, '--json' => true],

@@ -116,12 +116,12 @@ final class SoloMutatingOperationCatalog
             self::scratchpadWrite('solo:scratchpad:delete', 'delete', 'DELETE', [], forceRequired: true),
             self::op(
                 'solo:todo:create',
-                'solo:todo:create {title? : Todo title} {--body= : Todo body} {--json : Output JSON}',
+                'solo:todo:create {title? : Todo title} {--project= : Project id or name} {--body= : Todo body} {--json : Output JSON}',
                 'POST',
                 'todo/create',
                 'todo',
                 ['title'],
-                ['body' => 'body'],
+                ['project' => 'project', 'body' => 'body'],
             ),
             self::todo('solo:todo:update', 'update', 'PATCH', ['title' => 'title', 'body' => 'body']),
             self::todo('solo:todo:complete', 'complete', 'POST'),
@@ -282,12 +282,12 @@ final class SoloMutatingOperationCatalog
     ): SoloMutatingOperationDefinition {
         return self::op(
             $command,
-            "solo:todo:{$action} {todo? : Todo id} {--title= : Todo title} {--body= : Todo body} {--force : Confirm destructive action} {--json : Output JSON}",
+            "solo:todo:{$action} {todo? : Todo id} {--project= : Project id or name} {--title= : Todo title} {--body= : Todo body} {--force : Confirm destructive action} {--json : Output JSON}",
             $method,
             "todo/{$action}",
             'todo',
             ['todo'],
-            $payloadOptions,
+            ['project' => 'project'] + $payloadOptions,
             $forceRequired,
         );
     }

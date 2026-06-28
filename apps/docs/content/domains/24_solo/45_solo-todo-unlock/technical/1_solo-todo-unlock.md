@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:todo:unlock <todo> [--title=<title>] [--body=<body>] [--force] [--json]
+orbit solo:todo:unlock <todo> [--project=<project>] [--title=<title>] [--body=<body>] [--force] [--json]
 ```
 
 ## Input Contract

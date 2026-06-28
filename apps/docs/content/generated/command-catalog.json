@@ -10745,6 +10745,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "title",
                 "body",
                 "force",
@@ -10816,6 +10817,7 @@
                 "title"
             ],
             "options": [
+                "project",
                 "body",
                 "json"
             ],
@@ -10885,6 +10887,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "title",
                 "body",
                 "force",
@@ -10954,6 +10957,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "project",
                 "json"
             ],
             "renderers": {
@@ -11022,6 +11026,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "title",
                 "body",
                 "force",
@@ -11093,6 +11098,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "title",
                 "body",
                 "force",
@@ -11164,6 +11170,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "json"
             ],
             "renderers": {
@@ -11232,6 +11239,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "title",
                 "body",
                 "force",
@@ -11303,6 +11311,7 @@
                 "todo"
             ],
             "options": [
+                "project",
                 "title",
                 "body",
                 "force",

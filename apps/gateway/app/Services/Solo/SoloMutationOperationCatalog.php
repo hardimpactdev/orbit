@@ -130,9 +130,9 @@ final class SoloMutationOperationCatalog
                 'todo/create',
                 'POST',
                 'solo:todo:write',
-                '/todos',
+                '/projects/{project}/todos',
                 'todo',
-                ['title'],
+                ['project', 'title'],
                 ['title' => 'title', 'body' => 'body'],
             ),
             'todo/update' => self::todo('update', 'PATCH', 'solo:todo:write', ['title' => 'title', 'body' => 'body']),
@@ -274,11 +274,20 @@ final class SoloMutationOperationCatalog
             "todo/{$action}",
             $method,
             $permission,
-            "/todos/{todo}/{$action}",
+            self::todoTemplate($action),
             'todo',
-            ['todo'],
+            ['project', 'todo'],
             $payloadFields,
         );
+    }
+
+    private static function todoTemplate(string $action): string
+    {
+        if ($action === 'delete') {
+            return '/projects/{project}/todos/{todo}';
+        }
+
+        return "/projects/{project}/todos/{todo}/{$action}";
     }
 
     private static function timer(string $action, string $method): SoloMutationOperation

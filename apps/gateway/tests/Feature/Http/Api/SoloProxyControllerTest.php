@@ -447,6 +447,44 @@ describe('Solo proxy API', function (): void {
             ->assertJsonPath('error.code', 'solo_revision_conflict')
             ->assertJsonPath('error.meta.actual_revision', 8);
     });
+
+    it('proxies project-scoped Todo create and delete operations', function (): void {
+        $gateway = create_solo_target_node();
+        $caller = create_solo_proxy_caller_node();
+        grant_solo_proxy_gateway_access($caller, $gateway, ['solo:todo:write', 'solo:todo:delete']);
+        enable_solo_gateway_extension();
+        $upstream = bind_solo_proxy_upstream(new FakeSoloUpstreamClient([
+            'POST /projects/4/todos' => SoloUpstreamResponse::success(data: [
+                'todo' => ['id' => 42, 'title' => 'Check live Solo'],
+            ]),
+            'DELETE /projects/4/todos/42' => SoloUpstreamResponse::success(data: [
+                'todo' => ['id' => 42, 'deleted' => true],
+            ]),
+        ]));
+
+        solo_proxy_json_request(method: 'POST', uri: '/api/solo/todo/create', payload: [
+            'project' => '4',
+            'title' => 'Check live Solo',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.todo.id', 42);
+
+        solo_proxy_json_request(method: 'DELETE', uri: '/api/solo/todo/delete', payload: [
+            'project' => '4',
+            'todo' => '42',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.todo.deleted', true);
+
+        expect($upstream->calls)
+            ->toHaveCount(2)
+            ->and($upstream->calls[0]['path'])
+            ->toBe('/projects/4/todos')
+            ->and($upstream->calls[0]['payload'])
+            ->toMatchArray(['title' => 'Check live Solo'])
+            ->and($upstream->calls[1]['path'])
+            ->toBe('/projects/4/todos/42');
+    });
 });
 
 function solo_proxy_activity_entry(): object

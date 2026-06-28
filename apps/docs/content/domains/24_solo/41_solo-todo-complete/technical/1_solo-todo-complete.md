@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:todo:complete <todo> [--title=<title>] [--body=<body>] [--force] [--json]
+orbit solo:todo:complete <todo> [--project=<project>] [--title=<title>] [--body=<body>] [--force] [--json]
 ```
 
 ## Input Contract
