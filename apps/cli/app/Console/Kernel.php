@@ -4,10 +4,44 @@ declare(strict_types=1);
 
 namespace App\Console;
 
+use App\Commands\Solo\SoloExtensionPlaceholderCommand;
+use App\Commands\Solo\SoloMutatingCommand;
+use App\Commands\Solo\SoloMutatingOperationCatalog;
+use App\Commands\Solo\SoloMutatingOperationDefinition;
+use App\Commands\Solo\SoloReadOnlyCommand;
+use App\Commands\Solo\SoloReadOperationCatalog;
+use App\Commands\Solo\SoloReadOperationDefinition;
+use Illuminate\Console\Application as Artisan;
 use LaravelZero\Framework\Kernel as LaravelZeroKernel;
+use Orbit\Core\Extensions\OrbitExtensionRegistry;
 
 final class Kernel extends LaravelZeroKernel
 {
+    #[\Override]
+    protected function commands(): void
+    {
+        parent::commands();
+
+        Artisan::starting(static function ($artisan): void {
+            foreach (app(OrbitExtensionRegistry::class)->require('solo')->commands as $commandName) {
+                $readOperation = SoloReadOperationCatalog::find($commandName);
+                $mutatingOperation = SoloMutatingOperationCatalog::find($commandName);
+
+                $artisan->add(
+                    match (true) {
+                        $readOperation instanceof SoloReadOperationDefinition => new SoloReadOnlyCommand(
+                            $readOperation,
+                        ),
+                        $mutatingOperation instanceof SoloMutatingOperationDefinition => new SoloMutatingCommand(
+                            $mutatingOperation,
+                        ),
+                        default => new SoloExtensionPlaceholderCommand($commandName),
+                    },
+                );
+            }
+        });
+    }
+
     /**
      * @param  array<string, mixed>  $parameters
      */

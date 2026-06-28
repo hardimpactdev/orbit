@@ -174,6 +174,43 @@ final class NodePermissionRegistry
             'schedule:show',
             'schedule:write',
 
+            // Solo
+            'solo:*',
+            'solo:status',
+            'solo:help',
+            'solo:tools',
+            'solo:feedback',
+            'solo:project:*',
+            'solo:project:list',
+            'solo:project:show',
+            'solo:project:create',
+            'solo:project:update',
+            'solo:project:delete',
+            'solo:process:*',
+            'solo:process:read',
+            'solo:process:spawn',
+            'solo:process:input',
+            'solo:process:lifecycle',
+            'solo:process:delete',
+            'solo:agent:*',
+            'solo:agent-tool:list',
+            'solo:agent:spawn',
+            'solo:agent:setup',
+            'solo:scratchpad:*',
+            'solo:scratchpad:read',
+            'solo:scratchpad:write',
+            'solo:scratchpad:delete',
+            'solo:scratchpad:transfer',
+            'solo:todo:*',
+            'solo:todo:read',
+            'solo:todo:write',
+            'solo:todo:delete',
+            'solo:todo:lock',
+            'solo:todo:comment',
+            'solo:lock:*',
+            'solo:timer:*',
+            'solo:readiness:*',
+
             // Tool
             'tool:*',
             'tool:credentials',
@@ -253,6 +290,10 @@ final class NodePermissionRegistry
         }
 
         if (str_ends_with($permission, ':*')) {
+            if (in_array($permission, $this->all(), true)) {
+                return true;
+            }
+
             $namespace = substr($permission, 0, -2);
 
             return $this->namespaces()->contains($namespace);

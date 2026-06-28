@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Nodes\Access\NodePermissionRegistry;
+use Orbit\Core\Extensions\OrbitExtensionRegistry;
 
 describe('node permission registry', function (): void {
     it('defines a non-empty permission catalog', function (): void {
@@ -98,6 +99,15 @@ describe('node permission registry', function (): void {
             ->toBeTrue()
             ->and($registry->allows(['codex:*'], 'codex:app'))
             ->toBeTrue();
+    });
+
+    it('recognizes the core Solo extension permission catalog', function (): void {
+        $registry = new NodePermissionRegistry;
+        $solo = app(OrbitExtensionRegistry::class)->require('solo');
+
+        foreach ($solo->permissions as $permission) {
+            expect($registry->isKnown($permission))->toBeTrue("Expected {$permission} to be known.");
+        }
     });
 
     it('returns implied permissions for database umbrellas', function (): void {

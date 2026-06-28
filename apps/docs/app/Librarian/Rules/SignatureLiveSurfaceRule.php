@@ -171,7 +171,10 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
                 continue;
             }
 
-            if (preg_match('/^\[?<?(?<argument>[a-z0-9][a-z0-9_-]*)(\.\.\.)?>?\]?$/', $token, $argumentMatch) === 1) {
+            if (
+                preg_match('/^\[?<?(?<argument>[A-Za-z0-9][A-Za-z0-9_-]*)(\.\.\.)?>?\]?$/', $token, $argumentMatch)
+                === 1
+            ) {
                 $arguments[] = $argumentMatch['argument'];
             }
         }
