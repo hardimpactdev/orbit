@@ -48,6 +48,10 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
                 ->withHeader('X-Orbit-Node', $target->identity)
                 ->timeout(5);
 
+            if ($target->bearerToken !== null && $target->bearerToken !== '') {
+                $pending = $pending->withToken($target->bearerToken);
+            }
+
             $response = match ($method) {
                 'DELETE' => $pending->delete($this->url($target, $path), $payload),
                 'PATCH' => $pending->patch($this->url($target, $path), $payload),
@@ -83,6 +87,13 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
      */
     private function success(array $payload): SoloUpstreamResponse
     {
+        if (($payload['ok'] ?? null) === true) {
+            return SoloUpstreamResponse::success(
+                data: $this->stringKeyedArray($payload['data'] ?? []),
+                meta: $this->stringKeyedArray($payload['meta'] ?? []),
+            );
+        }
+
         $success = $this->stringKeyedArray($payload['success'] ?? []);
 
         if ($success === []) {
@@ -107,9 +118,26 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
             message: is_string($error['message'] ?? null)
                 ? $error['message']
                 : "Solo API request failed on {$target->node->name}.",
-            meta: $this->stringKeyedArray($error['meta'] ?? ['node' => $target->node->name]),
+            meta: $this->upstreamErrorMeta($target, $error),
             status: $status,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $error
+     * @return array<string, mixed>
+     */
+    private function upstreamErrorMeta(SoloUpstreamTarget $target, array $error): array
+    {
+        $meta = $this->stringKeyedArray($error['meta'] ?? []);
+
+        if ($meta !== []) {
+            return $meta;
+        }
+
+        $details = $this->stringKeyedArray($error['details'] ?? []);
+
+        return $details !== [] ? $details : ['node' => $target->node->name];
     }
 
     /**

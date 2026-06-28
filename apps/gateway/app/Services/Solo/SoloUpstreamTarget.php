@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Solo;
 
 use App\Models\Node;
+use SensitiveParameter;
 
 final readonly class SoloUpstreamTarget
 {
@@ -12,5 +13,7 @@ final readonly class SoloUpstreamTarget
         public Node $node,
         public string $url,
         public string $identity,
+        #[SensitiveParameter]
+        public ?string $bearerToken = null,
     ) {}
 }

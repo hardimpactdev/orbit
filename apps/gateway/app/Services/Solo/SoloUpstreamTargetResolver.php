@@ -73,10 +73,24 @@ final readonly class SoloUpstreamTargetResolver
                 ? trim($config['node_identity'])
                 : $node->name;
 
+        $credentials = $tool?->credentials;
+        $bearerToken = is_array($credentials) && is_string($credentials['bearer_token'] ?? null)
+            ? trim($credentials['bearer_token'])
+            : null;
+
+        if (
+            ($bearerToken === null || $bearerToken === '')
+            && is_array($config)
+            && is_string($config['bearer_token'] ?? null)
+        ) {
+            $bearerToken = trim($config['bearer_token']);
+        }
+
         return new SoloUpstreamTarget(
             node: $node,
             url: rtrim($url, characters: '/'),
             identity: $identity,
+            bearerToken: $bearerToken !== '' ? $bearerToken : null,
         );
     }
 }
