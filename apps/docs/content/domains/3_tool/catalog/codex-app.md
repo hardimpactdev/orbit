@@ -19,7 +19,7 @@ model in Orbit.
 ## Capabilities
 
 `codex-app` supports app-facing add, remove, and list operations through
-`app:codex`. Those operations merge Orbit-owned project entries into
+`codex:app`. Those operations merge Orbit-owned project entries into
 `~/.codex/codex-app/config.json`. The target node must be active, visible, not
 the gateway, and have a platform that resolves to macOS. The tool does not
 expose generic `tool:install`, `tool:remove`, credentials, service endpoints,

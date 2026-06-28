@@ -38,6 +38,8 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-28 — Optional Orbit command and gateway API families ship first as built-in extensions with separate local node and gateway enablement; external downloadable extensions remain out of scope.
+- 2026-06-28 — Codex App project registration belongs to the optional `codex` extension command family as `codex:app`; `app:codex` is removed from the public command surface and app permissions no longer imply Codex App registration.
 - 2026-06-25 — Fleet doctor --all node progress now reflects each node's own intra-node family check progress (family-weighted), reversing the prior out-of-scope deferral; per-family rows remain hidden in fleet output.
 - 2026-06-25 — `process:edit` is removed; `process:update` is the sole public process mutation command, and supported process identity rename flows use `process:update --name=<new-slug>` while preserving managed database connection coherence. Supersedes the same-day backward-compatible alias decision.
 - 2026-06-25 — SeaweedFS runtime lifecycle is process-owned: the `s3` role's SeaweedFS container start/stop/restart/logs and runtime drift belong to the `process` family (`doctor --family=process`), matching the metrics Prometheus/Grafana model, while the `seaweedfs` tool row, service credentials, and capability inventory remain `tool`-owned (`doctor --family=tool`). Supersedes the "generic SeaweedFS lifecycle remains under `tool:*`" wording.

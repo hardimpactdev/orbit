@@ -61,6 +61,32 @@ it('builds a command catalog from the live CLI surface and docs registries', fun
     ]);
 });
 
+it('catalogs built-in extension commands with extension metadata', function (): void {
+    $catalog = app(CommandCatalogBuilder::class)->build();
+
+    expect($catalog['commands'])
+        ->toHaveKeys([
+            'extension:list',
+            'extension:enable',
+            'extension:disable',
+            'cf-zone:list',
+            'codex:app',
+        ])
+        ->not->toHaveKey('app:codex');
+
+    expect($catalog['commands']['extension:list']['extension'])->toBeNull();
+
+    expect($catalog['commands']['cf-zone:list']['extension'])->toMatchArray([
+        'slug' => 'cloudflare',
+        'label' => 'Cloudflare',
+    ]);
+
+    expect($catalog['commands']['codex:app']['extension'])->toMatchArray([
+        'slug' => 'codex',
+        'label' => 'Codex',
+    ]);
+});
+
 it('maps unambiguous command endpoints to SDK and gateway implementation surfaces', function (): void {
     $catalog = app(CommandCatalogBuilder::class)->build();
 

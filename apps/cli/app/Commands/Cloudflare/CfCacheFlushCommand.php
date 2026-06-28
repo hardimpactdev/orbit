@@ -22,6 +22,10 @@ final class CfCacheFlushCommand extends CloudflareGatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         $zone = $this->stringOption('zone');
 
         if ($zone === null && ! $this->wantsJson() && $this->input->isInteractive()) {

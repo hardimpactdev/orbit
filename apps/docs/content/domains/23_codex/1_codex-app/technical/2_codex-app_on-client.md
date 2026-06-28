@@ -1,8 +1,8 @@
-# Client Context: `orbit app:codex`
+# Client Context: `orbit codex:app`
 
-[Back to `app:codex` technical contract.](1_app-codex.md)
+[Back to `codex:app` technical contract.](1_codex-app.md)
 
-`app:codex` is a gateway-mediated command. The CLI sends the selected action,
+`codex:app` is a gateway-mediated command. The CLI sends the selected action,
 app selector, and target node to the gateway. The gateway authorizes the caller
 and applies the config file on the target node over SSH.
 
@@ -12,8 +12,8 @@ The CLI never writes the target node's Codex App config file directly.
 
 | Context | Behavior |
 | --- | --- |
-| Configured CLI with `app:codex` on the app node and target node | Forward the selected action to the gateway and render the gateway result. |
-| Configured CLI without `app:codex` on either required node | Gateway rejects before reading or writing Codex App config. |
+| Configured CLI with `codex:app` on the app node and target node | Forward the selected action to the gateway and render the gateway result. |
+| Configured CLI without `codex:app` on either required node | Gateway rejects before reading or writing Codex App config. |
 | Target node is inactive, hidden, gateway, or not macOS | Gateway rejects before remote shell work. |
 | No configured gateway | CLI fails before prompts and side effects. |
 
@@ -21,5 +21,5 @@ The CLI never writes the target node's Codex App config file directly.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppCodexCommandTest.php` | Client request routing, no-gateway rejection, and gateway pass-through failures. |
+| `apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php` | Client request routing, no-gateway rejection, and gateway pass-through failures. |
 | `apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php` | Authorization denial, hidden target denial, gateway target denial, unsupported platform denial, and no remote side effects before denial. |

@@ -22,6 +22,10 @@ final class CfCacheRuleAddCommand extends CloudflareGatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         $app = $this->requiredArgument('app', 'app', 'An app name is required.');
 
         if (is_int($app)) {

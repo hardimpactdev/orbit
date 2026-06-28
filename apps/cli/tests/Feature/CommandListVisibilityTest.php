@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\OrbitConfigStore;
 use Symfony\Component\Process\Process;
 
 /**
@@ -24,6 +25,20 @@ function orbitCommandList(): array
     $commandList = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $commandList;
+}
+
+/**
+ * @param  array<string, string>  $environment
+ * @return array<string, mixed>
+ */
+function orbit_command_list_with_environment(array $environment): array
+{
+    $process = new Process([PHP_BINARY, 'orbit', 'list', '--format=json'], base_path(), $environment);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, 'orbit list --format=json failed: '.$process->getErrorOutput());
+
+    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
 }
 
 /**
@@ -71,7 +86,6 @@ describe('command list visibility', function (): void {
             'app:analytics disable',
             'app:analytics enable',
             'app:analytics show',
-            'app:codex',
             'app:env',
             'app:instance',
             'app:list',
@@ -90,15 +104,6 @@ describe('command list visibility', function (): void {
             'app-setup-step:add',
             'app-setup-step:list',
             'app-setup-step:remove',
-            'cf-cache:flush',
-            'cf-cache-rule:add',
-            'cf-cache-rule:remove',
-            'cf-dns:add',
-            'cf-dns:list',
-            'cf-dns:remove',
-            'cf-ssl:disable',
-            'cf-ssl:enable',
-            'cf-zone:list',
             'database:add',
             'database:add-user',
             'database:attach',
@@ -119,6 +124,9 @@ describe('command list visibility', function (): void {
             'deploy:step-remove',
             'dns:list',
             'dns:resolve-tld',
+            'extension:disable',
+            'extension:enable',
+            'extension:list',
             'firewall:allow',
             'firewall:deny',
             'firewall:list',
@@ -219,6 +227,65 @@ describe('command list visibility', function (): void {
             ->toBeNull();
     });
 
+    it('hides Cloudflare commands until the local cloudflare extension is enabled', function (): void {
+        $defaultConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-default-');
+        $enabledConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-cloudflare-');
+
+        unlink_orbit_test_file($defaultConfigPath);
+        unlink_orbit_test_file($enabledConfigPath);
+
+        try {
+            $defaultVisible = visibleCommandNames(orbit_command_list_with_environment([
+                'ORBIT_CONFIG_PATH' => $defaultConfigPath,
+            ]));
+
+            $store = new OrbitConfigStore(overridePath: $enabledConfigPath);
+            $store->enableExtension('cloudflare');
+
+            $enabledVisible = visibleCommandNames(orbit_command_list_with_environment([
+                'ORBIT_CONFIG_PATH' => $enabledConfigPath,
+            ]));
+
+            expect($defaultVisible)
+                ->not
+                ->toContain('cf-zone:list', 'cf-dns:add')
+                ->and($enabledVisible)
+                ->toContain('cf-zone:list', 'cf-dns:add');
+        } finally {
+            unlink_orbit_test_file($defaultConfigPath);
+            unlink_orbit_test_file($enabledConfigPath);
+        }
+    });
+
+    it('hides app codex and shows codex app only when the local codex extension is enabled', function (): void {
+        $defaultConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-codex-default-');
+        $enabledConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-codex-');
+
+        unlink_orbit_test_file($defaultConfigPath);
+        unlink_orbit_test_file($enabledConfigPath);
+
+        try {
+            $defaultVisible = visibleCommandNames(orbit_command_list_with_environment([
+                'ORBIT_CONFIG_PATH' => $defaultConfigPath,
+            ]));
+
+            $store = new OrbitConfigStore(overridePath: $enabledConfigPath);
+            $store->enableExtension('codex');
+
+            $enabledVisible = visibleCommandNames(orbit_command_list_with_environment([
+                'ORBIT_CONFIG_PATH' => $enabledConfigPath,
+            ]));
+
+            expect($defaultVisible)
+                ->not->toContain('app:codex')
+                ->not->toContain('codex:app')->and($enabledVisible)->toContain('codex:app')
+                ->not->toContain('app:codex');
+        } finally {
+            unlink_orbit_test_file($defaultConfigPath);
+            unlink_orbit_test_file($enabledConfigPath);
+        }
+    });
+
     it('contains ported commands in the registered command set', function (string $name): void {
         $list = orbitCommandList();
         $command = findCommandInList($list, $name);
@@ -236,7 +303,6 @@ describe('command list visibility', function (): void {
         'app:analytics disable',
         'app:analytics enable',
         'app:analytics show',
-        'app:codex',
         'app:list',
         'app:mount',
         'app:new',
@@ -253,15 +319,6 @@ describe('command list visibility', function (): void {
         'app:websocket disable',
         'app:websocket enable',
         'app:worker',
-        'cf-cache-rule:add',
-        'cf-cache-rule:remove',
-        'cf-cache:flush',
-        'cf-dns:add',
-        'cf-dns:list',
-        'cf-dns:remove',
-        'cf-ssl:disable',
-        'cf-ssl:enable',
-        'cf-zone:list',
         'database:add',
         'database:add-user',
         'database:attach',
@@ -276,6 +333,9 @@ describe('command list visibility', function (): void {
         'database:update',
         'dns:list',
         'dns:resolve-tld',
+        'extension:disable',
+        'extension:enable',
+        'extension:list',
         'deploy:history',
         'deploy:log',
         'deploy:run',

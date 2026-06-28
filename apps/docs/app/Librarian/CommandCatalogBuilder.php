@@ -6,12 +6,16 @@ namespace App\Librarian;
 
 final readonly class CommandCatalogBuilder
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private CliSurface $surface,
         private OrbitCommandDocs $docs,
         private CommandDocsRegistry $registry,
         private CommandCatalogDocsIndex $docsIndex,
         private CommandCatalogP4MappingIndex $p4MappingIndex,
+        private CommandCatalogExtensionIndex $extensions,
     ) {}
 
     /**
@@ -114,6 +118,7 @@ final readonly class CommandCatalogBuilder
                 'json' => in_array('json', $command->options, strict: true),
                 'stream_json' => in_array('stream-json', $command->options, strict: true),
             ],
+            'extension' => $this->extensionEntry($command),
             'destructive_consent' => null,
             'docs' => $docs,
             'public_options_documented' => $this->publicOptionsDocumented($command, $docs),
@@ -121,6 +126,14 @@ final readonly class CommandCatalogBuilder
             'verification_hints' => $verificationHints->forLinkedTestFiles($linkedTestFiles),
             'p4_mapping' => $this->p4MappingIndex->forCommand($command),
         ];
+    }
+
+    /**
+     * @return array{slug: string, label: string, description: string}|null
+     */
+    private function extensionEntry(CliCommand $command): ?array
+    {
+        return $this->extensions->forCommand($command);
     }
 
     /**

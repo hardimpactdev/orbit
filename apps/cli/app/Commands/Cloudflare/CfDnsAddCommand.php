@@ -26,6 +26,10 @@ final class CfDnsAddCommand extends CloudflareGatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         $name = $this->stringArgument('name');
         $content = $this->stringArgument('content');
 

@@ -2,8 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+
+beforeEach(function (): void {
+    $this->cloudflareConfigPath = orbit_test_config_path(prefix: 'orbit-cloudflare-read-');
+    unlink_orbit_test_file($this->cloudflareConfigPath);
+
+    $store = new OrbitConfigStore(overridePath: $this->cloudflareConfigPath);
+    $store->enableExtension('cloudflare');
+
+    app()->instance(OrbitConfigStore::class, $store);
+});
+
+afterEach(function (): void {
+    unlink_orbit_test_file($this->cloudflareConfigPath);
+});
 
 describe('cf-zone:list', function (): void {
     it('returns a canonical success envelope in JSON mode', function (): void {
@@ -17,7 +32,7 @@ describe('cf-zone:list', function (): void {
             ],
         ], ['count' => 1]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-zone:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, command: 'cf-zone:list', params: ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -50,7 +65,7 @@ describe('cf-zone:list', function (): void {
             ],
         ], ['count' => 2]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-zone:list');
+        [$exitCode, $output] = runCommand($this, command: 'cf-zone:list');
 
         expect($exitCode)
             ->toBe(0)
@@ -77,7 +92,7 @@ describe('cf-zone:list', function (): void {
     it('renders the documented empty state when no zones are visible', function (): void {
         fakeGateway(fakeSuccessEnvelope(['zones' => []], ['count' => 0]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-zone:list');
+        [$exitCode, $output] = runCommand($this, command: 'cf-zone:list');
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No Cloudflare zones found.');
     });
@@ -87,7 +102,7 @@ describe('cf-zone:list', function (): void {
             'reason' => 'token_missing',
         ]), 503);
 
-        [$exitCode, $output] = runCommand($this, 'cf-zone:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, command: 'cf-zone:list', params: ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -119,7 +134,7 @@ describe('cf-dns:list', function (): void {
             'count' => 1,
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:list', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: [
             'zone' => 'example.com',
             '--json' => true,
         ]);
@@ -166,7 +181,7 @@ describe('cf-dns:list', function (): void {
             ],
         ], ['zone' => 'example.com', 'count' => 2]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['zone' => 'example.com']);
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: ['zone' => 'example.com']);
 
         expect($exitCode)
             ->toBe(0)
@@ -199,7 +214,7 @@ describe('cf-dns:list', function (): void {
     it('renders the documented empty state with the requested zone when no records exist', function (): void {
         fakeGateway(fakeSuccessEnvelope(['records' => []], ['zone' => 'example.com', 'count' => 0]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['zone' => 'example.com']);
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: ['zone' => 'example.com']);
 
         expect($exitCode)->toBe(0)->and($output)->toBe('No Cloudflare DNS records found for example.com.');
     });
@@ -207,7 +222,7 @@ describe('cf-dns:list', function (): void {
     it('requires the zone argument in JSON mode before calling the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope(['records' => []]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -226,7 +241,7 @@ describe('cf-dns:list', function (): void {
             'missing_permission' => 'cf:dns:list',
         ]), 403);
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:list', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: [
             'zone' => 'example.com',
             '--json' => true,
         ]);
@@ -244,7 +259,7 @@ describe('cf-dns:list', function (): void {
     it('surfaces wireguard-specific gateway failures', function (): void {
         fakeGatewayDown('Network is unreachable');
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:list', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:list', params: [
             'zone' => 'example.com',
             '--json' => true,
         ]);

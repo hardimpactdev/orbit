@@ -29,7 +29,6 @@ final class NodePermissionRegistry
 
             // App
             'app:*',
-            'app:codex',
             'app:credentials',
             'app:list',
             'app:show',
@@ -60,6 +59,10 @@ final class NodePermissionRegistry
             'cf:ssl:disable',
             'cf:ssl:enable',
             'cf:zone:list',
+
+            // Codex
+            'codex:*',
+            'codex:app',
 
             // Deploy
             'deploy:*',
@@ -93,6 +96,12 @@ final class NodePermissionRegistry
             'dns:list',
             'dns:remove',
             'dns:resolve',
+
+            // Extension
+            'extension:*',
+            'extension:read',
+            'extension:enable',
+            'extension:disable',
 
             // Doctor
             'doctor:*',
@@ -204,7 +213,7 @@ final class NodePermissionRegistry
         return [
             'activity:read' => ['activity:list', 'activity:show'],
             'app:read' => ['app:list', 'app:show', 'app-setup-step:list'],
-            'app:write' => ['app:codex', 'app:setup', 'app-setup-step:add', 'app-setup-step:remove'],
+            'app:write' => ['app:setup', 'app-setup-step:add', 'app-setup-step:remove'],
             'database:query:write' => ['database:query'],
             'database:read' => [
                 'database:list',
@@ -221,7 +230,9 @@ final class NodePermissionRegistry
                 'database:attach',
                 'database:detach',
             ],
+            'codex:*' => ['codex:app'],
             'deploy:read' => ['deploy:history', 'deploy:log'],
+            'extension:*' => ['extension:read', 'extension:enable', 'extension:disable'],
             'node:read' => ['node:list', 'node:show'],
             'php:read' => ['php:list'],
             'process:read' => ['process:list', 'process:logs'],

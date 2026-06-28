@@ -83,6 +83,23 @@ describe('node permission registry', function (): void {
         expect($implied)->toContain('tool:update:agent-tools');
     });
 
+    it('returns implied permissions for extension and codex umbrellas', function (): void {
+        $registry = new NodePermissionRegistry;
+
+        expect($registry->impliedBy('extension:*'))
+            ->toBe(['extension:read', 'extension:enable', 'extension:disable'])
+            ->and($registry->impliedBy('codex:*'))
+            ->toBe(['codex:app'])
+            ->and($registry->allows(['extension:*'], 'extension:read'))
+            ->toBeTrue()
+            ->and($registry->allows(['extension:*'], 'extension:enable'))
+            ->toBeTrue()
+            ->and($registry->allows(['extension:*'], 'extension:disable'))
+            ->toBeTrue()
+            ->and($registry->allows(['codex:*'], 'codex:app'))
+            ->toBeTrue();
+    });
+
     it('returns implied permissions for database umbrellas', function (): void {
         $registry = new NodePermissionRegistry;
 

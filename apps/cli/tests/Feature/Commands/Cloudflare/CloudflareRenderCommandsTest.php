@@ -2,7 +2,22 @@
 
 declare(strict_types=1);
 
+use App\Services\OrbitConfigStore;
 use Illuminate\Support\Facades\Http;
+
+beforeEach(function (): void {
+    $this->cloudflareConfigPath = orbit_test_config_path(prefix: 'orbit-cloudflare-render-');
+    unlink_orbit_test_file($this->cloudflareConfigPath);
+
+    $store = new OrbitConfigStore(overridePath: $this->cloudflareConfigPath);
+    $store->enableExtension('cloudflare');
+
+    app()->instance(OrbitConfigStore::class, $store);
+});
+
+afterEach(function (): void {
+    unlink_orbit_test_file($this->cloudflareConfigPath);
+});
 
 describe('Cloudflare human render commands', function (): void {
     it('renders cf-dns:add as a progress tree with a created success line', function (): void {
@@ -21,7 +36,7 @@ describe('Cloudflare human render commands', function (): void {
             'already_present' => false,
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:add', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:add', params: [
             'name' => 'docs.example.com',
             'content' => '203.0.113.10',
             '--zone' => 'example.com',
@@ -61,7 +76,7 @@ describe('Cloudflare human render commands', function (): void {
             'already_present' => true,
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:add', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:add', params: [
             'name' => 'docs.example.com',
             'content' => '203.0.113.10',
             '--zone' => 'example.com',
@@ -79,7 +94,7 @@ describe('Cloudflare human render commands', function (): void {
     it('renders cf-dns:add gateway failures as prose without an envelope', function (): void {
         fakeGateway(fakeErrorEnvelope('cloudflare_unavailable', 'Cloudflare token is missing.'), 503);
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:add', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:add', params: [
             'name' => 'docs.example.com',
             'content' => '203.0.113.10',
             '--zone' => 'example.com',
@@ -109,7 +124,7 @@ describe('Cloudflare human render commands', function (): void {
             'action' => 'remove',
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:remove', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:remove', params: [
             'record-id' => 'record-1',
             '--zone' => 'example.com',
             '--force' => true,
@@ -134,7 +149,7 @@ describe('Cloudflare human render commands', function (): void {
     it('requires --force before cf-dns:remove without rendering a tree', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:remove', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:remove', params: [
             'record-id' => 'record-1',
             '--zone' => 'example.com',
         ]);
@@ -157,7 +172,7 @@ describe('Cloudflare human render commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-cache:flush', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-cache:flush', params: [
             '--zone' => 'example.com',
         ]);
 
@@ -191,7 +206,7 @@ describe('Cloudflare human render commands', function (): void {
             'already_present' => false,
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-cache-rule:add', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-cache-rule:add', params: [
             'app' => 'docs',
         ]);
 
@@ -224,7 +239,7 @@ describe('Cloudflare human render commands', function (): void {
             'provider' => 'cloudflare',
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-cache-rule:remove', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-cache-rule:remove', params: [
             'app' => 'docs',
             '--force' => true,
         ]);
@@ -255,7 +270,7 @@ describe('Cloudflare human render commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-ssl:enable', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-ssl:enable', params: [
             'zone' => 'example.com',
         ]);
 
@@ -286,7 +301,7 @@ describe('Cloudflare human render commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-ssl:disable', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-ssl:disable', params: [
             'zone' => 'example.com',
             '--force' => true,
         ]);
@@ -317,7 +332,7 @@ describe('Cloudflare human render commands', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-ssl:enable', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-ssl:enable', params: [
             'zone' => 'example.com',
             '--json' => true,
         ]);

@@ -24,6 +24,10 @@ final class CfDnsRemoveCommand extends CloudflareGatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         $recordId = $this->requiredArgument(
             'record-id',
             'record_id',

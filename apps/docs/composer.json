@@ -27,7 +27,8 @@
         "psr-4": {
             "App\\": "app/",
             "Database\\Factories\\": "database/factories/",
-            "Database\\Seeders\\": "database/seeders/"
+            "Database\\Seeders\\": "database/seeders/",
+            "Orbit\\Core\\": "../../packages/core/src/"
         }
     },
     "autoload-dev": {

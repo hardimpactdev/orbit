@@ -2,11 +2,48 @@
 
 declare(strict_types=1);
 
+use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-describe('app:codex', function (): void {
-    it('adds an app project through the gateway', function (): void {
+describe('codex:app', function (): void {
+    beforeEach(function (): void {
+        $this->tempPath = orbit_test_config_path(prefix: 'orbit-codex-app-');
+        unlink_orbit_test_file($this->tempPath);
+
+        app()->instance(OrbitConfigStore::class, new OrbitConfigStore(overridePath: $this->tempPath));
+    });
+
+    afterEach(function (): void {
+        unlink_orbit_test_file($this->tempPath);
+    });
+
+    it('returns extension disabled before gateway IO when locally disabled', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
+            'action' => 'list',
+            '--node' => 'mini',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('extension_disabled')
+            ->and($decoded['error']['meta']['extension'])
+            ->toBe('codex')
+            ->and($decoded['error']['meta']['scope'])
+            ->toBe('local');
+    });
+
+    it('adds an app project through the codex gateway API', function (): void {
+        enable_local_codex_extension();
+
         fakeGateway(fakeSuccessEnvelope([
             'codex_project' => [
                 'app' => 'docs',
@@ -18,7 +55,7 @@ describe('app:codex', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:codex', [
+        [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'add',
             'app' => 'docs',
             '--node' => 'mini',
@@ -30,7 +67,7 @@ describe('app:codex', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/codex'
+                && $request->url() === 'https://gateway.test/api/codex/apps/docs'
                 && $request->data() === ['node' => 'mini']
             ),
         );
@@ -38,7 +75,9 @@ describe('app:codex', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['codex_project']['ssh_alias'])->toBe('app-node');
     });
 
-    it('removes an app project through the gateway', function (): void {
+    it('removes an app project through the codex gateway API', function (): void {
+        enable_local_codex_extension();
+
         fakeGateway(fakeSuccessEnvelope([
             'codex_project' => [
                 'app' => 'docs',
@@ -47,7 +86,7 @@ describe('app:codex', function (): void {
             ],
         ]));
 
-        [$exitCode] = runCommand($this, 'app:codex', [
+        [$exitCode] = runCommand($this, command: 'codex:app', params: [
             'action' => 'remove',
             'app' => 'docs',
             '--node' => 'mini',
@@ -57,7 +96,7 @@ describe('app:codex', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'DELETE'
-                && $request->url() === 'https://gateway.test/api/apps/docs/codex'
+                && $request->url() === 'https://gateway.test/api/codex/apps/docs'
                 && $request->data() === ['node' => 'mini']
             ),
         );
@@ -65,7 +104,9 @@ describe('app:codex', function (): void {
         expect($exitCode)->toBe(0);
     });
 
-    it('lists target-node Codex App projects through the gateway', function (): void {
+    it('lists target-node Codex App projects through the codex gateway API', function (): void {
+        enable_local_codex_extension();
+
         fakeGateway(fakeSuccessEnvelope([
             'codex_projects' => [
                 [
@@ -77,7 +118,7 @@ describe('app:codex', function (): void {
             ],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'app:codex', [
+        [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'list',
             '--node' => 'mini',
             '--json' => true,
@@ -88,7 +129,7 @@ describe('app:codex', function (): void {
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
-                && $request->url() === 'https://gateway.test/api/apps/codex/projects?node=mini'
+                && $request->url() === 'https://gateway.test/api/codex/projects?node=mini'
             ),
         );
 
@@ -96,9 +137,10 @@ describe('app:codex', function (): void {
     });
 
     it('rejects app selectors when listing target-node Codex App projects', function (): void {
+        enable_local_codex_extension();
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:codex', [
+        [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'list',
             'app' => 'docs',
             '--node' => 'mini',
@@ -118,9 +160,10 @@ describe('app:codex', function (): void {
     });
 
     it('fails before gateway IO when required non-interactive input is missing', function (): void {
+        enable_local_codex_extension();
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'app:codex', [
+        [$exitCode, $output] = runCommand($this, command: 'codex:app', params: [
             'action' => 'add',
             'app' => 'docs',
             '--json' => true,
@@ -138,3 +181,8 @@ describe('app:codex', function (): void {
             ->toBe('node');
     });
 });
+
+function enable_local_codex_extension(): void
+{
+    app(OrbitConfigStore::class)->enableExtension('codex');
+}

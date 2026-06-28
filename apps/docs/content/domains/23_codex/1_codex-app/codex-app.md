@@ -1,23 +1,23 @@
-# `orbit app:codex add|remove|list [app]`
+# `orbit codex:app add|remove|list [app]`
 
-`app:codex` registers Orbit apps in Codex App on an eligible target node. It is
+`codex:app` registers Orbit apps in Codex App on an eligible target node. It is
 for Codex App's project list, not for app runtime configuration and not for the
 app's Agent IDE adapter.
 
 ## Usage
 
 ```bash
-orbit app:codex add <app> --node=<node> [--json]
-orbit app:codex remove <app> --node=<node> [--json]
-orbit app:codex list --node=<node> [--json]
+orbit codex:app add <app> --node=<node> [--json]
+orbit codex:app remove <app> --node=<node> [--json]
+orbit codex:app list --node=<node> [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit app:codex add docs --node=mini
-orbit app:codex remove docs --node=mini
-orbit app:codex list --node=mini --json
+orbit codex:app add docs --node=mini
+orbit codex:app remove docs --node=mini
+orbit codex:app list --node=mini --json
 ```
 
 ## Options
@@ -31,7 +31,7 @@ orbit app:codex list --node=mini --json
 
 ## What It Changes
 
-`app:codex` edits only this file on the target node:
+`codex:app` edits only this file on the target node:
 
 ```text
 ~/.codex/codex-app/config.json
@@ -46,4 +46,4 @@ codex://codex-app/apply-config
 The command does not register a workspace, register a Codex-managed worktree,
 change `app:agent-ide`, or mutate app runtime configuration.
 
-See [`app:codex` technical contract](technical/1_app-codex.md).
+See [`codex:app` technical contract](technical/1_codex-app.md).

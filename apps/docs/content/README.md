@@ -28,3 +28,5 @@
 19. [S3](domains/19_s3/s3.md)
 20. [Metrics](domains/20_metrics/metrics.md)
 21. [Analytics](domains/21_analytics/analytics.md)
+22. [Extension](domains/22_extension/extension.md)
+23. [Codex](domains/23_codex/codex.md)

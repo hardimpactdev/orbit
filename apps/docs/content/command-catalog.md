@@ -37,7 +37,9 @@ composer docs-lint
 
 The catalog joins existing Orbit sources:
 
-- The live CLI surface from `apps/cli/orbit list --format=json`.
+- The live CLI surface from `apps/cli/orbit list --format=json`, generated with
+  Orbit's docs-only extension-surface flag so built-in extension commands are
+  cataloged even when they are hidden from normal local discovery.
 - Command documentation directories under `apps/docs/content/domains`.
 - Command docs registries under `apps/docs/config/librarian-command-docs`.
 - Technical contract test mappings from command technical files.
@@ -61,6 +63,8 @@ Each command entry contains:
 - `name`, `slug`, and `family`.
 - `arguments` and `options` from the live CLI surface.
 - `renderers.json` and `renderers.stream_json` booleans inferred from live options.
+- `extension`, either `null` for core commands or an object with `slug`, `label`,
+  and `description` for commands owned by a built-in extension.
 - `public_options_documented.json` and
   `public_options_documented.stream_json` booleans from direct checks against
   the public command page. These indicate whether the public docs mention the

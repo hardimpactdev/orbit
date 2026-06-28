@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Cloudflare;
 
+use App\Commands\Concerns\RequiresLocalExtension;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 
 abstract class CloudflareGatewayCommand extends GatewayCommand
 {
+    use RequiresLocalExtension;
     use ResolvesHostContext;
+
+    protected function extensionSlug(): string
+    {
+        return 'cloudflare';
+    }
 
     /**
      * @param  array<string, mixed>  $extraMeta

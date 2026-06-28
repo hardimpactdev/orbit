@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
+use App\Models\GatewayExtension;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ const APP_CODEX_CALLER_WG_IP = '10.44.0.90';
 /**
  * @param  list<string>  $permissions
  */
-function grantAppCodexAccess(Node $caller, Node $servingNode, array $permissions = ['app:codex']): void
+function grantAppCodexAccess(Node $caller, Node $servingNode, array $permissions = ['codex:app']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -29,6 +30,13 @@ function grantAppCodexAccess(Node $caller, Node $servingNode, array $permissions
 }
 
 describe('AppCodexController', function (): void {
+    beforeEach(function (): void {
+        GatewayExtension::query()->updateOrCreate(
+            ['slug' => 'codex'],
+            ['enabled' => true, 'enabled_at' => now()],
+        );
+    });
+
     it('adds an app project to Codex App config on a macOS non-gateway target', function (): void {
         $caller = Node::factory()
             ->operator()
@@ -58,7 +66,7 @@ describe('AppCodexController', function (): void {
 
         $response = $this->call(
             'POST',
-            "/api/apps/{$app->name}/codex",
+            "/api/codex/apps/{$app->name}",
             [
                 'node' => 'mini',
             ],
@@ -120,7 +128,7 @@ describe('AppCodexController', function (): void {
 
         $response = $this->call(
             'POST',
-            "/api/apps/{$app->name}/codex",
+            "/api/codex/apps/{$app->name}",
             [
                 'node' => 'linux-operator',
             ],
@@ -164,7 +172,7 @@ describe('AppCodexController', function (): void {
 
         $response = $this->call(
             'POST',
-            "/api/apps/{$app->name}/codex",
+            "/api/codex/apps/{$app->name}",
             [
                 'node' => 'mini',
             ],
@@ -210,7 +218,7 @@ describe('AppCodexController', function (): void {
 
         $response = $this->call(
             'POST',
-            "/api/apps/{$app->name}/codex",
+            "/api/codex/apps/{$app->name}",
             [
                 'node' => 'mini',
             ],

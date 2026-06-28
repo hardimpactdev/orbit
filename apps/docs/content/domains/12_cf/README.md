@@ -5,6 +5,7 @@ Orbit-managed domains. The command domain owns the `cf-*` provider utility
 prefixes: `cf-zone:*`, `cf-dns:*`, `cf-cache:*`, `cf-cache-rule:*`, and
 `cf-ssl:*`.
 
+Cloudflare is Orbit's first command family backed by a built-in extension.
 Cloudflare is an external provider integration. It is not the canonical Orbit
 model for ingress, apps, TLS, or DNS.
 
@@ -22,10 +23,19 @@ There is no `doctor --family=cf` contract.
 These rules constrain all Cloudflare commands.
 
 - Cloudflare commands are gateway-resource provider utilities.
+- Cloudflare commands appear in normal local command discovery only after
+  `orbit extension:enable cloudflare` has enabled local state on the caller
+  node.
+- Cloudflare gateway API routes run only after
+  `orbit extension:enable cloudflare --node=gateway` has enabled gateway state.
 - The gateway is the only Orbit node that talks directly to the Cloudflare API.
 - Cloudflare API tokens are external secrets stored on the gateway.
 - Callers on clients invoke Cloudflare commands through the gateway API and
   must have the command's `cf:*` permission on the gateway.
+- Direct invocation while local Cloudflare state is disabled returns
+  `extension_disabled` with `meta.scope=local`; gateway route calls while
+  gateway Cloudflare state is disabled return `extension_disabled` with
+  `meta.scope=gateway` after identity and grant checks pass.
 - Authorization failures use `authorization_failed` with `missing_permission`
   metadata. Cloudflare provider administration is not app-local runtime work.
 - Cloudflare commands require a real configured domain in a Cloudflare zone.

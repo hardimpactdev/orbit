@@ -1,8 +1,8 @@
-# Technical Contract: `orbit app:codex add|remove|list [app]`
+# Technical Contract: `orbit codex:app add|remove|list [app]`
 
-[Back to public `app:codex` documentation.](../app-codex.md)
+[Back to public `codex:app` documentation.](../codex-app.md)
 
-**Owner:** `app`.
+**Owner:** `codex`.
 
 **Effects:** `read` for `list`; `write, remote-apply` for `add` and `remove`.
 
@@ -10,14 +10,14 @@
 - The CLI caller can reach the Orbit gateway.
 - The selected target node is active, visible to the caller, not the gateway,
   and its platform resolves to macOS for the `codex-app` tool.
-- `add` and `remove` require the authenticated peer to have `app:codex` on both
+- `add` and `remove` require the authenticated peer to have `codex:app` on both
   the app's owning node and the selected Codex App target node.
-- `list` requires `app:codex` on the selected Codex App target node.
+- `list` requires `codex:app` on the selected Codex App target node.
 
 ## Signature
 
 ```bash
-orbit app:codex <action> [app] --node=<node> [--json]
+orbit codex:app <action> [app] --node=<node> [--json]
 ```
 
 ## Input Contract
@@ -36,9 +36,9 @@ This command follows the shared
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
-| `POST` | `/api/apps/{app}/codex` | `app:codex` on app node and target node | Add or update the app project entry. |
-| `DELETE` | `/api/apps/{app}/codex` | `app:codex` on app node and target node | Remove the app project entry. |
-| `GET` | `/api/apps/codex/projects` | `app:codex` on target node | List target-node Codex App projects. |
+| `POST` | `/api/codex/apps/{app}` | `codex:app` on app node and target node | Add or update the app project entry. |
+| `DELETE` | `/api/codex/apps/{app}` | `codex:app` on app node and target node | Remove the app project entry. |
+| `GET` | `/api/codex/projects` | `codex:app` on target node | List target-node Codex App projects. |
 
 ## Behavior Contract
 
@@ -55,12 +55,12 @@ This command follows the shared
 
 ## Context Contracts
 
-- [Client context](2_app-codex_on-client.md)
+- [Client context](2_codex-app_on-client.md)
 
 ## Input Mode Contracts
 
-- [Interactive input mode](5.1_app-codex_input-mode_interactive.md)
-- [Non-interactive input mode](5.2_app-codex_input-mode_non-interactive.md)
+- [Interactive input mode](5.1_codex-app_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_codex-app_input-mode_non-interactive.md)
 
 ### Config Rules
 
@@ -96,7 +96,7 @@ This command follows the shared
 
 ### Scope Boundaries
 
-`app:codex` must not:
+`codex:app` must not:
 
 - Write app runtime files.
 - Change `app:agent-ide`.
@@ -106,8 +106,8 @@ This command follows the shared
 
 ## Renderer Contracts
 
-- [Human renderer](6.1_app-codex_output-render_human.md)
-- [JSON renderer](6.2_app-codex_output-render_json.md)
+- [Human renderer](6.1_codex-app_output-render_human.md)
+- [JSON renderer](6.2_codex-app_output-render_json.md)
 
 ## Failure Semantics
 
@@ -124,14 +124,14 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`app:codex` is a direct app-to-Codex-App configuration bridge. It is not
-currently restored by [`doctor --family=app`](../../app-doctor.md); later drift
+`codex:app` is a direct app-to-Codex-App configuration bridge. It is not
+currently restored by [`doctor --family=app`](../../../5_app/app-doctor.md); later drift
 automation must use the same source-agnostic config services.
 
 ## Test Mapping
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppCodexCommandTest.php` | CLI validation, request routing, JSON pass-through, and human progress output. |
+| `apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php` | CLI validation, request routing, JSON pass-through, and human progress output. |
 | `apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php` | Gateway authorization, target eligibility, config read/write/apply behavior, warning payloads in `success.meta.warnings[]`, and response shapes. |
 | `apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php` | Preserves unrelated config keys, creates missing project arrays, updates duplicate project entries in place, and removes only matching entries. |

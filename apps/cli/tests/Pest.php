@@ -511,6 +511,20 @@ function runCommand(object $test, string $command, array $params = []): array
     return [$exitCode, trim(app(Kernel::class)->output())];
 }
 
+function orbit_test_config_path(string $prefix): string
+{
+    return sys_get_temp_dir().'/'.$prefix.bin2hex(random_bytes(6)).'.json';
+}
+
+function unlink_orbit_test_file(?string $path): void
+{
+    if ($path === null || $path === '' || ! is_file($path)) {
+        return;
+    }
+
+    unlink($path);
+}
+
 /**
  * Run an Artisan command against decorated stdout so forked progress tickers
  * remain visible through output buffering.

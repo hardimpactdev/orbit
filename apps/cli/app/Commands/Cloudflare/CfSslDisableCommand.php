@@ -23,6 +23,10 @@ final class CfSslDisableCommand extends CloudflareGatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         $zone = $this->requiredArgument('zone', 'zone', 'A Cloudflare zone is required.');
 
         if (is_int($zone)) {

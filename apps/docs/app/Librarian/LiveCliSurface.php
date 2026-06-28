@@ -55,7 +55,14 @@ final class LiveCliSurface implements CliSurface
     private function load(): array
     {
         $entryPoint = $this->cliEntryPoint();
-        $process = new Process([PHP_BINARY, $entryPoint, 'list', '--format=json'], dirname($entryPoint));
+        $process = new Process(
+            command: [PHP_BINARY, $entryPoint, 'list', '--format=json'],
+            cwd: dirname($entryPoint),
+            env: [
+                'ORBIT_CLI_SHOW_ALL_EXTENSION_COMMANDS' => '1',
+                'ORBIT_CONFIG_PATH' => $this->emptyConfigPath(),
+            ],
+        );
         $process->mustRun();
 
         try {
@@ -102,5 +109,10 @@ final class LiveCliSurface implements CliSurface
         }
 
         return $path;
+    }
+
+    private function emptyConfigPath(): string
+    {
+        return sys_get_temp_dir().'/orbit-docs-command-catalog-empty-config.json';
     }
 }
