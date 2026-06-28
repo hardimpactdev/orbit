@@ -93,7 +93,7 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
     {
         if (($payload['ok'] ?? null) === true) {
             return SoloUpstreamResponse::success(
-                data: $this->stringKeyedArray($payload['data'] ?? []),
+                data: $this->normalizeSuccessData($this->stringKeyedArray($payload['data'] ?? [])),
                 meta: $this->stringKeyedArray($payload['meta'] ?? []),
             );
         }
@@ -105,9 +105,22 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
         }
 
         return SoloUpstreamResponse::success(
-            data: $this->stringKeyedArray($success['data'] ?? []),
+            data: $this->normalizeSuccessData($this->stringKeyedArray($success['data'] ?? [])),
             meta: $this->stringKeyedArray($success['meta'] ?? []),
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function normalizeSuccessData(array $data): array
+    {
+        if (! array_key_exists('tools', $data) && is_array($data['agentTools'] ?? null)) {
+            $data['tools'] = $data['agentTools'];
+        }
+
+        return $data;
     }
 
     /**

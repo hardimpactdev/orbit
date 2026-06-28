@@ -84,3 +84,34 @@ it('normalizes solo error envelopes', function (): void {
         ->and($response->error?->status)
         ->toBe(401);
 });
+
+it('maps solo discovery agent tools to the orbit tools key', function (): void {
+    Http::fake([
+        '127.0.0.1:24678/api/discovery' => Http::response([
+            'ok' => true,
+            'requestId' => 'req-discovery',
+            'data' => [
+                'schemaVersion' => 3,
+                'agentTools' => [
+                    ['name' => 'Codex', 'toolType' => 'codex'],
+                ],
+            ],
+        ]),
+    ]);
+
+    $node = Node::factory()->create(['name' => 'gateway']);
+    $target = new SoloUpstreamTarget(
+        node: $node,
+        url: 'http://127.0.0.1:24678/api',
+        identity: 'gateway',
+    );
+
+    $response = app(HttpSoloUpstreamClient::class)->get($target, '/discovery');
+
+    expect($response->ok)
+        ->toBeTrue()
+        ->and($response->data['tools'][0]['toolType'] ?? null)
+        ->toBe('codex')
+        ->and($response->data['agentTools'][0]['name'] ?? null)
+        ->toBe('Codex');
+});
