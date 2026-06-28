@@ -3,7 +3,7 @@ php-version = "8.5"
 
 [source]
 paths = ["app", "bootstrap", "config", "database", "routes", "tests"]
-includes = ["vendor"]
+includes = ["vendor", "../../packages/core/src"]
 excludes = ["bootstrap/cache", "build", "node_modules", "public/build", "storage"]
 
 [formatter]

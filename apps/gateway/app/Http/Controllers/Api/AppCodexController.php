@@ -118,7 +118,7 @@ final readonly class AppCodexController
             return $this->error('authorization_failed', 'Peer identity unknown.', [], 403);
         }
 
-        $target = $this->targetNode($request, $caller, 'app:codex');
+        $target = $this->targetNode($request, $caller, 'codex:app');
 
         if ($target instanceof JsonResponse) {
             return $target;
@@ -166,19 +166,19 @@ final readonly class AppCodexController
             return $this->error('app.not_found', "App '{$app}' not found.", ['app' => $app], 404);
         }
 
-        if (! app(NodeAccessAuthorizer::class)->allows($caller, $model->node, 'app:codex')) {
+        if (! app(NodeAccessAuthorizer::class)->allows($caller, $model->node, 'codex:app')) {
             return $this->error(
                 'authorization_failed',
-                "This node is not authorized for 'app:codex' on '{$model->node?->name}'.",
+                "This node is not authorized for 'codex:app' on '{$model->node?->name}'.",
                 [
                     'serving_node' => $model->node?->name,
-                    'missing_permission' => 'app:codex',
+                    'missing_permission' => 'codex:app',
                 ],
                 403,
             );
         }
 
-        $target = $this->targetNode($request, $caller, 'app:codex');
+        $target = $this->targetNode($request, $caller, 'codex:app');
 
         if ($target instanceof JsonResponse) {
             return $target;

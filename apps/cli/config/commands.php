@@ -10,7 +10,6 @@ use App\Commands\App\AppAgentIdeCommand;
 use App\Commands\App\AppAnalyticsDisableCommand;
 use App\Commands\App\AppAnalyticsEnableCommand;
 use App\Commands\App\AppAnalyticsShowCommand;
-use App\Commands\App\AppCodexCommand;
 use App\Commands\App\AppEnvCommand;
 use App\Commands\App\AppInstanceCommand;
 use App\Commands\App\AppListCommand;
@@ -38,6 +37,7 @@ use App\Commands\Cloudflare\CfDnsRemoveCommand;
 use App\Commands\Cloudflare\CfSslDisableCommand;
 use App\Commands\Cloudflare\CfSslEnableCommand;
 use App\Commands\Cloudflare\CfZoneListCommand;
+use App\Commands\Codex\CodexAppCommand;
 use App\Commands\Database\DatabaseAddCommand;
 use App\Commands\Database\DatabaseAddUserCommand;
 use App\Commands\Database\DatabaseAttachCommand;
@@ -58,6 +58,9 @@ use App\Commands\Deploy\DeployStepListCommand;
 use App\Commands\Deploy\DeployStepRemoveCommand;
 use App\Commands\Dns\DnsListCommand;
 use App\Commands\Dns\DnsResolveTldCommand;
+use App\Commands\Extension\ExtensionDisableCommand;
+use App\Commands\Extension\ExtensionEnableCommand;
+use App\Commands\Extension\ExtensionListCommand;
 use App\Commands\Firewall\FirewallAllowCommand;
 use App\Commands\Firewall\FirewallDenyCommand;
 use App\Commands\Firewall\FirewallListCommand;
@@ -176,7 +179,6 @@ return [
         AppAnalyticsDisableCommand::class,
         AppAnalyticsEnableCommand::class,
         AppAnalyticsShowCommand::class,
-        AppCodexCommand::class,
         AppEnvCommand::class,
         AppInstanceCommand::class,
         AppListCommand::class,
@@ -204,6 +206,7 @@ return [
         CfSslDisableCommand::class,
         CfSslEnableCommand::class,
         CfZoneListCommand::class,
+        CodexAppCommand::class,
         DatabaseAddCommand::class,
         DatabaseAddUserCommand::class,
         DatabaseAttachCommand::class,
@@ -216,14 +219,17 @@ return [
         DatabaseShowCommand::class,
         DatabaseTablesCommand::class,
         DatabaseUpdateCommand::class,
-        DnsListCommand::class,
-        DnsResolveTldCommand::class,
         DeployHistoryCommand::class,
         DeployLogCommand::class,
         DeployRunCommand::class,
         DeployStepAddCommand::class,
         DeployStepListCommand::class,
         DeployStepRemoveCommand::class,
+        DnsListCommand::class,
+        DnsResolveTldCommand::class,
+        ExtensionDisableCommand::class,
+        ExtensionEnableCommand::class,
+        ExtensionListCommand::class,
         FirewallAllowCommand::class,
         FirewallDenyCommand::class,
         FirewallListCommand::class,

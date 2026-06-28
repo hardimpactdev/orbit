@@ -2,8 +2,23 @@
 
 declare(strict_types=1);
 
+use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+
+beforeEach(function (): void {
+    $this->cloudflareConfigPath = orbit_test_config_path(prefix: 'orbit-cloudflare-write-');
+    unlink_orbit_test_file($this->cloudflareConfigPath);
+
+    $store = new OrbitConfigStore(overridePath: $this->cloudflareConfigPath);
+    $store->enableExtension('cloudflare');
+
+    app()->instance(OrbitConfigStore::class, $store);
+});
+
+afterEach(function (): void {
+    unlink_orbit_test_file($this->cloudflareConfigPath);
+});
 
 describe('Cloudflare write commands', function (): void {
     it('posts cf-dns:add payloads to the gateway', function (): void {
@@ -21,7 +36,7 @@ describe('Cloudflare write commands', function (): void {
             'action' => 'create',
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:add', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:add', params: [
             'name' => 'docs.lindaretel.nl',
             'content' => '203.0.113.10',
             '--zone' => 'lindaretel.nl',
@@ -55,11 +70,11 @@ describe('Cloudflare write commands', function (): void {
     it('validates cf-dns:add required input before contacting the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$missingNameExitCode, $missingNameOutput] = runCommand($this, 'cf-dns:add', [
+        [$missingNameExitCode, $missingNameOutput] = runCommand($this, command: 'cf-dns:add', params: [
             '--json' => true,
         ]);
 
-        [$missingContentExitCode, $missingContentOutput] = runCommand($this, 'cf-dns:add', [
+        [$missingContentExitCode, $missingContentOutput] = runCommand($this, command: 'cf-dns:add', params: [
             'name' => 'docs.lindaretel.nl',
             '--json' => true,
         ]);
@@ -94,7 +109,7 @@ describe('Cloudflare write commands', function (): void {
             'action' => 'remove',
         ]));
 
-        [$missingConsentExitCode, $missingConsentOutput] = runCommand($this, 'cf-dns:remove', [
+        [$missingConsentExitCode, $missingConsentOutput] = runCommand($this, command: 'cf-dns:remove', params: [
             'record-id' => 'record-1',
             '--zone' => 'lindaretel.nl',
             '--json' => true,
@@ -122,7 +137,7 @@ describe('Cloudflare write commands', function (): void {
             'action' => 'remove',
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'cf-dns:remove', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-dns:remove', params: [
             'record-id' => 'record-1',
             '--zone' => 'lindaretel.nl',
             '--force' => true,
@@ -169,7 +184,7 @@ describe('Cloudflare write commands', function (): void {
     it('validates cf-cache:flush zone before contacting the gateway in JSON mode', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'cf-cache:flush', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, command: 'cf-cache:flush', params: ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -283,7 +298,7 @@ describe('Cloudflare write commands', function (): void {
             'reason' => 'token_missing',
         ]), 503);
 
-        [$exitCode, $output] = runCommand($this, 'cf-cache:flush', [
+        [$exitCode, $output] = runCommand($this, command: 'cf-cache:flush', params: [
             '--zone' => 'lindaretel.nl',
             '--json' => true,
         ]);

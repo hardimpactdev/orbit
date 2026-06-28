@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Commands\Cloudflare;
 
-use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
 use function Laravel\Prompts\table;
 
-final class CfZoneListCommand extends GatewayCommand
+final class CfZoneListCommand extends CloudflareGatewayCommand
 {
     #[\Override]
     protected $signature = 'cf-zone:list {--json}';
@@ -19,6 +18,10 @@ final class CfZoneListCommand extends GatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         try {
             $response = $this->gatewayGet('/api/cloudflare/zones');
         } catch (GatewayApiException $exception) {

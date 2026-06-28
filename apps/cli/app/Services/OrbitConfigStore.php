@@ -338,6 +338,92 @@ final readonly class OrbitConfigStore
     }
 
     /**
+     * @return list<string>
+     */
+    public function enabledExtensions(): array
+    {
+        $config = $this->read();
+
+        /** @var array<string, mixed>|null $extensions */
+        $extensions = $config['extensions'] ?? null;
+
+        if (! is_array($extensions)) {
+            return [];
+        }
+
+        /** @var array<int, mixed>|null $enabled */
+        $enabled = $extensions['enabled'] ?? null;
+
+        if (! is_array($enabled)) {
+            return [];
+        }
+
+        /** @var array<string, true> $slugs */
+        $slugs = [];
+
+        foreach ($enabled as $slug) {
+            if (! is_string($slug) || $slug === '') {
+                continue;
+            }
+
+            $slugs[$slug] = true;
+        }
+
+        $unique = array_keys($slugs);
+        sort($unique);
+
+        return $unique;
+    }
+
+    public function isExtensionEnabled(string $slug): bool
+    {
+        return in_array($slug, $this->enabledExtensions(), strict: true);
+    }
+
+    public function enableExtension(string $slug): void
+    {
+        $config = $this->read();
+        $enabled = $this->enabledExtensions();
+
+        if (! in_array($slug, $enabled, strict: true)) {
+            $enabled[] = $slug;
+            sort($enabled);
+        }
+
+        if (! is_array($config['extensions'] ?? null)) {
+            $config['extensions'] = ['enabled' => []];
+        }
+
+        $config['extensions']['enabled'] = $enabled;
+
+        $this->save($config);
+    }
+
+    public function disableExtension(string $slug): bool
+    {
+        $enabled = $this->enabledExtensions();
+
+        if (! in_array($slug, $enabled, strict: true)) {
+            return false;
+        }
+
+        $config = $this->read();
+
+        if (! is_array($config['extensions'] ?? null)) {
+            $config['extensions'] = ['enabled' => []];
+        }
+
+        $config['extensions']['enabled'] = array_values(array_filter(
+            $enabled,
+            static fn (string $enabledSlug): bool => $enabledSlug !== $slug,
+        ));
+
+        $this->save($config);
+
+        return true;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function emptySkeleton(): array
@@ -347,6 +433,7 @@ final readonly class OrbitConfigStore
             'active_gateway' => null,
             'gateways' => [],
             'defaults' => ['node' => null, 'profile' => null],
+            'extensions' => ['enabled' => []],
             'meta' => ['imported_from' => null, 'imported_at' => null],
         ];
     }

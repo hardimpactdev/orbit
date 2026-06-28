@@ -174,5 +174,11 @@ return [
             'replacement' => '`process:update`',
             'allow_paths' => [],
         ],
+        [
+            'terms' => ['app:codex'],
+            'decision' => '2026-06-28 Codex App registration moved to the codex extension command family',
+            'replacement' => '`codex:app`',
+            'allow_paths' => ['domains/23_codex/README.md'],
+        ],
     ],
 ];

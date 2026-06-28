@@ -23,6 +23,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/17_activity/1_activity-list",
@@ -93,6 +94,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/17_activity/2_activity-show",
@@ -166,6 +168,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/15_agent-ide/1_agent-ide-message",
@@ -234,6 +237,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/21_analytics/1_analytics-update",
@@ -303,6 +307,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/23_app-setup-step-add",
@@ -359,6 +364,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/24_app-setup-step-list",
@@ -417,6 +423,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/25_app-setup-step-remove",
@@ -474,6 +481,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/9_app-agent-ide",
@@ -529,6 +537,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/17_app-analytics-disable",
@@ -585,6 +594,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/16_app-analytics-enable",
@@ -648,6 +658,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/18_app-analytics-show",
@@ -689,71 +700,6 @@
                 "response_dto": null
             }
         },
-        "app:codex": {
-            "name": "app:codex",
-            "slug": "app-codex",
-            "family": "app",
-            "arguments": [
-                "action",
-                "app"
-            ],
-            "options": [
-                "node",
-                "json"
-            ],
-            "renderers": {
-                "json": true,
-                "stream_json": false
-            },
-            "destructive_consent": null,
-            "docs": {
-                "directory": "domains/5_app/21_app-codex",
-                "public": "domains/5_app/21_app-codex/app-codex.md",
-                "technical": "domains/5_app/21_app-codex/technical/1_app-codex.md",
-                "repo_directory": "apps/docs/content/domains/5_app/21_app-codex",
-                "repo_public": "apps/docs/content/domains/5_app/21_app-codex/app-codex.md",
-                "repo_technical": "apps/docs/content/domains/5_app/21_app-codex/technical/1_app-codex.md"
-            },
-            "public_options_documented": {
-                "json": true,
-                "stream_json": false
-            },
-            "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/App/AppCodexCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php",
-                "apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php"
-            ],
-            "verification_hints": [
-                {
-                    "repo_test_path": "apps/cli/tests/Feature/Commands/App/AppCodexCommandTest.php",
-                    "working_directory": "apps/cli",
-                    "runner": "bin/orbit-cli-pest",
-                    "runner_test_path": "tests/Feature/Commands/App/AppCodexCommandTest.php",
-                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppCodexCommandTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppCodexControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppCodexControllerTest.php"
-                },
-                {
-                    "repo_test_path": "apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php"
-                }
-            ],
-            "p4_mapping": {
-                "sdk_request": null,
-                "gateway_route": null,
-                "gateway_controller": null,
-                "authorization_permission": null,
-                "response_dto": null
-            }
-        },
         "app:env": {
             "name": "app:env",
             "slug": "app-env",
@@ -775,6 +721,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/20_app-env",
@@ -856,6 +803,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/19_app-instance",
@@ -918,6 +866,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/3_app-list",
@@ -993,6 +942,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/15_app-mount",
@@ -1087,6 +1037,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/1_app-new",
@@ -1175,6 +1126,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/7_app-prune",
@@ -1259,6 +1211,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/2_app-register",
@@ -1338,6 +1291,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/6_app-remove",
@@ -1394,6 +1348,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/5_app-root",
@@ -1450,6 +1405,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/22_app-setup",
@@ -1513,6 +1469,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/4_app-show",
@@ -1583,6 +1540,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/14_app-websocket-credentials",
@@ -1630,6 +1588,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/13_app-websocket-disable",
@@ -1686,6 +1645,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/12_app-websocket-enable",
@@ -1742,6 +1702,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/5_app/11_app-worker",
@@ -1821,6 +1782,11 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
+            },
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/12_cf/6_cf-cache-rule-add",
@@ -1886,6 +1852,11 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
+            },
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/12_cf/7_cf-cache-rule-remove",
@@ -1948,6 +1919,11 @@
             "renderers": {
                 "json": true,
                 "stream_json": false
+            },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
             },
             "destructive_consent": null,
             "docs": {
@@ -2017,6 +1993,11 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
+            },
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/12_cf/3_cf-dns-add",
@@ -2071,6 +2052,11 @@
             "renderers": {
                 "json": true,
                 "stream_json": false
+            },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
             },
             "destructive_consent": null,
             "docs": {
@@ -2130,6 +2116,11 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
+            },
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/12_cf/4_cf-dns-remove",
@@ -2185,6 +2176,11 @@
             "renderers": {
                 "json": true,
                 "stream_json": false
+            },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
             },
             "destructive_consent": null,
             "docs": {
@@ -2251,6 +2247,11 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
+            },
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/12_cf/8_cf-ssl-enable",
@@ -2313,6 +2314,11 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": {
+                "slug": "cloudflare",
+                "label": "Cloudflare",
+                "description": "Cloudflare DNS, cache, and SSL operations through the gateway."
+            },
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/12_cf/1_cf-zone-list",
@@ -2363,6 +2369,76 @@
                 "response_dto": null
             }
         },
+        "codex:app": {
+            "name": "codex:app",
+            "slug": "codex-app",
+            "family": "codex",
+            "arguments": [
+                "action",
+                "app"
+            ],
+            "options": [
+                "node",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "codex",
+                "label": "Codex",
+                "description": "Codex App project registration on eligible operator nodes."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/23_codex/1_codex-app",
+                "public": "domains/23_codex/1_codex-app/codex-app.md",
+                "technical": "domains/23_codex/1_codex-app/technical/1_codex-app.md",
+                "repo_directory": "apps/docs/content/domains/23_codex/1_codex-app",
+                "repo_public": "apps/docs/content/domains/23_codex/1_codex-app/codex-app.md",
+                "repo_technical": "apps/docs/content/domains/23_codex/1_codex-app/technical/1_codex-app.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php",
+                "apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Codex/CodexAppCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Codex/CodexAppCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppCodexControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppCodexControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "database:add": {
             "name": "database:add",
             "slug": "database-add",
@@ -2385,6 +2461,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/3_database-add",
@@ -2460,6 +2537,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/12_database-add-user",
@@ -2534,6 +2612,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/6_database-attach",
@@ -2606,6 +2685,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/11_database-describe",
@@ -2664,6 +2744,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/7_database-detach",
@@ -2735,6 +2816,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/1_database-list",
@@ -2810,6 +2892,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/8_database-query",
@@ -2898,6 +2981,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/5_database-remove",
@@ -2969,6 +3053,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/10_database-schema",
@@ -3031,6 +3116,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/2_database-show",
@@ -3102,6 +3188,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/9_database-tables",
@@ -3174,6 +3261,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/18_database/4_database-update",
@@ -3245,6 +3333,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/10_deploy/5_deploy-history",
@@ -3310,6 +3399,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/10_deploy/6_deploy-log",
@@ -3382,6 +3472,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/10_deploy/4_deploy-run",
@@ -3473,6 +3564,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/10_deploy/1_deploy-step-add",
@@ -3559,6 +3651,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/10_deploy/2_deploy-step-list",
@@ -3631,6 +3724,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/10_deploy/3_deploy-step-remove",
@@ -3707,6 +3801,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/16_dns/2_dns-list",
@@ -3758,6 +3853,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/16_dns/1_dns-resolve-tld",
@@ -3824,6 +3920,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/3_doctor",
@@ -3889,6 +3986,184 @@
                 "response_dto": null
             }
         },
+        "extension:disable": {
+            "name": "extension:disable",
+            "slug": "extension-disable",
+            "family": "extension",
+            "arguments": [
+                "extension"
+            ],
+            "options": [
+                "node",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/22_extension/3_extension-disable",
+                "public": "domains/22_extension/3_extension-disable/extension-disable.md",
+                "technical": "domains/22_extension/3_extension-disable/technical/1_extension-disable.md",
+                "repo_directory": "apps/docs/content/domains/22_extension/3_extension-disable",
+                "repo_public": "apps/docs/content/domains/22_extension/3_extension-disable/extension-disable.md",
+                "repo_technical": "apps/docs/content/domains/22_extension/3_extension-disable/technical/1_extension-disable.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ExtensionControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Extension/ExtensionCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ExtensionControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ExtensionControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ExtensionControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "extension:enable": {
+            "name": "extension:enable",
+            "slug": "extension-enable",
+            "family": "extension",
+            "arguments": [
+                "extension"
+            ],
+            "options": [
+                "node",
+                "gateway",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/22_extension/2_extension-enable",
+                "public": "domains/22_extension/2_extension-enable/extension-enable.md",
+                "technical": "domains/22_extension/2_extension-enable/technical/1_extension-enable.md",
+                "repo_directory": "apps/docs/content/domains/22_extension/2_extension-enable",
+                "repo_public": "apps/docs/content/domains/22_extension/2_extension-enable/extension-enable.md",
+                "repo_technical": "apps/docs/content/domains/22_extension/2_extension-enable/technical/1_extension-enable.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ExtensionControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Extension/ExtensionCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ExtensionControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ExtensionControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ExtensionControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "extension:list": {
+            "name": "extension:list",
+            "slug": "extension-list",
+            "family": "extension",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/22_extension/1_extension-list",
+                "public": "domains/22_extension/1_extension-list/extension-list.md",
+                "technical": "domains/22_extension/1_extension-list/technical/1_extension-list.md",
+                "repo_directory": "apps/docs/content/domains/22_extension/1_extension-list",
+                "repo_public": "apps/docs/content/domains/22_extension/1_extension-list/extension-list.md",
+                "repo_technical": "apps/docs/content/domains/22_extension/1_extension-list/technical/1_extension-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ExtensionControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Extension/ExtensionCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Extension/ExtensionCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ExtensionControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ExtensionControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ExtensionControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": {
+                    "method": "GET",
+                    "uri": "/api/extensions"
+                },
+                "gateway_controller": {
+                    "class": "App\\Http\\Controllers\\Api\\ExtensionListController",
+                    "path": "apps/gateway/app/Http/Controllers/Api/ExtensionListController.php",
+                    "action": "__invoke"
+                },
+                "authorization_permission": [
+                    "extension:read"
+                ],
+                "response_dto": null
+            }
+        },
         "firewall:allow": {
             "name": "firewall:allow",
             "slug": "firewall-allow",
@@ -3910,6 +4185,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/4_firewall/2_firewall-allow",
@@ -3980,6 +4256,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/4_firewall/3_firewall-deny",
@@ -4042,6 +4319,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/4_firewall/1_firewall-list",
@@ -4112,6 +4390,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/4_firewall/4_firewall-remove",
@@ -4191,6 +4470,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/2_gateway/1_gateway-add",
@@ -4236,6 +4516,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/2_gateway/3_gateway-list",
@@ -4281,6 +4562,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/2_gateway/5_gateway-status",
@@ -4342,6 +4624,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/2_gateway/2_gateway-trust",
@@ -4389,6 +4672,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/2_gateway/4_gateway-use",
@@ -4434,6 +4718,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/7_manifest-remove",
@@ -4498,6 +4783,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/6_manifest-update",
@@ -4570,6 +4856,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/20_metrics/4_metrics-credentials",
@@ -4634,6 +4921,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/20_metrics/2_metrics-disable",
@@ -4688,6 +4976,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/20_metrics/1_metrics-enable",
@@ -4750,6 +5039,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/20_metrics/3_metrics-status",
@@ -4818,6 +5108,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/12_node-role-add",
@@ -4873,6 +5164,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/11_node-role-list",
@@ -4931,6 +5223,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/14_node-role-remove",
@@ -4987,6 +5280,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/10_node-agent-ide",
@@ -5058,6 +5352,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/9_node-default",
@@ -5109,6 +5404,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/5_node-grant",
@@ -5178,6 +5474,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/3_node-list",
@@ -5245,6 +5542,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/16_node-manage",
@@ -5332,6 +5630,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/1_node-new",
@@ -5423,6 +5722,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/15_node-permissions",
@@ -5492,6 +5792,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/8_node-remove",
@@ -5572,6 +5873,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/6_node-revoke",
@@ -5642,6 +5944,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/4_node-show",
@@ -5716,6 +6019,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/1_node/7_node-update",
@@ -5788,6 +6092,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/14_php/1_php-list",
@@ -5869,6 +6174,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/14_php/2_php-use",
@@ -5960,6 +6266,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/1_process-add",
@@ -6039,6 +6346,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/4_process-list",
@@ -6112,6 +6420,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/8_process-logs",
@@ -6194,6 +6503,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/3_process-remove",
@@ -6252,6 +6562,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/7_process-restart",
@@ -6310,6 +6621,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/5_process-start",
@@ -6368,6 +6680,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/6_process-stop",
@@ -6432,6 +6745,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/7_process/2_process-update",
@@ -6492,6 +6806,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/5_profile",
@@ -6568,6 +6883,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/8_proxy/2_proxy-add",
@@ -6652,6 +6968,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/8_proxy/1_proxy-list",
@@ -6729,6 +7046,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/8_proxy/3_proxy-remove",
@@ -6806,6 +7124,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/19_s3/3_s3-credentials",
@@ -6872,6 +7191,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/19_s3/1_s3-publish",
@@ -6947,6 +7267,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/19_s3/2_s3-unpublish",
@@ -7025,6 +7346,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/9_schedule/1_schedule-add",
@@ -7085,6 +7407,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/9_schedule/2_schedule-list",
@@ -7149,6 +7472,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/9_schedule/6_schedule-logs",
@@ -7214,6 +7538,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/9_schedule/4_schedule-remove",
@@ -7263,6 +7588,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/9_schedule/5_schedule-run",
@@ -7312,6 +7638,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/9_schedule/3_schedule-show",
@@ -7376,6 +7703,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/10_tool-credentials",
@@ -7446,6 +7774,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/3_tool-install",
@@ -7540,6 +7869,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/1_tool-list",
@@ -7620,6 +7950,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/12_tool-reconfigure",
@@ -7701,6 +8032,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/4_tool-remove",
@@ -7782,6 +8114,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/2_tool-show",
@@ -7864,6 +8197,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/3_tool/9_tool-update",
@@ -7933,6 +8267,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/1_update",
@@ -8011,6 +8346,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/2_update-all",
@@ -8131,6 +8467,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/11_operation/4_version",
@@ -8203,6 +8540,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/13_vpn/4_vpn-client-disable",
@@ -8267,6 +8605,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/13_vpn/3_vpn-client-enable",
@@ -8329,6 +8668,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/13_vpn/1_vpn-client-list",
@@ -8409,6 +8749,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/13_vpn/2_vpn-client-new",
@@ -8497,6 +8838,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/13_vpn/5_vpn-client-remove",
@@ -8569,6 +8911,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/13_vpn/6_vpn-web-ui-change-password",
@@ -8642,6 +8985,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/8_workspace-setup-step-add",
@@ -8704,6 +9048,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/9_workspace-setup-step-list",
@@ -8760,6 +9105,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/10_workspace-setup-step-remove",
@@ -8826,6 +9172,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/11_workspace-teardown-step-add",
@@ -8880,6 +9227,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/12_workspace-teardown-step-list",
@@ -8936,6 +9284,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/13_workspace-teardown-step-remove",
@@ -8995,6 +9344,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/6_workspace-history",
@@ -9050,6 +9400,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/3_workspace-list",
@@ -9120,6 +9471,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/7_workspace-log",
@@ -9179,6 +9531,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/1_workspace-new",
@@ -9260,6 +9613,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/5_workspace-remove",
@@ -9318,6 +9672,7 @@
                 "json": true,
                 "stream_json": true
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/2_workspace-setup",
@@ -9414,6 +9769,7 @@
                 "json": true,
                 "stream_json": false
             },
+            "extension": null,
             "destructive_consent": null,
             "docs": {
                 "directory": "domains/6_workspace/4_workspace-show",

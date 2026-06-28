@@ -36,6 +36,8 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
         'cf' => ['proxy', 'app'],
         'deploy' => ['app'],
         'dns' => ['node'],
+        'extension' => ['node'],
+        'codex' => ['app', 'tool'],
         'gateway' => ['node'],
         'php' => ['tool', 'app', 'workspace', 'proxy', 'node'],
         'operation' => ['node', 'app', 'workspace', 'process', 'proxy', 'schedule', 'tool', 'firewall_rule'],

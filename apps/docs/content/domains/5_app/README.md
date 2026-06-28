@@ -88,10 +88,11 @@ These rules govern all app family commands.
   selection and backend pools, and the `analytics` role owns the Plausible CE
   runtime. V1 does not inject scripts, provision Plausible sites, or expose the
   Plausible dashboard publicly.
-- Apps may be registered in Codex App on an eligible operator node through
-  `app:codex`. The command edits only Codex App's config file on the target
-  node and applies Codex App's URL callback; it does not configure the app's
-  agent IDE adapter.
+- Apps may be registered in Codex App on an eligible operator node through the
+  optional [`codex:app`](../23_codex/1_codex-app/codex-app.md) extension
+  command. The command edits only Codex App's config file on the target node
+  and applies Codex App's URL callback; it does not configure the app's agent
+  IDE adapter.
 - Production deployment pipeline definitions currently remain app-owned for
   compatibility. The product direction is for deployment steps, runs, logs, and
   latest deployment status to move to app instances so `app:deploy` can be
@@ -293,13 +294,13 @@ Use these commands for analytics, app instances, and env values.
 
 ### App tooling and setup
 
-Use these commands for Codex bindings and setup steps.
+Use these commands for setup steps. Codex App registration lives in the
+[`codex`](../23_codex/README.md) extension command domain.
 
-1. [`orbit app:codex add|remove|list [app]`](21_app-codex/app-codex.md)
-2. [`orbit app:setup [app]`](22_app-setup/app-setup.md)
-3. [`orbit app-setup-step:add [app]`](23_app-setup-step-add/app-setup-step-add.md)
-4. [`orbit app-setup-step:list [app]`](24_app-setup-step-list/app-setup-step-list.md)
-5. [`orbit app-setup-step:remove [app]`](25_app-setup-step-remove/app-setup-step-remove.md)
+1. [`orbit app:setup [app]`](22_app-setup/app-setup.md)
+2. [`orbit app-setup-step:add [app]`](23_app-setup-step-add/app-setup-step-add.md)
+3. [`orbit app-setup-step:list [app]`](24_app-setup-step-list/app-setup-step-list.md)
+4. [`orbit app-setup-step:remove [app]`](25_app-setup-step-remove/app-setup-step-remove.md)
 
 ## Related
 

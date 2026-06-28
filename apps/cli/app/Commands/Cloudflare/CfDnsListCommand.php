@@ -4,16 +4,12 @@ declare(strict_types=1);
 
 namespace App\Commands\Cloudflare;
 
-use App\Commands\Concerns\ResolvesHostContext;
-use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 
 use function Laravel\Prompts\table;
 
-final class CfDnsListCommand extends GatewayCommand
+final class CfDnsListCommand extends CloudflareGatewayCommand
 {
-    use ResolvesHostContext;
-
     #[\Override]
     protected $signature = 'cf-dns:list {zone? : Cloudflare zone ID or domain} {--json}';
 
@@ -22,6 +18,10 @@ final class CfDnsListCommand extends GatewayCommand
 
     public function handle(): int
     {
+        if (($failure = $this->guardLocalExtension()) !== null) {
+            return $failure;
+        }
+
         $zone = $this->stringArgument('zone');
 
         if ($zone === null) {

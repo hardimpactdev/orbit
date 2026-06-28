@@ -8,16 +8,18 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 describe(NodePermissionRegistry::class, function (): void {
-    it('registers app codex and lets app write imply it', function (): void {
+    it('registers codex app without app write implying it', function (): void {
         $registry = app(NodePermissionRegistry::class);
 
         expect($registry->all())
-            ->toContain('app:codex')
-            ->and($registry->allows(['app:codex'], 'app:codex'))
+            ->toContain('codex:app')
+            ->and($registry->allows(['codex:app'], 'codex:app'))
             ->toBeTrue()
-            ->and($registry->allows(['app:write'], 'app:codex'))
+            ->and($registry->allows(['codex:*'], 'codex:app'))
             ->toBeTrue()
-            ->and($registry->allows(['app:read'], 'app:codex'))
+            ->and($registry->allows(['app:write'], 'codex:app'))
+            ->toBeFalse()
+            ->and($registry->allows(['app:read'], 'codex:app'))
             ->toBeFalse();
     });
 });

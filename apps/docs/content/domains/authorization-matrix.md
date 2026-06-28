@@ -16,9 +16,6 @@ authority](../architecture.md#gateway-implicit-authority).
 | `activity:show` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `agent-ide:message` | `agent-ide:message` | resolved app or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved app/workspace when available |
 | `app:agent-ide` | `app:agent` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
-| `app:codex add` | `app:codex` | app owning node and selected Codex App target node | `app:write` and `app:*` imply `app:codex`; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
-| `app:codex list` | `app:codex` | selected Codex App target node | `app:write` and `app:*` imply `app:codex`; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus selected node |
-| `app:codex remove` | `app:codex` | app owning node and selected Codex App target node | `app:write` and `app:*` imply `app:codex`; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
 | `app:list` | `app:read` | app owning node per returned row | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested filter resolves to no visible node |
 | `app:new` | `app:new` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:prune` | `app:prune` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
@@ -42,6 +39,9 @@ authority](../architecture.md#gateway-implicit-authority).
 | `cf-ssl:disable` | `cf:ssl:disable` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-ssl:enable` | `cf:ssl:enable` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-zone:list` | `cf:zone:list` | gateway | None | `authorization_failed` | Standard missing-permission meta |
+| `codex:app add` | `codex:app` | app owning node and selected Codex App target node | No app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
+| `codex:app list` | `codex:app` | selected Codex App target node | No app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus selected node |
+| `codex:app remove` | `codex:app` | app owning node and selected Codex App target node | No app permission implication; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
 | `database:add` | `database:write` | target database host or app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `database:add-user` | `database:write` | managed MySQL process node | None | `authorization_failed` | Standard missing-permission meta plus service |
 | `database:attach` | `database:write` | target database connection and app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |

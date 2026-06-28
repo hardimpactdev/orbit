@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\GatewayExtension;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
@@ -14,6 +15,10 @@ const CLOUDFLARE_API_CALLER_WG_IP = '10.6.0.88';
 
 beforeEach(function (): void {
     config()->set('orbit.cloudflare.api_token', 'test-token');
+    GatewayExtension::query()->updateOrCreate(
+        ['slug' => 'cloudflare'],
+        ['enabled' => true, 'enabled_at' => now()],
+    );
     Http::preventStrayRequests();
 });
 
