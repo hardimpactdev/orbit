@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Extensions\OrbitExtensionRegistry;
+use Symfony\Component\Process\Process;
 
 /**
  * @mago-expect lint:halstead
@@ -57,6 +59,16 @@ describe('extension commands', function (): void {
                 'local_enabled',
                 'gateway_enabled',
             ])
+            ->and($solo['commands'])
+            ->toContain('solo:project:list', 'solo:process:list', 'solo:scratchpad:list', 'solo:todo:list')
+            ->and($solo['permissions'])
+            ->toContain(
+                'solo:*',
+                'solo:project:list',
+                'solo:process:read',
+                'solo:scratchpad:write',
+                'solo:todo:comment',
+            )
             ->and($solo['local_enabled'])
             ->toBeTrue()
             ->and($solo['gateway_enabled'])
@@ -270,6 +282,92 @@ describe('extension commands', function (): void {
             ->not->toContain('InvalidArgumentException')->and($output)
             ->not->toContain('Stack trace');
     });
+
+    it('hides registered solo commands from discovery until the local solo extension is enabled', function (): void {
+        $defaultConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-solo-default-');
+        $enabledConfigPath = orbit_test_config_path(prefix: 'orbit-command-list-solo-enabled-');
+
+        unlink_orbit_test_file($defaultConfigPath);
+        unlink_orbit_test_file($enabledConfigPath);
+
+        try {
+            $soloCommands = app(OrbitExtensionRegistry::class)->require('solo')->commands;
+
+            $defaultVisible = extension_command_visible_names(extension_command_list_with_config($defaultConfigPath));
+
+            $store = new OrbitConfigStore(overridePath: $enabledConfigPath);
+            $store->enableExtension('solo');
+
+            $enabledVisible = extension_command_visible_names(extension_command_list_with_config($enabledConfigPath));
+
+            foreach ($soloCommands as $command) {
+                expect($defaultVisible)
+                    ->not
+                    ->toContain($command)
+                    ->and($enabledVisible)
+                    ->toContain($command);
+            }
+        } finally {
+            unlink_orbit_test_file($defaultConfigPath);
+            unlink_orbit_test_file($enabledConfigPath);
+        }
+    });
+
+    it('shows concrete solo commands in command catalog discovery mode', function (): void {
+        $configPath = orbit_test_config_path(prefix: 'orbit-command-list-show-all-');
+
+        unlink_orbit_test_file($configPath);
+
+        try {
+            $visible = extension_command_visible_names(extension_command_list_with_environment($configPath, [
+                'ORBIT_CLI_SHOW_ALL_EXTENSION_COMMANDS' => '1',
+            ]));
+
+            expect($visible)
+                ->toContain('cf-zone:list', 'codex:app')
+                ->toContain('solo:project:list', 'solo:process:list', 'solo:scratchpad:list', 'solo:todo:list')
+                ->not->toContain('solo:status');
+        } finally {
+            unlink_orbit_test_file($configPath);
+        }
+    });
+
+    it('returns extension disabled when invoking a registered solo command while local solo is disabled', function (): void {
+        [$exitCode, $output] = runCommand($this, command: 'solo:project:list', params: [
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('extension_disabled')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
+                'extension' => 'solo',
+                'scope' => 'local',
+            ]);
+    });
+
+    it('returns a deferred failure when invoking an unimplemented registered solo command after local solo is enabled', function (): void {
+        app(OrbitConfigStore::class)->enableExtension('solo');
+
+        [$exitCode, $output] = runCommand($this, command: 'solo:status', params: [
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('solo_command_deferred')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
+                'scope' => 'local',
+            ]);
+    });
 });
 
 /**
@@ -302,4 +400,41 @@ function fake_gateway_extensions_snapshot(?string $solo_enabled_at = null): arra
             'enabled_at' => $solo_enabled_at,
         ],
     ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function extension_command_list_with_config(string $configPath): array
+{
+    return extension_command_list_with_environment($configPath);
+}
+
+/**
+ * @param  array<string, string>  $environment
+ * @return array<string, mixed>
+ */
+function extension_command_list_with_environment(string $configPath, array $environment = []): array
+{
+    $process = new Process([PHP_BINARY, 'orbit', 'list', '--format=json'], base_path(), [
+        'ORBIT_CONFIG_PATH' => $configPath,
+        ...$environment,
+    ]);
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, 'orbit list --format=json failed: '.$process->getErrorOutput());
+
+    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @param  array<string, mixed>  $commandList
+ * @return list<string>
+ */
+function extension_command_visible_names(array $commandList): array
+{
+    return array_values(array_column(
+        array_filter($commandList['commands'], fn (array $command): bool => ! ($command['hidden'] ?? false)),
+        'name',
+    ));
 }

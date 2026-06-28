@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -198,4 +199,40 @@ describe('Extension API controllers', function (): void {
         'enable' => ['POST', '/api/extensions/missing/enable'],
         'disable' => ['POST', '/api/extensions/missing/disable'],
     ]);
+
+    it('lists built-in extensions with disabled defaults when gateway extension storage is missing', function (): void {
+        createExtensionApiCallerNode();
+
+        Schema::drop('gateway_extensions');
+
+        extensionApiRequest('GET', '/api/extensions')
+            ->assertOk()
+            ->assertJsonPath('success.data.extensions.0.slug', 'cloudflare')
+            ->assertJsonPath('success.data.extensions.0.enabled', false)
+            ->assertJsonPath('success.data.extensions.1.slug', 'codex')
+            ->assertJsonPath('success.data.extensions.2.slug', 'solo')
+            ->assertJsonPath('success.data.extensions.2.enabled', false);
+    });
+
+    it('returns extension_state_unavailable when enabling without gateway extension storage', function (): void {
+        createExtensionApiCallerNode();
+
+        Schema::drop('gateway_extensions');
+
+        extensionApiRequest('POST', '/api/extensions/solo/enable')
+            ->assertStatus(503)
+            ->assertJsonPath('error.code', 'extension_state_unavailable')
+            ->assertJsonPath('error.meta.extension', 'solo');
+    });
+
+    it('returns extension_state_unavailable when disabling without gateway extension storage', function (): void {
+        createExtensionApiCallerNode();
+
+        Schema::drop('gateway_extensions');
+
+        extensionApiRequest('POST', '/api/extensions/solo/disable')
+            ->assertStatus(503)
+            ->assertJsonPath('error.code', 'extension_state_unavailable')
+            ->assertJsonPath('error.meta.extension', 'solo');
+    });
 });

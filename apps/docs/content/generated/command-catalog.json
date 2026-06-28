@@ -7687,6 +7687,3751 @@
                 }
             }
         },
+        "solo:agent-tool:list": {
+            "name": "solo:agent-tool:list",
+            "slug": "solo-agent-tool-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/24_solo-agent-tool-list",
+                "public": "domains/24_solo/24_solo-agent-tool-list/solo-agent-tool-list.md",
+                "technical": "domains/24_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/24_solo-agent-tool-list",
+                "repo_public": "apps/docs/content/domains/24_solo/24_solo-agent-tool-list/solo-agent-tool-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:lock:acquire": {
+            "name": "solo:lock:acquire",
+            "slug": "solo-lock-acquire",
+            "family": "solo",
+            "arguments": [
+                "name"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/56_solo-lock-acquire",
+                "public": "domains/24_solo/56_solo-lock-acquire/solo-lock-acquire.md",
+                "technical": "domains/24_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/56_solo-lock-acquire",
+                "repo_public": "apps/docs/content/domains/24_solo/56_solo-lock-acquire/solo-lock-acquire.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:lock:release": {
+            "name": "solo:lock:release",
+            "slug": "solo-lock-release",
+            "family": "solo",
+            "arguments": [
+                "name"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/57_solo-lock-release",
+                "public": "domains/24_solo/57_solo-lock-release/solo-lock-release.md",
+                "technical": "domains/24_solo/57_solo-lock-release/technical/1_solo-lock-release.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/57_solo-lock-release",
+                "repo_public": "apps/docs/content/domains/24_solo/57_solo-lock-release/solo-lock-release.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/57_solo-lock-release/technical/1_solo-lock-release.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:lock:status": {
+            "name": "solo:lock:status",
+            "slug": "solo-lock-status",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/55_solo-lock-status",
+                "public": "domains/24_solo/55_solo-lock-status/solo-lock-status.md",
+                "technical": "domains/24_solo/55_solo-lock-status/technical/1_solo-lock-status.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/55_solo-lock-status",
+                "repo_public": "apps/docs/content/domains/24_solo/55_solo-lock-status/solo-lock-status.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/55_solo-lock-status/technical/1_solo-lock-status.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:clear-output": {
+            "name": "solo:process:clear-output",
+            "slug": "solo-process-clear-output",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/21_solo-process-clear-output",
+                "public": "domains/24_solo/21_solo-process-clear-output/solo-process-clear-output.md",
+                "technical": "domains/24_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/21_solo-process-clear-output",
+                "repo_public": "apps/docs/content/domains/24_solo/21_solo-process-clear-output/solo-process-clear-output.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:close": {
+            "name": "solo:process:close",
+            "slug": "solo-process-close",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/23_solo-process-close",
+                "public": "domains/24_solo/23_solo-process-close/solo-process-close.md",
+                "technical": "domains/24_solo/23_solo-process-close/technical/1_solo-process-close.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/23_solo-process-close",
+                "repo_public": "apps/docs/content/domains/24_solo/23_solo-process-close/solo-process-close.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/23_solo-process-close/technical/1_solo-process-close.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:input": {
+            "name": "solo:process:input",
+            "slug": "solo-process-input",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "input",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/16_solo-process-input",
+                "public": "domains/24_solo/16_solo-process-input/solo-process-input.md",
+                "technical": "domains/24_solo/16_solo-process-input/technical/1_solo-process-input.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/16_solo-process-input",
+                "repo_public": "apps/docs/content/domains/24_solo/16_solo-process-input/solo-process-input.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/16_solo-process-input/technical/1_solo-process-input.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:list": {
+            "name": "solo:process:list",
+            "slug": "solo-process-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/13_solo-process-list",
+                "public": "domains/24_solo/13_solo-process-list/solo-process-list.md",
+                "technical": "domains/24_solo/13_solo-process-list/technical/1_solo-process-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/13_solo-process-list",
+                "repo_public": "apps/docs/content/domains/24_solo/13_solo-process-list/solo-process-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/13_solo-process-list/technical/1_solo-process-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:output": {
+            "name": "solo:process:output",
+            "slug": "solo-process-output",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "lines",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/15_solo-process-output",
+                "public": "domains/24_solo/15_solo-process-output/solo-process-output.md",
+                "technical": "domains/24_solo/15_solo-process-output/technical/1_solo-process-output.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/15_solo-process-output",
+                "repo_public": "apps/docs/content/domains/24_solo/15_solo-process-output/solo-process-output.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/15_solo-process-output/technical/1_solo-process-output.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:rename": {
+            "name": "solo:process:rename",
+            "slug": "solo-process-rename",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "name",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/22_solo-process-rename",
+                "public": "domains/24_solo/22_solo-process-rename/solo-process-rename.md",
+                "technical": "domains/24_solo/22_solo-process-rename/technical/1_solo-process-rename.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/22_solo-process-rename",
+                "repo_public": "apps/docs/content/domains/24_solo/22_solo-process-rename/solo-process-rename.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/22_solo-process-rename/technical/1_solo-process-rename.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:restart": {
+            "name": "solo:process:restart",
+            "slug": "solo-process-restart",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/20_solo-process-restart",
+                "public": "domains/24_solo/20_solo-process-restart/solo-process-restart.md",
+                "technical": "domains/24_solo/20_solo-process-restart/technical/1_solo-process-restart.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/20_solo-process-restart",
+                "repo_public": "apps/docs/content/domains/24_solo/20_solo-process-restart/solo-process-restart.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/20_solo-process-restart/technical/1_solo-process-restart.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:show": {
+            "name": "solo:process:show",
+            "slug": "solo-process-show",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/14_solo-process-show",
+                "public": "domains/24_solo/14_solo-process-show/solo-process-show.md",
+                "technical": "domains/24_solo/14_solo-process-show/technical/1_solo-process-show.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/14_solo-process-show",
+                "repo_public": "apps/docs/content/domains/24_solo/14_solo-process-show/solo-process-show.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/14_solo-process-show/technical/1_solo-process-show.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:spawn": {
+            "name": "solo:process:spawn",
+            "slug": "solo-process-spawn",
+            "family": "solo",
+            "arguments": [
+                "processCommand"
+            ],
+            "options": [
+                "project",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/17_solo-process-spawn",
+                "public": "domains/24_solo/17_solo-process-spawn/solo-process-spawn.md",
+                "technical": "domains/24_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/17_solo-process-spawn",
+                "repo_public": "apps/docs/content/domains/24_solo/17_solo-process-spawn/solo-process-spawn.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:start": {
+            "name": "solo:process:start",
+            "slug": "solo-process-start",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/18_solo-process-start",
+                "public": "domains/24_solo/18_solo-process-start/solo-process-start.md",
+                "technical": "domains/24_solo/18_solo-process-start/technical/1_solo-process-start.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/18_solo-process-start",
+                "repo_public": "apps/docs/content/domains/24_solo/18_solo-process-start/solo-process-start.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/18_solo-process-start/technical/1_solo-process-start.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:process:stop": {
+            "name": "solo:process:stop",
+            "slug": "solo-process-stop",
+            "family": "solo",
+            "arguments": [
+                "process"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/19_solo-process-stop",
+                "public": "domains/24_solo/19_solo-process-stop/solo-process-stop.md",
+                "technical": "domains/24_solo/19_solo-process-stop/technical/1_solo-process-stop.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/19_solo-process-stop",
+                "repo_public": "apps/docs/content/domains/24_solo/19_solo-process-stop/solo-process-stop.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/19_solo-process-stop/technical/1_solo-process-stop.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:create": {
+            "name": "solo:project:create",
+            "slug": "solo-project-create",
+            "family": "solo",
+            "arguments": [
+                "name"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/9_solo-project-create",
+                "public": "domains/24_solo/9_solo-project-create/solo-project-create.md",
+                "technical": "domains/24_solo/9_solo-project-create/technical/1_solo-project-create.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/9_solo-project-create",
+                "repo_public": "apps/docs/content/domains/24_solo/9_solo-project-create/solo-project-create.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/9_solo-project-create/technical/1_solo-project-create.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:delete": {
+            "name": "solo:project:delete",
+            "slug": "solo-project-delete",
+            "family": "solo",
+            "arguments": [
+                "project"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/12_solo-project-delete",
+                "public": "domains/24_solo/12_solo-project-delete/solo-project-delete.md",
+                "technical": "domains/24_solo/12_solo-project-delete/technical/1_solo-project-delete.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/12_solo-project-delete",
+                "repo_public": "apps/docs/content/domains/24_solo/12_solo-project-delete/solo-project-delete.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/12_solo-project-delete/technical/1_solo-project-delete.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:list": {
+            "name": "solo:project:list",
+            "slug": "solo-project-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/5_solo-project-list",
+                "public": "domains/24_solo/5_solo-project-list/solo-project-list.md",
+                "technical": "domains/24_solo/5_solo-project-list/technical/1_solo-project-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/5_solo-project-list",
+                "repo_public": "apps/docs/content/domains/24_solo/5_solo-project-list/solo-project-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/5_solo-project-list/technical/1_solo-project-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:rename": {
+            "name": "solo:project:rename",
+            "slug": "solo-project-rename",
+            "family": "solo",
+            "arguments": [
+                "project"
+            ],
+            "options": [
+                "name",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/10_solo-project-rename",
+                "public": "domains/24_solo/10_solo-project-rename/solo-project-rename.md",
+                "technical": "domains/24_solo/10_solo-project-rename/technical/1_solo-project-rename.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/10_solo-project-rename",
+                "repo_public": "apps/docs/content/domains/24_solo/10_solo-project-rename/solo-project-rename.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/10_solo-project-rename/technical/1_solo-project-rename.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:select": {
+            "name": "solo:project:select",
+            "slug": "solo-project-select",
+            "family": "solo",
+            "arguments": [
+                "project"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/11_solo-project-select",
+                "public": "domains/24_solo/11_solo-project-select/solo-project-select.md",
+                "technical": "domains/24_solo/11_solo-project-select/technical/1_solo-project-select.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/11_solo-project-select",
+                "repo_public": "apps/docs/content/domains/24_solo/11_solo-project-select/solo-project-select.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/11_solo-project-select/technical/1_solo-project-select.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:show": {
+            "name": "solo:project:show",
+            "slug": "solo-project-show",
+            "family": "solo",
+            "arguments": [
+                "project"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/6_solo-project-show",
+                "public": "domains/24_solo/6_solo-project-show/solo-project-show.md",
+                "technical": "domains/24_solo/6_solo-project-show/technical/1_solo-project-show.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/6_solo-project-show",
+                "repo_public": "apps/docs/content/domains/24_solo/6_solo-project-show/solo-project-show.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/6_solo-project-show/technical/1_solo-project-show.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:stats": {
+            "name": "solo:project:stats",
+            "slug": "solo-project-stats",
+            "family": "solo",
+            "arguments": [
+                "project"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/8_solo-project-stats",
+                "public": "domains/24_solo/8_solo-project-stats/solo-project-stats.md",
+                "technical": "domains/24_solo/8_solo-project-stats/technical/1_solo-project-stats.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/8_solo-project-stats",
+                "repo_public": "apps/docs/content/domains/24_solo/8_solo-project-stats/solo-project-stats.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/8_solo-project-stats/technical/1_solo-project-stats.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:project:status": {
+            "name": "solo:project:status",
+            "slug": "solo-project-status",
+            "family": "solo",
+            "arguments": [
+                "project"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/7_solo-project-status",
+                "public": "domains/24_solo/7_solo-project-status/solo-project-status.md",
+                "technical": "domains/24_solo/7_solo-project-status/technical/1_solo-project-status.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/7_solo-project-status",
+                "repo_public": "apps/docs/content/domains/24_solo/7_solo-project-status/solo-project-status.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/7_solo-project-status/technical/1_solo-project-status.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:append": {
+            "name": "solo:scratchpad:append",
+            "slug": "solo-scratchpad-append",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/30_solo-scratchpad-append",
+                "public": "domains/24_solo/30_solo-scratchpad-append/solo-scratchpad-append.md",
+                "technical": "domains/24_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/30_solo-scratchpad-append",
+                "repo_public": "apps/docs/content/domains/24_solo/30_solo-scratchpad-append/solo-scratchpad-append.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:append-section": {
+            "name": "solo:scratchpad:append-section",
+            "slug": "solo-scratchpad-append-section",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/31_solo-scratchpad-append-section",
+                "public": "domains/24_solo/31_solo-scratchpad-append-section/solo-scratchpad-append-section.md",
+                "technical": "domains/24_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/31_solo-scratchpad-append-section",
+                "repo_public": "apps/docs/content/domains/24_solo/31_solo-scratchpad-append-section/solo-scratchpad-append-section.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:archive": {
+            "name": "solo:scratchpad:archive",
+            "slug": "solo-scratchpad-archive",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/34_solo-scratchpad-archive",
+                "public": "domains/24_solo/34_solo-scratchpad-archive/solo-scratchpad-archive.md",
+                "technical": "domains/24_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/34_solo-scratchpad-archive",
+                "repo_public": "apps/docs/content/domains/24_solo/34_solo-scratchpad-archive/solo-scratchpad-archive.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:clear": {
+            "name": "solo:scratchpad:clear",
+            "slug": "solo-scratchpad-clear",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/35_solo-scratchpad-clear",
+                "public": "domains/24_solo/35_solo-scratchpad-clear/solo-scratchpad-clear.md",
+                "technical": "domains/24_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/35_solo-scratchpad-clear",
+                "repo_public": "apps/docs/content/domains/24_solo/35_solo-scratchpad-clear/solo-scratchpad-clear.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:create": {
+            "name": "solo:scratchpad:create",
+            "slug": "solo-scratchpad-create",
+            "family": "solo",
+            "arguments": [
+                "name"
+            ],
+            "options": [
+                "content",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/28_solo-scratchpad-create",
+                "public": "domains/24_solo/28_solo-scratchpad-create/solo-scratchpad-create.md",
+                "technical": "domains/24_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/28_solo-scratchpad-create",
+                "repo_public": "apps/docs/content/domains/24_solo/28_solo-scratchpad-create/solo-scratchpad-create.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:delete": {
+            "name": "solo:scratchpad:delete",
+            "slug": "solo-scratchpad-delete",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/36_solo-scratchpad-delete",
+                "public": "domains/24_solo/36_solo-scratchpad-delete/solo-scratchpad-delete.md",
+                "technical": "domains/24_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/36_solo-scratchpad-delete",
+                "repo_public": "apps/docs/content/domains/24_solo/36_solo-scratchpad-delete/solo-scratchpad-delete.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:edit": {
+            "name": "solo:scratchpad:edit",
+            "slug": "solo-scratchpad-edit",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/32_solo-scratchpad-edit",
+                "public": "domains/24_solo/32_solo-scratchpad-edit/solo-scratchpad-edit.md",
+                "technical": "domains/24_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/32_solo-scratchpad-edit",
+                "repo_public": "apps/docs/content/domains/24_solo/32_solo-scratchpad-edit/solo-scratchpad-edit.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:find": {
+            "name": "solo:scratchpad:find",
+            "slug": "solo-scratchpad-find",
+            "family": "solo",
+            "arguments": [
+                "query"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/27_solo-scratchpad-find",
+                "public": "domains/24_solo/27_solo-scratchpad-find/solo-scratchpad-find.md",
+                "technical": "domains/24_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/27_solo-scratchpad-find",
+                "repo_public": "apps/docs/content/domains/24_solo/27_solo-scratchpad-find/solo-scratchpad-find.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:list": {
+            "name": "solo:scratchpad:list",
+            "slug": "solo-scratchpad-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/25_solo-scratchpad-list",
+                "public": "domains/24_solo/25_solo-scratchpad-list/solo-scratchpad-list.md",
+                "technical": "domains/24_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/25_solo-scratchpad-list",
+                "repo_public": "apps/docs/content/domains/24_solo/25_solo-scratchpad-list/solo-scratchpad-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:rename": {
+            "name": "solo:scratchpad:rename",
+            "slug": "solo-scratchpad-rename",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/33_solo-scratchpad-rename",
+                "public": "domains/24_solo/33_solo-scratchpad-rename/solo-scratchpad-rename.md",
+                "technical": "domains/24_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/33_solo-scratchpad-rename",
+                "repo_public": "apps/docs/content/domains/24_solo/33_solo-scratchpad-rename/solo-scratchpad-rename.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:show": {
+            "name": "solo:scratchpad:show",
+            "slug": "solo-scratchpad-show",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/26_solo-scratchpad-show",
+                "public": "domains/24_solo/26_solo-scratchpad-show/solo-scratchpad-show.md",
+                "technical": "domains/24_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/26_solo-scratchpad-show",
+                "repo_public": "apps/docs/content/domains/24_solo/26_solo-scratchpad-show/solo-scratchpad-show.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:scratchpad:write": {
+            "name": "solo:scratchpad:write",
+            "slug": "solo-scratchpad-write",
+            "family": "solo",
+            "arguments": [
+                "scratchpad"
+            ],
+            "options": [
+                "content",
+                "heading",
+                "search",
+                "replace",
+                "name",
+                "expected-revision",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/29_solo-scratchpad-write",
+                "public": "domains/24_solo/29_solo-scratchpad-write/solo-scratchpad-write.md",
+                "technical": "domains/24_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/29_solo-scratchpad-write",
+                "repo_public": "apps/docs/content/domains/24_solo/29_solo-scratchpad-write/solo-scratchpad-write.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:service:list": {
+            "name": "solo:service:list",
+            "slug": "solo-service-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/49_solo-service-list",
+                "public": "domains/24_solo/49_solo-service-list/solo-service-list.md",
+                "technical": "domains/24_solo/49_solo-service-list/technical/1_solo-service-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/49_solo-service-list",
+                "repo_public": "apps/docs/content/domains/24_solo/49_solo-service-list/solo-service-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/49_solo-service-list/technical/1_solo-service-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:timer:cancel": {
+            "name": "solo:timer:cancel",
+            "slug": "solo-timer-cancel",
+            "family": "solo",
+            "arguments": [
+                "timer"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/52_solo-timer-cancel",
+                "public": "domains/24_solo/52_solo-timer-cancel/solo-timer-cancel.md",
+                "technical": "domains/24_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/52_solo-timer-cancel",
+                "repo_public": "apps/docs/content/domains/24_solo/52_solo-timer-cancel/solo-timer-cancel.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:timer:list": {
+            "name": "solo:timer:list",
+            "slug": "solo-timer-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/50_solo-timer-list",
+                "public": "domains/24_solo/50_solo-timer-list/solo-timer-list.md",
+                "technical": "domains/24_solo/50_solo-timer-list/technical/1_solo-timer-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/50_solo-timer-list",
+                "repo_public": "apps/docs/content/domains/24_solo/50_solo-timer-list/solo-timer-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/50_solo-timer-list/technical/1_solo-timer-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:timer:pause": {
+            "name": "solo:timer:pause",
+            "slug": "solo-timer-pause",
+            "family": "solo",
+            "arguments": [
+                "timer"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/53_solo-timer-pause",
+                "public": "domains/24_solo/53_solo-timer-pause/solo-timer-pause.md",
+                "technical": "domains/24_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/53_solo-timer-pause",
+                "repo_public": "apps/docs/content/domains/24_solo/53_solo-timer-pause/solo-timer-pause.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:timer:resume": {
+            "name": "solo:timer:resume",
+            "slug": "solo-timer-resume",
+            "family": "solo",
+            "arguments": [
+                "timer"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/54_solo-timer-resume",
+                "public": "domains/24_solo/54_solo-timer-resume/solo-timer-resume.md",
+                "technical": "domains/24_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/54_solo-timer-resume",
+                "repo_public": "apps/docs/content/domains/24_solo/54_solo-timer-resume/solo-timer-resume.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:timer:set": {
+            "name": "solo:timer:set",
+            "slug": "solo-timer-set",
+            "family": "solo",
+            "arguments": [
+                "name"
+            ],
+            "options": [
+                "seconds",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/51_solo-timer-set",
+                "public": "domains/24_solo/51_solo-timer-set/solo-timer-set.md",
+                "technical": "domains/24_solo/51_solo-timer-set/technical/1_solo-timer-set.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/51_solo-timer-set",
+                "repo_public": "apps/docs/content/domains/24_solo/51_solo-timer-set/solo-timer-set.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/51_solo-timer-set/technical/1_solo-timer-set.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:comment:add": {
+            "name": "solo:todo:comment:add",
+            "slug": "solo-todo-comment-add",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "body",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/46_solo-todo-comment-add",
+                "public": "domains/24_solo/46_solo-todo-comment-add/solo-todo-comment-add.md",
+                "technical": "domains/24_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/46_solo-todo-comment-add",
+                "repo_public": "apps/docs/content/domains/24_solo/46_solo-todo-comment-add/solo-todo-comment-add.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:comment:delete": {
+            "name": "solo:todo:comment:delete",
+            "slug": "solo-todo-comment-delete",
+            "family": "solo",
+            "arguments": [
+                "comment"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/48_solo-todo-comment-delete",
+                "public": "domains/24_solo/48_solo-todo-comment-delete/solo-todo-comment-delete.md",
+                "technical": "domains/24_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/48_solo-todo-comment-delete",
+                "repo_public": "apps/docs/content/domains/24_solo/48_solo-todo-comment-delete/solo-todo-comment-delete.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:comment:update": {
+            "name": "solo:todo:comment:update",
+            "slug": "solo-todo-comment-update",
+            "family": "solo",
+            "arguments": [
+                "comment"
+            ],
+            "options": [
+                "body",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/47_solo-todo-comment-update",
+                "public": "domains/24_solo/47_solo-todo-comment-update/solo-todo-comment-update.md",
+                "technical": "domains/24_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/47_solo-todo-comment-update",
+                "repo_public": "apps/docs/content/domains/24_solo/47_solo-todo-comment-update/solo-todo-comment-update.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:complete": {
+            "name": "solo:todo:complete",
+            "slug": "solo-todo-complete",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "title",
+                "body",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/41_solo-todo-complete",
+                "public": "domains/24_solo/41_solo-todo-complete/solo-todo-complete.md",
+                "technical": "domains/24_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/41_solo-todo-complete",
+                "repo_public": "apps/docs/content/domains/24_solo/41_solo-todo-complete/solo-todo-complete.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:create": {
+            "name": "solo:todo:create",
+            "slug": "solo-todo-create",
+            "family": "solo",
+            "arguments": [
+                "title"
+            ],
+            "options": [
+                "body",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/39_solo-todo-create",
+                "public": "domains/24_solo/39_solo-todo-create/solo-todo-create.md",
+                "technical": "domains/24_solo/39_solo-todo-create/technical/1_solo-todo-create.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/39_solo-todo-create",
+                "repo_public": "apps/docs/content/domains/24_solo/39_solo-todo-create/solo-todo-create.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/39_solo-todo-create/technical/1_solo-todo-create.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:delete": {
+            "name": "solo:todo:delete",
+            "slug": "solo-todo-delete",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "title",
+                "body",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/43_solo-todo-delete",
+                "public": "domains/24_solo/43_solo-todo-delete/solo-todo-delete.md",
+                "technical": "domains/24_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/43_solo-todo-delete",
+                "repo_public": "apps/docs/content/domains/24_solo/43_solo-todo-delete/solo-todo-delete.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:list": {
+            "name": "solo:todo:list",
+            "slug": "solo-todo-list",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/37_solo-todo-list",
+                "public": "domains/24_solo/37_solo-todo-list/solo-todo-list.md",
+                "technical": "domains/24_solo/37_solo-todo-list/technical/1_solo-todo-list.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/37_solo-todo-list",
+                "repo_public": "apps/docs/content/domains/24_solo/37_solo-todo-list/solo-todo-list.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/37_solo-todo-list/technical/1_solo-todo-list.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:lock": {
+            "name": "solo:todo:lock",
+            "slug": "solo-todo-lock",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "title",
+                "body",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/44_solo-todo-lock",
+                "public": "domains/24_solo/44_solo-todo-lock/solo-todo-lock.md",
+                "technical": "domains/24_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/44_solo-todo-lock",
+                "repo_public": "apps/docs/content/domains/24_solo/44_solo-todo-lock/solo-todo-lock.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:reopen": {
+            "name": "solo:todo:reopen",
+            "slug": "solo-todo-reopen",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "title",
+                "body",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/42_solo-todo-reopen",
+                "public": "domains/24_solo/42_solo-todo-reopen/solo-todo-reopen.md",
+                "technical": "domains/24_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/42_solo-todo-reopen",
+                "repo_public": "apps/docs/content/domains/24_solo/42_solo-todo-reopen/solo-todo-reopen.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:show": {
+            "name": "solo:todo:show",
+            "slug": "solo-todo-show",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/38_solo-todo-show",
+                "public": "domains/24_solo/38_solo-todo-show/solo-todo-show.md",
+                "technical": "domains/24_solo/38_solo-todo-show/technical/1_solo-todo-show.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/38_solo-todo-show",
+                "repo_public": "apps/docs/content/domains/24_solo/38_solo-todo-show/solo-todo-show.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/38_solo-todo-show/technical/1_solo-todo-show.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:unlock": {
+            "name": "solo:todo:unlock",
+            "slug": "solo-todo-unlock",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "title",
+                "body",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/45_solo-todo-unlock",
+                "public": "domains/24_solo/45_solo-todo-unlock/solo-todo-unlock.md",
+                "technical": "domains/24_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/45_solo-todo-unlock",
+                "repo_public": "apps/docs/content/domains/24_solo/45_solo-todo-unlock/solo-todo-unlock.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:todo:update": {
+            "name": "solo:todo:update",
+            "slug": "solo-todo-update",
+            "family": "solo",
+            "arguments": [
+                "todo"
+            ],
+            "options": [
+                "title",
+                "body",
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/40_solo-todo-update",
+                "public": "domains/24_solo/40_solo-todo-update/solo-todo-update.md",
+                "technical": "domains/24_solo/40_solo-todo-update/technical/1_solo-todo-update.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/40_solo-todo-update",
+                "repo_public": "apps/docs/content/domains/24_solo/40_solo-todo-update/solo-todo-update.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/40_solo-todo-update/technical/1_solo-todo-update.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "solo:tools": {
+            "name": "solo:tools",
+            "slug": "solo-tools",
+            "family": "solo",
+            "arguments": [],
+            "options": [
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": {
+                "slug": "solo",
+                "label": "Solo",
+                "description": "Solo API command family through the Orbit gateway."
+            },
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/24_solo/4_solo-tools",
+                "public": "domains/24_solo/4_solo-tools/solo-tools.md",
+                "technical": "domains/24_solo/4_solo-tools/technical/1_solo-tools.md",
+                "repo_directory": "apps/docs/content/domains/24_solo/4_solo-tools",
+                "repo_public": "apps/docs/content/domains/24_solo/4_solo-tools/solo-tools.md",
+                "repo_technical": "apps/docs/content/domains/24_solo/4_solo-tools/technical/1_solo-tools.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloMutatingCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloMutatingCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/SoloProxyControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "tool:credentials": {
             "name": "tool:credentials",
             "slug": "tool-credentials",

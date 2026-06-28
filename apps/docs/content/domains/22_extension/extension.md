@@ -13,6 +13,10 @@ documentation.
 - Keep local and gateway extension enablement contracts aligned with Orbit's
   current behavior.
 - Document the built-in extension slugs that Orbit ships in this release.
+- Document the Solo extension command catalog and its flat colon naming
+  convention.
+- Document the gateway Solo proxy foundation, including extension gating,
+  `solo:*` authorization, activity logging, and node-local upstream boundaries.
 - Preserve the boundary that downloadable extensions are not part of this
   command surface.
 

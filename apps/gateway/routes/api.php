@@ -92,6 +92,7 @@ use App\Http\Controllers\Api\ScheduleLogsController;
 use App\Http\Controllers\Api\ScheduleRunController;
 use App\Http\Controllers\Api\ScheduleShowController;
 use App\Http\Controllers\Api\ScheduleStoreController;
+use App\Http\Controllers\Api\SoloProxyController;
 use App\Http\Controllers\Api\ToolCredentialsController;
 use App\Http\Controllers\Api\ToolInstallController;
 use App\Http\Controllers\Api\ToolListController;
@@ -236,6 +237,16 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             Route::get('/codex/projects', [AppCodexController::class, 'list']);
             Route::post('/codex/apps/{app}', [AppCodexController::class, 'add']);
             Route::delete('/codex/apps/{app}', [AppCodexController::class, 'remove']);
+        });
+        Route::middleware(RequireGatewayExtension::class.':solo')->group(function (): void {
+            Route::get('/solo/tools', [SoloProxyController::class, 'tools']);
+            Route::get('/solo/projects', [SoloProxyController::class, 'projects']);
+            Route::get('/solo/{operation}', [SoloProxyController::class, 'read'])->where('operation', '.*');
+            Route::match(
+                ['POST', 'PUT', 'PATCH', 'DELETE'],
+                '/solo/{operation}',
+                [SoloProxyController::class, 'mutate'],
+            )->where('operation', '.*');
         });
         Route::post('/apps/{app}/agent-ide', AppAgentIdeController::class);
         Route::post('/apps/{app}/analytics/enable', [AppAnalyticsController::class, 'enable']);

@@ -41,6 +41,8 @@ use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\SshRemoteShellStream;
+use App\Services\Solo\HttpSoloUpstreamClient;
+use App\Services\Solo\SoloUpstreamClient;
 use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Trust\LinuxTrustStoreInstaller;
 use App\Services\Trust\MacOsTrustStoreInstaller;
@@ -152,6 +154,7 @@ class AppServiceProvider extends ServiceProvider
             localExecutor: $app->make(RemoteLocalExecutor::class),
         ));
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
+        $this->app->bind(SoloUpstreamClient::class, HttpSoloUpstreamClient::class);
         $this->app->bind(UpdateAllGatewayStream::class, SdkUpdateAllGatewayStream::class);
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(
