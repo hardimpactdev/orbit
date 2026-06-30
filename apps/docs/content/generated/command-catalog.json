@@ -7687,6 +7687,56 @@
                 }
             }
         },
+        "skill:install": {
+            "name": "skill:install",
+            "slug": "skill-install",
+            "family": "skill",
+            "arguments": [
+                "provider",
+                "path"
+            ],
+            "options": [
+                "force",
+                "json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": false
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/25_skill/1_skill-install",
+                "public": "domains/25_skill/1_skill-install/skill-install.md",
+                "technical": "domains/25_skill/1_skill-install/technical/1_skill-install.md",
+                "repo_directory": "apps/docs/content/domains/25_skill/1_skill-install",
+                "repo_public": "apps/docs/content/domains/25_skill/1_skill-install/skill-install.md",
+                "repo_technical": "apps/docs/content/domains/25_skill/1_skill-install/technical/1_skill-install.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": false
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Skill/SkillInstallCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Skill/SkillInstallCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Skill/SkillInstallCommandTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "solo:agent-tool:list": {
             "name": "solo:agent-tool:list",
             "slug": "solo-agent-tool-list",

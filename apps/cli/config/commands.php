@@ -122,6 +122,7 @@ use App\Commands\Schedule\ScheduleLogsCommand;
 use App\Commands\Schedule\ScheduleRemoveCommand;
 use App\Commands\Schedule\ScheduleRunCommand;
 use App\Commands\Schedule\ScheduleShowCommand;
+use App\Commands\Skill\SkillInstallCommand;
 use App\Commands\Tool\ToolCredentialsCommand;
 use App\Commands\Tool\ToolInstallCommand;
 use App\Commands\Tool\ToolListCommand;
@@ -284,6 +285,7 @@ return [
         ScheduleRemoveCommand::class,
         ScheduleRunCommand::class,
         ScheduleShowCommand::class,
+        SkillInstallCommand::class,
         ToolCredentialsCommand::class,
         ToolInstallCommand::class,
         ToolListCommand::class,

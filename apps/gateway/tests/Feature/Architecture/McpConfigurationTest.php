@@ -355,6 +355,7 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
     $concepts = (string) file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md'));
     $app = (string) file_get_contents(repo_path('.agents/skills/orbit/references/app.md'));
     $node = (string) file_get_contents(repo_path('.agents/skills/orbit/references/node.md'));
+    $skillRef = (string) file_get_contents(repo_path('.agents/skills/orbit/references/skill.md'));
     $tool = (string) file_get_contents(repo_path('.agents/skills/orbit/references/tool.md'));
     $operation = (string) file_get_contents(repo_path('.agents/skills/orbit/references/operation.md'));
 
@@ -400,6 +401,18 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
     expect($tool)
         ->toContain('[--with-process] [--no-process]')
         ->toContain('--json|--stream-json');
+
+    expect($skill)
+        ->toContain('`orbit skill:install [provider] [path]`')
+        ->toContain('references/skill.md');
+
+    expect($skillRef)
+        ->toContain('orbit skill:install [provider] [path] [--force] [--json]')
+        ->toContain('~/.agents/skills/orbit')
+        ->toContain('~/.claude/skills/orbit')
+        ->toContain('~/.gemini/config/skills/orbit')
+        ->toContain('~/.grok/skills/orbit')
+        ->toContain('does not call the gateway');
 
     preg_match('/### Apps[\s\S]*?### Workspaces/', $skill, $appCommandIndex);
 

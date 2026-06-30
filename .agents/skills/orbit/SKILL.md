@@ -40,6 +40,9 @@ terminology, node roles, state families and `doctor`, identity slug rules,
 execution lanes, JSON envelope shape, and the `--node` / `--app` /
 `--workspace` resolution order.
 
+See [`references/skill.md`](references/skill.md) for installing the bundled
+Orbit skill into Codex, Claude, Antigravity, Grok, or an explicit local path.
+
 ## Command index
 
 Commands are grouped by family. Each reference file lists every command in that family with its signature, options, defaults, and a couple of examples.
@@ -52,6 +55,12 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit update` | Update the caller-local Orbit CLI binary, gated by the active gateway version |
 | `orbit update:all` | Update Orbit nodes gateway-first, then caller-local and workload nodes as fan-out targets |
 | `orbit profile [target]` | Profile one HTTP request against an Orbit-managed app (DNS/connect/TLS/TTFB + Toolbar enrichment) |
+
+### Local skill install  -  [`references/skill.md`](references/skill.md)
+
+| Command | What it does |
+|---|---|
+| `orbit skill:install [provider] [path]` | Copy the bundled Orbit skill into Codex, Claude, Antigravity, Grok, or an explicit local path |
 
 ### Node fleet  -  [`references/node.md`](references/node.md)
 
