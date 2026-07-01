@@ -6,6 +6,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -150,7 +151,7 @@ it('inherits configured app runtime mounts from the parent app', function (): vo
 });
 
 it('does not mount the packages directory for app-prod PHP workspace runtimes', function (): void {
-    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'demo-prod',
         'environment' => 'production',
@@ -381,6 +382,72 @@ it('exposes ORBIT_APP, ORBIT_WORKSPACE, and ORBIT_PHP_VERSION env to the contain
         'ORBIT_WORKSPACE' => 'feature-a',
         'ORBIT_PHP_VERSION' => '8.5',
     ]);
+});
+
+it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo',
+        'path' => '/home/nckrtl/apps/demo',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect($container->mounts())
+        ->toContain([
+            'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'read_only' => true,
+        ])
+        ->and($container->environment())
+        ->toMatchArray([
+            'SSL_CERT_FILE' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'CURL_CA_BUNDLE' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+        ])
+        ->and($container->phpIni())
+        ->toMatchArray([
+            'openssl.cafile' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'curl.cainfo' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+        ]);
+});
+
+it('does not render runtime client trust for app-prod workspace runtimes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo-prod',
+        'environment' => 'production',
+        'path' => '/home/demo/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/demo/app/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect(collect($container->mounts())->pluck('target'))
+        ->not
+        ->toContain(AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath)
+        ->and(array_key_exists('SSL_CERT_FILE', $container->environment()))
+        ->toBeFalse()
+        ->and(array_key_exists('CURL_CA_BUNDLE', $container->environment()))
+        ->toBeFalse()
+        ->and(array_key_exists('openssl.cafile', $container->phpIni()))
+        ->toBeFalse()
+        ->and(array_key_exists('curl.cainfo', $container->phpIni()))
+        ->toBeFalse();
 });
 
 it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {

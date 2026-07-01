@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
@@ -135,7 +136,7 @@ it('renders configured app runtime mounts after built-in mounts', function (): v
 });
 
 it('does not mount the packages directory for app-prod PHP app runtimes', function (): void {
-    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs-prod',
         'environment' => 'production',
@@ -325,6 +326,62 @@ it('uses the internal app-dev runtime upstream on HTTP port 8080 by default', fu
     $app = makePhpApp(['name' => 'docs']);
 
     expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs:8080');
+});
+
+it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'craft-starterkit-react',
+        'path' => '/home/nckrtl/apps/craft-starterkit-react',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect($container->mounts())
+        ->toContain([
+            'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'read_only' => true,
+        ])
+        ->and($container->environment())
+        ->toMatchArray([
+            'SSL_CERT_FILE' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'CURL_CA_BUNDLE' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+        ])
+        ->and($container->phpIni())
+        ->toMatchArray([
+            'openssl.cafile' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'curl.cainfo' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+        ]);
+});
+
+it('does not render runtime client trust for app-prod PHP runtimes', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(collect($container->mounts())->pluck('target'))
+        ->not
+        ->toContain(AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath)
+        ->and(array_key_exists('SSL_CERT_FILE', $container->environment()))
+        ->toBeFalse()
+        ->and(array_key_exists('CURL_CA_BUNDLE', $container->environment()))
+        ->toBeFalse()
+        ->and(array_key_exists('openssl.cafile', $container->phpIni()))
+        ->toBeFalse()
+        ->and(array_key_exists('curl.cainfo', $container->phpIni()))
+        ->toBeFalse();
 });
 
 it('renders app-dev PHP runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {

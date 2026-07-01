@@ -113,8 +113,8 @@ describe('AppStoreController', function (): void {
             ->toBeTrue()
             ->and(collect($remoteShell->runs)
                 ->pluck('script')
-                ->contains(fn (string $script): bool => str_contains($script, '/etc/orbit/ca/root.crt')))
-            ->toBeFalse();
+                ->contains(fn (string $script): bool => str_contains($script, "sudo tee '/etc/orbit/ca/root.crt'")))
+            ->toBeTrue();
     });
 
     it('stores the opt-in HTTPS runtime proxy transport for new apps', function (): void {

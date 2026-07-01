@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -51,6 +52,25 @@ function renderTestWorkspaceContainer(Workspace $workspace): WorkspaceRuntimeCon
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
     )->render($workspace);
+}
+
+function fake_orbit_ca_service_for_workspace_manager_test(): OrbitCaService
+{
+    return new readonly class extends OrbitCaService {
+        public function rootCert(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+    };
+}
+
+function workspace_runtime_manager_for_test(RemoteShell $shell): WorkspaceRuntimeContainerManager
+{
+    return new WorkspaceRuntimeContainerManager(
+        $shell,
+        new DockerCommandBuilder,
+        fake_orbit_ca_service_for_workspace_manager_test(),
+    );
 }
 
 function inspectPayloadForWorkspace(
@@ -109,7 +129,7 @@ it('creates the orbit network, writes php.ini, and runs the workspace runtime co
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -154,7 +174,7 @@ it('creates the app-dev packages bind mount source before running the workspace 
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
 
@@ -194,7 +214,7 @@ it('creates inherited configured runtime mount sources before running the worksp
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
 
@@ -204,6 +224,47 @@ it('creates inherited configured runtime mount sources before running the worksp
         ->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/home/nckrtl/packages,readonly'")
         ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
         ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
+it('installs the Orbit runtime trust pool on the node and mounts it into app-dev workspace runtime containers', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo',
+        'path' => '/home/nckrtl/apps/demo',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('app', $app);
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+
+    expect($script)
+        ->toContain("sudo install -d -m 0755 '/etc/orbit/ca'")
+        ->toContain("sudo tee '/etc/orbit/ca/root.crt'")
+        ->toContain(
+            "--mount 'type=bind,source="
+            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+            .',target='
+            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+            .",readonly'",
+        )
+        ->and(strpos(haystack: $script, needle: "sudo tee '/etc/orbit/ca/root.crt'"))
+        ->toBeLessThan(strpos(haystack: $script, needle: 'docker run -d'));
 });
 
 it('treats app-dev workspace runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
@@ -230,7 +291,7 @@ it('treats app-dev workspace runtime TLS certificate mounts as Orbit-managed bui
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
     $certSource = '/home/nckrtl/.config/orbit/certs/feature-a.nckrtl.test.crt';
@@ -285,7 +346,7 @@ it('rejects unsafe app-dev packages bind mount sources before running the worksp
         new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
     );
 
-    expect(fn () => new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container))
+    expect(fn () => workspace_runtime_manager_for_test($shell)->apply($node, $container))
         ->toThrow(WorkspaceRuntimeContainerApplyException::class, 'unsafe packages mount source');
 
     expect(collect($shell->calls)
@@ -304,7 +365,7 @@ it('verifies image presence on the matching-running ("Unchanged") path before re
         new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
     );
 
-    $outcome = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -334,7 +395,7 @@ it('verifies image presence on the matching-stopped ("Started") path before star
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -363,7 +424,7 @@ it('recreates the container when the rendered spec drifts', function (): void {
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -382,7 +443,7 @@ it('returns AlreadyAbsent when removing a workspace container that does not exis
         ),
     );
 
-    $outcome = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->remove(
+    $outcome = workspace_runtime_manager_for_test($shell)->remove(
         $node,
         'demo',
         'feature-a',
@@ -405,7 +466,7 @@ it('returns Removed when an existing workspace container is removed', function (
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->remove(
+    $outcome = workspace_runtime_manager_for_test($shell)->remove(
         $node,
         'demo',
         'feature-a',
@@ -430,7 +491,7 @@ it('returns FailedRemaining when an existing workspace container cannot be remov
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container in use', durationMs: 1),
     );
 
-    $outcome = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->remove(
+    $outcome = workspace_runtime_manager_for_test($shell)->remove(
         $node,
         'demo',
         'feature-a',
@@ -495,7 +556,7 @@ it(
             ),
         );
 
-        $outcome = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->remove(
+        $outcome = workspace_runtime_manager_for_test($shell)->remove(
             $node,
             'demo',
             'feature-a',
@@ -513,7 +574,7 @@ it('writes the managed workspace runtime config file via writeRuntimeConfigFile'
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->writeRuntimeConfigFile($node, $container);
+    workspace_runtime_manager_for_test($shell)->writeRuntimeConfigFile($node, $container);
 
     expect($shell->calls)
         ->toHaveCount(1)
@@ -541,7 +602,7 @@ it(
         );
 
         expect(
-            fn () => new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container),
+            fn () => workspace_runtime_manager_for_test($shell)->apply($node, $container),
         )
             ->toThrow(WorkspaceRuntimeImageUnavailableException::class);
     },
@@ -564,7 +625,7 @@ it(
             ),
         );
 
-        $manager = new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder);
+        $manager = workspace_runtime_manager_for_test($shell);
 
         $caught = null;
         try {

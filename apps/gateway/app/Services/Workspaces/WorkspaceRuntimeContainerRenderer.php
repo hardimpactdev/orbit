@@ -12,6 +12,7 @@ use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\FrankenPhpRuntimeConfigRenderer;
+use App\Services\Apps\RuntimeClientTrustPolicy;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
@@ -25,6 +26,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -98,6 +100,8 @@ final readonly class WorkspaceRuntimeContainerRenderer
             }
         }
 
+        $mounts = array_merge($mounts, $this->runtimeClientTrust->mountsForWorkspace($workspace));
+
         return new WorkspaceRuntimeContainer(
             name: $this->containerName($workspace),
             image: $policy->image,
@@ -105,13 +109,19 @@ final readonly class WorkspaceRuntimeContainerRenderer
             restartPolicy: 'unless-stopped',
             appSlug: $app->name,
             workspaceSlug: $workspace->name,
-            environment: $this->environmentFor($app, $workspace, $phpVersion),
+            environment: array_merge(
+                $this->environmentFor($app, $workspace, $phpVersion),
+                $this->runtimeClientTrust->environmentForWorkspace($workspace),
+            ),
             mounts: $mounts,
             networkAliases: [
                 $this->containerName($workspace),
                 "ws-{$app->name}-{$workspace->name}",
             ],
-            phpIni: $policy->phpIni,
+            phpIni: array_merge(
+                $policy->phpIni,
+                $this->runtimeClientTrust->phpIniForWorkspace($workspace),
+            ),
         );
     }
 

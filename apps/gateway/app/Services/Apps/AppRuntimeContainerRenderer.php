@@ -35,6 +35,7 @@ final readonly class AppRuntimeContainerRenderer
         private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -95,6 +96,8 @@ final readonly class AppRuntimeContainerRenderer
             }
         }
 
+        $mounts = array_merge($mounts, $this->runtimeClientTrust->mountsForApp($app));
+
         return new AppRuntimeContainer(
             name: $this->containerName($app),
             image: $policy->image,
@@ -102,13 +105,19 @@ final readonly class AppRuntimeContainerRenderer
             restartPolicy: 'unless-stopped',
             appSlug: $app->name,
             runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
-            environment: $this->environmentFor($app),
+            environment: array_merge(
+                $this->environmentFor($app),
+                $this->runtimeClientTrust->environmentForApp($app),
+            ),
             mounts: $mounts,
             networkAliases: [
                 $this->containerName($app),
                 "app-{$app->name}",
             ],
-            phpIni: $policy->phpIni,
+            phpIni: array_merge(
+                $policy->phpIni,
+                $this->runtimeClientTrust->phpIniForApp($app),
+            ),
         );
     }
 

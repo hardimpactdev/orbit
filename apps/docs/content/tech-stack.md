@@ -343,6 +343,15 @@ path repository symlinks under `/app/vendor` resolve without mounting the host
 home directory or changing the FrankenPHP runtime model. Static runtimes and
 `app-prod` runtimes do not receive this mount.
 
+On `app-dev` nodes, PHP app and workspace FrankenPHP containers also install
+and bind-mount Orbit's runtime trust pool from the node at
+`/etc/orbit/ca/root.crt`, set `SSL_CERT_FILE` and `CURL_CA_BUNDLE`, and render
+managed `php.ini` directives `openssl.cafile` and `curl.cainfo` to that path.
+This gives outbound HTTPS clients inside the runtime container default trust
+for Orbit-issued development certificates, such as Vite dev-server and Inertia
+SSR endpoints, without per-project CA files or checkout-local `php.ini`
+ceremony. `app-prod` runtimes do not receive this client-trust configuration.
+
 `app-dev` PHP app and workspace containers render a small native
 `FRANKENPHP_CONFIG` snippet in classic mode: `max_threads auto` and
 `max_idle_time 1h`. These are FrankenPHP thread-pool settings, not Laravel

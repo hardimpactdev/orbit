@@ -143,6 +143,12 @@ it('applies set env values to the remote app runtime when apply is requested', f
     AppInstance::factory()->for($app)->create(['name' => 'development']);
 
     app()->instance(RemoteShell::class, new AppInstanceEnvControllerRecordingRemoteShell);
+    app()->instance(\App\Services\Ca\OrbitCaService::class, new readonly class extends \App\Services\Ca\OrbitCaService {
+        public function rootCert(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+    });
 
     $response = appInstanceEnvApiJson('POST', '/api/apps/billing/instances/development/env', [
         'key' => 'MAIL_MAILER',

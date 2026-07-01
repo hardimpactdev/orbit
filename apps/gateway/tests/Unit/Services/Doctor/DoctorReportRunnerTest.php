@@ -543,6 +543,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['app']);
 
@@ -556,8 +557,9 @@ describe('DoctorReportRunner app family extra container detection', function ():
             ->and(
                 collect($shell->scripts)
                     ->contains(
-                        fn (string $s): bool => (
-                            str_contains($s, 'docker run -d') && str_contains($s, "'orbit-app-docs'")
+                        fn (string $script): bool => doctor_runner_script_creates_trusted_runtime(
+                            script: $script,
+                            containerName: 'orbit-app-docs',
                         ),
                     ),
             )
@@ -1772,6 +1774,7 @@ describe('DoctorReportRunner', function (): void {
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
         $action = collect($report['actions'])->first();
@@ -1797,8 +1800,9 @@ describe('DoctorReportRunner', function (): void {
             ->and(
                 collect($shell->scripts)
                     ->contains(
-                        fn (string $script): bool => (
-                            str_contains($script, 'docker run') && str_contains($script, "'orbit-ws-docs-feature-a'")
+                        fn (string $script): bool => doctor_runner_script_creates_trusted_runtime(
+                            script: $script,
+                            containerName: 'orbit-ws-docs-feature-a',
                         ),
                     ),
             )
@@ -3309,6 +3313,25 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
 
         return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService
+{
+    return new readonly class extends \App\Services\Ca\OrbitCaService {
+        public function rootCert(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+    };
+}
+
+function doctor_runner_script_creates_trusted_runtime(string $script, string $containerName): bool
+{
+    return (
+        str_contains(haystack: $script, needle: "sudo tee '/etc/orbit/ca/root.crt'")
+        && str_contains(haystack: $script, needle: 'docker run')
+        && str_contains(haystack: $script, needle: "'{$containerName}'")
+    );
 }
 
 /**

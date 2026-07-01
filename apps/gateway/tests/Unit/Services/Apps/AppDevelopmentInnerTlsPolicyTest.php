@@ -6,6 +6,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
+use App\Services\Apps\RuntimeClientTrustPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -15,7 +16,7 @@ uses(RefreshDatabase::class);
 it('applies inner TLS only to opted-in app-dev PHP apps that are not production', function (): void {
     $policy = new AppDevelopmentInnerTlsPolicy;
     $appDevNode = createTestAppHostNode(['user' => 'nckrtl']);
-    $appProdNode = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $appProdNode = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
 
     $appDevPhpDefault = App::factory()->for($appDevNode, 'node')->create([
         'name' => 'docs',
@@ -94,6 +95,41 @@ it('describes runtime TLS mounts and upstream transport for an app-dev route dom
                     }
 
             CADDY);
+});
+
+it('describes runtime client trust for app-dev PHP apps that are not production', function (): void {
+    $policy = new RuntimeClientTrustPolicy;
+    $appDevNode = createTestAppHostNode(['user' => 'nckrtl']);
+    $appProdNode = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
+
+    $appDevPhp = App::factory()->for($appDevNode, 'node')->create([
+        'name' => 'docs',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $appProdPhp = App::factory()->for($appProdNode, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    expect($policy->mountsForApp($appDevPhp))
+        ->toBe([[
+            'source' => '/etc/orbit/ca/root.crt',
+            'target' => '/etc/orbit/ca/root.crt',
+            'read_only' => true,
+        ]])
+        ->and($policy->mountsForApp($appProdPhp))
+        ->toBeEmpty()
+        ->and($policy->phpIniForApp($appDevPhp))
+        ->toBe([
+            'openssl.cafile' => '/etc/orbit/ca/root.crt',
+            'curl.cainfo' => '/etc/orbit/ca/root.crt',
+        ])
+        ->and($policy->environmentForApp($appDevPhp))
+        ->toBe([
+            'SSL_CERT_FILE' => '/etc/orbit/ca/root.crt',
+            'CURL_CA_BUNDLE' => '/etc/orbit/ca/root.crt',
+        ]);
 });
 
 it('describes workspace route domains and inherits the app-dev inner TLS policy from the parent app', function (): void {

@@ -161,7 +161,13 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
 
 function base64DecodedPhpIni(string $script): string
 {
-    if (preg_match("/printf %s\\s+'([A-Za-z0-9+\\/=]+)'/", $script, $match) !== 1) {
+    if (
+        preg_match(
+            "/printf %s\\s+'([A-Za-z0-9+\\/=]+)' \\| base64 -d \\| sudo tee '\\/etc\\/orbit\\/apps\\/docs\\.ini'/",
+            $script,
+            $match,
+        ) !== 1
+    ) {
         return '';
     }
 

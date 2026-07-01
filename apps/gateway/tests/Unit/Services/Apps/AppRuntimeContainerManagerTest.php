@@ -16,6 +16,7 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeImageUnavailableException;
 use App\Services\Apps\AppRuntimeUserUnavailableException;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -59,6 +60,25 @@ function renderTestAppContainer(App $app): AppRuntimeContainer
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
     )->render($app);
+}
+
+function fake_orbit_ca_service_for_manager_test(): OrbitCaService
+{
+    return new readonly class extends OrbitCaService {
+        public function rootCert(): string
+        {
+            return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+        }
+    };
+}
+
+function app_runtime_manager_for_test(RemoteShell $shell): AppRuntimeContainerManager
+{
+    return new AppRuntimeContainerManager(
+        $shell,
+        new DockerCommandBuilder,
+        fake_orbit_ca_service_for_manager_test(),
+    );
 }
 
 function inspectPayloadForApp(AppRuntimeContainer $container, bool $running = true, ?string $specHash = null): string
@@ -114,7 +134,7 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -160,7 +180,7 @@ it('creates the app-dev packages bind mount source before running the app runtim
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
 
@@ -194,7 +214,7 @@ it('creates configured runtime mount sources before running the app runtime cont
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
 
@@ -204,6 +224,41 @@ it('creates configured runtime mount sources before running the app runtime cont
         ->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/home/nckrtl/packages,readonly'")
         ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
         ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
+it('installs the Orbit runtime trust pool on the node and mounts it into app-dev runtime containers', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'craft-starterkit-react',
+        'path' => '/home/nckrtl/apps/craft-starterkit-react',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $container = renderTestAppContainer($app);
+
+    $shell = new AppRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    app_runtime_manager_for_test($shell)->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+
+    expect($script)
+        ->toContain("sudo install -d -m 0755 '/etc/orbit/ca'")
+        ->toContain("sudo tee '/etc/orbit/ca/root.crt'")
+        ->toContain(
+            "--mount 'type=bind,source="
+            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+            .',target='
+            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+            .",readonly'",
+        )
+        ->and(strpos(haystack: $script, needle: "sudo tee '/etc/orbit/ca/root.crt'"))
+        ->toBeLessThan(strpos(haystack: $script, needle: 'docker run -d'));
 });
 
 it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
@@ -224,7 +279,7 @@ it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', f
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
     $certSource = '/home/nckrtl/.config/orbit/certs/nckrtl.test.crt';
@@ -279,7 +334,7 @@ it('rejects unsafe app-dev packages bind mount sources before running the app ru
         new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
     );
 
-    expect(fn () => new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container))
+    expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
         ->toThrow(AppRuntimeContainerApplyException::class, 'unsafe packages mount source');
 
     expect(collect($shell->calls)
@@ -305,7 +360,7 @@ it('resolves production runtime users to numeric uid gid before creating the con
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -338,7 +393,7 @@ it('throws a runtime-user exception before creating the container when the produ
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'id: docs: no such user', durationMs: 1),
     );
 
-    expect(fn () => new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container))
+    expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
         ->toThrow(AppRuntimeUserUnavailableException::class);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
@@ -361,7 +416,7 @@ it('verifies image presence on the matching-running ("Unchanged") path before re
         new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -404,7 +459,7 @@ it('verifies image presence on the matching-stopped ("Started") path before star
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -438,7 +493,7 @@ it('recreates the container when the rendered spec drifts', function (): void {
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+    $outcome = app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -465,7 +520,7 @@ it('returns AlreadyAbsent when removing a container that does not exist on the n
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'no such container', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->remove($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->remove($node, 'docs');
 
     expect($outcome)
         ->toBe(AppRuntimeArtifactRemovalOutcome::AlreadyAbsent)
@@ -484,7 +539,7 @@ it('returns Removed when an existing container is removed', function (): void {
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->remove($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->remove($node, 'docs');
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
 
@@ -507,7 +562,7 @@ it('returns FailedRemaining when an existing container cannot be removed', funct
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container in use', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->remove($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->remove($node, 'docs');
 
     expect($outcome)->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining);
 });
@@ -572,7 +627,7 @@ it(
             ),
         );
 
-        $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->remove($node, 'docs');
+        $outcome = app_runtime_manager_for_test($shell)->remove($node, 'docs');
 
         expect($outcome)
             ->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining)
@@ -595,7 +650,7 @@ it('returns AlreadyAbsent only when docker inspect reports "No such object"', fu
         ),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->remove($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->remove($node, 'docs');
 
     expect($outcome)->toBe(AppRuntimeArtifactRemovalOutcome::AlreadyAbsent)->and(count($shell->calls))->toBe(1);
 });
@@ -612,7 +667,7 @@ it('returns FailedRemaining when the sudo runtime config probe fails for an unkn
         ),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->removeRuntimeConfigFile($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->removeRuntimeConfigFile($node, 'docs');
 
     expect($outcome)
         ->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining)
@@ -634,7 +689,7 @@ it('returns FailedRemaining when the runtime config probe shell call itself fail
         ),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->removeRuntimeConfigFile($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->removeRuntimeConfigFile($node, 'docs');
 
     expect($outcome)->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining);
 });
@@ -648,7 +703,7 @@ it('returns FailedRemaining when post-removal probe cannot confirm the runtime c
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:error\n", stderr: '', durationMs: 1),
     );
 
-    $outcome = new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->removeRuntimeConfigFile($node, 'docs');
+    $outcome = app_runtime_manager_for_test($shell)->removeRuntimeConfigFile($node, 'docs');
 
     expect($outcome)->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining);
 });
@@ -661,7 +716,7 @@ it('writes the managed runtime config file via writeRuntimeConfigFile', function
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
 
-    new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->writeRuntimeConfigFile($node, $container);
+    app_runtime_manager_for_test($shell)->writeRuntimeConfigFile($node, $container);
 
     expect($shell->calls)
         ->toHaveCount(1)
@@ -691,7 +746,7 @@ it(
             ),
         );
 
-        expect(fn () => new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container))
+        expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
             ->toThrow(AppRuntimeImageUnavailableException::class);
     },
 );
@@ -719,7 +774,7 @@ it(
 
         $caughtImage = '';
         try {
-            new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container);
+            app_runtime_manager_for_test($shell)->apply($node, $container);
         } catch (AppRuntimeImageUnavailableException $exception) {
             $caughtImage = $exception->image;
         }
@@ -760,7 +815,7 @@ it(
             ),
         );
 
-        expect(fn () => new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container))
+        expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
             ->toThrow(AppRuntimeImageUnavailableException::class);
 
         $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
@@ -789,7 +844,7 @@ it('throws AppRuntimeImageUnavailableException when image is not on the node bef
         ),
     );
 
-    expect(fn () => new AppRuntimeContainerManager($shell, new DockerCommandBuilder)->apply($node, $container))
+    expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
         ->toThrow(AppRuntimeImageUnavailableException::class);
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
@@ -819,7 +874,7 @@ it(
             ),
         );
 
-        $manager = new AppRuntimeContainerManager($shell, new DockerCommandBuilder);
+        $manager = app_runtime_manager_for_test($shell);
 
         $caught = null;
         try {
@@ -867,7 +922,7 @@ it(
             ),
         );
 
-        $manager = new AppRuntimeContainerManager($shell, new DockerCommandBuilder);
+        $manager = app_runtime_manager_for_test($shell);
 
         $caught = null;
         try {
@@ -914,7 +969,7 @@ it(
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
         );
 
-        $manager = new AppRuntimeContainerManager($shell, new DockerCommandBuilder);
+        $manager = app_runtime_manager_for_test($shell);
 
         $caught = null;
         try {

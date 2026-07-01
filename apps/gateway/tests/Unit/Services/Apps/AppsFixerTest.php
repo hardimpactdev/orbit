@@ -16,6 +16,7 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppsFixer;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
@@ -62,7 +63,16 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
     return new AppsFixer(
         $shell,
         $appRuntimeContainerRenderer,
-        new AppRuntimeContainerManager($shell, new DockerCommandBuilder),
+        new AppRuntimeContainerManager(
+            $shell,
+            new DockerCommandBuilder,
+            new readonly class extends OrbitCaService {
+                public function rootCert(): string
+                {
+                    return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
+                }
+            },
+        ),
         new AppRuntimeUser,
         new EnsureFrankenPhpRuntimeProcess(
             $appRuntimeContainerRenderer,

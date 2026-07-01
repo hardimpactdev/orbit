@@ -11,6 +11,7 @@ use App\Enums\Workspaces\WorkspaceRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Runtime\DockerCommandBuilder;
 use RuntimeException;
 use Throwable;
@@ -20,6 +21,8 @@ final readonly class WorkspaceRuntimeContainerManager
     public function __construct(
         private RemoteShell $remoteShell,
         private DockerCommandBuilder $commands,
+        private OrbitCaService $ca = new OrbitCaService,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     public function apply(Node $node, WorkspaceRuntimeContainer $container): WorkspaceRuntimeContainerApplyOutcome
@@ -313,22 +316,47 @@ final readonly class WorkspaceRuntimeContainerManager
         $phpIniHostPath = $this->findPhpIniMountSource($container);
         $phpIniDirectory = dirname($phpIniHostPath);
         $phpIniContent = $container->phpIniContent();
+        $trustPoolInstallScript = $this->renderRuntimeTrustPoolInstallScript($container);
         $packagesMountScript = $this->renderPackagesMountDirectoryScript($container);
         $configuredMountScript = $this->renderConfiguredMountDirectoryScript($container);
 
         return sprintf(
             <<<'SH'
                 set -e
+                %s
                 sudo install -d -m 0755 %s
                 printf %%s %s | base64 -d | sudo tee %s >/dev/null
                 %s
                 %s
                 SH,
+            $trustPoolInstallScript,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
             escapeshellarg($phpIniHostPath),
             $packagesMountScript,
             $configuredMountScript,
+        );
+    }
+
+    private function renderRuntimeTrustPoolInstallScript(WorkspaceRuntimeContainer $container): string
+    {
+        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+            return '';
+        }
+
+        return (
+            $this->innerTlsPolicy->trustPoolInstallScript(
+                AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                $this->ca->rootCert(),
+            )."\n"
+        );
+    }
+
+    private function containerRequiresRuntimeTrustPool(WorkspaceRuntimeContainer $container): bool
+    {
+        return array_any(
+            $container->mounts(),
+            static fn (array $mount): bool => $mount['target'] === AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
         );
     }
 
@@ -439,6 +467,7 @@ final readonly class WorkspaceRuntimeContainerManager
                 AppDevelopmentPackagesMount::Target,
                 AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath,
                 AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath,
+                AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
             ],
             true,
         );
