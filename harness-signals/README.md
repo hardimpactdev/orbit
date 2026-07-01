@@ -163,6 +163,8 @@ Do not replace `harness-signals/` with raw session archives under
 record here. Completed active `.orbit/` state belongs in
 the persistent project archive home before worktree cleanup or before rewriting
 `.orbit/loop.md` for a new slice. The default archive home is the primary
-checkout's `.orbit/sessions/<timestamp-feature-slug>/`; archive creation copies
-every active `.orbit/` entry except `.orbit/sessions/` to avoid recursive
-copies.
+checkout's `.orbit/sessions/<timestamp-feature-slug>/`, named as
+`YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
+compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
+names. Archive creation copies every active `.orbit/` entry except
+`.orbit/sessions/` to avoid recursive copies.

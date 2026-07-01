@@ -56,12 +56,14 @@ Responsibilities:
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
   active slice only, rewriting it when the next slice starts. Before rewriting
   `.orbit/loop.md`, archive the completed active `.orbit/` state into the
-  persistent project archive home defined by `HARNESS.md`, copying every active
-  `.orbit/` entry except `.orbit/sessions/`. If the source roadmap lives in
-  another Solo project or machine, create a reachable execution-project
-  scratchpad that links back to the source and mirrors the source roadmap's
-  feature request, slice order, current-slice acceptance criteria, deferred
-  slices, and open decisions before spawning workers.
+  persistent project archive home defined by `HARNESS.md`, using
+  `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
+  compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
+  names. Copy every active `.orbit/` entry except `.orbit/sessions/`. If the
+  source roadmap lives in another Solo project or machine, create a reachable
+  execution-project scratchpad that links back to the source and mirrors the
+  source roadmap's feature request, slice order, current-slice acceptance
+  criteria, deferred slices, and open decisions before spawning workers.
 - Run a dependency scan before spawning workers. If slices or verification lanes
   have disjoint ownership and neither needs the other's result, dispatch them in
   parallel through Solo by default. Use one worker serially only when ownership,
@@ -898,6 +900,9 @@ command address/output transcript.
     changed guardrail target is reachable. After final distillation is complete,
     archive the completed active `.orbit/` state into the persistent project
     archive home before cleanup and before any later `.orbit/loop.md` rewrite.
+    Name the archive directory as `YYYY-MM-DD-HHMMSS-<feature-slug>` in the
+    checkout's local time. Do not use compact timestamps, `T` separators, `Z`,
+    or UTC offsets in archive directory names.
     Copy every active `.orbit/` entry except `.orbit/sessions/`.
 25. Commit the verified worktree changes on the worktree branch.
 26. Merge the branch back into `main` from the primary `~/orbit` checkout by

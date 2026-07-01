@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Processes\ProcessDockerContainer;
@@ -49,6 +50,7 @@ function processDockerRenderer(): ProcessDockerContainerRenderer
     return new ProcessDockerContainerRenderer(
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
+        new LaravelViteDevServerEnvironment,
     );
 }
 
@@ -185,7 +187,23 @@ it('populates the runtime unit environment contract for the docker process runti
         ->and($environment['VITE_APP_URL'])
         ->toBe('https://docs.orbit.beast')
         ->and($environment['VITE_VALET_HOST'])
-        ->toBe('docs.orbit.beast');
+        ->toBe('docs.orbit.beast')
+        ->and($environment['VITE_DEV_SERVER_KEY'])
+        ->toBe('/etc/orbit/certs/docs.orbit.beast.key')
+        ->and($environment['VITE_DEV_SERVER_CERT'])
+        ->toBe('/etc/orbit/certs/docs.orbit.beast.crt');
+
+    expect(processDockerRenderer()->render($app, $process)->mounts())
+        ->toContain([
+            'source' => '/home/orbit/.config/orbit/certs/docs.orbit.beast.key',
+            'target' => '/etc/orbit/certs/docs.orbit.beast.key',
+            'read_only' => true,
+        ])
+        ->toContain([
+            'source' => '/home/orbit/.config/orbit/certs/docs.orbit.beast.crt',
+            'target' => '/etc/orbit/certs/docs.orbit.beast.crt',
+            'read_only' => true,
+        ]);
 });
 
 it('includes ORBIT_WORKSPACE in the environment when rendering a workspace process container', function (): void {
@@ -198,7 +216,23 @@ it('includes ORBIT_WORKSPACE in the environment when rendering a workspace proce
     expect($environment['ORBIT_WORKSPACE'])
         ->toBe('feature-x')
         ->and($environment['APP_URL'])
-        ->toBe('https://feature-x.docs.orbit.beast');
+        ->toBe('https://feature-x.docs.orbit.beast')
+        ->and($environment['VITE_DEV_SERVER_KEY'])
+        ->toBe('/etc/orbit/certs/feature-x.docs.orbit.beast.key')
+        ->and($environment['VITE_DEV_SERVER_CERT'])
+        ->toBe('/etc/orbit/certs/feature-x.docs.orbit.beast.crt');
+
+    expect(processDockerRenderer()->render($app, $process, $workspace)->mounts())
+        ->toContain([
+            'source' => '/home/orbit/.config/orbit/certs/feature-x.docs.orbit.beast.key',
+            'target' => '/etc/orbit/certs/feature-x.docs.orbit.beast.key',
+            'read_only' => true,
+        ])
+        ->toContain([
+            'source' => '/home/orbit/.config/orbit/certs/feature-x.docs.orbit.beast.crt',
+            'target' => '/etc/orbit/certs/feature-x.docs.orbit.beast.crt',
+            'read_only' => true,
+        ]);
 });
 
 it('exposes labels with the spec hash so the manager can detect drift', function (): void {

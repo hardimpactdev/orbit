@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
@@ -18,6 +19,7 @@ final readonly class ProcessDockerContainerRenderer
     public function __construct(
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
+        private LaravelViteDevServerEnvironment $vite,
     ) {}
 
     public function render(App $app, Process $process, ?Workspace $workspace = null): ProcessDockerContainer
@@ -67,6 +69,7 @@ final readonly class ProcessDockerContainerRenderer
                     'target' => ProcessDockerContainer::SourceTarget,
                     'read_only' => false,
                 ],
+                ...$this->vite->containerCertificateMounts($app, $workspace),
             ],
             networkAliases: [$name],
             ports: [],
@@ -187,45 +190,21 @@ final readonly class ProcessDockerContainerRenderer
      */
     private function environmentFor(App $app, Process $process, ?Workspace $workspace, string $phpVersion): array
     {
-        $url = $workspace instanceof Workspace ? $workspace->url() : $app->url();
-        $host = $this->hostFromUrl($url, $app, $workspace);
         $home = '/root';
-        $tlsBase = '/etc/orbit/certs/'.$host;
 
-        $environment = [
-            'PATH' => '/app/vendor/bin:/app/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-            'HOME' => $home,
-            'APP_URL' => $url,
-            'VITE_APP_URL' => $url,
-            'VITE_VALET_HOST' => $host,
-            'VITE_DEV_SERVER_KEY' => $tlsBase.'.key',
-            'VITE_DEV_SERVER_CERT' => $tlsBase.'.crt',
-            'ORBIT_APP' => $app->name,
-            'ORBIT_PHP_VERSION' => $phpVersion,
-        ];
+        $environment =
+            [
+                'PATH' => '/app/vendor/bin:/app/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+                'HOME' => $home,
+                'ORBIT_APP' => $app->name,
+                'ORBIT_PHP_VERSION' => $phpVersion,
+            ] + $this->vite->containerVariables($app, $workspace);
 
         if ($workspace instanceof Workspace) {
             $environment['ORBIT_WORKSPACE'] = $workspace->name;
         }
 
         return $environment;
-    }
-
-    private function hostFromUrl(string $url, App $app, ?Workspace $workspace): string
-    {
-        $host = parse_url($url, PHP_URL_HOST);
-
-        if (is_string($host) && $host !== '') {
-            return $host;
-        }
-
-        $stripped = preg_replace('#^https?://#', '', $url);
-
-        if (is_string($stripped) && $stripped !== '') {
-            return $stripped;
-        }
-
-        return $workspace instanceof Workspace ? "{$workspace->name}.{$app->name}" : $app->name;
     }
 
     /**

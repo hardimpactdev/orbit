@@ -7,9 +7,14 @@ namespace App\Services\Apps;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvVariable;
 use App\Models\DatabaseConnection;
+use App\Models\Node;
 
 final readonly class AppInstanceEnvRenderer
 {
+    public function __construct(
+        private LaravelViteDevServerEnvironment $vite,
+    ) {}
+
     /**
      * @return list<array{key: string, value: string|null, secret: bool}>
      */
@@ -37,9 +42,21 @@ final readonly class AppInstanceEnvRenderer
      */
     public function render(AppInstance $instance): array
     {
-        $instance->loadMissing(['envVariables', 'databaseConnectionTargets.connection']);
+        $instance->loadMissing(['app.node', 'envVariables', 'databaseConnectionTargets.connection']);
 
         $env = [];
+        $app = $instance->app;
+        $node = $app->node ?? null;
+
+        if ($node instanceof Node) {
+            foreach ($this->vite->shellVariables($app, $node) as $key => $value) {
+                $env[$key] = [
+                    'value' => $value,
+                    'secret' => false,
+                    'source' => 'orbit',
+                ];
+            }
+        }
 
         foreach ($instance->envVariables as $variable) {
             $env[$variable->key] = [

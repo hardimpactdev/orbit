@@ -39,6 +39,10 @@ manifests.
 - If the user requests a live artifact release with no GitHub release, stop
   after live candidate acceptance. Do not create a GitHub tag, publish a GitHub
   release, or move the final GHCR version tag in that mode.
+- If the user requests a release-candidate refresh for the current live
+  version, do not bump `VERSION` just to create candidate artifacts. Build from
+  the pushed `origin/main` commit, give the candidate a unique `build_id`, and
+  make the no-GitHub boundary explicit in the report.
 - The GitHub Actions release workflow must verify the promoted
   `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-release-manifest.json`, and
   digest-pinned `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image, then
@@ -49,7 +53,10 @@ manifests.
   candidate manifest before GitHub publication.
 - Live topology doctor status is the release safety baseline. Capture it before
   publishing a new release so post-`update:all` doctor output can be compared
-  against known pre-existing drift.
+  against known pre-existing drift. Always use
+  `orbit doctor --all --stream-json` for broad fleet doctor runs; the non-
+  streaming `--json` form can be slow and look hung even while work is still
+  progressing.
 - Candidate artifacts are published from a commit already reachable from
   `origin/main`. Merge and push the release VERSION commit before artifact
   publication, then record the release worktree commit, primary `main` commit,
@@ -63,18 +70,21 @@ manifests.
 ## Workflow
 
 1. Work from a prepared implementation worktree, not directly on `main`.
-2. Confirm the release intent and choose the next version. If legacy split
-   repos contain higher tags, choose a version higher than those tags or clean
-   those generated repos intentionally.
-3. Update only the root `VERSION` file for the version bump.
+2. Confirm the release intent and choose whether this is a versioned GitHub
+   release candidate or a no-GitHub live candidate refresh for the current
+   version. If legacy split repos contain higher tags, choose a version higher
+   than those tags or clean those generated repos intentionally.
+3. For a versioned release, update only the root `VERSION` file for the version
+   bump. For a current-version candidate refresh, leave `VERSION` unchanged and
+   record the current version in the release evidence.
 4. Run focused tests for release and update behavior:
 
    ```bash
    bin/orbit-gateway-pest --compact tests/Feature/Release tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php
    ```
 
-5. Commit the version bump, then run the broad quality gate before publishing
-   candidate artifacts:
+5. Commit the version bump when there is one, then run the broad quality gate
+   before publishing candidate artifacts:
 
    ```bash
    version="$(bin/orbit-version)"
@@ -83,6 +93,10 @@ manifests.
    composer quality-check
    composer quality-gate:final-check
    ```
+
+   For a no-bump candidate refresh, replace the `git add VERSION` and
+   `git commit` lines with a source identity check that proves the current
+   commit already contains the accepted changes.
 
 6. Merge the release worktree branch back to primary `main`, push `main`, and
    prove the pushed source identity before uploading candidate bytes:
@@ -258,7 +272,10 @@ manifests.
 8. Capture live topology doctor status before publishing. Record the exact
    command, timestamp, target topology, and result summary in the release
    report. Existing drift does not necessarily block the release, but it must be
-   known before `update:all` so new regressions are visible.
+   known before `update:all` so new regressions are visible. Also capture
+   `orbit gateway:status --json` and `orbit node:list --json`; these are the
+   fast identity checks for the gateway version and the actual fleet being
+   updated, including macOS nodes such as Mini or the local disk machine.
 9. Run live topology acceptance against the activated candidate channel from the
    operator node. Prefer the source CLI in the release worktree so the update
    command definitely understands the candidate manifest contract. If you use
@@ -270,9 +287,14 @@ manifests.
    ORBIT_RELEASE_MANIFEST_URL="$candidate_channel_manifest_url" ./apps/cli/orbit update:all --stream-json
    orbit activity:show <activity-id> --json
    orbit gateway:status --json
-   orbit doctor --all --json
+   orbit doctor --all --stream-json
    orbit node:list --json
    ```
+
+   Do not use `orbit doctor --all --json` for broad release checks. It may stay
+   quiet long enough to be mistaken for a hang. Use the stream events to show
+   progress and keep the final event as the doctor summary in the release
+   evidence.
 
 10. Confirm:
     - gateway service image is the tested digest-pinned
@@ -395,6 +417,22 @@ promoted assets and publishes the split package repos.
   helper-free temporary `DOCKER_CONFIG` for `docker login` and `docker push`.
   Remove it after the push and verify no auth token strings were written into
   evidence directories.
+- If `docker login` still invokes the macOS credential helper even with a
+  temporary config, write a minimal helper-free config instead of retrying
+  interactively:
+
+  ```bash
+  ghcr_docker_config="$(mktemp -d)"
+  ghcr_user="$(gh api user -q .login)"
+  ghcr_auth="$(printf '%s:%s' "$ghcr_user" "$(gh auth token)" | base64 | tr -d '\n')"
+  umask 077
+  printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$ghcr_auth" > "${ghcr_docker_config}/config.json"
+  DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image"
+  rm -rf "$ghcr_docker_config"
+  unset ghcr_auth
+  ```
+
+  Do not tee this command output in a way that could capture the auth value.
 - If workload node updates fail, inspect the durable operation error first.
   Workload fan-out failures should fail before final verification and include
   per-node results.

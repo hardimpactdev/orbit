@@ -770,6 +770,23 @@ it('passes lifecycle environment into containerized setup steps', function (): v
 
     expect($composerRun['script'])->toContain("'ORBIT_APP=demo'");
     expect($composerRun['script'])->toContain("'ORBIT_WORKSPACE_NAME=feature-a'");
+    expect($composerRun['script'])->toContain("'APP_URL=https://feature-a.demo.beast'");
+    expect($composerRun['script'])->toContain("'VITE_APP_URL=https://feature-a.demo.beast'");
+    expect($composerRun['script'])
+        ->toContain(
+            "'VITE_DEV_SERVER_KEY=/home/gateway/.config/orbit/certs/feature-a.demo.beast.key'",
+        );
+    expect($composerRun['script'])
+        ->toContain(
+            "'VITE_DEV_SERVER_CERT=/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt'",
+        );
+    expect($composerRun['options']['metadata'])->toMatchArray([
+        'APP_URL' => 'https://feature-a.demo.beast',
+        'VITE_APP_URL' => 'https://feature-a.demo.beast',
+        'VITE_VALET_HOST' => 'feature-a.demo.beast',
+        'VITE_DEV_SERVER_KEY' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.key',
+        'VITE_DEV_SERVER_CERT' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt',
+    ]);
 });
 
 it('skips setup steps when hash matches previous successful run', function (): void {

@@ -9,12 +9,14 @@ use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
 use App\Services\Apps\AppSetupStepRunner;
+use App\Services\Apps\LaravelViteDevServerEnvironment;
 use RuntimeException;
 
 final readonly class SetupApp
 {
     public function __construct(
         private AppSetupStepRunner $stepRunner,
+        private LaravelViteDevServerEnvironment $vite,
     ) {}
 
     /**
@@ -91,7 +93,14 @@ final readonly class SetupApp
             'started_at' => now(),
         ]);
 
-        $success = $this->stepRunner->run($run, $steps->all(), $app, $node, $this->appEnv($app), $onStepProgress);
+        $success = $this->stepRunner->run(
+            $run,
+            $steps->all(),
+            $app,
+            $node,
+            $this->appEnv($app, $node),
+            $onStepProgress,
+        );
 
         if (! $success) {
             $failedStep = $run
@@ -139,17 +148,15 @@ final readonly class SetupApp
     /**
      * @return array<string, string>
      */
-    private function appEnv(App $app): array
+    private function appEnv(App $app, Node $node): array
     {
-        $domain = parse_url($app->url(), PHP_URL_HOST) ?: $app->name;
-
-        return [
-            'ORBIT_APP' => $app->name,
-            'ORBIT_APP_PATH' => $app->path,
-            'ORBIT_URL' => $app->url(),
-            'ORBIT_PHP_VERSION' => $app->php_version,
-            'VITE_APP_URL' => $app->url(),
-            'VITE_VALET_HOST' => $domain,
-        ];
+        return (
+            [
+                'ORBIT_APP' => $app->name,
+                'ORBIT_APP_PATH' => $app->path,
+                'ORBIT_URL' => $app->url(),
+                'ORBIT_PHP_VERSION' => $app->php_version,
+            ] + $this->vite->shellVariables($app, $node)
+        );
     }
 }
