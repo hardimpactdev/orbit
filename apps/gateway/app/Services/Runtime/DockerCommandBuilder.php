@@ -213,6 +213,10 @@ class DockerCommandBuilder
             return null;
         }
 
+        if ($container instanceof AppRuntimeContainer || $container instanceof WorkspaceRuntimeContainer) {
+            return null;
+        }
+
         if ($container instanceof OrbitCaddyContainer && str_ends_with($container->name(), '-orbit-caddy')) {
             return substr($container->name(), 0, -strlen('-orbit-caddy')) ?: null;
         }

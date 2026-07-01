@@ -9,6 +9,7 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Runtime\OrbitGatewayContainerRenderer;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -164,6 +165,69 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
             )
             ->not->toContain('container:orbit-e2e-run123-gateway')
             ->not->toContain('--network-alias');
+    } finally {
+        if ($previousNetwork === false) {
+            putenv('ORBIT_E2E_DOCKER_NETWORK');
+        } else {
+            putenv("ORBIT_E2E_DOCKER_NETWORK={$previousNetwork}");
+        }
+
+        if ($previousNodeContainer === false) {
+            putenv('ORBIT_NODE_CONTAINER');
+        } else {
+            putenv("ORBIT_NODE_CONTAINER={$previousNodeContainer}");
+        }
+    }
+});
+
+it('keeps app and workspace runtime containers on the Docker E2E network with aliases', function (): void {
+    $previousNetwork = getenv('ORBIT_E2E_DOCKER_NETWORK');
+    $previousNodeContainer = getenv('ORBIT_NODE_CONTAINER');
+
+    putenv('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123');
+    putenv('ORBIT_NODE_CONTAINER=orbit-e2e-run123-gateway');
+
+    try {
+        $app = new AppRuntimeContainer(
+            name: 'orbit-app-docs',
+            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            network: 'orbit-e2e-run123',
+            restartPolicy: 'unless-stopped',
+            appSlug: 'docs',
+            runtimeUser: 'docs',
+            environment: [],
+            mounts: [],
+            networkAliases: ['orbit-app-docs', 'app-docs'],
+            phpIni: [],
+        );
+        $workspace = new WorkspaceRuntimeContainer(
+            name: 'orbit-ws-docs-feature',
+            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            network: 'orbit-e2e-run123',
+            restartPolicy: 'unless-stopped',
+            appSlug: 'docs',
+            workspaceSlug: 'feature',
+            environment: [],
+            mounts: [],
+            networkAliases: ['orbit-ws-docs-feature', 'ws-docs-feature'],
+            phpIni: [],
+        );
+
+        $builder = new DockerCommandBuilder;
+
+        expect($builder->runDetached($app))
+            ->toContain('--network '.escapeshellarg('orbit-e2e-run123'))
+            ->not
+            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-gateway'))
+            ->toContain('--network-alias '.escapeshellarg('orbit-app-docs'))
+            ->toContain('--network-alias '.escapeshellarg('app-docs'));
+
+        expect($builder->runDetached($workspace))
+            ->toContain('--network '.escapeshellarg('orbit-e2e-run123'))
+            ->not
+            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-gateway'))
+            ->toContain('--network-alias '.escapeshellarg('orbit-ws-docs-feature'))
+            ->toContain('--network-alias '.escapeshellarg('ws-docs-feature'));
     } finally {
         if ($previousNetwork === false) {
             putenv('ORBIT_E2E_DOCKER_NETWORK');
