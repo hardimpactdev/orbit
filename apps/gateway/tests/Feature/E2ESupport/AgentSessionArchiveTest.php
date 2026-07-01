@@ -39,7 +39,7 @@ it('archives supported provider sessions and records unsupported providers in th
     $temp = make_agent_session_archive_temp_dir(suffix: 'archive');
     $home = "{$temp}/home";
     $cwd = "{$temp}/worktree";
-    $archiveDir = "{$temp}/.orbit/sessions/2026-07-01-session-archive/agent-sessions";
+    $archiveDir = "{$temp}/.orbit/sessions/2026-07-01-100305-session-archive/agent-sessions";
     $marker = 'session-archive-fixture-marker';
 
     try {
@@ -119,6 +119,220 @@ it('archives supported provider sessions and records unsupported providers in th
     }
 });
 
+it('filters multiple target solo processes from fixture exports', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'multi-process');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+
+        write_agent_session_archive_fixtures(home: $home, cwd: $cwd, marker: $marker);
+
+        $processesPath = "{$temp}/processes.json";
+        write_agent_session_archive_processes(path: $processesPath, cwd: $cwd);
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--processes-json={$processesPath}",
+                '--solo-process-id=101,103',
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--marker={$marker}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+            [
+                'SOLO_PROCESS_ID' => false,
+                'SOLO_PROJECT_ID' => false,
+            ],
+        );
+
+        $process->run();
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($results)
+            ->toHaveCount(2)
+            ->and(provider_status(results: $results, provider: 'codex'))
+            ->toBe('ok')
+            ->and(provider_status(results: $results, provider: 'grok'))
+            ->toBe('ok')
+            ->and(provider_status(results: $results, provider: 'claude'))
+            ->toBeNull();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('archives active orbit state and provider sessions into one session directory', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'session-wrapper');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $sourceOrbitDir = "{$cwd}/.orbit";
+    $archiveDir = "{$temp}/archive-root/2026-07-01-100305-session-wrapper";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir("{$sourceOrbitDir}/evidence", recursive: true);
+        mkdir("{$sourceOrbitDir}/quality-gates", recursive: true);
+        mkdir("{$sourceOrbitDir}/sessions/old-session", recursive: true);
+        file_put_contents("{$sourceOrbitDir}/loop.md", "- Solo worker: Grok process `103`\n");
+        file_put_contents("{$sourceOrbitDir}/evidence/proof.txt", "proof\n");
+        file_put_contents("{$sourceOrbitDir}/quality-gates/result.json", "{\"result\":\"passed\"}\n");
+        file_put_contents("{$sourceOrbitDir}/sessions/old-session/loop.md", "old\n");
+
+        write_agent_session_archive_fixtures(home: $home, cwd: $cwd, marker: $marker);
+
+        $processesPath = "{$temp}/processes.json";
+        write_agent_session_archive_processes(path: $processesPath, cwd: $cwd);
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-session-archive'),
+                "--source-orbit-dir={$sourceOrbitDir}",
+                "--archive-dir={$archiveDir}",
+                "--processes-json={$processesPath}",
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--marker={$marker}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+            [
+                'SOLO_PROCESS_ID' => false,
+                'SOLO_PROJECT_ID' => false,
+            ],
+        );
+
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($summary)
+            ->toHaveKey('archive_dir', $archiveDir)
+            ->and($summary['copied_entries'])
+            ->toBe(['evidence', 'loop.md', 'quality-gates'])
+            ->and("{$archiveDir}/loop.md")
+            ->toBeFile()
+            ->and("{$archiveDir}/evidence/proof.txt")
+            ->toBeFile()
+            ->and("{$archiveDir}/quality-gates/result.json")
+            ->toBeFile()
+            ->and("{$archiveDir}/sessions/old-session/loop.md")
+            ->not->toBeFile();
+
+        $manifest = read_agent_session_archive_json(path: "{$archiveDir}/agent-sessions/manifest.json");
+
+        expect($manifest['providers'])
+            ->toMatchArray([
+                'codex' => ['ok' => 1],
+                'claude' => ['ok' => 1],
+                'grok' => ['ok' => 1],
+                'antigravity' => ['unsupported' => 1],
+            ])
+            ->and("{$archiveDir}/orbit-session-archive.json")
+            ->toBeFile();
+
+        assert_provider_archive(archiveDir: "{$archiveDir}/agent-sessions", spec: codex_archive_spec(marker: $marker));
+        assert_provider_archive(archiveDir: "{$archiveDir}/agent-sessions", spec: claude_archive_spec(marker: $marker));
+        assert_provider_archive(archiveDir: "{$archiveDir}/agent-sessions", spec: grok_archive_spec(marker: $marker));
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('creates generated session archives with local timestamp and feature slug names', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'generated-session-wrapper');
+    $cwd = "{$temp}/worktree";
+    $sourceOrbitDir = "{$cwd}/.orbit";
+    $archiveRoot = "{$temp}/archive-root";
+    $archiveDir = "{$archiveRoot}/2026-07-01-100305-session-wrapper";
+
+    try {
+        mkdir($sourceOrbitDir, recursive: true);
+        file_put_contents("{$sourceOrbitDir}/loop.md", "No worker sessions.\n");
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-session-archive'),
+                "--source-orbit-dir={$sourceOrbitDir}",
+                "--archive-root={$archiveRoot}",
+                '--timestamp=2026-07-01-100305',
+                '--slug=session-wrapper',
+                "--cwd={$cwd}",
+            ],
+            repo_path(),
+            [
+                'SOLO_PROCESS_ID' => false,
+                'SOLO_PROJECT_ID' => false,
+            ],
+        );
+
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $manifest = read_agent_session_archive_json(path: "{$archiveDir}/agent-sessions/manifest.json");
+
+        expect($summary)
+            ->toHaveKey('archive_dir', $archiveDir)
+            ->and($summary['agent_results'])
+            ->toBe([])
+            ->and($manifest['providers'])
+            ->toBe([])
+            ->and("{$archiveDir}/loop.md")
+            ->toBeFile();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('documents session archive directory names as local date time and feature slug', function (): void {
+    $archiveName = '2026-07-01-100305-session-archive';
+    $archivePattern = '/^\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9]+(?:-[a-z0-9]+)*$/';
+
+    expect($archiveName)->toMatch($archivePattern);
+
+    collect([
+        '2026-07-01-session-archive',
+        '2026-07-01T1003-session-archive',
+        '20260701100305-session-archive',
+        '20260701T080305Z-session-archive',
+        '2026-07-01-100305Z-session-archive',
+    ])->each(function (string $archiveName) use ($archivePattern): void {
+        expect($archiveName)->not->toMatch($archivePattern);
+    });
+
+    foreach (session_archive_contract_paths() as $path) {
+        $contents = file_get_contents(repo_path($path));
+        $normalizedContents = preg_replace(
+            pattern: '/\s+/',
+            replacement: ' ',
+            subject: $contents === false ? '' : $contents,
+        );
+
+        if ($normalizedContents === null) {
+            $normalizedContents = '';
+        }
+
+        expect($normalizedContents)
+            ->toContain('YYYY-MM-DD-HHMMSS-<feature-slug>')
+            ->toContain(
+                'Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.',
+            );
+    }
+});
+
 function make_agent_session_archive_temp_dir(string $suffix): string
 {
     $temp = sys_get_temp_dir().'/orbit-agent-session-archive-'.$suffix.'-'.bin2hex(random_bytes(6));
@@ -126,6 +340,20 @@ function make_agent_session_archive_temp_dir(string $suffix): string
     mkdir($temp, recursive: true);
 
     return $temp;
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_contract_paths(): array
+{
+    return [
+        'HARNESS.md',
+        'LOOP.md.example',
+        'harness-signals/README.md',
+        '.agents/skills/handling-feature-requests/SKILL.md',
+        '.agents/skills/implementing-features/SKILL.md',
+    ];
 }
 
 function remove_agent_session_archive_temp_dir(string $path): void
@@ -190,7 +418,14 @@ function write_codex_fixture(string $home, string $cwd, string $marker): void
     write_jsonl("{$codexDir}/rollout-2026-07-01T08-00-00-codex-fixture.jsonl", [
         [
             'type' => 'session_meta',
-            'payload' => ['id' => 'codex-session-1', 'cwd' => $cwd, 'timestamp' => '2026-07-01T08:00:05Z'],
+            'payload' => [
+                'id' => 'codex-session-1',
+                'cwd' => $cwd,
+                'timestamp' => '2026-07-01T08:00:05Z',
+                'base_instructions' => [
+                    'text' => 'Codex base instructions '.$marker,
+                ],
+            ],
         ],
         [
             'type' => 'response_item',
@@ -260,8 +495,9 @@ function write_grok_fixture(string $home, string $cwd, string $marker): void
     $grokDir = "{$home}/.grok/sessions/".rawurlencode($cwd).'/grok-session-1';
     mkdir($grokDir, recursive: true);
     write_jsonl("{$grokDir}/chat_history.jsonl", [
-        ['role' => 'user', 'content' => 'Grok user '.$marker],
-        ['role' => 'assistant', 'content' => 'Grok assistant response'],
+        ['type' => 'system', 'content' => 'Synthetic Grok system prompt'],
+        ['type' => 'user', 'content' => [['type' => 'text', 'text' => 'Grok user '.$marker]]],
+        ['type' => 'assistant', 'content' => [['type' => 'text', 'text' => 'Grok assistant response']]],
     ]);
     write_jsonl("{$grokDir}/events.jsonl", [['event' => 'tool', 'message' => $marker]]);
     write_jsonl("{$grokDir}/updates.jsonl", [['update' => 'done']]);
@@ -338,7 +574,7 @@ function codex_archive_spec(string $marker): array
         'slug' => 'codex-feature-101',
         'raw_files' => ['rollout-2026-07-01T08-00-00-codex-fixture.jsonl'],
         'expected_usage' => ['input_tokens' => 10, 'output_tokens' => 5, 'reasoning_tokens' => 2, 'total_tokens' => 17],
-        'expected_messages' => ['Codex user '.$marker, 'Codex assistant response'],
+        'expected_messages' => ['Codex base instructions '.$marker, 'Codex user '.$marker, 'Codex assistant response'],
     ];
 }
 
@@ -393,7 +629,7 @@ function grok_archive_spec(string $marker): array
             'updates.jsonl',
         ],
         'expected_usage' => ['context_tokens_used' => 321, 'tool_call_count' => 4, 'session_duration_seconds' => 55],
-        'expected_messages' => ['Grok user '.$marker, 'Grok assistant response'],
+        'expected_messages' => ['Synthetic Grok system prompt', 'Grok user '.$marker, 'Grok assistant response'],
     ];
 }
 

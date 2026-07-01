@@ -56,7 +56,7 @@ $appDataDir = (string) ($options['solo-app-data-dir'] ?? "{$home}/.config/solote
 $soloDb = (string) ($options['solo-db'] ?? "{$appDataDir}/solo.db");
 $soloCli = (string) ($options['solo-cli'] ?? defaultSoloCliPath());
 $onlyOk = array_key_exists('only-ok', $options);
-$targetProcessId = targetSoloProcessId($options);
+$targetProcessIds = targetSoloProcessIds($options);
 $processMetadataSource = 'fixture';
 
 if (isset($options['processes-json'])) {
@@ -70,38 +70,67 @@ if (isset($options['processes-json'])) {
 
     $processes = normalizeProcessListPayload($processes);
 
-    if ($targetProcessId !== null) {
-        $processes = filterProcessTree($processes, $targetProcessId);
+    if ($targetProcessIds !== []) {
+        $processes = filterProcessTrees($processes, $targetProcessIds);
     }
 } else {
-    if ($targetProcessId !== null) {
-        $rootProcess = loadProcessFromSoloCli($soloCli, $targetProcessId, $appDataDir);
+    if ($targetProcessIds !== []) {
+        $processes = [];
+        $seenProcessIds = [];
         $processMetadataSource = 'solo_cli';
 
-        if ($rootProcess === null) {
-            $rootProcess = loadProcessFromSoloDb($soloDb, $targetProcessId);
-            $processMetadataSource = 'solo_sqlite';
-        }
+        foreach ($targetProcessIds as $targetProcessId) {
+            $rootProcess = loadProcessFromSoloCli($soloCli, $targetProcessId, $appDataDir);
+            $rootProcessMetadataSource = 'solo_cli';
 
-        if ($rootProcess === null) {
-            fwrite(STDERR, "Could not load Solo process: {$targetProcessId}\n");
-            exit(2);
-        }
+            if ($rootProcess === null) {
+                $rootProcess = loadProcessFromSoloDb($soloDb, $targetProcessId);
+                $rootProcessMetadataSource = 'solo_sqlite';
+                $processMetadataSource = $processMetadataSource === 'solo_cli' ? 'solo_sqlite' : $processMetadataSource;
+            }
 
-        $projectId = normalizeOptionalInt($rootProcess['project_id'] ?? null);
-        $projectProcesses = $projectId === null ? null : loadProcessesFromSoloCli($soloCli, $projectId, $appDataDir);
+            if ($rootProcess === null) {
+                fwrite(STDERR, "Could not load Solo process: {$targetProcessId}\n");
+                exit(2);
+            }
 
-        if ($projectProcesses === null && $projectId !== null) {
-            $projectProcesses = loadProcessesFromSoloDb($soloDb, $projectId);
-            $processMetadataSource = 'solo_sqlite';
-        }
+            $projectId = normalizeOptionalInt($rootProcess['project_id'] ?? null);
+            $projectProcesses = $projectId === null ? null : loadProcessesFromSoloCli($soloCli, $projectId, $appDataDir);
 
-        $processes = $projectProcesses === null
-            ? [$rootProcess]
-            : filterProcessTree($projectProcesses, $targetProcessId);
+            if ($projectProcesses === null && $projectId !== null) {
+                $projectProcesses = loadProcessesFromSoloDb($soloDb, $projectId);
+                $rootProcessMetadataSource = 'solo_sqlite';
+                $processMetadataSource = $processMetadataSource === 'solo_cli' ? 'solo_sqlite' : $processMetadataSource;
+            }
 
-        if ($processes === []) {
-            $processes = [$rootProcess];
+            if ($rootProcessMetadataSource !== $processMetadataSource) {
+                $processMetadataSource = 'mixed';
+            }
+
+            $targetProcesses = $projectProcesses === null
+                ? [$rootProcess]
+                : filterProcessTree($projectProcesses, $targetProcessId);
+
+            if ($targetProcesses === []) {
+                $targetProcesses = [$rootProcess];
+            }
+
+            foreach ($targetProcesses as $process) {
+                $processId = normalizeOptionalInt($process['id'] ?? null);
+
+                if ($processId === null) {
+                    $processes[] = $process;
+
+                    continue;
+                }
+
+                if (isset($seenProcessIds[$processId])) {
+                    continue;
+                }
+
+                $seenProcessIds[$processId] = true;
+                $processes[] = $process;
+            }
         }
     } else {
         if (!shouldLoadSoloProject($options)) {
@@ -157,7 +186,7 @@ foreach ($processes as $process) {
 
     $startedAt = processStartedAt($process, $now);
     $processCwd = processCwd($process, $cwd);
-    $requireCwdMatch = $targetProcessId === null;
+    $requireCwdMatch = $targetProcessIds === [];
 
     $base = [
         'solo_process_id' => $process['id'] ?? null,
@@ -223,16 +252,40 @@ function shouldLoadSoloProject(array $options): bool
 
 /**
  * @param array<string, mixed> $options
+ *
+ * @return list<int>
  */
-function targetSoloProcessId(array $options): ?int
+function targetSoloProcessIds(array $options): array
 {
-    if (isset($options['solo-process-id']) && is_numeric($options['solo-process-id'])) {
-        return (int) $options['solo-process-id'];
+    if (isset($options['solo-process-id']) && is_string($options['solo-process-id'])) {
+        return normalizeProcessIdList($options['solo-process-id']);
     }
 
     $soloProcessId = getenv('SOLO_PROCESS_ID');
 
-    return is_string($soloProcessId) && ctype_digit($soloProcessId) ? (int) $soloProcessId : null;
+    return is_string($soloProcessId) ? normalizeProcessIdList($soloProcessId) : [];
+}
+
+/**
+ * @return list<int>
+ */
+function normalizeProcessIdList(string $value): array
+{
+    $ids = [];
+
+    foreach (preg_split('/[,\s]+/', $value) ?: [] as $part) {
+        if (!ctype_digit($part)) {
+            continue;
+        }
+
+        $id = (int) $part;
+
+        if ($id > 0 && !in_array($id, $ids, true)) {
+            $ids[] = $id;
+        }
+    }
+
+    return $ids;
 }
 
 function discoverSoloProjectId(string $soloCli, string $soloDb, string $cwd, string $appDataDir): ?int
@@ -787,6 +840,39 @@ function filterProcessTree(array $processes, int $rootProcessId): array
 }
 
 /**
+ * @param array<int, array<string, mixed>> $processes
+ * @param list<int> $rootProcessIds
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function filterProcessTrees(array $processes, array $rootProcessIds): array
+{
+    $filtered = [];
+    $seenProcessIds = [];
+
+    foreach ($rootProcessIds as $rootProcessId) {
+        foreach (filterProcessTree($processes, $rootProcessId) as $process) {
+            $processId = normalizeOptionalInt($process['id'] ?? null);
+
+            if ($processId === null) {
+                $filtered[] = $process;
+
+                continue;
+            }
+
+            if (isset($seenProcessIds[$processId])) {
+                continue;
+            }
+
+            $seenProcessIds[$processId] = true;
+            $filtered[] = $process;
+        }
+    }
+
+    return $filtered;
+}
+
+/**
  * @param array<string, mixed> $process
  */
 function processStartedAt(array $process, int $now): ?int
@@ -1002,6 +1088,12 @@ function extractCodexSession(
         foreach (jsonl($file) as $index => $row) {
             if (($row['type'] ?? null) === 'session_meta') {
                 $sessionMeta = $row;
+
+                $baseInstructionsMessage = codexBaseInstructionsMessage($row, $index);
+
+                if ($baseInstructionsMessage !== null) {
+                    $messages[] = $baseInstructionsMessage;
+                }
             }
 
             if (($row['type'] ?? null) === 'event_msg' && ($row['payload']['type'] ?? null) === 'token_count') {
@@ -1352,7 +1444,7 @@ function sessionDirContains(string $dir, string $needle): bool
  */
 function normalizeMessage(string $provider, array $row, string $source, int $sourceIndex, ?string $timestamp): ?array
 {
-    $role = $row['role'] ?? $row['author'] ?? $row['speaker'] ?? null;
+    $role = $row['role'] ?? $row['author'] ?? $row['speaker'] ?? roleFromMessageType($row['type'] ?? null);
     $content = $row['content'] ?? $row['text'] ?? $row['message'] ?? null;
 
     if (!is_string($role) || $content === null) {
@@ -1374,6 +1466,54 @@ function normalizeMessage(string $provider, array $row, string $source, int $sou
         'source' => $source,
         'source_index' => $sourceIndex,
     ];
+}
+
+/**
+ * @param array<string, mixed> $row
+ *
+ * @return array<string, mixed>|null
+ */
+function codexBaseInstructionsMessage(array $row, int $sourceIndex): ?array
+{
+    $payload = $row['payload'] ?? null;
+
+    if (!is_array($payload)) {
+        return null;
+    }
+
+    $baseInstructions = $payload['base_instructions'] ?? null;
+
+    if (!is_array($baseInstructions)) {
+        return null;
+    }
+
+    $contentText = contentToText($baseInstructions['text'] ?? null);
+
+    if ($contentText === null || $contentText === '') {
+        return null;
+    }
+
+    return [
+        'schema_version' => 1,
+        'provider' => 'codex',
+        'role' => 'system',
+        'content' => $contentText,
+        'timestamp' => timestampFromRow($row),
+        'source' => 'codex_session_meta_base_instructions',
+        'source_index' => $sourceIndex,
+    ];
+}
+
+function roleFromMessageType(mixed $type): ?string
+{
+    if (!is_string($type)) {
+        return null;
+    }
+
+    return match ($type) {
+        'system', 'developer', 'user', 'assistant', 'tool' => $type,
+        default => null,
+    };
 }
 
 function contentToText(mixed $content): ?string

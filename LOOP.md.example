@@ -7,11 +7,13 @@ do not commit `.orbit/`.
 When a feature has multiple slices, archive the completed active `.orbit/`
 session into the persistent project archive home before rewriting
 `.orbit/loop.md` at the start of the next slice. The default archive home is
-the primary checkout's `.orbit/sessions/<timestamp-feature-slug>/`; do not
-leave the soon-to-be-removed feature worktree as the only copy. Copy every
-active `.orbit/` entry except `.orbit/sessions/`. Keep durable feature history,
-slice outcomes, and ordering in the feature scratchpad and session archives.
-Keep code history in Git.
+the primary checkout's `.orbit/sessions/<timestamp-feature-slug>/`, named as
+`YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
+compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
+names. Do not leave the soon-to-be-removed feature worktree as the only copy.
+Copy every active `.orbit/` entry except `.orbit/sessions/`. Keep durable
+feature history, slice outcomes, and ordering in the feature scratchpad and
+session archives. Keep code history in Git.
 
 ## Feature Context
 
@@ -89,11 +91,14 @@ packets. After the slice or feature loop is complete, archive the active
 `.orbit/` session into the persistent project archive home before worktree
 cleanup or before rewriting `.orbit/loop.md` for a new slice. The default
 archive home is the primary checkout's
-`.orbit/sessions/<timestamp-feature-slug>/`. Preserve every active `.orbit/`
-entry except `.orbit/sessions/`, including `loop.md`, `.orbit/evidence/`,
-`.orbit/quality-gates/`, and `agent-sessions/` output from
-`bin/orbit-agent-session-archive` when agent session archiving is run. Provider
-session archives are grouped by LLM and process/session slug and contain
+`.orbit/sessions/<timestamp-feature-slug>/`, named as
+`YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
+compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
+names. Preserve every active `.orbit/` entry except `.orbit/sessions/`,
+including `loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, and
+`agent-sessions/` output from
+`bin/orbit-session-archive`. Provider session archives are grouped by LLM and
+process/session slug and contain
 `manifest.json`, `usage.json`, `messages.jsonl`, and raw provider files for
 supported providers. Antigravity remains an explicit unsupported/missing
 manifest entry until a reliable local session-file contract is known.

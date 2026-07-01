@@ -68,7 +68,10 @@ workspaces or nodes.
   features. The archive home must survive feature worktree cleanup; by default
   it is the primary checkout's `.orbit/sessions/` directory. Each archive lives
   at `.orbit/sessions/<timestamp-feature-slug>/` and is created before worktree
-  cleanup and before rewriting `.orbit/loop.md` for a new slice.
+  cleanup and before rewriting `.orbit/loop.md` for a new slice. Use
+  `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time, for example
+  `2026-07-01-100305-session-archive`. Do not use compact timestamps, `T`
+  separators, `Z`, or UTC offsets in archive directory names.
 
 Do not commit `.orbit/`. Commit only the durable guardrail that absorbs a
 recurring signal: harness docs, skills, review personas, product/testing docs,
@@ -82,26 +85,29 @@ and before rewriting `.orbit/loop.md` for the next slice. Copy every active
 `.orbit/` entry except `.orbit/sessions/` into the persistent project archive
 home, normally the primary checkout's
 `.orbit/sessions/<timestamp-feature-slug>/`, where
-`<timestamp-feature-slug>` is a sortable timestamp plus a short feature slug.
-Do not leave the soon-to-be-removed feature worktree's `.orbit/sessions/` as
-the only archive copy.
+`<timestamp-feature-slug>` uses `YYYY-MM-DD-HHMMSS-<feature-slug>` in the
+checkout's local time. Do not use compact timestamps, `T` separators, `Z`, or
+UTC offsets in archive directory names. Do not leave the soon-to-be-removed
+feature worktree's `.orbit/sessions/` as the only archive copy.
 
 A session archive should preserve at minimum:
 
 - `loop.md` (the completed slice's final packet)
 - `.orbit/evidence/`
 - `.orbit/quality-gates/`
-- `agent-sessions/` when agent session archive tooling is run
+- `agent-sessions/` with the provider session files that backed the loop
 
-Use `bin/orbit-agent-session-archive` with an explicit archive directory such
-as `.orbit/sessions/<timestamp-feature-slug>/agent-sessions/` to preserve the
-LLM session files behind the loop. The helper keeps the existing token-usage
-summary behavior, safely returns `[]` when no explicit Solo/process/project or
-fixture context is available, and writes provider-grouped archives when
-`--archive-dir` is supplied. Codex, Claude, and Grok archives include
-`manifest.json`, `usage.json`, `messages.jsonl`, and `raw/` copies of the
-session files used to derive them. Antigravity is represented explicitly as
-`unsupported` until a reliable local session-file contract is known.
+Use `bin/orbit-session-archive` to create the session archive. It copies every
+active `.orbit/` entry except `.orbit/sessions/`, then runs
+`bin/orbit-agent-session-archive` into
+`.orbit/sessions/2026-07-01-100305-session-archive/agent-sessions/`. The
+provider helper keeps the existing token-usage summary behavior, safely writes
+an empty manifest when no explicit Solo/process/project context is available,
+and writes provider-grouped archives when session files are found. Codex,
+Claude, and Grok archives include `manifest.json`, `usage.json`,
+`messages.jsonl`, and `raw/` copies of the session files used to derive them.
+Antigravity is represented explicitly as `unsupported` until a reliable local
+session-file contract is known.
 
 Archive creation must exclude the existing `.orbit/sessions/` tree so archives
 do not recurse into prior session copies.
@@ -376,11 +382,13 @@ Within a feature worktree, `.orbit/loop.md` is the current-slice contract, not
 the feature history. Before rewriting it for the next slice, archive the
 completed active `.orbit/` state into the persistent project archive home,
 normally the primary checkout's `.orbit/sessions/<timestamp-feature-slug>/`,
-and exclude `.orbit/sessions/` from the copy. Keep prior slice outcomes in the
-feature scratchpad, session archives, and the actual code history in Git. The
-top of `.orbit/loop.md` should name the feature scratchpad, summarize completed
-slices in one line each, and identify the current slice so a worker knows the
-branch may already contain earlier feature work.
+named as `YYYY-MM-DD-HHMMSS-<feature-slug>` in local time, and exclude
+`.orbit/sessions/` from the copy. Do not use compact timestamps, `T`
+separators, `Z`, or UTC offsets in archive directory names. Keep prior slice
+outcomes in the feature scratchpad, session archives, and the actual code
+history in Git. The top of `.orbit/loop.md` should name the feature scratchpad,
+summarize completed slices in one line each, and identify the current slice so a
+worker knows the branch may already contain earlier feature work.
 
 If a multi-slice feature reaches worker dispatch without a feature roadmap
 scratchpad link, or with only a thin cross-project link that does not mirror the
@@ -404,9 +412,11 @@ Merge and cleanup are separate boundaries.
 - Worktree cleanup happens only after that audit is complete or the user
   explicitly approves cleanup. Archive the completed active `.orbit/` session
   into the persistent project archive home before cleanup, normally the primary
-  checkout's `.orbit/sessions/<timestamp-feature-slug>/`, excluding
-  `.orbit/sessions/` from the archive copy. Follow the Merge Boundary Gate above
-  before running cleanup.
+  checkout's `.orbit/sessions/<timestamp-feature-slug>/`, named as
+  `YYYY-MM-DD-HHMMSS-<feature-slug>` in local time. Do not use compact
+  timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.
+  Exclude `.orbit/sessions/` from the archive copy. Follow the Merge Boundary
+  Gate above before running cleanup.
 - Feature completion cleanup happens only after the user confirms the live
   topology works as expected, or explicitly says the feature can be considered
   complete. Then archive the feature scratchpad, close or resolve related Solo

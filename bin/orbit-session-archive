@@ -1,0 +1,372 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Archive a completed active .orbit session and preserve related provider
+ * session files under the same persisted session directory.
+ */
+
+$options = getopt('', [
+    'source-orbit-dir:',
+    'archive-dir:',
+    'archive-root:',
+    'slug:',
+    'timestamp:',
+    'cwd:',
+    'home:',
+    'marker:',
+    'processes-json:',
+    'solo-process-id:',
+    'solo-project-id:',
+    'solo-app-data-dir:',
+    'solo-db:',
+    'solo-cli:',
+    'max-start-distance:',
+    'only-ok',
+    'discover-by-cwd',
+    'help',
+]);
+
+if (array_key_exists('help', $options)) {
+    fwrite(STDOUT, <<<'EOF'
+        Usage:
+          bin/orbit-session-archive [--archive-dir=<path> | --slug=<slug>] [agent session options]
+
+        Options:
+          --source-orbit-dir=<path>     Active .orbit directory to archive. Defaults to <cwd>/.orbit.
+          --archive-dir=<path>          Exact destination session archive directory.
+          --archive-root=<path>         Root directory for generated archives. Defaults to the primary checkout's .orbit/sessions.
+          --slug=<slug>                 Short feature slug when --archive-dir is omitted.
+          --timestamp=<value>           Timestamp prefix when --archive-dir is omitted. Defaults to current local time as YYYY-MM-DD-HHMMSS.
+          --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
+
+        Provider session options are forwarded to bin/orbit-agent-session-archive:
+          --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
+          --home, --marker, --solo-app-data-dir, --solo-db, --solo-cli,
+          --max-start-distance, --only-ok.
+
+        If no explicit provider process context is supplied, this command scans
+        <source-orbit-dir>/loop.md for Solo process ids and passes them as a
+        comma-separated --solo-process-id list. Without discovered process ids,
+        agent session archiving safely writes an empty manifest.
+        EOF);
+
+    exit(0);
+}
+
+$cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
+$sourceOrbitDir = isset($options['source-orbit-dir'])
+    ? rtrim((string) $options['source-orbit-dir'], '/')
+    : "{$cwd}/.orbit";
+$sourceOrbitDir = realpath($sourceOrbitDir) ?: $sourceOrbitDir;
+
+if (!is_dir($sourceOrbitDir)) {
+    fwrite(STDERR, "Source .orbit directory does not exist: {$sourceOrbitDir}\n");
+    exit(2);
+}
+
+$archiveDir = archiveDirectory($options, $cwd, $sourceOrbitDir);
+
+if (directoryHasEntries($archiveDir)) {
+    fwrite(STDERR, "Archive directory already exists and is not empty: {$archiveDir}\n");
+    exit(2);
+}
+
+$copiedEntries = copyActiveOrbitEntries($sourceOrbitDir, $archiveDir);
+$loopProcessIds = shouldDiscoverLoopProcessIds($options) ? loopSoloProcessIds("{$sourceOrbitDir}/loop.md") : [];
+$agentResults = runAgentSessionArchive($options, $cwd, $archiveDir, $loopProcessIds);
+
+$summary = [
+    'schema_version' => 1,
+    'generated_at' => gmdate('c'),
+    'source_orbit_dir' => $sourceOrbitDir,
+    'archive_dir' => $archiveDir,
+    'agent_sessions_dir' => "{$archiveDir}/agent-sessions",
+    'copied_entries' => $copiedEntries,
+    'discovered_solo_process_ids' => $loopProcessIds,
+    'agent_results' => $agentResults,
+];
+
+writeJsonFile("{$archiveDir}/orbit-session-archive.json", $summary);
+
+echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
+
+/**
+ * @param array<string, mixed> $options
+ */
+function archiveDirectory(array $options, string $cwd, string $sourceOrbitDir): string
+{
+    if (isset($options['archive-dir'])) {
+        return rtrim((string) $options['archive-dir'], '/');
+    }
+
+    $archiveRoot = isset($options['archive-root'])
+        ? rtrim((string) $options['archive-root'], '/')
+        : defaultArchiveRoot($cwd, $sourceOrbitDir);
+    $timestamp = archiveTimestamp($options);
+    $slug = isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd);
+
+    return "{$archiveRoot}/{$timestamp}-" . slugify($slug);
+}
+
+/**
+ * @param array<string, mixed> $options
+ */
+function archiveTimestamp(array $options): string
+{
+    $timestamp = isset($options['timestamp']) ? (string) $options['timestamp'] : date('Y-m-d-His');
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}$/', $timestamp) === 1) {
+        return $timestamp;
+    }
+
+    fwrite(STDERR, "Archive timestamp must use YYYY-MM-DD-HHMMSS in local time: {$timestamp}\n");
+    exit(2);
+}
+
+function defaultArchiveRoot(string $cwd, string $sourceOrbitDir): string
+{
+    $worktreeMarker = '/.worktrees/';
+    $worktreeOffset = strpos($cwd, $worktreeMarker);
+
+    if ($worktreeOffset !== false) {
+        $primaryCheckout = substr($cwd, 0, $worktreeOffset);
+
+        if ($primaryCheckout !== '' && is_dir($primaryCheckout)) {
+            return "{$primaryCheckout}/.orbit/sessions";
+        }
+    }
+
+    return "{$sourceOrbitDir}/sessions";
+}
+
+function defaultArchiveSlug(string $cwd): string
+{
+    $branch = trim((string) shell_exec('git -C ' . escapeshellarg($cwd) . ' branch --show-current 2>/dev/null'));
+
+    return $branch !== '' ? $branch : basename($cwd);
+}
+
+function directoryHasEntries(string $directory): bool
+{
+    if (!is_dir($directory)) {
+        return false;
+    }
+
+    $iterator = new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS);
+
+    return $iterator->valid();
+}
+
+/**
+ * @return list<string>
+ */
+function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): array
+{
+    ensureDirectory($archiveDir);
+    $copiedEntries = [];
+    $iterator = new DirectoryIterator($sourceOrbitDir);
+
+    foreach ($iterator as $entry) {
+        if ($entry->isDot()) {
+            continue;
+        }
+
+        $name = $entry->getFilename();
+
+        if ($name === 'sessions') {
+            continue;
+        }
+
+        $source = $entry->getPathname();
+        $target = "{$archiveDir}/{$name}";
+
+        if ($entry->isDir()) {
+            copyDirectory($source, $target);
+        } elseif ($entry->isFile()) {
+            ensureDirectory(dirname($target));
+            copy($source, $target);
+        } else {
+            continue;
+        }
+
+        $copiedEntries[] = $name;
+    }
+
+    sort($copiedEntries, SORT_STRING);
+
+    return $copiedEntries;
+}
+
+function copyDirectory(string $source, string $target): void
+{
+    ensureDirectory($target);
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+
+    foreach ($iterator as $entry) {
+        $relativePath = substr($entry->getPathname(), strlen($source) + 1);
+        $destination = "{$target}/{$relativePath}";
+
+        if ($entry->isDir()) {
+            ensureDirectory($destination);
+
+            continue;
+        }
+
+        if ($entry->isFile()) {
+            ensureDirectory(dirname($destination));
+            copy($entry->getPathname(), $destination);
+        }
+    }
+}
+
+/**
+ * @param array<string, mixed> $options
+ */
+function shouldDiscoverLoopProcessIds(array $options): bool
+{
+    if (
+        isset($options['processes-json'])
+        || isset($options['solo-process-id'])
+        || isset($options['solo-project-id'])
+        || array_key_exists('discover-by-cwd', $options)
+    ) {
+        return false;
+    }
+
+    return getenv('SOLO_PROCESS_ID') === false && getenv('SOLO_PROJECT_ID') === false;
+}
+
+/**
+ * @return list<int>
+ */
+function loopSoloProcessIds(string $loopPath): array
+{
+    if (!is_file($loopPath)) {
+        return [];
+    }
+
+    $content = (string) file_get_contents($loopPath);
+    $ids = [];
+    $patterns = [
+        '/\bSolo[^\n]*\bprocess(?:\s+id)?\s*`?(\d+)`?/i',
+        '/\b(?:worker|reviewer|analyzer|orchestrator)[^\n]*\bprocess(?:\s+id)?\s*`?(\d+)`?/i',
+        '/\bprocess\s+id\s*`?(\d+)`?/i',
+    ];
+
+    foreach ($patterns as $pattern) {
+        preg_match_all($pattern, $content, $matches);
+
+        foreach ($matches[1] ?? [] as $match) {
+            $id = (int) $match;
+
+            if ($id > 0 && !in_array($id, $ids, true)) {
+                $ids[] = $id;
+            }
+        }
+    }
+
+    sort($ids, SORT_NUMERIC);
+
+    return $ids;
+}
+
+/**
+ * @param array<string, mixed> $options
+ * @param list<int> $loopProcessIds
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function runAgentSessionArchive(array $options, string $cwd, string $archiveDir, array $loopProcessIds): array
+{
+    $command = [
+        PHP_BINARY,
+        __DIR__ . '/orbit-agent-session-archive',
+        "--archive-dir={$archiveDir}/agent-sessions",
+        "--cwd={$cwd}",
+    ];
+
+    foreach ([
+        'processes-json',
+        'solo-process-id',
+        'solo-project-id',
+        'solo-app-data-dir',
+        'solo-db',
+        'solo-cli',
+        'home',
+        'marker',
+        'max-start-distance',
+    ] as $option) {
+        if (isset($options[$option])) {
+            $command[] = "--{$option}={$options[$option]}";
+        }
+    }
+
+    if (!isset($options['solo-process-id']) && $loopProcessIds !== []) {
+        $command[] = '--solo-process-id=' . implode(',', $loopProcessIds);
+    }
+
+    foreach (['only-ok', 'discover-by-cwd'] as $flag) {
+        if (array_key_exists($flag, $options)) {
+            $command[] = "--{$flag}";
+        }
+    }
+
+    [$exitCode, $output] = runCommand($command);
+
+    if ($exitCode !== 0) {
+        fwrite(STDERR, $output . PHP_EOL);
+        exit($exitCode);
+    }
+
+    $payload = json_decode($output, true);
+
+    return is_array($payload) ? $payload : [];
+}
+
+/**
+ * @param list<string> $command
+ *
+ * @return array{0: int, 1: string}
+ */
+function runCommand(array $command): array
+{
+    $output = [];
+    $exitCode = 0;
+    exec(implode(' ', array_map('escapeshellarg', $command)) . ' 2>&1', $output, $exitCode);
+
+    return [$exitCode, implode("\n", $output)];
+}
+
+function slugify(string $value): string
+{
+    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
+    $slug = trim($slug, '-');
+
+    return $slug === '' ? 'session' : $slug;
+}
+
+function writeJsonFile(string $path, array $payload): void
+{
+    ensureDirectory(dirname($path));
+    file_put_contents(
+        $path,
+        json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL,
+    );
+}
+
+function ensureDirectory(string $directory): void
+{
+    if (is_dir($directory)) {
+        return;
+    }
+
+    if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
+        throw new RuntimeException("Unable to create directory: {$directory}");
+    }
+}
