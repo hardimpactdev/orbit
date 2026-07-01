@@ -9,6 +9,7 @@ use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\OrbitConfigStoreException;
 use App\Services\OrbitConfigStore;
+use App\Support\Prompts\DataList;
 
 final class ToolListCommand extends GatewayCommand
 {
@@ -46,7 +47,7 @@ final class ToolListCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        new ToolListDataListRenderer($this)->render($tools);
+        $this->renderTools($tools);
 
         return self::SUCCESS;
     }
@@ -78,5 +79,69 @@ final class ToolListCommand extends GatewayCommand
         }
 
         return array_values(array_filter($tools, is_array(...)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $tools
+     */
+    private function renderTools(array $tools): void
+    {
+        new DataList($this->toolDataListGroups($tools))->display();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $tools
+     * @return list<array{
+     *     heading: string,
+     *     items: list<array{
+     *         label: string,
+     *         properties: array<string, string>,
+     *     }>,
+     * }>
+     */
+    private function toolDataListGroups(array $tools): array
+    {
+        $grouped = [];
+
+        foreach ($tools as $tool) {
+            $node = $this->toolString($tool, 'node');
+            $grouped[$node][] = $tool;
+        }
+
+        ksort($grouped);
+
+        return array_map(
+            fn (string $node, array $nodeTools): array => [
+                'heading' => "Node: {$node}",
+                'items' => array_map(fn (array $tool): array => [
+                    'label' => $this->toolString($tool, 'name'),
+                    'properties' => [
+                        'Expected' => $this->toolString($tool, 'expected_state'),
+                        'Managed' => $this->toolString($tool, 'managed'),
+                        'Version' => $this->toolString($tool, 'version'),
+                    ],
+                ], $nodeTools),
+            ],
+            array_keys($grouped),
+            array_values($grouped),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $tool
+     */
+    private function toolString(array $tool, string $key): string
+    {
+        $value = $tool[$key] ?? null;
+
+        if (is_bool($value)) {
+            return $value ? 'yes' : 'no';
+        }
+
+        if (is_scalar($value) && (string) $value !== '') {
+            return (string) $value;
+        }
+
+        return '—';
     }
 }

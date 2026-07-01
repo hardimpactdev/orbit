@@ -40,17 +40,28 @@ These rules govern all uses of `data-list` in Orbit commands.
 
 ## Implementation
 
-Render with command output lines from the human renderer path. No Orbit wrapper
-trait is required for the basic case.
+Render with Orbit's Prompts-backed data-list component. Do not hand-roll data
+lists with `$this->line()` indentation; that produces plain text, not the
+documented component.
 
 ## Example
 
 ```php
-$this->line('Node: app-1');
-$this->line('  composer');
-$this->line('    Expected: installed');
-$this->line('    Managed: yes');
-$this->line('    Version: —');
+(new DataList([
+    [
+        'heading' => 'Node: app-1',
+        'items' => [
+            [
+                'label' => 'composer',
+                'properties' => [
+                    'Expected' => 'installed',
+                    'Managed' => 'yes',
+                    'Version' => '—',
+                ],
+            ],
+        ],
+    ],
+]))->display();
 ```
 
 ## Reference Implementation
