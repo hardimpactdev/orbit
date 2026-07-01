@@ -36,6 +36,9 @@ manifests.
 - GitHub release tags and release assets are created only after live candidate
   acceptance and explicit human approval to publish. A successful candidate
   `update:all` is not by itself approval to create a GitHub release.
+- If the user requests a live artifact release with no GitHub release, stop
+  after live candidate acceptance. Do not create a GitHub tag, publish a GitHub
+  release, or move the final GHCR version tag in that mode.
 - The GitHub Actions release workflow must verify the promoted
   `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-release-manifest.json`, and
   digest-pinned `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image, then
@@ -47,10 +50,15 @@ manifests.
 - Live topology doctor status is the release safety baseline. Capture it before
   publishing a new release so post-`update:all` doctor output can be compared
   against known pre-existing drift.
-- No release may be published without retained topology proof that the release
-  candidate artifacts are functional. The proof must apply to the target
-  version and commit being released, not an older branch, previous artifact set,
-  or stale topology.
+- Candidate artifacts are published from a commit already reachable from
+  `origin/main`. Merge and push the release VERSION commit before artifact
+  publication, then record the release worktree commit, primary `main` commit,
+  `origin/main` commit, and `VERSION`.
+- Topology-specific retained-environment verification is outside this release
+  workflow. If the release scope depends on that evidence, complete it before
+  starting this skill and carry only the evidence reference into the release
+  notes. Do not acquire or troubleshoot retained environments during the
+  artifact publication flow.
 
 ## Workflow
 
@@ -65,19 +73,59 @@ manifests.
    bin/orbit-gateway-pest --compact tests/Feature/Release tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php
    ```
 
-5. Capture retained topology release-candidate proof before publishing anything.
-   Without passing retained topology proof, stop; do not merge, tag, or publish
-   a GitHub release. Record the topology id/kind, candidate version, manifest
-   commit, installed binary/image paths or digests, exact commands, and terminal
-   or artifact evidence. E2E artifact preparation output is not proof by itself.
+5. Commit the version bump, then run the broad quality gate before publishing
+   candidate artifacts:
 
-6. Build and publish the release candidate artifacts once. Use the central
-   artifact store for files and GHCR for the gateway image. Do not use S3
+   ```bash
+   version="$(bin/orbit-version)"
+   git add VERSION
+   git commit -m "Bump version to ${version}"
+   composer quality-check
+   composer quality-gate:final-check
+   ```
+
+6. Merge the release worktree branch back to primary `main`, push `main`, and
+   prove the pushed source identity before uploading candidate bytes:
+
+   ```bash
+   version="$(bin/orbit-version)"
+   release_branch="$(git branch --show-current)"
+   release_commit="$(git rev-parse HEAD)"
+   git status --short --branch
+
+   primary_checkout="${ORBIT_PRIMARY_CHECKOUT:-${HOME}/orbit}"
+   git -C "$primary_checkout" fetch origin
+   git -C "$primary_checkout" status --short --branch
+   (cd "$primary_checkout" && bin/orbit-feature-finalization-check git merge "$release_branch")
+   git -C "$primary_checkout" push origin main
+
+   primary_main_commit="$(git -C "$primary_checkout" rev-parse main)"
+   origin_main_commit="$(git -C "$primary_checkout" ls-remote origin refs/heads/main | awk '{ print $1 }')"
+   if [ "$release_commit" != "$primary_main_commit" ] || [ "$release_commit" != "$origin_main_commit" ]; then
+     echo "Release commit, primary main, and origin/main must match before artifact publication." >&2
+     exit 1
+   fi
+   ```
+
+   When the release is Mini-owned, run this proof on Mini and record the Mini
+   release worktree path, branch, commit, `origin/main` commit, and clean/dirty
+   status. Do not infer Mini state from another machine.
+
+7. Build and publish the release candidate artifacts once from the pushed
+   source commit. Use the central artifact store for files and GHCR for the
+   gateway image. Do not use S3
    image tarballs as the normal gateway image path; Docker Swarm must consume an
    OCI registry reference.
 
    ```bash
    version="$(bin/orbit-version)"
+   source_commit="$(git rev-parse HEAD)"
+   origin_main_commit="$(git ls-remote origin refs/heads/main | awk '{ print $1 }')"
+   if [ "$source_commit" != "$origin_main_commit" ]; then
+     echo "Candidate artifacts must be built from the pushed origin/main commit." >&2
+     exit 1
+   fi
+
    build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
    candidate_tag="${version}-candidate-${build_id}"
    candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
@@ -138,8 +186,18 @@ manifests.
      .
 
    gh auth status -h github.com
-   gh auth token | docker login ghcr.io -u "$(gh api user -q .login)" --password-stdin
-   docker push "$candidate_image" | tee "${candidate_dir}/gateway-image-push.log"
+   ghcr_docker_config="$(mktemp -d)"
+   trap 'rm -rf "$ghcr_docker_config"' EXIT
+   gh auth token \
+     | DOCKER_CONFIG="$ghcr_docker_config" docker login ghcr.io \
+       -u "$(gh api user -q .login)" \
+       --password-stdin
+
+   DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" \
+     | tee "${candidate_dir}/gateway-image-push.log"
+   rm -rf "$ghcr_docker_config"
+   trap - EXIT
+
    gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${candidate_dir}/gateway-image-push.log" | tail -1)"
    if [ -z "$gateway_digest" ]; then
      echo "Failed to capture the pushed gateway image digest." >&2
@@ -197,24 +255,23 @@ manifests.
    manifests, run `orbit manifest:remove` to restore the configured default
    release manifest source.
 
-7. Run the broad quality gate before tagging:
-
-   ```bash
-   composer quality-check
-   ```
-
 8. Capture live topology doctor status before publishing. Record the exact
    command, timestamp, target topology, and result summary in the release
    report. Existing drift does not necessarily block the release, but it must be
    known before `update:all` so new regressions are visible.
 9. Run live topology acceptance against the activated candidate channel from the
-   operator node:
+   operator node. Prefer the source CLI in the release worktree so the update
+   command definitely understands the candidate manifest contract. If you use
+   an installed `orbit`, first prove it is current enough and actually reads
+   the selected candidate manifest.
 
    ```bash
    version="$(bin/orbit-version)"
-   orbit update:all
-   orbit doctor
-   orbit node:list
+   ORBIT_RELEASE_MANIFEST_URL="$candidate_channel_manifest_url" ./apps/cli/orbit update:all --stream-json
+   orbit activity:show <activity-id> --json
+   orbit gateway:status --json
+   orbit doctor --all --json
+   orbit node:list --json
    ```
 
 10. Confirm:
@@ -227,11 +284,12 @@ manifests.
       pre-release baseline;
     - `orbit node:list` succeeds after the update.
 
-11. Stop and ask for explicit human approval to publish the accepted candidate
-    to GitHub. Do not create a GitHub release, push a `v<VERSION>` tag, upload
-    GitHub release assets, or move the final GHCR version tag until approval is
-    given for the candidate identified by `build_id`, commit, CLI hashes, and
-    gateway digest.
+11. If the user requested no GitHub release, stop here after recording the live
+    acceptance evidence. Otherwise, stop and ask for explicit human approval to
+    publish the accepted candidate to GitHub. Do not create a GitHub release,
+    push a `v<VERSION>` tag, upload GitHub release assets, or move the final
+    GHCR version tag until approval is given for the candidate identified by
+    `build_id`, commit, CLI hashes, and gateway digest.
 
 12. After approval, promote the accepted gateway image digest to the final GHCR
     version tag without rebuilding:
@@ -272,13 +330,12 @@ manifests.
      --output="orbit-release-manifest.json"
    ```
 
-14. Merge the worktree branch back to `main`, push `main`, then create a draft
-    release, attach the tested files, and publish the draft. The release workflow
-    runs on the `release.published` event, so a tag push alone is not enough:
+14. Create a draft release, attach the tested files, and publish the draft. The
+    release workflow runs on the `release.published` event, so a tag push alone
+    is not enough:
 
    ```bash
    version="$(bin/orbit-version)"
-   git push origin main
 
    gh release create "v${version}" \
      --target main \
@@ -315,10 +372,12 @@ manifests.
     feasible. For intentional or pre-existing live-topology migration work,
     create scoped follow-up tasks with the before/after doctor evidence.
 
-The release is not eligible to publish until release-candidate retained
-topology proof and live candidate `update:all` acceptance pass. It is not
-complete until the GitHub workflow verifies the promoted assets and publishes
-the split package repos.
+GitHub publication is not eligible until live candidate `update:all`
+acceptance passes and the human approves the accepted build id, commit, CLI
+hashes, and gateway digest. A no-GitHub live artifact release is complete when
+the live acceptance evidence is recorded and the no-GitHub boundary is explicit.
+A GitHub release is not complete until the GitHub workflow verifies the
+promoted assets and publishes the split package repos.
 
 ## Failure Handling
 
@@ -332,6 +391,18 @@ the split package repos.
   `orbit-gateway` container package public before accepting the release. A
   credentialed gateway pre-pull is only a temporary live-diagnosis workaround,
   not release acceptance.
+- If Mini's Docker credential helper fails or asks for interaction, use a
+  helper-free temporary `DOCKER_CONFIG` for `docker login` and `docker push`.
+  Remove it after the push and verify no auth token strings were written into
+  evidence directories.
 - If workload node updates fail, inspect the durable operation error first.
   Workload fan-out failures should fail before final verification and include
   per-node results.
+- If live `update:all` was started by an old installed operator CLI and the
+  operation did not use the candidate manifest, stop that follower, inspect the
+  durable operation/activity, and rerun acceptance from the release worktree
+  source CLI with `ORBIT_RELEASE_MANIFEST_URL` set to the candidate channel.
+- If `update:all` reports `update_lease_conflict`, inspect the existing
+  operation run and wait for the lease to expire unless you can prove the lease
+  belongs to a stale failed release attempt. Do not start overlapping fleet
+  updates blindly.
