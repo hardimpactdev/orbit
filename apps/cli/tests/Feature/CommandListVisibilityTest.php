@@ -12,12 +12,20 @@ function orbitCommandList(): array
 {
     /** @var array<string, mixed>|null $commandList */
     static $commandList = null;
+    static $configPath = null;
 
     if ($commandList !== null) {
         return $commandList;
     }
 
-    $process = new Process([PHP_BINARY, 'orbit', 'list', '--format=json'], base_path());
+    if ($configPath === null) {
+        $configPath = orbit_test_config_path(prefix: 'orbit-command-list-base-');
+        unlink_orbit_test_file($configPath);
+    }
+
+    $process = new Process([PHP_BINARY, 'orbit', 'list', '--format=json'], base_path(), [
+        'ORBIT_CONFIG_PATH' => $configPath,
+    ]);
     $process->run();
 
     expect($process->getExitCode())->toBe(0, 'orbit list --format=json failed: '.$process->getErrorOutput());

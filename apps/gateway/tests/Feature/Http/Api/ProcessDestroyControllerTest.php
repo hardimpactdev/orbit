@@ -88,7 +88,7 @@ describe('ProcessDestroyController', function (): void {
             ->create([
                 'name' => 'opencode-server',
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
             ]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

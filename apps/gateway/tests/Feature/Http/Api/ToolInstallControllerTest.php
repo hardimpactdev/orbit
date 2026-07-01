@@ -100,7 +100,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/opencode-server/install',
+            '/api/tools/opencode-cli/install',
             [
                 'node' => 'app-oc-1',
             ],
@@ -111,11 +111,20 @@ describe('ToolInstallController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.tool.name', 'opencode-server')
+            ->assertJsonPath('success.data.tool.name', 'opencode-cli')
             ->assertJsonPath('success.data.tool.process.name', 'opencode-server')
             ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.tool.process.tool', 'opencode')
+            ->assertJsonPath('success.data.tool.process.tool', 'opencode-cli')
             ->assertJsonPath('success.data.tool.process.action', 'configured');
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'opencode-cli')
+            ->first();
+
+        expect($tool)
+            ->not
+            ->toBeNull();
 
         $process = DB::table('processes')
             ->where('node_id', $node->id)
@@ -130,7 +139,7 @@ describe('ToolInstallController', function (): void {
             ->and($process->runtime)
             ->toBe('systemd')
             ->and($process->tool)
-            ->toBe('opencode');
+            ->toBe('opencode-cli');
     });
 
     it('skips process configuration when with_process is false', function (): void {
@@ -142,7 +151,7 @@ describe('ToolInstallController', function (): void {
 
         $response = $this->call(
             'POST',
-            '/api/tools/opencode-server/install',
+            '/api/tools/opencode-cli/install',
             [
                 'node' => 'app-oc-2',
                 'with_process' => false,
@@ -170,9 +179,9 @@ describe('ToolInstallController', function (): void {
         $payload = ['node' => 'app-oc-3'];
         $headers = ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP];
 
-        $this->call('POST', '/api/tools/opencode-server/install', $payload, [], [], $headers)->assertOk();
+        $this->call('POST', '/api/tools/opencode-cli/install', $payload, [], [], $headers)->assertOk();
 
-        $response = $this->call('POST', '/api/tools/opencode-server/install', $payload, [], [], $headers);
+        $response = $this->call('POST', '/api/tools/opencode-cli/install', $payload, [], [], $headers);
 
         $response->assertOk()
             ->assertJsonPath('success.data.tool.process.action', 'converged');
@@ -446,6 +455,111 @@ describe('ToolInstallController', function (): void {
             ->toContain('https://claude.ai/install.sh')
             ->toContain('claude --version');
     });
+
+    it('persists agent coding CLI install config with node default user and sanitized additional users', function (
+        string $tool,
+        string $installNeedle,
+        string $verifyNeedle,
+    ): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => "app-{$tool}-install",
+            'status' => 'active',
+            'user' => 'deploy',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            "/api/tools/{$tool}/install",
+            [
+                'node' => "app-{$tool}-install",
+                'config' => [
+                    'install_users' => ['agent', 'deploy', 'agent'],
+                ],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', $tool)
+            ->assertJsonPath('success.data.tool.node', "app-{$tool}-install")
+            ->assertJsonPath('success.data.tool.state', 'installed');
+
+        $nodeTool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', $tool)
+            ->firstOrFail();
+
+        expect($nodeTool->config)
+            ->toBe([
+                'default_user' => 'deploy',
+                'install_users' => ['agent', 'deploy'],
+            ])
+            ->and($shell->scripts)
+            ->toHaveCount(1)
+            ->and($shell->scripts[0])
+            ->toContain("sudo -u 'deploy' -H bash -lc")
+            ->toContain("sudo -u 'agent' -H bash -lc")
+            ->toContain($installNeedle)
+            ->toContain($verifyNeedle)
+            ->not->toContain('API_KEY')
+            ->not->toContain('TOKEN')
+            ->not->toContain('auth.json')
+            ->not->toContain('keychain');
+    })->with([
+        'codex cli' => ['codex-cli', 'https://chatgpt.com/codex/install.sh', 'codex --version'],
+        'grok cli' => ['grok-cli', 'https://x.ai/cli/install.sh', 'grok --version'],
+        'antigravity cli' => ['antigravity-cli', 'https://antigravity.google/cli/install.sh', 'agy --version'],
+        'cursor cli' => ['cursor-cli', 'https://cursor.com/install', 'cursor-agent'],
+    ]);
+
+    it('rejects unverified agent coding CLI install versions before side effects', function (string $tool): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => "app-{$tool}-version",
+            'status' => 'active',
+            'user' => 'deploy',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            "/api/tools/{$tool}/install",
+            [
+                'node' => "app-{$tool}-version",
+                'version' => '1.2.3',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'version')
+            ->assertJsonPath('error.meta.reason', 'unsupported_field');
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toBe([]);
+    })->with([
+        'codex cli' => ['codex-cli'],
+        'grok cli' => ['grok-cli'],
+        'antigravity cli' => ['antigravity-cli'],
+        'cursor cli' => ['cursor-cli'],
+    ]);
 
     it('falls back to orbit when claude-code install target node user is missing', function (): void {
         $caller = createToolInstallApiCallerNode();

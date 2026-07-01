@@ -21,7 +21,8 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
-use App\Tools\ClaudeCodeTool;
+use App\Tools\UserScopedCliTool;
+use App\Tools\UserScopedCliUsers;
 use InvalidArgumentException;
 use Throwable;
 
@@ -288,60 +289,29 @@ final readonly class ToolsProbe
      */
     private function probeMetadataForTool(NodeTool $tool): array
     {
-        $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name) ?? [];
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+        $metadata = $catalog->probeMetadata($tool->name) ?? [];
+        $definition = $catalog->definition($tool->name);
 
-        if ($tool->name !== 'claude-code') {
+        if (! $definition instanceof UserScopedCliTool) {
             return $metadata;
         }
 
-        $user = $this->claudeCodeProbeUser($tool);
-        $binary = $this->claudeCodeBinaryPath($user);
-
-        return [
-            ...$metadata,
-            'binary' => $binary,
-            'version_command' => sprintf(
-                'sudo -u %s -H bash -lc %s',
-                escapeshellarg($user),
-                escapeshellarg("{$binary} --version"),
-            ),
-        ];
+        return $definition->probeMetadataForUser($this->userScopedCliProbeUser($tool, $definition));
     }
 
-    private function claudeCodeProbeUser(NodeTool $tool): string
+    private function userScopedCliProbeUser(NodeTool $tool, UserScopedCliTool $definition): string
     {
         $config = is_array($tool->config) ? $tool->config : [];
-        $configuredUser = $this->normalizeClaudeCodeUsername($config['default_user'] ?? null);
+        $configuredUser = UserScopedCliUsers::normalize($config['default_user'] ?? null);
 
         if ($configuredUser !== null) {
             return $configuredUser;
         }
 
-        $nodeUser = $this->normalizeClaudeCodeUsername($tool->node instanceof Node ? $tool->node->user : null);
+        $nodeUser = UserScopedCliUsers::normalize($tool->node instanceof Node ? $tool->node->user : null);
 
         return $nodeUser ?? 'orbit';
-    }
-
-    private function claudeCodeBinaryPath(string $user): string
-    {
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-
-        return "{$home}/.local/bin/claude";
-    }
-
-    private function normalizeClaudeCodeUsername(mixed $value): ?string
-    {
-        if (! is_string($value)) {
-            return null;
-        }
-
-        $trimmed = trim($value);
-
-        if ($trimmed === '' || preg_match(ClaudeCodeTool::USERNAME_PATTERN, $trimmed) !== 1) {
-            return null;
-        }
-
-        return $trimmed;
     }
 
     /**
@@ -749,7 +719,7 @@ final readonly class ToolsProbe
             return false;
         }
 
-        return in_array(strtolower(trim($expectedVersion)), ['latest', 'stable'], true);
+        return in_array(strtolower(trim($expectedVersion)), ['latest', 'stable'], strict: true);
     }
 
     /**

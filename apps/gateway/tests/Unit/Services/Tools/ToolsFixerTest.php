@@ -176,7 +176,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -191,9 +191,9 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.credentials_missing',
             kind: DriftKind::Missing,
-            summary: 'Tool opencode-server managed credential material is missing.',
+            summary: 'Tool opencode-cli managed credential material is missing.',
             detail: [
-                'tool' => 'opencode-server',
+                'tool' => 'opencode-cli',
                 'path' => '/home/orbit/.config/opencode-server/password',
             ],
         ));
@@ -217,7 +217,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -232,8 +232,8 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.credentials_mismatch',
             kind: DriftKind::Divergent,
-            summary: 'Tool opencode-server managed credential material differs from gateway intent.',
-            detail: ['tool' => 'opencode-server'],
+            summary: 'Tool opencode-cli managed credential material differs from gateway intent.',
+            detail: ['tool' => 'opencode-cli'],
         ));
 
         expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
@@ -268,6 +268,39 @@ describe('ToolsFixer', function (): void {
             ->toContain('composer-setup.php')
             ->and($shell->scripts[0])
             ->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
+    });
+
+    it('repairs missing git through the catalog apt install script', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'git',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.capability_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool git is missing on the target node.',
+            detail: ['tool' => 'git'],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('# orbit install git')
+            ->and($shell->scripts[0])
+            ->toContain('apt-get')
+            ->and($shell->scripts[0])
+            ->toContain('ppa:git-core/ppa');
     });
 
     it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {

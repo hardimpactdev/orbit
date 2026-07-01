@@ -12,7 +12,7 @@ These terms define the core vocabulary used across tool command contracts and th
   updates, adopts, removes, observes, or keeps available for other runtime
   units. A tool is not itself the lifecycle-managed unit.
 - **Tool process dependency:** Optional relationship from a process to the
-  tool capability it uses, such as `opencode`, `viteplus`, or `php-cli`.
+  tool capability it uses, such as `opencode-cli`, `viteplus`, or `php-cli`.
   The process owns lifecycle; the tool supplies the capability. A tool
   definition may also declare a related singleton process (runtime, command,
   and `--tool` dependency); `tool:install` configures that process by default so

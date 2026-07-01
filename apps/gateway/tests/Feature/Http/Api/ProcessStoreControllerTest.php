@@ -410,7 +410,7 @@ describe('ProcessStoreController', function (): void {
                 'name' => 'opencode-server',
                 'command' => 'opencode serve --hostname 0.0.0.0',
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
             ],
             [],
             [],
@@ -421,7 +421,7 @@ describe('ProcessStoreController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.process.name', 'opencode-server')
             ->assertJsonPath('success.data.process.node', 'app-1')
-            ->assertJsonPath('success.data.process.tool', 'opencode')
+            ->assertJsonPath('success.data.process.tool', 'opencode-cli')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
             ->assertJsonPath('success.data.runtime_units.0.name', 'opencode-server');
 
@@ -434,7 +434,7 @@ describe('ProcessStoreController', function (): void {
             ->and($process->node_id)
             ->toBe($node->id)
             ->and($process->tool)
-            ->toBe('opencode')
+            ->toBe('opencode-cli')
             ->and($process->runtime)
             ->toBe(ProcessRuntime::Systemd)
             ->and($remoteShell->scripts[1])

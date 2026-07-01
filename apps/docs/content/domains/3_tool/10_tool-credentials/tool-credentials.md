@@ -20,9 +20,9 @@ orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
 ```bash
 orbit tool:credentials mailpit --node=app-1
 orbit tool:credentials openclaw --node=agent-1
-orbit tool:credentials opencode-server --app=docs
+orbit tool:credentials opencode-cli --app=docs
 orbit tool:credentials --node=app-1
-orbit tool:credentials opencode-server --node=agent-1 --json
+orbit tool:credentials opencode-cli --node=agent-1 --json
 ```
 
 ## Arguments and options

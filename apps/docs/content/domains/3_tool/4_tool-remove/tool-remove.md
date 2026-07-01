@@ -18,7 +18,7 @@ orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
 
 ```bash
 orbit tool:remove composer --node=app-1
-orbit tool:remove opencode-server --app=docs --force
+orbit tool:remove opencode-cli --app=docs --force
 orbit tool:remove composer --node=app-1 --json
 ```
 

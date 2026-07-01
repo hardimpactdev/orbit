@@ -38,6 +38,9 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-07-01 — OpenCode's canonical managed tool identity is `opencode-cli`: `opencode-server` remains the node-owned process/runtime unit name with command `opencode serve -a`, and its process dependency is `tool=opencode-cli`. Existing `node_tools.name=opencode-server` rows and OpenCode process rows using `tool=opencode` are backfilled to the canonical tool slug.
+- 2026-07-01 — Agent coding CLIs `codex-cli`, `grok-cli`, `antigravity-cli`, and `cursor-cli` are user-scoped runtime tools managed through `tool:*` and `doctor --family=tool`; Orbit installs, updates, probes, and safely adopts the CLI binaries where source-backed channels are available, while provider auth/session/account state remains outside Orbit ownership. `codex-app` remains the separate macOS app bridge, and outdated `gemini-cli` catalog support is not added.
+- 2026-07-01 — Git is a managed runtime tool on `app-dev`, `app-prod`, and `agent` role nodes: Orbit installs, updates, probes, and safely adopts Ubuntu host Git through apt using Git's official upstream stable PPA (`ppa:git-core/ppa`), and Linux Git management does not use Homebrew or Linuxbrew.
 - 2026-06-28 — Solo extension commands use Orbit-style flat colon names such as `solo:project:list`, `solo:process:list`, `solo:scratchpad:list`, and `solo:todo:list`; grouped noun/subcommand signatures remain out of scope for the Solo catalog.
 - 2026-06-28 — Optional Orbit command and gateway API families ship first as built-in extensions with separate local node and gateway enablement; external downloadable extensions remain out of scope.
 - 2026-06-28 — Codex App project registration belongs to the optional `codex` extension command family as `codex:app`; `app:codex` is removed from the public command surface and app permissions no longer imply Codex App registration.

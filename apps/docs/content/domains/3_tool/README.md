@@ -76,10 +76,15 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-dev` and `app-prod` roles | `runtime` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |
+| [`git`](catalog/git.md) | Git | system binary | Role baseline tool for the `app-dev`, `app-prod`, and `agent` roles (repository clone and checkout workflows) | `runtime` | install, update, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
 | [`composer`](catalog/composer.md) | Composer | host binary (`/usr/local/bin/composer`) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, adopt |
 | [`laravel-installer`](catalog/laravel-installer.md) | Laravel Installer | Composer global package (`laravel/installer`) | Installable/updatable/removable host toolchain on `app-dev` only | `runtime` | install, update, remove, adopt |
 | [`claude-code`](catalog/claude-code.md) | Claude Code | Anthropic native installer (`https://claude.ai/install.sh`) | Installable runtime CLI on authorized active non-gateway Linux nodes; no required node role | `runtime` | install |
+| [`codex-cli`](catalog/codex-cli.md) | Codex CLI | OpenAI standalone installer (`https://chatgpt.com/codex/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
+| [`grok-cli`](catalog/grok-cli.md) | Grok CLI | xAI Grok Build installer (`https://x.ai/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
+| [`antigravity-cli`](catalog/antigravity-cli.md) | Antigravity CLI | Google Antigravity installer (`https://antigravity.google/cli/install.sh`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes; supersedes outdated Gemini CLI support | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
+| [`cursor-cli`](catalog/cursor-cli.md) | Cursor CLI | Cursor Agent installer (`https://cursor.com/install`) | User-scoped runtime CLI on authorized active non-gateway Linux or macOS nodes | `runtime` | install, update, adopt; auth/session state is outside Orbit ownership |
 | [`dns`](catalog/dns.md) | DNS | Docker service | Required infrastructure tool, adopted and kept converged | `infrastructure` | update, fix, adopt; lifecycle and logs through `process:*` |
 | [`php`](catalog/php.md) | PHP images | FrankenPHP Docker image capability | Selected by app/workspace runtime configuration | `runtime` | image inventory, update, fix, adopt |
 | [`mailpit`](catalog/mailpit.md) | Mailpit | Docker service | Installable and removable by Orbit | `development` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
@@ -87,15 +92,15 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`seaweedfs`](catalog/seaweedfs.md) | SeaweedFS | Docker runtime container | Role baseline tool for the `s3` role | `storage` | update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`node-exporter`](catalog/node-exporter.md) | node-exporter | host binary (`/usr/local/bin/node_exporter`) | Role baseline tool for the `metrics` role and active workload nodes scraped by metrics | `observability` | install, remove, update, fix, adopt; lifecycle and logs through `process:*` |
 | [`polyscope-server`](catalog/polyscope-server.md) | PolyScope Server | Node-owned `systemd` process with `tool=polyscope` | Installable and removable by Orbit | `development` | install, remove, reconfigure, update, fix, adopt; lifecycle and logs through `process:*` |
-| [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | Node-owned `systemd` process with `tool=opencode` | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`opencode-cli`](catalog/opencode-cli.md) | OpenCode CLI | Installed OpenCode CLI with related `opencode-server` `systemd` process (`tool=opencode-cli`) | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |
 
 Required baseline tools are expected to exist as part of node provisioning or
-host bootstrap. `tool:install` does not create those tools from scratch unless
-a future tool definition explicitly changes their support model. Role baseline
-tools, such as `seaweedfs`, are installed automatically by their owning role.
+host bootstrap. `tool:install` creates those tools from scratch only when the
+selected tool definition explicitly supports install. Role baseline tools, such
+as `git` and `seaweedfs`, are installed automatically by their owning role.
 User-directed `tool:*` commands with an explicit target may target an active
 visible node unless that node is the gateway. The selected tool definition must
 support the target node operating system; role membership is not the general

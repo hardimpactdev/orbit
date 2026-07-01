@@ -30,6 +30,9 @@ final class E2ECurrentCheckout
     /** @var (\Closure(string, E2EPhaseTimer): string)|null */
     private static ?\Closure $installerForTests = null;
 
+    /** @var (\Closure(): string)|null */
+    private static ?\Closure $treeHashResolverForTests = null;
+
     /**
      * Install the current local checkout into selected roles of an acquired
      * topology. This is the branch-overlay helper for E2E tests: the topology
@@ -519,6 +522,13 @@ final class E2ECurrentCheckout
     public static function useInstallerForTests(?callable $installer): void
     {
         self::$installerForTests = $installer !== null ? \Closure::fromCallable($installer) : null;
+    }
+
+    public static function useTreeHashResolverForTests(?callable $resolver): void
+    {
+        self::$treeHashResolverForTests = $resolver !== null
+            ? static fn (): string => (string) $resolver()
+            : null;
     }
 
     public static function orbitWrapperScript(
@@ -1739,6 +1749,7 @@ final class E2ECurrentCheckout
             './.cursor',
             './.idea',
             './.nova',
+            './.orbit',
             './.orbit-e2e-vendor-archives',
             './.phpunit.cache',
             './.vscode',
@@ -1982,6 +1993,10 @@ final class E2ECurrentCheckout
 
     public static function treeHash(): string
     {
+        if (self::$treeHashResolverForTests !== null) {
+            return (self::$treeHashResolverForTests)();
+        }
+
         return self::treeHashForManifest(self::archiveManifest());
     }
 

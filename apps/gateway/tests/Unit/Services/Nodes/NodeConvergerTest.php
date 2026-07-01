@@ -56,6 +56,7 @@ describe('NodeConverger', function (): void {
                 'caddy',
                 'composer',
                 'gh',
+                'git',
                 'laravel-installer',
                 'php-cli',
             ])
@@ -66,7 +67,7 @@ describe('NodeConverger', function (): void {
             ->and(
                 NodeTool::query()
                     ->where('node_id', $node->id)
-                    ->whereIn('name', ['caddy', 'composer', 'gh', 'laravel-installer', 'php-cli'])
+                    ->whereIn('name', ['caddy', 'composer', 'gh', 'git', 'laravel-installer', 'php-cli'])
                     ->pluck('name')
                     ->sort()
                     ->values()
@@ -76,6 +77,7 @@ describe('NodeConverger', function (): void {
                 'caddy',
                 'composer',
                 'gh',
+                'git',
                 'laravel-installer',
                 'php-cli',
             ])
@@ -83,7 +85,7 @@ describe('NodeConverger', function (): void {
             ->not->toContain('doctor --restore')->and(implode("\n", $shell->scripts))
             ->not->toContain(' orbit doctor ')->and($shell->probeScripts())->toHaveCount(2)->and(
                 $shell->repairScripts(),
-            )->toHaveCount(5);
+            )->toHaveCount(6);
     });
 
     it('keeps setup drift visible when repair fails', function (): void {
@@ -137,7 +139,7 @@ function createNodeConvergerAppDevToolRows(Node $node): void
         'config' => ['container' => $container->spec()],
     ]);
 
-    foreach (['php-cli', 'composer', 'gh', 'laravel-installer'] as $tool) {
+    foreach (['php-cli', 'composer', 'git', 'gh', 'laravel-installer'] as $tool) {
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => $tool,
@@ -157,6 +159,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         'php-cli' => false,
         'composer' => false,
         'gh' => false,
+        'git' => false,
         'laravel-installer' => false,
     ];
 
@@ -244,6 +247,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
                 "/usr/local/bin/composer\tComposer version 2.9.0\n",
             ),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
+            'git' => $this->installedProbe('git', "/usr/bin/git\tgit version 2.53.0\n"),
             '/usr/local/bin/laravel' => $this->installedProbe(
                 'laravel-installer',
                 "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n",
@@ -298,6 +302,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
         $installedPayloads = [
             'composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
+            'git' => ['/usr/bin/git', 'git version 2.53.0'],
             'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
             'php-cli' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
         ];
@@ -342,6 +347,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install composer') => 'composer',
             str_contains($script, '# orbit install gh') => 'gh',
+            str_contains($script, '# orbit install git') => 'git',
             str_contains($script, '# orbit install laravel-installer') => 'laravel-installer',
             default => null,
         };

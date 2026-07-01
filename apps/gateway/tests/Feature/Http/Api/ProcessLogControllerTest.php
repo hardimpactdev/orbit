@@ -118,7 +118,7 @@ describe('ProcessLogController', function (): void {
             ->create([
                 'name' => 'opencode-server',
                 'runtime' => ProcessRuntime::Systemd,
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
             ]);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "OpenCode ready\n", stderr: '', durationMs: 1),

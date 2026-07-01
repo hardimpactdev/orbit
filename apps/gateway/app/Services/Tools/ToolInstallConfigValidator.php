@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Tools\ClaudeCodeTool;
+use App\Tools\UserScopedCliTool;
+use App\Tools\UserScopedCliUsers;
 
 final class ToolInstallConfigValidator
 {
@@ -17,36 +18,44 @@ final class ToolInstallConfigValidator
             return null;
         }
 
-        if ($tool !== 'claude-code') {
+        if (! app(ToolCatalog::class)->definition($tool) instanceof UserScopedCliTool) {
             return ToolRegistryFailure::validation(
                 field: 'config.install_users',
                 value: '',
-                message: 'Install users are only supported for claude-code.',
+                message: 'Install users are only supported for user-scoped CLI tools.',
                 meta: ['reason' => 'unsupported_field'],
             );
         }
 
-        $installUsers = $config['install_users'];
-
-        if (! is_array($installUsers)) {
+        if (! is_array($config['install_users'])) {
             return ToolRegistryFailure::validation(
                 field: 'config.install_users',
-                value: get_debug_type($installUsers),
+                value: get_debug_type($config['install_users']),
                 message: 'Install users must be a list of Linux usernames.',
                 meta: ['reason' => 'unsupported_value'],
             );
         }
 
-        foreach ($installUsers as $username) {
-            if (
-                is_string($username)
-                && $username !== ''
-                && preg_match(ClaudeCodeTool::USERNAME_PATTERN, $username) === 1
-            ) {
-                continue;
-            }
+        $invalidValues = array_filter(
+            array_map(
+                static function (mixed $username): ?string {
+                    if (
+                        is_string($username)
+                        && $username !== ''
+                        && preg_match(UserScopedCliUsers::USERNAME_PATTERN, $username) === 1
+                    ) {
+                        return null;
+                    }
 
-            $value = is_scalar($username) ? (string) $username : get_debug_type($username);
+                    return is_scalar($username) ? (string) $username : get_debug_type($username);
+                },
+                $config['install_users'],
+            ),
+            static fn (?string $value): bool => $value !== null,
+        );
+
+        if ($invalidValues !== []) {
+            $value = array_first($invalidValues);
 
             return ToolRegistryFailure::validation(
                 field: 'config.install_users',

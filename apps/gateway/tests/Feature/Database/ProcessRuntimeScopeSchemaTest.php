@@ -67,7 +67,7 @@ it('stores node owned systemd process runtime configuration with a tool dependen
         'name' => 'opencode-server',
         'command' => 'opencode serve -a',
         'runtime' => ProcessRuntime::Systemd,
-        'tool' => 'opencode',
+        'tool' => 'opencode-cli',
         'runtime_config' => [
             'service' => 'opencode-server',
         ],
@@ -78,7 +78,7 @@ it('stores node owned systemd process runtime configuration with a tool dependen
         ->owner->toBeInstanceOf(Node::class)
         ->node_id->toBe($node->id)
         ->runtime->toBe(ProcessRuntime::Systemd)
-        ->tool->toBe('opencode')
+        ->tool->toBe('opencode-cli')
         ->runtime_config->toBe([
             'service' => 'opencode-server',
         ]);
