@@ -2,6 +2,11 @@
 
 Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). On Linux, each app/workspace host-command process definition renders as one systemd unit per target. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`. Spec: [`apps/docs/content/domains/7_process/`](../../../apps/docs/content/domains/7_process/).
 
+App/workspace runtime units receive Laravel Vite-compatible URL/TLS env fields:
+`APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
+`VITE_DEV_SERVER_CERT`. Docker-backed runtime units mount the corresponding
+Orbit cert/key files at the in-container paths exposed through those variables.
+
 ## `orbit process:add [name] [command]`
 
 Add a process definition for an app, workspace, or node.

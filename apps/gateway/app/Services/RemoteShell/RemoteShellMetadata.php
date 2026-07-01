@@ -11,6 +11,7 @@ final class RemoteShellMetadata
     private const int MaxValueBytes = 4096;
 
     private const array ExactKeys = [
+        'APP_URL',
         'ORBIT_APP',
         'ORBIT_APP_PATH',
         'ORBIT_NODE_ID',
@@ -30,6 +31,8 @@ final class RemoteShellMetadata
         'ORBIT_WORKSPACE_NAME',
         'ORBIT_WORKSPACE_PATH',
         'VITE_APP_URL',
+        'VITE_DEV_SERVER_CERT',
+        'VITE_DEV_SERVER_KEY',
         'VITE_VALET_HOST',
     ];
 

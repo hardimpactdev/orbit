@@ -197,6 +197,9 @@ remains gateway state only.
 Secret env writes are intentionally rejected for now. Attach database
 connections with `database:attach --app=<app> --instance=<name>` and use
 `app:env render` to see the effective env with secret values redacted.
+Rendered env also includes Orbit-derived Laravel Vite URL/TLS defaults:
+`APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
+`VITE_DEV_SERVER_CERT`.
 
 ## `orbit app:websocket enable | disable | credentials`
 

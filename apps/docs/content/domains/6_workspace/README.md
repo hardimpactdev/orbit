@@ -197,8 +197,11 @@ instead of depending on command-string substitution.
 | `ORBIT_WORKSPACE_PATH` | Workspace path | Lets scripts use the workspace path without recomputing it. |
 | `ORBIT_URL` | Workspace HTTPS URL | Lets scripts write canonical URL config such as `.env` values. |
 | `ORBIT_PHP_VERSION` | Effective workspace PHP version | Lets scripts run PHP-version-specific setup. |
+| `APP_URL` | Workspace HTTPS URL | Gives Laravel and framework tooling the canonical public URL. |
 | `VITE_APP_URL` | Workspace HTTPS URL | Keeps Vite-aware app config aligned with the workspace URL. |
-| `VITE_VALET_HOST` | Workspace host without scheme | Supports Laravel Vite TLS detection compatibility. |
+| `VITE_VALET_HOST` | Workspace host without scheme | Supports Herd/Valet-style Laravel Vite configuration that keys off a host. |
+| `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path on the app node | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
+| `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path on the app node | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
 
 ## Commands
 

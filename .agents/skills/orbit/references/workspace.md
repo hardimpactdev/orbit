@@ -51,6 +51,8 @@ Use `--stream-json` for JSONL setup progress when an agent needs incremental
 frames; use `--json` for the final result envelope only.
 
 Workspace setup runs the steps configured for the parent app via `workspace-setup-step:add`.
+Setup steps receive `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`,
+`VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` for the workspace URL.
 
 ## `orbit workspace:remove [name]`
 

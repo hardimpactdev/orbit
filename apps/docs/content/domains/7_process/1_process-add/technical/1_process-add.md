@@ -71,8 +71,8 @@ If process configuration is written but runtime-unit apply or optional start fai
 - Development-server commands that need browser or HMR access across the Orbit network must bind to a node-reachable interface instead of loopback.
 - For Vite-backed development servers, the expected command shape is `npm run dev -- --host=0.0.0.0`, or an equivalent package-manager/framework adapter command with the same bind behavior.
 - Runtime units generated from the process definition receive Orbit URL and TLS environment fields, including `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT`.
-- `VITE_VALET_HOST` is included for Laravel Vite and Vite Plus compatibility.
-- Those toolchains read it when deriving TLS and hot-file URLs for development servers.
+- `VITE_VALET_HOST` is included for Herd/Valet-style Laravel Vite compatibility when app config keys off a host.
+- `VITE_DEV_SERVER_KEY` and `VITE_DEV_SERVER_CERT` are included for Laravel Vite's standard env-provided certificate bridge.
 
 ## Renderer Contracts
 

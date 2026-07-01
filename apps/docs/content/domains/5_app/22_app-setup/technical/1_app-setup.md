@@ -41,6 +41,23 @@ This command follows the shared
 7. Stops at the first failed setup step.
 8. Stores per-step result status and captured output.
 
+### Setup Step Environment
+
+Setup steps run on the app's owning node and receive lifecycle variables for the
+app plus Laravel Vite-compatible URL and TLS fields.
+
+| Variable | Value | Why it is exposed |
+| --- | --- | --- |
+| `ORBIT_APP` | App slug | Lets scripts identify the app being set up. |
+| `ORBIT_APP_PATH` | App root path | Lets scripts use the app path without recomputing it. |
+| `ORBIT_URL` | App HTTPS URL | Lets scripts write canonical URL config such as `.env` values. |
+| `ORBIT_PHP_VERSION` | App PHP version | Lets scripts run PHP-version-specific setup. |
+| `APP_URL` | App HTTPS URL | Gives Laravel and framework tooling the canonical public URL. |
+| `VITE_APP_URL` | App HTTPS URL | Keeps Vite-aware app config aligned with the app URL. |
+| `VITE_VALET_HOST` | App host without scheme | Supports Herd/Valet-style Laravel Vite configuration that keys off a host. |
+| `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path on the app node | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
+| `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path on the app node | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
+
 ## Renderer Contracts
 
 - [Human renderer](6.1_app-setup_output-render_human.md)

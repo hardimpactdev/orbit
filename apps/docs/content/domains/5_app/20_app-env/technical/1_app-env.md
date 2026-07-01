@@ -43,6 +43,9 @@ Gateway-owned `app_instance_database_connection_targets` rows connect one
 database connection to one app instance and env prefix. They are rendered by
 `app:env render`.
 
+Orbit-derived runtime defaults are rendered from the selected instance's app and
+owning node. These defaults are not stored as explicit instance env rows.
+
 ## API Surface
 
 | Method | Path | Permission | Action |
@@ -59,13 +62,16 @@ database connection to one app instance and env prefix. They are rendered by
    app.
 2. **Non-secret only.** Explicit secret values are rejected until secret storage
    is designed.
-3. **Database merge.** Rendered env includes supported database keys for database
+3. **Orbit defaults.** Rendered env includes non-secret Orbit-derived
+   `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
+   `VITE_DEV_SERVER_CERT` values for the selected app.
+4. **Database merge.** Rendered env includes supported database keys for database
    connections attached to the same instance.
-4. **Secret redaction.** Rendered database password values are marked
+5. **Secret redaction.** Rendered database password values are marked
    `secret=true` and redacted from responses.
-5. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
+6. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
    writes the app's live `.env` on the owning node through `RemoteShell`.
-6. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
+7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config/bootstrap cache on the host PHP toolchain and reapplies the
    FrankenPHP runtime container through `AppRuntimeContainerManager`.
 
