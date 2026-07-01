@@ -14,7 +14,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
         {--tool-version= : Version or version family to install}
-        {--user=* : Additional OS user to install Claude Code for}
+        {--user=* : Additional OS user to install a user-scoped CLI tool for}
         {--status=installed : Desired state after install (installed|running)}
         {--with-process : Also configure the related service process (default for service tools)}
         {--no-process : Install the capability only; do not configure the related service process}
@@ -85,12 +85,6 @@ final class ToolInstallCommand extends ToolGatewayCommand
             return [];
         }
 
-        if ($tool !== 'claude-code') {
-            return $this->failValidation('user', '--user is only supported for claude-code installs.', [
-                'reason' => 'unsupported_field',
-            ]);
-        }
-
         return [
             'install_users' => $users,
         ];
@@ -109,13 +103,11 @@ final class ToolInstallCommand extends ToolGatewayCommand
 
         $items = [];
 
-        foreach ($value as $item) {
-            if (! is_string($item)) {
-                continue;
+        array_walk($value, static function (mixed $item) use (&$items): void {
+            if (is_string($item)) {
+                $items[] = $item;
             }
-
-            $items[] = $item;
-        }
+        });
 
         return $items;
     }

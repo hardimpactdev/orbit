@@ -174,7 +174,7 @@ describe('ProcessUpdateController', function (): void {
                 'name' => 'opencode-server',
                 'command' => 'opencode serve',
                 'runtime' => 'systemd',
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
             ]);
         $remoteShell = new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -201,7 +201,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('success.data.process.workspace', null)
             ->assertJsonPath('success.data.process.command', 'opencode serve -a')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
-            ->assertJsonPath('success.data.process.tool', 'opencode')
+            ->assertJsonPath('success.data.process.tool', 'opencode-cli')
             ->assertJsonPath('success.data.runtime_units.0', ['name' => 'opencode-server', 'context' => 'node']);
 
         expect(Process::query()->where('name', 'opencode-server')->value('command'))->toBe('opencode serve -a');

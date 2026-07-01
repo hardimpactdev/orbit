@@ -12,9 +12,13 @@ Each agent IDE product is referenced by three related identifiers:
 |---|---|---|
 | Marketing name | Prose and product docs | PolyScope, OpenCode |
 | Adapter id | Command input (`node:agent-ide`, `app:agent-ide`), JSON output `agent_ide.adapter` | `polyscope`, `opencode` |
-| Server tool slug | Tool catalog entries (`tool:install <slug>`) | `polyscope-server`, `opencode-server` |
+| Tool slug | Tool catalog entries (`tool:install <slug>`) | `polyscope-server`, `opencode-cli` |
 
-The adapter id is the stable string the gateway uses to identify the integration. The server tool slug names the long-running server process that hosts the adapter on a node; not every adapter requires a separate server tool (some adapters run entirely client-side).
+The adapter id is the stable string the gateway uses to identify the integration.
+The tool slug names the installed capability that can host the adapter on
+a node; not every adapter requires a separate tool (some adapters run
+entirely client-side). OpenCode uses `opencode-cli` as the tool slug and
+`opencode-server` as the related process/runtime unit name.
 
 Autonomous agent tools (`openclaw`, `hermes`) follow a simpler convention: a single tool slug names the runtime, and they have no separate adapter id because they are not interactive IDE adapters — they are Orbit clients running on the `agent` role.
 

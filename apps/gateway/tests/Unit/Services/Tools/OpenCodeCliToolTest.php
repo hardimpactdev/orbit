@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Tools\OpenCodeServerTool;
+use App\Tools\OpenCodeCliTool;
 
 it('installs only the server binary because lifecycle belongs to a process', function (): void {
-    $script = new OpenCodeServerTool()->installScript();
+    $script = new OpenCodeCliTool()->installScript();
 
     expect($script)
         ->toContain('https://opencode.ai/install')
@@ -17,10 +17,19 @@ it('installs only the server binary because lifecycle belongs to a process', fun
 });
 
 it('keeps lifecycle metadata out of the tool definition', function (): void {
-    $tool = new OpenCodeServerTool;
+    $tool = new OpenCodeCliTool;
     $metadata = $tool->probeMetadata();
 
-    expect($tool->removeScript())
+    expect($tool->slug())
+        ->toBe('opencode-cli')
+        ->and($tool->relatedProcess())
+        ->toMatchArray([
+            'name' => 'opencode-server',
+            'command' => 'opencode serve -a',
+            'runtime' => 'systemd',
+            'tool' => 'opencode-cli',
+        ])
+        ->and($tool->removeScript())
         ->toContain('rm -rf "${home}/.opencode"')
         ->not->toContain('supervisorctl')
         ->not->toContain('systemctl')->and($tool->updateScript())->toContain('"${home}/.opencode/bin/opencode" upgrade')

@@ -9283,13 +9283,13 @@ message = "Assigning `nonnull` type to a variable may lead to unexpected behavio
 count = 1
 
 [[issues]]
-file = "app/Tools/OpenCodeServerTool.php"
+file = "app/Tools/OpenCodeCliTool.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
-file = "app/Tools/OpenCodeServerTool.php"
+file = "app/Tools/OpenCodeCliTool.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 4

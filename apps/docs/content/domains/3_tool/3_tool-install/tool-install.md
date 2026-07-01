@@ -6,7 +6,7 @@ Install or configure a managed host tool on a node.
 
 `tool:install` bootstraps a supported tool capability on a target node and
 records gateway configuration for that node. When the tool backs a singleton
-service (such as `opencode-server`), install also configures that tool's
+service (such as `opencode-cli` backing `opencode-server`), install also configures that tool's
 related process by default so the capability comes up running; pass
 `--no-process` to install the capability only. Multi-instance services such as
 MySQL or Redis are not tool installs; use `process:add --service=<identifier>` for those.
@@ -22,11 +22,12 @@ orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version
 ```bash
 orbit tool:install composer --node=app-1
 orbit tool:install composer --node=app-1 --tool-version=2.9.2
-orbit tool:install opencode-server --node=agent-1
+orbit tool:install opencode-cli --node=agent-1
 orbit tool:install composer --node=app-1 --json
 orbit tool:install composer --node=app-1 --stream-json
 orbit tool:install claude-code --node=app-1
 orbit tool:install claude-code --node=app-1 --user=agent
+orbit tool:install codex-cli --node=app-1 --user=agent
 ```
 
 ## Arguments and options
@@ -35,13 +36,16 @@ orbit tool:install claude-code --node=app-1 --user=agent
 - `--node`: Target node.
 - `--app`: Resolve the target node from an app.
 - `--tool-version`: Specific tool version supported by the tool definition.
-- `--user`: Repeatable additional Linux OS user for `claude-code` installs
-  only. Supplying `--user` for any other tool fails with `validation_failed`.
+  Tools that do not explicitly support install versions fail with
+  `validation_failed`.
+- `--user`: Repeatable additional Linux OS user for user-scoped CLI installs.
+  Supplying `--user` for a tool that is not user-scoped fails with
+  `validation_failed`.
   The node's stored default user (`nodes.user`, falling back to `orbit`) is
-  always installed; each `--user` value adds another Claude Code install scoped
-  to that existing OS user. The option does not create Linux accounts. Empty
-  values are rejected by gateway validation before row writes. This is additive
-  install targeting, not a node-role eligibility gate.
+  always installed; each `--user` value adds another install scoped to that
+  existing OS user. The option does not create Linux accounts. Empty values are
+  rejected by gateway validation before row writes. This is additive install
+  targeting, not a node-role eligibility gate.
 - `--status`: Expected capability state after install. Defaults to
   `installed`; it does not create or start a process.
 - `--with-process`: Also configure the tool's related service process. This is

@@ -176,7 +176,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -191,9 +191,9 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.credentials_missing',
             kind: DriftKind::Missing,
-            summary: 'Tool opencode-server managed credential material is missing.',
+            summary: 'Tool opencode-cli managed credential material is missing.',
             detail: [
-                'tool' => 'opencode-server',
+                'tool' => 'opencode-cli',
                 'path' => '/home/orbit/.config/opencode-server/password',
             ],
         ));
@@ -217,7 +217,7 @@ describe('ToolsFixer', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -232,8 +232,8 @@ describe('ToolsFixer', function (): void {
             family: 'tool',
             key: 'tool.credentials_mismatch',
             kind: DriftKind::Divergent,
-            summary: 'Tool opencode-server managed credential material differs from gateway intent.',
-            detail: ['tool' => 'opencode-server'],
+            summary: 'Tool opencode-cli managed credential material differs from gateway intent.',
+            detail: ['tool' => 'opencode-cli'],
         ));
 
         expect($action)->toBeNull()->and($shell->scripts)->toBe([]);

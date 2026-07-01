@@ -155,7 +155,7 @@ describe('ProcessListController', function (): void {
             ->create([
                 'name' => 'opencode-server',
                 'runtime' => ProcessRuntime::Systemd,
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
                 'sort_order' => 1,
             ]);
 
@@ -172,7 +172,7 @@ describe('ProcessListController', function (): void {
             ->assertOk()
             ->assertJsonPath('success.data.context', ['node' => 'app-1', 'app' => null, 'workspace' => null])
             ->assertJsonPath('success.data.processes.0.name', 'opencode-server')
-            ->assertJsonPath('success.data.processes.0.tool', 'opencode')
+            ->assertJsonPath('success.data.processes.0.tool', 'opencode-cli')
             ->assertJsonPath('success.data.processes.0.runtime', 'systemd')
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'opencode-server');
     });

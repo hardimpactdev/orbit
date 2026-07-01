@@ -467,7 +467,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'expected_state' => 'installed',
         ]);
         $shell = new RecordingToolsProbeRemoteShell(
@@ -482,7 +482,7 @@ describe('ToolsProbe', function (): void {
         expect($input)
             ->not
             ->toHaveKey('supervisor_program')
-            ->and($snapshot->get('opencode-server'))
+            ->and($snapshot->get('opencode-cli'))
             ->toMatchArray([
                 'installed' => true,
                 'path' => '/home/orbit/.opencode/bin/opencode',
@@ -938,7 +938,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -971,7 +971,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -1005,7 +1005,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -1040,7 +1040,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
@@ -1072,7 +1072,7 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
+            'name' => 'opencode-cli',
             'credentials' => [
                 'managed_secret' => [
                     'path' => 'relative/password',
@@ -1083,14 +1083,14 @@ describe('ToolsProbe', function (): void {
         ]);
 
         $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
-            'opencode-server' => ['installed' => true],
+            'opencode-cli' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)
             ->toBe(DriftKind::Missing)
             ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)
             ->toMatchArray([
-                'tool' => 'opencode-server',
+                'tool' => 'opencode-cli',
                 'field' => 'managed_secret',
             ]);
     });

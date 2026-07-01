@@ -556,7 +556,7 @@ it('runs systemd process lifecycle through the systemd runtime driver', function
             'name' => 'opencode-server',
             'command' => 'opencode serve -a',
             'runtime' => ProcessRuntime::Systemd,
-            'tool' => 'opencode',
+            'tool' => 'opencode-cli',
         ]);
 
     $driver = app(SystemdProcessRuntimeDriver::class);
@@ -609,7 +609,7 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
             'command' => 'opencode serve -a',
             'restart_policy' => ProcessRestartPolicy::OnFailure,
             'runtime' => ProcessRuntime::Systemd,
-            'tool' => 'opencode',
+            'tool' => 'opencode-cli',
         ]);
 
     $driver = app(SystemdProcessRuntimeDriver::class);

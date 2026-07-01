@@ -103,10 +103,21 @@ websocket capability. MySQL, PostgreSQL, and Redis are process-owned services,
 not tool installs. Fleet realtime uses the `websocket` role; the `reverb` tool
 remains documented for compatibility until it is removed or migrated.
 
+Agent coding CLI supported-OS metadata follows the operating systems documented
+by the upstream installer source. `claude-code`, `codex-cli`, `grok-cli`,
+`antigravity-cli`, and `cursor-cli` include macOS because their official
+installers support it. Retained topology proof remains Linux because Orbit
+retained nodes are Linux; macOS support is represented by the tool metadata and
+the generated install/update scripts for macOS client targets.
+
 1. [`php`](php.md)
 2. [`mailpit`](mailpit.md)
 3. [`reverb`](reverb.md)
 4. [`claude-code`](claude-code.md)
+5. [`codex-cli`](codex-cli.md)
+6. [`grok-cli`](grok-cli.md)
+7. [`antigravity-cli`](antigravity-cli.md)
+8. [`cursor-cli`](cursor-cli.md)
 
 ### Agent IDE servers, operator tools, and autonomous agent tools
 
@@ -115,11 +126,11 @@ configuration, and first-party autonomous agents. Explicit tool targeting is
 constrained by the selected tool's supported operating systems, not by role
 membership.
 
-5. [`polyscope-server`](polyscope-server.md)
-6. [`opencode-server`](opencode-server.md)
-7. [`openclaw`](openclaw.md)
-8. [`hermes`](hermes.md)
-9. [`codex-app`](codex-app.md)
+9. [`polyscope-server`](polyscope-server.md)
+10. [`opencode-cli`](opencode-cli.md)
+11. [`openclaw`](openclaw.md)
+12. [`hermes`](hermes.md)
+13. [`codex-app`](codex-app.md)
 
 ## File Contract
 

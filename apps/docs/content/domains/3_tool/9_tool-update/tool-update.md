@@ -20,8 +20,8 @@ orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<vers
 orbit tool:update composer --node=app-1
 orbit tool:update composer --node=app-1 --expected-version=2.9.2
 orbit tool:update --node=app-1
-orbit tool:update opencode-server --app=docs --json
-orbit tool:update opencode-server --app=docs --stream-json
+orbit tool:update opencode-cli --app=docs --json
+orbit tool:update opencode-cli --app=docs --stream-json
 ```
 
 ## Arguments and options

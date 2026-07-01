@@ -1,36 +1,36 @@
-# Tool Catalog: `opencode-server`
+# Tool Catalog: `opencode-cli`
 
 [Back to tool catalog.](README.md)
 
 ## Catalog
 
-These fields describe the OpenCode Server tool's identity, backend, and support model in Orbit.
+These fields describe the OpenCode CLI tool's identity, backend, and support model in Orbit.
 
 | Field | Value |
 | --- | --- |
-| Slug | `opencode-server` |
-| Label | OpenCode Server |
-| Backend | Node-owned `systemd` process named `opencode-server` with `tool=opencode` |
+| Slug | `opencode-cli` |
+| Label | OpenCode CLI |
+| Backend | Installed OpenCode CLI binary with a related node-owned `systemd` process named `opencode-server` |
 | Support model | Installable and removable by Orbit |
 | Category | `development` |
 
 ## Capabilities
 
-`opencode-server` supports `tool:install`, `tool:remove`,
+`opencode-cli` supports `tool:install`, `tool:remove`,
 `tool:reconfigure`, password reconfiguration, `tool:update`,
 `tool:credentials`, proxy route metadata, safe doctor fix, and safe doctor
 adopt. Start, stop, restart, and logs for the long-running server belong to
 the related `opencode-server` process.
 
-`opencode-server` declares a related singleton process, so `tool:install
-opencode-server` configures that process by default: a node-owned `systemd`
+`opencode-cli` declares a related singleton process, so `tool:install
+opencode-cli` configures that process by default: a node-owned `systemd`
 process named `opencode-server`, command `opencode serve -a`, with a
-`tool=opencode` dependency. The convergence is idempotent. Pass `--no-process`
+`tool=opencode-cli` dependency. The convergence is idempotent. Pass `--no-process`
 to install the capability only.
 
 ## Credentials
 
-`tool:credentials opencode-server` returns connection and authentication fields
+`tool:credentials opencode-cli` returns connection and authentication fields
 for the managed OpenCode Server service.
 
 Example JSON shape:
@@ -40,7 +40,7 @@ Example JSON shape:
   "success": {
     "data": {
       "credentials": {
-        "tool": "opencode-server",
+        "tool": "opencode-cli",
         "node": "app-1",
         "fields": {
           "host": "127.0.0.1",
@@ -63,20 +63,16 @@ misleading empty password.
 
 ## Service Endpoint
 
-`opencode-server` exposes a tool-owned HTTPS proxy route at
+`opencode-cli` exposes a tool-owned HTTPS proxy route at
 `https://opencode.<node-tld>` for development nodes.
 
 ## Orbit Notes
 
-OpenCode Server is an agent IDE server capability. Password reset is owned by
-`tool:reconfigure opencode-server --password=<password>`.
+OpenCode CLI is the installed agent IDE capability. The related
+`opencode-server` process is the runtime unit that serves the OpenCode API.
+Password reset is owned by `tool:reconfigure opencode-cli --password=<password>`.
 
-Runtime-model migration treats `opencode` as the installed capability and
-`opencode-server` as the process name. The backfilled node-owned process row
-owns lifecycle with `runtime=systemd`; the `opencode-server` tool row remains
-the capability and compatibility payload record.
-
-`tool:update opencode-server` currently runs OpenCode's native `opencode
+`tool:update opencode-cli` currently runs OpenCode's native `opencode
 upgrade` command through the Orbit-managed binary. Update remains tool-owned
 while start, stop, restart, and logs belong to the related process.
 
