@@ -1739,6 +1739,7 @@ final class E2ECurrentCheckout
             './.cursor',
             './.idea',
             './.nova',
+            './.orbit',
             './.orbit-e2e-vendor-archives',
             './.phpunit.cache',
             './.vscode',

@@ -67,6 +67,7 @@ use App\Tools\ComposerTool;
 use App\Tools\DnsTool;
 use App\Tools\DockerTool;
 use App\Tools\GhTool;
+use App\Tools\GitTool;
 use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
@@ -167,6 +168,7 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(VitePlusTool::class),
                     $app->make(PhpCliTool::class),
                     $app->make(GhTool::class),
+                    $app->make(GitTool::class),
                     $app->make(ComposerTool::class),
                     $app->make(DnsTool::class),
                     $app->make(PhpTool::class),

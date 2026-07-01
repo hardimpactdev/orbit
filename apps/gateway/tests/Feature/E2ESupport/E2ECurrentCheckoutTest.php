@@ -646,6 +646,7 @@ it('publishes the checkout archive excludes for tarball construction', function 
         ->toContain(
             './.git',
             './.worktrees',
+            './.orbit',
             './.orbit-e2e-vendor-archives',
             './.env',
             './build',

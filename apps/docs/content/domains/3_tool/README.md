@@ -76,6 +76,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`docker`](catalog/docker.md) | Docker | system service | Required baseline, adopted and kept converged | `always` | probe, fix, adopt, prerequisite for Docker-backed processes |
 | [`viteplus`](catalog/viteplus.md) | VitePlus | system binary | Role baseline tool for the `app-dev` and `app-prod` roles | `runtime` | probe, adopt |
 | [`php-cli`](catalog/php-cli.md) | PHP CLI | prebuilt static host binaries (dl.static-php.dev bulk preset) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, probe, adopt |
+| [`git`](catalog/git.md) | Git | system binary | Role baseline tool for the `app-dev`, `app-prod`, and `agent` roles (repository clone and checkout workflows) | `runtime` | install, update, adopt |
 | [`gh`](catalog/gh.md) | GitHub CLI | system binary | Role baseline tool for the `app-dev` and `app-prod` roles (repository cloning and deployment) | `runtime` | update, adopt |
 | [`composer`](catalog/composer.md) | Composer | host binary (`/usr/local/bin/composer`) | Installable/updatable host toolchain on `app-dev` and `app-prod` | `runtime` | install, update, adopt |
 | [`laravel-installer`](catalog/laravel-installer.md) | Laravel Installer | Composer global package (`laravel/installer`) | Installable/updatable/removable host toolchain on `app-dev` only | `runtime` | install, update, remove, adopt |

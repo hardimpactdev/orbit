@@ -77,6 +77,13 @@ describe('agent role baseline', function (): void {
 
         expect($tools->pluck('name')->all())
             ->toBe(['caddy'])
+            ->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->where('name', 'git')
+                    ->value('expected_state'),
+            )
+            ->toBe('installed')
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'installed',

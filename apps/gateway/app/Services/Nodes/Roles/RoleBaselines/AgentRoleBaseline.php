@@ -49,6 +49,7 @@ class AgentRoleBaseline implements RoleBaseline
 
         $this->convergeAgentUser($node);
         $this->convergeTools($node, ['caddy']);
+        $this->convergeTool($node, 'git', 'installed');
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
@@ -65,7 +66,7 @@ class AgentRoleBaseline implements RoleBaseline
             }
         }
 
-        $this->removeTools($node, ['caddy']);
+        $this->removeTools($node, ['caddy', 'git']);
     }
 
     private function convergeAgentUser(Node $node): void

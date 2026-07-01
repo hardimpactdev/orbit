@@ -270,6 +270,39 @@ describe('ToolsFixer', function (): void {
             ->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     });
 
+    it('repairs missing git through the catalog apt install script', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'git',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.capability_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool git is missing on the target node.',
+            detail: ['tool' => 'git'],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('# orbit install git')
+            ->and($shell->scripts[0])
+            ->toContain('apt-get')
+            ->and($shell->scripts[0])
+            ->toContain("'git'");
+    });
+
     it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([

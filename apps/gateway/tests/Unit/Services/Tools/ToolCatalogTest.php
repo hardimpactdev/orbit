@@ -10,6 +10,7 @@ use App\Services\Tools\ToolCatalog;
 use App\Tools\CaddyTool;
 use App\Tools\CodexAppTool;
 use App\Tools\GhTool;
+use App\Tools\GitTool;
 use App\Tools\HermesTool;
 use App\Tools\OpenCodeServerTool;
 use App\Tools\PolyscopeServerTool;
@@ -60,6 +61,27 @@ describe('tool catalog definitions', function (): void {
             ->toBeTrue()
             ->and($catalog->hasCapability('gh', 'safe-adopt'))
             ->toBeTrue();
+    });
+
+    it('catalogs git as a role-baseline runtime tool with apt install and update', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->definition('git'))
+            ->toBeInstanceOf(GitTool::class)
+            ->and($catalog->category('git'))
+            ->toBe('runtime')
+            ->and($catalog->supportedOperatingSystems('git'))
+            ->toBe(['linux'])
+            ->and($catalog->hasCapability('git', 'install'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('git', 'update'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('git', 'safe-adopt'))
+            ->toBeTrue()
+            ->and($catalog->installScript('git'))
+            ->toContain("'git'")
+            ->and($catalog->updateScript('git'))
+            ->toContain('--only-upgrade');
     });
 
     it('does not catalog runnable database and cache services as tools', function (string $tool): void {

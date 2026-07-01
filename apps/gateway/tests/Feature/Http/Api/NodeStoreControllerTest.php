@@ -378,6 +378,7 @@ describe('NodeStoreController', function (): void {
             'caddy',
             'composer',
             'gh',
+            'git',
             'laravel-installer',
             'php-cli',
         ]);
@@ -936,6 +937,7 @@ final class NodeStoreConvergenceRemoteShell implements RemoteShell
             '/opt/orbit/php/8.5/bin/php' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
             '/usr/local/bin/composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
+            'git' => ['/usr/bin/git', 'git version 2.53.0'],
             'laravel', '/usr/local/bin/laravel', 'laravel-installer' => [
                 '/usr/local/bin/laravel',
                 'Laravel Installer 5.0.0',

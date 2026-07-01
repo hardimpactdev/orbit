@@ -74,6 +74,26 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
             ->toBe('installed');
     });
 
+    it('converges git with expected_state installed', function (): void {
+        $node = appProdBaselineNode();
+        $assignment = appProdBaselineAssignment($node);
+
+        $baseline = new AppProductionRoleBaseline;
+
+        $baseline->converge($node, $assignment);
+
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'git')
+            ->first();
+
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed');
+    });
+
     it('converges gh with expected_state installed', function (): void {
         $node = appProdBaselineNode();
         $assignment = appProdBaselineAssignment($node);
@@ -141,17 +161,17 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])
+                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
-            ->toBe(4);
+            ->toBe(5);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
         expect(
             NodeTool::query()
                 ->where('node_id', $node->id)
-                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])
+                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh', 'git'])
                 ->count(),
         )
             ->toBe(0);
