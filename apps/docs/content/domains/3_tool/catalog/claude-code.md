@@ -26,7 +26,8 @@ home directory under `~/.local/bin/claude` with settings and state isolated to
 that user's `~/.claude` and `~/.claude.json`.
 
 Repeat `--user=<name>` on `tool:install claude-code` to install additional
-user-scoped copies on the same node. `--user` is not accepted for other tools.
+user-scoped copies on the same node. Other agent CLI tools that install per OS
+user use the same `--user` targeting model.
 Example:
 
 ```bash

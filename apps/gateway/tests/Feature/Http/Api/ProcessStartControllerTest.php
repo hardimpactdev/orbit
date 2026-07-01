@@ -148,7 +148,7 @@ describe('ProcessStartController', function (): void {
             ->create([
                 'name' => 'opencode-server',
                 'runtime' => ProcessRuntime::Systemd,
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
                 'command' => 'opencode serve --hostname 0.0.0.0',
             ]);
         app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([

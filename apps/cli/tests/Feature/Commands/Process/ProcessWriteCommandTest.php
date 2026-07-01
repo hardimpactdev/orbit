@@ -76,7 +76,7 @@ describe('process write commands', function (): void {
             'process' => [
                 'name' => 'opencode-server',
                 'node' => 'app-1',
-                'tool' => 'opencode',
+                'tool' => 'opencode-cli',
                 'runtime' => 'systemd',
             ],
             'runtime_units' => [['name' => 'opencode-server', 'context' => 'node']],
@@ -88,7 +88,7 @@ describe('process write commands', function (): void {
             'name' => 'opencode-server',
             'process_command' => 'opencode serve -a',
             '--node' => 'app-1',
-            '--tool' => 'opencode',
+            '--tool' => 'opencode-cli',
             '--runtime' => 'systemd',
             '--json' => true,
         ]);
@@ -107,7 +107,7 @@ describe('process write commands', function (): void {
                     'crash_notification' => 'none',
                     'start' => true,
                     'runtime' => 'systemd',
-                    'tool' => 'opencode',
+                    'tool' => 'opencode-cli',
                 ]
             ),
         );

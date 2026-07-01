@@ -61,7 +61,7 @@ describe('ToolStream commands', function (): void {
             gatewayProgressFrame('complete', [
                 'exit_code' => 0,
                 'data' => ['tool' => [
-                    'name' => 'opencode-server',
+                    'name' => 'opencode-cli',
                     'node' => 'app-1',
                     'state' => 'installed',
                     'process' => null,
@@ -70,7 +70,7 @@ describe('ToolStream commands', function (): void {
         );
 
         [$exitCode] = runCommand($this, 'tool:install', [
-            'tool' => 'opencode-server',
+            'tool' => 'opencode-cli',
             '--node' => 'app-1',
             '--no-process' => true,
             '--json' => true,
@@ -79,7 +79,7 @@ describe('ToolStream commands', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/tools/opencode-server/install'
+                && $request->url() === 'https://gateway.test/api/tools/opencode-cli/install'
                 && $request->data() === [
                     'node' => 'app-1',
                     'status' => 'installed',
@@ -172,14 +172,14 @@ describe('ToolStream commands', function (): void {
         $complete = [
             'exit_code' => 0,
             'data' => [
-                'tool' => ['name' => 'opencode-server', 'node' => 'app-1', 'action' => 'reconfigured'],
+                'tool' => ['name' => 'opencode-cli', 'node' => 'app-1', 'action' => 'reconfigured'],
             ],
         ];
 
         fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
 
         [$exitCode, $output] = runCommand($this, 'tool:reconfigure', [
-            'tool' => 'opencode-server',
+            'tool' => 'opencode-cli',
             '--app' => 'docs',
             '--password' => 'newpass',
             '--json' => true,
@@ -190,7 +190,7 @@ describe('ToolStream commands', function (): void {
         assertGatewayStreamSent(
             fn (FakeGatewayStreamRequest $request): bool => (
                 $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/tools/opencode-server/reconfigure'
+                && $request->url() === 'https://gateway.test/api/tools/opencode-cli/reconfigure'
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'app' => 'docs',
@@ -245,7 +245,7 @@ describe('ToolStream commands', function (): void {
             'data' => [
                 'code' => 'tool.action_failed',
                 'message' => 'Tool action failed.',
-                'meta' => ['tool' => 'opencode-server', 'action' => 'restart'],
+                'meta' => ['tool' => 'opencode-cli', 'action' => 'restart'],
             ],
         ];
 
@@ -259,7 +259,7 @@ describe('ToolStream commands', function (): void {
         );
 
         [$exitCode, $output] = runCommand($this, 'tool:update', [
-            'tool' => 'opencode-server',
+            'tool' => 'opencode-cli',
             '--node' => 'app-1',
             '--json' => true,
         ]);

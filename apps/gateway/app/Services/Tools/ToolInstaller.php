@@ -19,7 +19,8 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\RemoteSecretFile;
-use App\Tools\ClaudeCodeTool;
+use App\Tools\UserScopedCliTool;
+use App\Tools\UserScopedCliUsers;
 
 final readonly class ToolInstaller
 {
@@ -105,16 +106,27 @@ final readonly class ToolInstaller
             return $configFailure;
         }
 
-        if ($tool === 'claude-code') {
+        $definition = $this->catalog->definition($tool);
+
+        if ($definition instanceof UserScopedCliTool) {
+            if ($version !== null && trim($version) !== '' && ! $definition->supportsInstallVersion()) {
+                return ToolRegistryFailure::validation(
+                    field: 'version',
+                    value: $version,
+                    message: "Tool '{$tool}' does not support managed install versions.",
+                    meta: ['reason' => 'unsupported_field'],
+                );
+            }
+
             $nodeUser = is_string($targetNode->user) ? trim($targetNode->user) : '';
-            $defaultUser = preg_match(ClaudeCodeTool::USERNAME_PATTERN, $nodeUser) === 1 ? $nodeUser : 'orbit';
+            $defaultUser = preg_match(UserScopedCliUsers::USERNAME_PATTERN, $nodeUser) === 1 ? $nodeUser : 'orbit';
 
             $installUsers = [];
             $requestedUsers = $config['install_users'] ?? [];
 
             if (is_array($requestedUsers)) {
                 foreach ($requestedUsers as $username) {
-                    if (! is_string($username) || preg_match(ClaudeCodeTool::USERNAME_PATTERN, $username) !== 1) {
+                    if (! is_string($username) || preg_match(UserScopedCliUsers::USERNAME_PATTERN, $username) !== 1) {
                         continue;
                     }
 
@@ -125,7 +137,11 @@ final readonly class ToolInstaller
             $config = [
                 'default_user' => $defaultUser,
                 'install_users' => array_values(array_unique($installUsers)),
-                ...($version !== null && trim($version) !== '' ? ['version' => trim($version)] : []),
+                ...(
+                    $definition->supportsInstallVersion() && $version !== null && trim($version) !== ''
+                        ? ['version' => trim($version)]
+                        : []
+                ),
             ];
         }
 

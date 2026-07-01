@@ -306,8 +306,8 @@ function toolTargetAuthToolNameFromUri(string $uri): string
         return 'openclaw';
     }
 
-    if (str_contains($uri, 'opencode-server')) {
-        return 'opencode-server';
+    if (str_contains($uri, 'opencode-cli')) {
+        return 'opencode-cli';
     }
 
     if (str_contains($uri, 'polyscope-server')) {

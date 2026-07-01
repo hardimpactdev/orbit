@@ -27,6 +27,7 @@ afterEach(function (): void {
     E2ECurrentCheckout::flushCache();
     E2ECurrentCheckout::useNowResolverForTests(null);
     E2ECurrentCheckout::useInstallerForTests(null);
+    E2ECurrentCheckout::useTreeHashResolverForTests(null);
     m::close();
 });
 
@@ -447,6 +448,7 @@ it('does not record archive timing for shared archive cache hits', function (): 
 
     putenv('ORBIT_E2E_CHECKOUT_CACHE=process');
     putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$cacheDir}");
+    E2ECurrentCheckout::useTreeHashResolverForTests(static fn (): string => 'shared-checkout-archive-test');
 
     Process::fake(function ($process) use (&$tarBuilds) {
         if (str_starts_with((string) $process->command, 'COPYFILE_DISABLE=1 tar ')) {

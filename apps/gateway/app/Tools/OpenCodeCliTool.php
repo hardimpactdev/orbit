@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
-final class OpenCodeServerTool extends BaseTool
+final class OpenCodeCliTool extends BaseTool
 {
     public function slug(): string
     {
-        return 'opencode-server';
+        return 'opencode-cli';
     }
 
     #[\Override]
@@ -33,7 +33,7 @@ final class OpenCodeServerTool extends BaseTool
             'name' => 'opencode-server',
             'command' => 'opencode serve -a',
             'runtime' => 'systemd',
-            'tool' => 'opencode',
+            'tool' => 'opencode-cli',
         ];
     }
 
@@ -41,7 +41,7 @@ final class OpenCodeServerTool extends BaseTool
     {
         return <<<'BASH'
             #!/usr/bin/env bash
-            # orbit install opencode-server
+            # orbit install opencode-cli
             set -e
             curl -fsSL https://opencode.ai/install | bash
             BASH;
@@ -51,7 +51,7 @@ final class OpenCodeServerTool extends BaseTool
     {
         return <<<'BASH'
             #!/usr/bin/env bash
-            # orbit remove opencode-server
+            # orbit remove opencode-cli
             set -e
             home=$(echo $HOME)
             rm -rf "${home}/.opencode"
@@ -62,7 +62,7 @@ final class OpenCodeServerTool extends BaseTool
     {
         return <<<'BASH'
             #!/usr/bin/env bash
-            # orbit update opencode-server
+            # orbit update opencode-cli
             set -e
             home=$(echo $HOME)
             "${home}/.opencode/bin/opencode" upgrade
@@ -95,7 +95,7 @@ final class OpenCodeServerTool extends BaseTool
     {
         return <<<'BASH'
             #!/usr/bin/env bash
-            # orbit reconfigure opencode-server
+            # orbit reconfigure opencode-cli
             set -e
             # Runtime changes are owned by the related process. This command only records
             # tool capability config and credentials in gateway intent.

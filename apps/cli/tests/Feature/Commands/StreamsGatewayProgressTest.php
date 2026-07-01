@@ -357,9 +357,9 @@ describe('StreamsGatewayProgress', function (): void {
         ],
         'tool:reconfigure' => [
             'tool:reconfigure',
-            ['tool' => 'opencode-server', '--node' => 'app-1'],
+            ['tool' => 'opencode-cli', '--node' => 'app-1'],
             'POST',
-            '/api/tools/opencode-server/reconfigure',
+            '/api/tools/opencode-cli/reconfigure',
         ],
         's3:publish' => [
             's3:publish',
@@ -411,7 +411,7 @@ describe('StreamsGatewayProgress', function (): void {
         'deploy:run' => ['deploy:run', ['app' => 'docs']],
         'tool:install' => ['tool:install', ['tool' => 'composer', '--node' => 'app-1']],
         'tool:update' => ['tool:update', ['tool' => 'composer', '--node' => 'app-1']],
-        'tool:reconfigure' => ['tool:reconfigure', ['tool' => 'opencode-server', '--node' => 'app-1']],
+        'tool:reconfigure' => ['tool:reconfigure', ['tool' => 'opencode-cli', '--node' => 'app-1']],
         's3:publish' => ['s3:publish', ['host' => 's3.example.com', '--node' => 'storage-1']],
         's3:unpublish' => ['s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1', '--force' => true]],
     ]);

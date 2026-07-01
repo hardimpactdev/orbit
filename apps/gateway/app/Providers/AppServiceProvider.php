@@ -60,20 +60,24 @@ use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
+use App\Tools\AntigravityCliTool;
 use App\Tools\CaddyTool;
 use App\Tools\ClaudeCodeTool;
 use App\Tools\CodexAppTool;
+use App\Tools\CodexCliTool;
 use App\Tools\ComposerTool;
+use App\Tools\CursorCliTool;
 use App\Tools\DnsTool;
 use App\Tools\DockerTool;
 use App\Tools\GhTool;
 use App\Tools\GitTool;
+use App\Tools\GrokCliTool;
 use App\Tools\HermesTool;
 use App\Tools\LaravelInstallerTool;
 use App\Tools\MailpitTool;
 use App\Tools\NodeExporterTool;
 use App\Tools\OpenClawTool;
-use App\Tools\OpenCodeServerTool;
+use App\Tools\OpenCodeCliTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
 use App\Tools\PolyscopeServerTool;
@@ -177,12 +181,16 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(SeaweedfsTool::class),
                     $app->make(NodeExporterTool::class),
                     $app->make(PolyscopeServerTool::class),
-                    $app->make(OpenCodeServerTool::class),
+                    $app->make(OpenCodeCliTool::class),
                     $app->make(OpenClawTool::class),
                     $app->make(HermesTool::class),
                     $app->make(LaravelInstallerTool::class),
                     $app->make(CodexAppTool::class),
                     $app->make(ClaudeCodeTool::class),
+                    $app->make(CodexCliTool::class),
+                    $app->make(GrokCliTool::class),
+                    $app->make(AntigravityCliTool::class),
+                    $app->make(CursorCliTool::class),
                 ];
 
                 return new ToolDefinitionRegistry($definitions);

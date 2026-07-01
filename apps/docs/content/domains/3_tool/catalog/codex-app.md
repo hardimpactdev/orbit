@@ -55,4 +55,6 @@ written successfully.
 - Register workspaces or Codex-managed worktrees.
 - Depend on the target node being roleless or carrying an agent role.
 - Edit any Codex CLI configuration outside `~/.codex/codex-app/config.json`.
+- Install, update, remove, or probe the terminal Codex CLI. That lifecycle
+  belongs to [`codex-cli`](codex-cli.md).
 - Create node grants, SSH keys, host keys, or WireGuard identity material.

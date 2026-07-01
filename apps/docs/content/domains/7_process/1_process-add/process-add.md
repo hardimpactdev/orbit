@@ -15,7 +15,7 @@ long-running app or workspace workers, and development servers.
 orbit process:add vite "npm run dev" --app=docs --crash-notification=agent_ide
 orbit process:add queue "php artisan queue:work" --app=docs --restart-policy=always
 orbit process:add horizon "php artisan horizon" --app=docs --workspace=feature-docs --runtime=systemd
-orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode
+orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime=systemd --tool=opencode-cli
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
 orbit process:add redis --node=database-1 --service=redis --runtime=docker --version=7

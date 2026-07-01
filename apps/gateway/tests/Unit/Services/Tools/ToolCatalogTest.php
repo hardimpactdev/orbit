@@ -12,7 +12,7 @@ use App\Tools\CodexAppTool;
 use App\Tools\GhTool;
 use App\Tools\GitTool;
 use App\Tools\HermesTool;
-use App\Tools\OpenCodeServerTool;
+use App\Tools\OpenCodeCliTool;
 use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
 use Tests\TestCase;
@@ -46,6 +46,122 @@ describe('tool catalog definitions', function (): void {
             ->toBeFalse()
             ->and($catalog->hasCapability('codex-app', 'remove'))
             ->toBeFalse();
+    });
+
+    it('catalogs agent coding CLIs as user-scoped runtime tools', function (
+        string $tool,
+        string $binaryPath,
+        array $operatingSystems,
+    ): void {
+        $catalog = app(ToolCatalog::class);
+        $metadata = $catalog->probeMetadata($tool);
+
+        expect($catalog->supports($tool))
+            ->toBeTrue()
+            ->and($catalog->category($tool))
+            ->toBe('runtime')
+            ->and($catalog->requiredNodeRole($tool))
+            ->toBeNull()
+            ->and($catalog->supportedOperatingSystems($tool))
+            ->toBe($operatingSystems)
+            ->and($catalog->hasCapability($tool, 'install'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability($tool, 'update'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability($tool, 'safe-adopt'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability($tool, 'credentials'))
+            ->toBeFalse()
+            ->and($catalog->hasCapability($tool, 'reconfigure'))
+            ->toBeFalse()
+            ->and($catalog->relatedProcess($tool))
+            ->toBeNull()
+            ->and($metadata)
+            ->toMatchArray([
+                'binary' => $binaryPath,
+            ])
+            ->and($metadata['version_command'] ?? null)
+            ->toBeString()
+            ->and($catalog->logCommand($tool, 50))
+            ->toBeNull();
+    })->with([
+        'codex cli' => ['codex-cli', '/home/orbit/.local/bin/codex', ['linux', 'macos']],
+        'grok cli' => ['grok-cli', '/home/orbit/.grok/bin/grok', ['linux', 'macos']],
+        'antigravity cli' => ['antigravity-cli', '/home/orbit/.local/bin/agy', ['linux', 'macos']],
+        'cursor cli' => ['cursor-cli', '/home/orbit/.local/bin/cursor-agent', ['linux', 'macos']],
+    ]);
+
+    it('keeps Codex App separate from Codex CLI lifecycle support', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->supports('codex-app'))
+            ->toBeTrue()
+            ->and($catalog->supports('codex-cli'))
+            ->toBeTrue()
+            ->and($catalog->category('codex-app'))
+            ->toBe('operator')
+            ->and($catalog->category('codex-cli'))
+            ->toBe('runtime')
+            ->and($catalog->hasCapability('codex-app', 'install'))
+            ->toBeFalse()
+            ->and($catalog->hasCapability('codex-cli', 'install'))
+            ->toBeTrue();
+    });
+
+    it('does not catalog outdated Gemini CLI support', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->supports('gemini-cli'))
+            ->toBeFalse()
+            ->and($catalog->definition('gemini-cli'))
+            ->toBeNull()
+            ->and($catalog->installScript('gemini-cli'))
+            ->toBeNull();
+    });
+
+    it('uses source-backed installer and update channels without provider credential ownership', function (
+        string $tool,
+        string $installNeedle,
+        string $updateNeedle,
+    ): void {
+        $catalog = app(ToolCatalog::class);
+
+        $installScript = (string) $catalog->installScript($tool);
+        $updateScript = (string) $catalog->updateScript($tool);
+
+        expect($installScript)
+            ->toContain($installNeedle)
+            ->not->toContain('API_KEY')
+            ->not->toContain('TOKEN')
+            ->not->toContain('auth.json')
+            ->not->toContain('keychain')->and($updateScript)->toContain($updateNeedle)
+            ->not->toContain('API_KEY')
+            ->not->toContain('TOKEN')
+            ->not->toContain('auth.json')
+            ->not->toContain('keychain');
+    })->with([
+        'codex cli' => ['codex-cli', 'https://chatgpt.com/codex/install.sh', 'https://chatgpt.com/codex/install.sh'],
+        'grok cli' => ['grok-cli', 'https://x.ai/cli/install.sh', 'grok update'],
+        'antigravity cli' => [
+            'antigravity-cli',
+            'https://antigravity.google/cli/install.sh',
+            'https://antigravity.google/cli/install.sh',
+        ],
+        'cursor cli' => ['cursor-cli', 'https://cursor.com/install', 'https://cursor.com/install'],
+    ]);
+
+    it('probes Cursor CLI through a version fallback that does not inspect login state', function (): void {
+        $metadata = app(ToolCatalog::class)->probeMetadata('cursor-cli');
+
+        expect($metadata)
+            ->toMatchArray([
+                'binary' => '/home/orbit/.local/bin/cursor-agent',
+            ])
+            ->and($metadata['version_command'] ?? null)
+            ->toContain('readlink')
+            ->and($metadata['version_command'] ?? null)
+            ->not->toContain('--version')->and($metadata['version_command'] ?? null)
+            ->not->toContain('keychain');
     });
 
     it('catalogs gh as an app-role runtime tool, not a fleet-wide always tool', function (): void {
@@ -186,9 +302,20 @@ describe('tool catalog definitions', function (): void {
                 ->not->toContain('.config/systemd/user');
         }
     })->with([
-        'opencode server' => ['opencode-server', 'opencode', OpenCodeServerTool::class],
+        'opencode cli' => ['opencode-cli', 'opencode', OpenCodeCliTool::class],
         'polyscope server' => ['polyscope-server', 'polyscope-server', PolyscopeServerTool::class],
     ]);
+
+    it('does not catalog opencode-server as the canonical managed tool slug', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->supports('opencode-server'))
+            ->toBeFalse()
+            ->and($catalog->definition('opencode-server'))
+            ->toBeNull()
+            ->and($catalog->installScript('opencode-server'))
+            ->toBeNull();
+    });
 
     it('describes caddy as the orbit-caddy Docker container instead of a host Caddy service', function (): void {
         $catalog = app(ToolCatalog::class);

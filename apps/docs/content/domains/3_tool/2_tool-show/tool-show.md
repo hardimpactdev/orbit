@@ -18,7 +18,7 @@ orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
 
 ```bash
 orbit tool:show composer --node=app-1
-orbit tool:show opencode-server --app=docs
+orbit tool:show opencode-cli --app=docs
 orbit tool:show composer --node=app-1 --live
 orbit tool:show composer --node=app-1 --json
 ```
