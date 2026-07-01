@@ -43,9 +43,27 @@ execution lanes, JSON envelope shape, and the `--node` / `--app` /
 See [`references/skill.md`](references/skill.md) for installing the bundled
 Orbit skill into Codex, Claude, Antigravity, Grok, or an explicit local path.
 
+See [`references/solo.md`](references/solo.md) for the optional Solo extension,
+including local/gateway enablement, the gateway proxy boundary, and how to
+discover exact `solo:*` command names.
+
+## Command discovery
+
+Use `orbit list --format=json` for the commands visible on the current node.
+Normal command discovery can hide disabled extension command families.
+
+Inside this repository, use
+`apps/docs/content/generated/command-catalog.json` for the full generated
+product command catalog, including extension-gated commands. The catalog is
+built from the live CLI surface and command docs; prefer it over hand-maintained
+lists when you need exact current command names, options, docs paths, or linked
+verification hints.
+
 ## Command index
 
-Commands are grouped by family. Each reference file lists every command in that family with its signature, options, defaults, and a couple of examples.
+Commands are grouped by family for quick navigation. The grouped index is not
+the exhaustive command source; use `orbit list --format=json` or the generated
+command catalog when command completeness matters.
 
 ### Setup and ops  -  [`references/operation.md`](references/operation.md)
 
@@ -61,6 +79,17 @@ Commands are grouped by family. Each reference file lists every command in that 
 | Command | What it does |
 |---|---|
 | `orbit skill:install [provider] [path]` | Copy the bundled Orbit skill into Codex, Claude, Antigravity, Grok, or an explicit local path |
+
+### Extensions and Solo  -  [`references/solo.md`](references/solo.md)
+
+| Command | What it does |
+|---|---|
+| `orbit extension:list\|enable\|disable` | Inspect or change built-in extension state, including local and gateway `solo` enablement |
+| `orbit solo:tools` / `orbit solo:agent-tool:list` | Inspect Solo tools exposed through the gateway proxy |
+| `orbit solo:project:*` | Manage and inspect Solo projects |
+| `orbit solo:process:*` | Inspect, spawn, control, and interact with Solo processes and agents |
+| `orbit solo:scratchpad:*` / `orbit solo:todo:*` | Manage Solo scratchpads and todos |
+| `orbit solo:timer:*` / `orbit solo:lock:*` | Manage Solo timers and coordination locks |
 
 ### Node fleet  -  [`references/node.md`](references/node.md)
 
@@ -371,5 +400,6 @@ orbit app:agent-ide myapp polyscope  # per-app override
 - Local TLD resolution on a caller machine -> [`dns.md`](references/dns.md)
 - Audit trail / who did what -> [`activity.md`](references/activity.md)
 - Sending messages into a workspace's coding agent -> [`agent-ide.md`](references/agent-ide.md)
+- Solo extension commands, projects, agents, scratchpads, todos, timers -> [`solo.md`](references/solo.md)
 - WireGuard client provisioning, web UI password -> [`vpn.md`](references/vpn.md)
 - Node roles, doctor model, slugs, JSON shape -> [`concepts.md`](references/concepts.md)
