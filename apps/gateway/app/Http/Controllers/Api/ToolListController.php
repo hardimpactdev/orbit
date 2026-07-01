@@ -37,8 +37,13 @@ final readonly class ToolListController implements Loggable
         );
         $node = $request->query('node');
         $app = $request->query('app');
-        $hasExplicitTarget = is_string($node) && $node !== '' || is_string($app) && $app !== '';
+        $self = $request->boolean('self');
+        $hasExplicitTarget = $self || is_string($node) && $node !== '' || is_string($app) && $app !== '';
         $authorizationNodeIds = $hasExplicitTarget ? $targetVisibleNodeIds : $defaultVisibleNodeIds;
+
+        if ($self) {
+            $authorizationNodeIds = [$caller->id];
+        }
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $authorizationNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the tool registry.');
@@ -86,8 +91,14 @@ final readonly class ToolListController implements Loggable
             $nodeFilter = $appNode;
         }
 
+        if ($self) {
+            $nodeFilter = $caller;
+        }
+
         $tools = $this->fetchTools(
-            $nodeFilter instanceof Node ? $targetVisibleNodeIds : $defaultVisibleNodeIds,
+            $self
+                ? $this->callerNodeIds($caller)
+                : $this->visibleNodeIdsForFetch($nodeFilter, $targetVisibleNodeIds, $defaultVisibleNodeIds),
             $nodeFilter,
         );
 
@@ -98,6 +109,27 @@ final readonly class ToolListController implements Loggable
                 ],
             ],
         ]);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function callerNodeIds(Node $caller): array
+    {
+        return [$caller->id];
+    }
+
+    /**
+     * @param  list<int>  $targetVisibleNodeIds
+     * @param  list<int>  $defaultVisibleNodeIds
+     * @return list<int>
+     */
+    private function visibleNodeIdsForFetch(
+        ?Node $node,
+        array $targetVisibleNodeIds,
+        array $defaultVisibleNodeIds,
+    ): array {
+        return $node instanceof Node ? $targetVisibleNodeIds : $defaultVisibleNodeIds;
     }
 
     /**

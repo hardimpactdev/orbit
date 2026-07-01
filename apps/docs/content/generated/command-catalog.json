@@ -11676,6 +11676,7 @@
             "options": [
                 "app",
                 "node",
+                "all",
                 "json"
             ],
             "renderers": {
@@ -11725,24 +11726,11 @@
                 }
             ],
             "p4_mapping": {
-                "sdk_request": {
-                    "class": "Orbit\\Sdk\\Laravel\\Requests\\Tools\\ListToolsRequest",
-                    "path": "packages/sdk/src/Requests/Tools/ListToolsRequest.php"
-                },
-                "gateway_route": {
-                    "method": "GET",
-                    "uri": "/api/tools"
-                },
-                "gateway_controller": {
-                    "class": "App\\Http\\Controllers\\Api\\ToolListController",
-                    "path": "apps/gateway/app/Http/Controllers/Api/ToolListController.php",
-                    "action": "__invoke"
-                },
-                "authorization_permission": [],
-                "response_dto": {
-                    "class": "Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolListResponse",
-                    "path": "packages/sdk/src/Responses/Tools/ToolListResponse.php"
-                }
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
             }
         },
         "tool:reconfigure": {

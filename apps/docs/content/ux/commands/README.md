@@ -15,6 +15,8 @@ primitives are explicitly called out below.
 These rules apply to all renderer and input-mode docs in this tree.
 
 - Lists default to read-only [`table`](lists/table.md). Use
+  [`data-list`](lists/data-list.md) when each item needs a compact grouped
+  property view instead of a columnar row, and use
   [`datatable`](lists/data-table-prompt.md) whenever the operator must choose an
   existing Orbit entity from finite registry state before a command action, such
   as an app, node, workspace, process, schedule, or tool target.

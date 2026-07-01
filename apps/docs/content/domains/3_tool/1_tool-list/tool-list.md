@@ -4,14 +4,16 @@
 
 List registered tool state from gateway configuration.
 
-`tool:list` shows the tools Orbit expects or manages on nodes in the
-fleet. It is an inventory and audit command. It does not probe nodes unless a
-future command contract adds an explicit live inspection option.
+`tool:list` shows the tools Orbit expects or manages on the selected node. By
+default, the command uses the local default node. When no default node is set,
+it falls back to the current caller node: the machine where Orbit is installed
+and running. It is an inventory and audit command. It does not probe nodes
+unless a future command contract adds an explicit live inspection option.
 
 ## Usage
 
 ```bash
-orbit tool:list [--app=<app>] [--node=<node>] [--json]
+orbit tool:list [--app=<app>] [--node=<node>] [--all] [--json]
 ```
 
 ## Examples
@@ -19,6 +21,7 @@ orbit tool:list [--app=<app>] [--node=<node>] [--json]
 ```bash
 orbit tool:list
 orbit tool:list --node=app-1
+orbit tool:list --all
 orbit tool:list --app=docs
 orbit tool:list --json
 ```
@@ -28,25 +31,29 @@ orbit tool:list --json
 - `--node`: Limit results to one visible node.
 - `--app`: Resolve the owning node from an app and limit results to that
   node.
+- `--all`: Show visible tools across all nodes instead of defaulting to the
+  local default node or current caller node.
 - `--json`: Output JSON.
 
 ## What Happens
 
-Run this command to read the tools Orbit expects or manages on the selected nodes.
+Run this command to read the tools Orbit expects or manages on the selected node.
 
 `tool:list`:
 
 1. Resolves the caller's gateway connection and visibility.
-2. Resolves optional node or app filters.
+2. Resolves optional node or app filters; when neither is provided, uses the
+   local default node or current caller node.
 3. Reads visible gateway tool rows.
-4. Groups the result by node.
+4. Shows a node-scoped list, or a grouped node list when `--all` is provided.
 
 The command is read-only. It does not install, remove, start, stop, or inspect
 tools on nodes.
 
 ## Output
 
-Use `--json` to get machine-readable tool entities; omit it for a grouped node view.
+Use `--json` to get machine-readable tool entities; omit it for a grouped node
+data list.
 
 Human output is grouped by node and shows each tool's name, expected lifecycle
 state, managed flag, and known version when available.

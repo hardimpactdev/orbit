@@ -83,6 +83,23 @@ describe('ToolListController', function (): void {
             ->assertJsonPath('success.data.tools.0.name', 'php');
     });
 
+    it('filters tools to the caller node when self scope is requested', function (): void {
+        $caller = createToolListCallerNode();
+        $otherNode = createTestAppHostNode(['name' => 'app-1']);
+        grantToolListAccess($caller, $otherNode);
+
+        NodeTool::factory()->create(['name' => 'composer', 'node_id' => $caller->id]);
+        NodeTool::factory()->create(['name' => 'php', 'node_id' => $otherNode->id]);
+
+        $response = $this->call('GET', '/api/tools?self=1', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.tools')
+            ->assertJsonPath('success.data.tools.0.node', 'caller')
+            ->assertJsonPath('success.data.tools.0.name', 'composer');
+    });
+
     it('filters tools by app owning node', function (): void {
         $caller = createToolListCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);

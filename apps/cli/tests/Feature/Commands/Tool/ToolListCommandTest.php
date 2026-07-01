@@ -2,11 +2,34 @@
 
 declare(strict_types=1);
 
+use App\Services\GatewayApiClient;
+use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
+function create_tool_list_config_store(string $filename, ?string $defaultNode = null): OrbitConfigStore
+{
+    $store = new OrbitConfigStore(overridePath: base_path($filename));
+    remove_tool_list_config_store($store);
+
+    if ($defaultNode !== null) {
+        $store->save(['defaults' => ['node' => $defaultNode, 'profile' => null]]);
+    }
+
+    app()->instance(OrbitConfigStore::class, $store);
+
+    return $store;
+}
+
+function remove_tool_list_config_store(OrbitConfigStore $store): void
+{
+    if (is_file($store->path())) {
+        unlink($store->path());
+    }
+}
+
 describe('tool:list', function (): void {
-    it('returns a canonical success envelope in JSON mode and forwards filters', function (): void {
+    it('returns a canonical success envelope in JSON mode and forwards explicit node filters', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
                 [
@@ -39,7 +62,120 @@ describe('tool:list', function (): void {
             ->toBe(1);
     });
 
-    it('renders human output containing tool fields', function (): void {
+    it('uses the local default node when no target option is provided', function (): void {
+        $store = create_tool_list_config_store('tests/.tmp-tool-list-config.json', defaultNode: 'default-app');
+
+        fakeGateway(fakeSuccessEnvelope([
+            'tools' => [
+                [
+                    'name' => 'composer',
+                    'node' => 'default-app',
+                    'expected_state' => 'installed',
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'tool:list', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return str_contains($url, '/api/tools') && str_contains($url, 'node=default-app');
+        });
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tools'][0]['node'])
+            ->toBe('default-app');
+
+        remove_tool_list_config_store($store);
+    });
+
+    it('falls back to caller node scope when no default node is configured', function (): void {
+        $store = create_tool_list_config_store('tests/.tmp-tool-list-empty-config.json');
+
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->forgetInstance(GatewayApiClient::class);
+
+        $toolRequestUrl = null;
+        $toolRequestData = [];
+
+        Http::fake(function (Request $request) use (&$toolRequestUrl, &$toolRequestData) {
+            if (str_contains($request->url(), '/api/me')) {
+                return Http::response(fakeSuccessEnvelope([
+                    'self' => [
+                        'name' => 'caller',
+                        'status' => 'active',
+                    ],
+                ]));
+            }
+
+            $toolRequestUrl = urldecode($request->url());
+            $toolRequestData = $request->data();
+
+            return Http::response(fakeSuccessEnvelope([
+                'tools' => [
+                    [
+                        'name' => 'composer',
+                        'node' => 'caller',
+                        'expected_state' => 'installed',
+                    ],
+                ],
+            ]));
+        });
+
+        [$exitCode, $output] = runCommand($this, 'tool:list', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET' && str_contains($request->url(), '/api/me'),
+        );
+
+        expect($toolRequestUrl)
+            ->toContain('/api/tools')
+            ->and($toolRequestData)
+            ->not->toHaveKey('self')->and((string) $toolRequestUrl)
+            ->not->toContain('self=1');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tools'][0]['node'])
+            ->toBe('caller');
+
+        remove_tool_list_config_store($store);
+    });
+
+    it('uses all visible nodes when --all is provided', function (): void {
+        $store = create_tool_list_config_store('tests/.tmp-tool-list-all-config.json', defaultNode: 'default-app');
+
+        fakeGateway(fakeSuccessEnvelope([
+            'tools' => [
+                ['name' => 'composer', 'node' => 'app-1'],
+                ['name' => 'php', 'node' => 'app-2'],
+            ],
+        ]));
+
+        [$exitCode] = runCommand($this, 'tool:list', [
+            '--all' => true,
+            '--json' => true,
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return str_contains($url, '/api/tools') && ! str_contains($url, 'node=') && ! str_contains($url, 'self=1');
+        });
+
+        expect($exitCode)->toBe(0);
+
+        remove_tool_list_config_store($store);
+    });
+
+    it('renders human data list output containing tool fields', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
                 [
@@ -61,19 +197,15 @@ describe('tool:list', function (): void {
             ->and($output)
             ->toContain('Node: app-1')
             ->and($output)
-            ->toContain('TOOL')
-            ->and($output)
-            ->toContain('EXPECTED')
-            ->and($output)
-            ->toContain('MANAGED')
-            ->and($output)
-            ->toContain('VERSION')
-            ->and($output)
             ->toContain('composer')
             ->and($output)
-            ->toContain('installed')
+            ->toContain('Expected: installed')
             ->and($output)
-            ->toContain('—');
+            ->toContain('Managed: yes')
+            ->and($output)
+            ->toContain('Version: —')
+            ->and($output)
+            ->not->toContain('TOOL');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {

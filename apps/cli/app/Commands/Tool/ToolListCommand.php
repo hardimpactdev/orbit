@@ -7,8 +7,8 @@ namespace App\Commands\Tool;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
-
-use function Laravel\Prompts\table;
+use App\Exceptions\OrbitConfigStoreException;
+use App\Services\OrbitConfigStore;
 
 final class ToolListCommand extends GatewayCommand
 {
@@ -18,6 +18,7 @@ final class ToolListCommand extends GatewayCommand
     protected $signature = 'tool:list
         {--app= : Filter by app selector}
         {--node= : Filter by owning node}
+        {--all : Show tools across all visible nodes}
         {--json}';
 
     #[\Override]
@@ -26,10 +27,9 @@ final class ToolListCommand extends GatewayCommand
     public function handle(): int
     {
         try {
-            $response = $this->gatewayGet('/api/tools', $this->filledQuery([
-                'app' => $this->stringOption('app'),
-                'node' => $this->stringOption('node'),
-            ]));
+            $response = $this->gatewayGet('/api/tools', $this->toolListQuery());
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -46,21 +46,23 @@ final class ToolListCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        foreach ($this->toolsGroupedByNode($tools) as $node => $nodeTools) {
-            $this->line("Node: {$node}");
-
-            table(
-                headers: ['TOOL', 'EXPECTED', 'MANAGED', 'VERSION'],
-                rows: array_map(fn (array $tool): array => [
-                    $this->toolString($tool, 'name'),
-                    $this->toolString($tool, 'expected_state'),
-                    $this->toolBoolean($tool, 'managed'),
-                    $this->toolString($tool, 'version'),
-                ], $nodeTools),
-            );
-        }
+        new ToolListDataListRenderer($this)->render($tools);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function toolListQuery(): array
+    {
+        return new ToolListQueryResolver(
+            app: $this->stringOption('app'),
+            node: $this->stringOption('node'),
+            defaultNode: app(OrbitConfigStore::class)->defaultNode(),
+            all: (bool) $this->option('all'),
+            gatewayGet: $this->gatewayGet(...),
+        )->resolve();
     }
 
     /**
@@ -76,51 +78,5 @@ final class ToolListCommand extends GatewayCommand
         }
 
         return array_values(array_filter($tools, is_array(...)));
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $tools
-     * @return array<string, list<array<string, mixed>>>
-     */
-    private function toolsGroupedByNode(array $tools): array
-    {
-        $grouped = [];
-
-        foreach ($tools as $tool) {
-            $node = $this->toolString($tool, 'node');
-            $grouped[$node][] = $tool;
-        }
-
-        ksort($grouped);
-
-        return $grouped;
-    }
-
-    /**
-     * @param  array<string, mixed>  $tool
-     */
-    private function toolString(array $tool, string $key): string
-    {
-        $value = $tool[$key] ?? null;
-
-        if (is_bool($value)) {
-            return $value ? 'yes' : 'no';
-        }
-
-        if (is_scalar($value) && (string) $value !== '') {
-            return (string) $value;
-        }
-
-        return '—';
-    }
-
-    /**
-     * @param  array<string, mixed>  $tool
-     */
-    private function toolBoolean(array $tool, string $key): string
-    {
-        $value = $tool[$key] ?? null;
-
-        return is_bool($value) ? ($value ? 'yes' : 'no') : '—';
     }
 }
