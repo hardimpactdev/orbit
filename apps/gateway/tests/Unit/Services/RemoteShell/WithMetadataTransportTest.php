@@ -132,3 +132,25 @@ it('allows wg-easy database path metadata used by vpn state commands', function 
         'export ORBIT_WG_EASY_DB_PATH=',
     ));
 });
+
+it('allows Laravel Vite URL and dev server certificate metadata', function (): void {
+    Process::fake();
+
+    new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'test -n "$VITE_DEV_SERVER_KEY"', [
+        'metadata' => [
+            'APP_URL' => 'https://craft-starterkit-react.test',
+            'VITE_APP_URL' => 'https://craft-starterkit-react.test',
+            'VITE_VALET_HOST' => 'craft-starterkit-react.test',
+            'VITE_DEV_SERVER_KEY' => '/home/orbit/.config/orbit/certs/craft-starterkit-react.test.key',
+            'VITE_DEV_SERVER_CERT' => '/home/orbit/.config/orbit/certs/craft-starterkit-react.test.crt',
+        ],
+    ]);
+
+    Process::assertRan(
+        fn (PendingProcess $process): bool => (
+            str_contains((string) $process->command, 'export APP_URL=')
+            && str_contains((string) $process->command, 'export VITE_DEV_SERVER_KEY=')
+            && str_contains((string) $process->command, 'export VITE_DEV_SERVER_CERT=')
+        ),
+    );
+});

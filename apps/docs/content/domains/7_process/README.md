@@ -193,11 +193,16 @@ units do not receive `ORBIT_*` lifecycle variables by contract.
 | `HOME` | Runtime user's home directory | Lets tools find home-relative config and caches. |
 | `APP_URL` | Resolved app or workspace HTTPS URL | Gives Laravel/runtime code the canonical public URL. |
 | `VITE_APP_URL` | Resolved app or workspace HTTPS URL | Keeps Vite-aware processes aligned with the runtime URL. |
-| `VITE_VALET_HOST` | Resolved app or workspace host without scheme | Keeps Laravel Vite and Vite Plus TLS / hot-file detection compatible with Orbit-managed HTTPS names. |
-| `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
-| `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path for the resolved URL | Lets dev-server processes serve HTTPS with Orbit-managed cert material. |
+| `VITE_VALET_HOST` | Resolved app or workspace host without scheme | Supports Herd/Valet-style Laravel Vite configuration that keys off a host. |
+| `VITE_DEV_SERVER_KEY` | Orbit-managed TLS key path visible to the process | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
+| `VITE_DEV_SERVER_CERT` | Orbit-managed TLS cert path visible to the process | Lets Laravel Vite use Orbit cert material through its standard env bridge. |
 
-`VITE_VALET_HOST` is exposed for the same compatibility reason as workspace setup: existing Laravel Vite and Vite Plus configurations use it while deriving development-server TLS and hot-file URLs. Orbit still supplies canonical `APP_URL`, `VITE_APP_URL`, and certificate paths so newer app configs can key off Orbit-owned fields directly.
+Laravel Vite's `detectTls` option probes Herd/Valet certificate locations. Orbit
+does not require per-project cert copies in those layouts. Instead, Orbit
+exposes canonical `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, and
+`VITE_DEV_SERVER_KEY` / `VITE_DEV_SERVER_CERT` so standard Laravel Vite config
+can use the env-provided certificate bridge while remaining compatible with
+Herd/Valet-style apps.
 
 ## Development Server Runtime
 
