@@ -91,7 +91,12 @@ cleanup or before rewriting `.orbit/loop.md` for a new slice. The default
 archive home is the primary checkout's
 `.orbit/sessions/<timestamp-feature-slug>/`. Preserve every active `.orbit/`
 entry except `.orbit/sessions/`, including `loop.md`, `.orbit/evidence/`,
-`.orbit/quality-gates/`, and future metadata or manifests when tooling exists.
+`.orbit/quality-gates/`, and `agent-sessions/` output from
+`bin/orbit-agent-session-archive` when agent session archiving is run. Provider
+session archives are grouped by LLM and process/session slug and contain
+`manifest.json`, `usage.json`, `messages.jsonl`, and raw provider files for
+supported providers. Antigravity remains an explicit unsupported/missing
+manifest entry until a reliable local session-file contract is known.
 `harness-signals/` remains curated distilled learning, not raw session storage.
 
 Keep the exact Markdown bullet-label shape below.

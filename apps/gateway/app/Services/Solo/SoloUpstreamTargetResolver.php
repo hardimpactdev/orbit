@@ -82,7 +82,8 @@ final readonly class SoloUpstreamTargetResolver
             : null;
 
         if (
-            ($bearerToken === null || $bearerToken === '')
+            ($bearerToken === null
+            || $bearerToken === '')
             && is_array($config)
             && is_string($config['bearer_token'] ?? null)
         ) {

@@ -91,15 +91,24 @@ A session archive should preserve at minimum:
 - `loop.md` (the completed slice's final packet)
 - `.orbit/evidence/`
 - `.orbit/quality-gates/`
-- future metadata or manifests when archive helper tooling exists
+- `agent-sessions/` when agent session archive tooling is run
+
+Use `bin/orbit-agent-session-archive` with an explicit archive directory such
+as `.orbit/sessions/<timestamp-feature-slug>/agent-sessions/` to preserve the
+LLM session files behind the loop. The helper keeps the existing token-usage
+summary behavior, safely returns `[]` when no explicit Solo/process/project or
+fixture context is available, and writes provider-grouped archives when
+`--archive-dir` is supplied. Codex, Claude, and Grok archives include
+`manifest.json`, `usage.json`, `messages.jsonl`, and `raw/` copies of the
+session files used to derive them. Antigravity is represented explicitly as
+`unsupported` until a reliable local session-file contract is known.
 
 Archive creation must exclude the existing `.orbit/sessions/` tree so archives
 do not recurse into prior session copies.
 
 `harness-signals/` remains curated distilled learning and guardrail history, not
 raw session storage. Post-feature analysis and future eval construction may
-inspect session archives as trace evidence, but archive helper scripts and
-eval wiring are later slices.
+inspect session archives as trace evidence. Eval wiring remains a later slice.
 
 ## Agent Discovery Path
 
