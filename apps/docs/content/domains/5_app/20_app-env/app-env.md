@@ -38,8 +38,9 @@ When both `[app]` and `--app` are supplied, they must match.
 
 ## What Happens
 
-Use `app:env` to store app-instance env intent on the gateway. `render` merges explicit
-instance env values with database connections attached to that same instance.
+Use `app:env` to store app-instance env intent on the gateway. `render` merges
+Orbit-derived app URL and Laravel Vite development-server fields, explicit
+instance env values, and database connections attached to that same instance.
 Secret database values are redacted in API and CLI responses.
 
 `set` without `--apply` stores gateway intent only. `set --apply` also writes the
@@ -49,7 +50,9 @@ reapplies the FrankenPHP runtime container for PHP apps.
 ## Output
 
 Use `list` for explicit non-secret env variables. Use `render` for the effective
-env map for the instance, including database-derived keys.
+env map for the instance, including Orbit-derived `APP_URL`, `VITE_APP_URL`,
+`VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, `VITE_DEV_SERVER_CERT`, and
+database-derived keys.
 
 ## Requirements
 

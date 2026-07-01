@@ -65,9 +65,17 @@ function appInstanceEnvApiJson(string $method, string $uri, array $data = []): T
 
 it('sets lists and renders non-secret app instance env values with database attachments', function (): void {
     $caller = createAppInstanceEnvApiCaller();
-    $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'user' => 'nckrtl',
+        ]);
     grantAppInstanceEnvApiAccess($caller, $node);
-    $app = App::factory()->for($node, 'node')->create(['name' => 'billing']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'billing',
+        'domain' => 'craft-starterkit-react.test',
+    ]);
     $instance = AppInstance::factory()->for($app)->create(['name' => 'development']);
     $connection = DatabaseConnection::factory()->for($node)->create([
         'slug' => 'billing-db',
@@ -119,9 +127,20 @@ it('sets lists and renders non-secret app instance env values with database atta
 
     $render
         ->assertOk()
+        ->assertJsonPath('success.data.variables.APP_URL.value', 'https://craft-starterkit-react.test')
         ->assertJsonPath('success.data.variables.APP_DEBUG.value', 'false')
         ->assertJsonPath('success.data.variables.DB_CONNECTION.value', 'pgsql')
-        ->assertJsonPath('success.data.variables.DB_PASSWORD.secret', true);
+        ->assertJsonPath('success.data.variables.DB_PASSWORD.secret', true)
+        ->assertJsonPath('success.data.variables.VITE_APP_URL.value', 'https://craft-starterkit-react.test')
+        ->assertJsonPath(
+            'success.data.variables.VITE_DEV_SERVER_KEY.value',
+            '/home/nckrtl/.config/orbit/certs/craft-starterkit-react.test.key',
+        )
+        ->assertJsonPath(
+            'success.data.variables.VITE_DEV_SERVER_CERT.value',
+            '/home/nckrtl/.config/orbit/certs/craft-starterkit-react.test.crt',
+        )
+        ->assertJsonPath('success.data.variables.VITE_VALET_HOST.value', 'craft-starterkit-react.test');
 
     expect($render->getContent())
         ->not

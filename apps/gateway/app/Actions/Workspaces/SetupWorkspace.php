@@ -15,6 +15,7 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
@@ -40,6 +41,7 @@ final readonly class SetupWorkspace
         private SiteCertificateInstaller $siteCertificateInstaller,
         private WorkspaceRoleGuard $roleGuard,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
+        private LaravelViteDevServerEnvironment $vite,
     ) {}
 
     /**
@@ -307,7 +309,7 @@ final readonly class SetupWorkspace
             return ['success' => true, 'message' => 'No processes', 'count' => 0, 'names' => []];
         }
 
-        $host = $this->host($app, $workspace);
+        $host = $this->vite->host($app, $workspace);
 
         try {
             $this->siteCertificateInstaller->ensureFor($node, $host);
@@ -420,29 +422,15 @@ final readonly class SetupWorkspace
      */
     private function workspaceEnv(App $app, Workspace $workspace, Node $node): array
     {
-        $domain = parse_url($workspace->url(), PHP_URL_HOST) ?? "{$workspace->name}.{$app->name}";
-
-        return [
-            'ORBIT_APP' => $app->name,
-            'ORBIT_APP_PATH' => $app->path,
-            'ORBIT_WORKSPACE_NAME' => $workspace->name,
-            'ORBIT_WORKSPACE_PATH' => $workspace->path,
-            'ORBIT_URL' => $workspace->url(),
-            'ORBIT_PHP_VERSION' => $workspace->effectivePhpVersion() ?? $app->php_version,
-            'VITE_APP_URL' => $workspace->url(),
-            'VITE_VALET_HOST' => $domain,
-        ];
-    }
-
-    private function host(App $app, Workspace $workspace): string
-    {
-        $url = $workspace->url();
-        $host = parse_url($url, PHP_URL_HOST);
-
-        if (is_string($host) && $host !== '') {
-            return $host;
-        }
-
-        return preg_replace('#^https?://#', '', $url) ?: $app->name;
+        return (
+            [
+                'ORBIT_APP' => $app->name,
+                'ORBIT_APP_PATH' => $app->path,
+                'ORBIT_WORKSPACE_NAME' => $workspace->name,
+                'ORBIT_WORKSPACE_PATH' => $workspace->path,
+                'ORBIT_URL' => $workspace->url(),
+                'ORBIT_PHP_VERSION' => $workspace->effectivePhpVersion() ?? $app->php_version,
+            ] + $this->vite->shellVariables($app, $node, $workspace)
+        );
     }
 }
