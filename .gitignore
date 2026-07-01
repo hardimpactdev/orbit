@@ -3,6 +3,7 @@
 .env
 .env.e2e
 .env.backup
+.env.backup.*
 .env.production
 /LOOP.md
 /.orbit/
