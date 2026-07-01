@@ -45,8 +45,7 @@ it('sends configured bearer tokens and normalizes solo success envelopes', funct
 
     Http::assertSent(
         fn (Request $request): bool => (
-            $request->hasHeader('Authorization', "Bearer {$token}")
-            && $request->hasHeader('X-Orbit-Node', 'gateway')
+            $request->hasHeader('Authorization', "Bearer {$token}") && $request->hasHeader('X-Orbit-Node', 'gateway')
         ),
     );
 });
