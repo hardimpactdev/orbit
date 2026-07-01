@@ -26,7 +26,7 @@ describe('GitTool', function (): void {
             ->toContain('safe-adopt');
     });
 
-    it('installScript installs git through apt on Ubuntu hosts', function (): void {
+    it('installScript installs git from the upstream stable apt source on Ubuntu hosts', function (): void {
         $tool = new GitTool;
         $script = $tool->installScript();
 
@@ -37,19 +37,29 @@ describe('GitTool', function (): void {
             ->and($script)
             ->toContain('apt-get')
             ->and($script)
-            ->toContain("'git'")
+            ->toContain('ppa:git-core/ppa')
+            ->and($script)
+            ->toContain('add-apt-repository')
+            ->and($script)
+            ->toContain('software-properties-common')
+            ->and($script)
+            ->toContain('install -y -qq git')
             ->and($script)
             ->not->toContain('brew')->and($script)
             ->not->toContain('linuxbrew');
     });
 
-    it('updateScript upgrades git through apt on Ubuntu hosts', function (): void {
+    it('updateScript upgrades git from the upstream stable apt source on Ubuntu hosts', function (): void {
         $tool = new GitTool;
 
         $script = $tool->updateScript();
 
         expect($script)
             ->toContain('apt-get')
+            ->and($script)
+            ->toContain('ppa:git-core/ppa')
+            ->and($script)
+            ->toContain('add-apt-repository')
             ->and($script)
             ->toContain('--only-upgrade')
             ->and($script)

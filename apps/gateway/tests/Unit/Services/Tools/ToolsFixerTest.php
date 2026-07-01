@@ -300,7 +300,7 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts[0])
             ->toContain('apt-get')
             ->and($shell->scripts[0])
-            ->toContain("'git'");
+            ->toContain('ppa:git-core/ppa');
     });
 
     it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {

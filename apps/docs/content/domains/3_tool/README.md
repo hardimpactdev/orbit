@@ -94,9 +94,9 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |
 
 Required baseline tools are expected to exist as part of node provisioning or
-host bootstrap. `tool:install` does not create those tools from scratch unless
-a future tool definition explicitly changes their support model. Role baseline
-tools, such as `seaweedfs`, are installed automatically by their owning role.
+host bootstrap. `tool:install` creates those tools from scratch only when the
+selected tool definition explicitly supports install. Role baseline tools, such
+as `git` and `seaweedfs`, are installed automatically by their owning role.
 User-directed `tool:*` commands with an explicit target may target an active
 visible node unless that node is the gateway. The selected tool definition must
 support the target node operating system; role membership is not the general

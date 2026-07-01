@@ -79,7 +79,9 @@ describe('tool catalog definitions', function (): void {
             ->and($catalog->hasCapability('git', 'safe-adopt'))
             ->toBeTrue()
             ->and($catalog->installScript('git'))
-            ->toContain("'git'")
+            ->toContain('ppa:git-core/ppa')
+            ->and($catalog->updateScript('git'))
+            ->toContain('ppa:git-core/ppa')
             ->and($catalog->updateScript('git'))
             ->toContain('--only-upgrade');
     });
