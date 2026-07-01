@@ -112,13 +112,16 @@ Solo todo:
   should be archived into the persistent project archive home before worktree
   cleanup and before rewriting `.orbit/loop.md` for a new slice. The default
   archive home is the primary checkout's
-  `.orbit/sessions/<timestamp-feature-slug>/`. Archives preserve every active
-  `.orbit/` entry except `.orbit/sessions/`, including `loop.md`,
-  `.orbit/evidence/`, `.orbit/quality-gates/`, and future metadata or manifests
-  when tooling exists. `harness-signals/` remains curated distilled learning,
-  not raw session storage. Post-feature analysis and future eval construction
-  may inspect session archives as trace evidence; archive helper scripts and
-  eval wiring are later slices.
+  `.orbit/sessions/<timestamp-feature-slug>/`, named as
+  `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
+  compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
+  names. Archives preserve every active `.orbit/` entry except
+  `.orbit/sessions/`, including `loop.md`, `.orbit/evidence/`,
+  `.orbit/quality-gates/`, and future metadata or manifests when tooling
+  exists. `harness-signals/` remains curated distilled learning, not raw
+  session storage. Post-feature analysis and future eval construction may
+  inspect session archives as trace evidence; archive helper scripts and eval
+  wiring are later slices.
 
 ## Implementation Handoff
 
