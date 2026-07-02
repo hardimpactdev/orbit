@@ -84,26 +84,26 @@ describe('OrbStackTool', function (): void {
         'restart',
     ]);
 
-    it('probeMetadata detects orb, orbctl, the app bundle, and version without lifecycle commands', function (): void {
+    it('probeMetadata detects orb, orbctl, the app bundle, and version through PATH-aware commands', function (): void {
         $tool = new OrbStackTool;
         $metadata = $tool->probeMetadata();
 
         expect($metadata)
             ->toMatchArray([
-                'binary' => '/usr/local/bin/orb',
+                'binary' => 'orb',
             ])
             ->and($metadata['version_command'] ?? null)
             ->toBeString()
             ->toContain('orb version')
             ->and($metadata['probe'] ?? null)
             ->toBeString()
-            ->toContain('/usr/local/bin/orbctl')
+            ->toContain('command -v orbctl')
             ->and($metadata['probe'] ?? null)
             ->toContain('/Applications/OrbStack.app')
             ->and($metadata['update_command'] ?? null)
             ->toBe($tool->updateScript())
             ->and($metadata['provider_command'] ?? null)
-            ->toBe('/usr/local/bin/orbctl status')
+            ->toBe('orbctl status')
             ->and($metadata)
             ->not->toHaveKey('service')->and($metadata)
             ->not->toHaveKey('container')->and($metadata)

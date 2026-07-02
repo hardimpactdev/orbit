@@ -402,8 +402,8 @@ describe('tool catalog definitions', function (): void {
             ->toBeNull()
             ->and($metadata)
             ->toMatchArray([
-                'binary' => '/usr/local/bin/orb',
-                'provider_command' => '/usr/local/bin/orbctl status',
+                'binary' => 'orb',
+                'provider_command' => 'orbctl status',
             ]);
     });
 

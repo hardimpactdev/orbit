@@ -61,10 +61,10 @@ final class OrbStackTool extends BaseTool
     public function probeMetadata(): array
     {
         return [
-            'binary' => '/usr/local/bin/orb',
-            'version_command' => '/usr/local/bin/orb version 2>/dev/null | head -n 1',
-            'probe' => 'test -x /usr/local/bin/orb && test -x /usr/local/bin/orbctl && test -d /Applications/OrbStack.app',
-            'provider_command' => '/usr/local/bin/orbctl status',
+            'binary' => 'orb',
+            'version_command' => 'orb version 2>/dev/null | head -n 1',
+            'probe' => 'command -v orbctl >/dev/null 2>&1 && test -d /Applications/OrbStack.app',
+            'provider_command' => 'orbctl status',
             'update_command' => $this->updateScript(),
         ];
     }
