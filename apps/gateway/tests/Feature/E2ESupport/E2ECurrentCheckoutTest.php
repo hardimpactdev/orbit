@@ -1219,6 +1219,11 @@ it('reuses the shared checkout archive after flushing in-process checkout state'
 
     putenv('ORBIT_E2E_CHECKOUT_CACHE=process');
     putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$cacheDir}");
+    // Pin the archive cache key: the real tree hash reads the live working
+    // tree (git ls-files + hash_file) and flips when parallel test processes
+    // create or delete unignored files mid-test, which would force a second
+    // tar build and break the disk-archive reuse this test proves.
+    E2ECurrentCheckout::useTreeHashResolverForTests(static fn (): string => 'archive-reuse-after-flush-test');
 
     Process::fake(function ($process) use (&$tarBuilds) {
         if (str_starts_with((string) $process->command, 'COPYFILE_DISABLE=1 tar ')) {
