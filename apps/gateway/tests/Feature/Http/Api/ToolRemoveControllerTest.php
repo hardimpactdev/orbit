@@ -83,6 +83,43 @@ describe('ToolRemoveController', function (): void {
             ->toBe('app-remove-api-1');
     });
 
+    it('removes stale tool records whose catalog definition no longer exists', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
+        grantToolRemoveApiAccess($caller, $node);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'solo',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolRemoveApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/solo',
+            [
+                'node' => 'app-remove-api-1',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'solo')
+            ->assertJsonPath('success.data.tool.node', 'app-remove-api-1')
+            ->assertJsonPath('success.data.tool.stale_record', true);
+
+        expect(NodeTool::find($tool->id))
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
+    });
+
     it('records explicit destructive consent source for a streamed human removal', function (): void {
         $caller = createToolRemoveApiCallerNode();
         $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
