@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class CodexAppTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['macos'];
+
     public function slug(): string
     {
         return 'codex-app';
@@ -15,12 +20,6 @@ final class CodexAppTool extends BaseTool
     public function category(): string
     {
         return 'operator';
-    }
-
-    #[\Override]
-    public function supportedOperatingSystems(): array
-    {
-        return ['macos'];
     }
 
     #[\Override]

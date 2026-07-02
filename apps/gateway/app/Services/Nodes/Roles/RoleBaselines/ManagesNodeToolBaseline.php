@@ -9,6 +9,8 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\Nodes\NodeContainerScope;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolCatalog;
@@ -35,6 +37,10 @@ trait ManagesNodeToolBaseline
         ?array $config = null,
     ): void {
         if (! $this->toolCatalog()->supports($tool)) {
+            return;
+        }
+
+        if (! $this->toolCatalog()->supportsPlatform($tool, $node->platform)) {
             return;
         }
 
@@ -97,21 +103,72 @@ trait ManagesNodeToolBaseline
         $wireGuardAddress = is_string($node->wireguard_address)
             ? trim($node->wireguard_address)
             : '';
-        $names = OrbitContainerNames::forNodeScope($this->containerScopeForNode($node));
+        $names = OrbitContainerNames::forNodeScope(NodeContainerScope::forNode($node));
 
         if ($this->nodeHasIngressRole($node)) {
-            return OrbitCaddyContainer::forPublicIngress($wireGuardAddress !== '' ? $wireGuardAddress : null, $names);
+            $container = OrbitCaddyContainer::forPublicIngress(
+                $wireGuardAddress !== '' ? $wireGuardAddress : null,
+                $names,
+            );
+
+            return $this->platformAwareOrbitCaddyContainer($container, $node);
         }
 
         if ($wireGuardAddress === '') {
-            return OrbitCaddyContainer::default($names);
+            $container = OrbitCaddyContainer::default($names);
+
+            return $this->platformAwareOrbitCaddyContainer($container, $node);
         }
 
-        return OrbitCaddyContainer::forPrivateNode(
+        $container = OrbitCaddyContainer::forPrivateNode(
             wireGuardAddress: $wireGuardAddress,
             names: $names,
             callerFacingAddress: $this->appDevelopmentCallerFacingAddress($node),
         );
+
+        return $this->platformAwareOrbitCaddyContainer($container, $node);
+    }
+
+    private function platformAwareOrbitCaddyContainer(OrbitCaddyContainer $container, Node $node): OrbitCaddyContainer
+    {
+        if (! NodeHostPaths::isMacosPlatform($node->platform)) {
+            return $container;
+        }
+
+        $dataRoot = NodeHostPaths::homeDirectoryFor($node->platform, $node->user).'/.local/share/orbit/caddy';
+        $mounts = array_map(
+            fn (array $mount): array => $this->macosCaddyMount($mount, $dataRoot),
+            $container->mounts(),
+        );
+
+        return OrbitCaddyContainer::fromConfig([
+            ...$container->spec(),
+            'mounts' => $mounts,
+        ]);
+    }
+
+    /**
+     * @param  array{source: string, target: string, read_only: bool}  $mount
+     * @return array{source: string, target: string, read_only: bool}
+     */
+    private function macosCaddyMount(array $mount, string $dataRoot): array
+    {
+        return match ($mount['source']) {
+            '/var/lib/orbit/caddy/data' => [
+                ...$mount,
+                'source' => "{$dataRoot}/data",
+            ],
+            '/var/lib/orbit/caddy/config' => [
+                ...$mount,
+                'source' => "{$dataRoot}/config",
+            ],
+            '/home' => [
+                ...$mount,
+                'source' => '/Users',
+                'target' => '/Users',
+            ],
+            default => $mount,
+        };
     }
 
     private function nodeHasIngressRole(Node $node): bool
@@ -147,16 +204,5 @@ trait ManagesNodeToolBaseline
                 NodeRoleStatus::Active->value,
             ])
             ->exists();
-    }
-
-    private function containerScopeForNode(Node $node): string
-    {
-        $host = is_string($node->host) ? trim($node->host) : '';
-
-        if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP) === false) {
-            return $host;
-        }
-
-        return $node->name;
     }
 }

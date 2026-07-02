@@ -186,6 +186,41 @@ it('creates the app-dev packages bind mount source before running the workspace 
         ->toBeLessThan(strpos($script, 'docker run -d'));
 });
 
+it('creates the macos app-dev packages bind mount source before running the workspace runtime container', function (): void {
+    $node = createTestAppHostNode(['platform' => 'macos_14', 'user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/Users/nckrtl/apps/nckrtl',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/Users/nckrtl/apps/nckrtl/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('app', $app);
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    workspace_runtime_manager_for_test($shell)->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+
+    expect($script)
+        ->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/Users/nckrtl/packages'")
+        ->and($script)
+        ->toContain("--mount 'type=bind,source=/Users/nckrtl/packages,target=/packages'")
+        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/Users/nckrtl/packages'"))
+        ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
 it('creates inherited configured runtime mount sources before running the workspace runtime container', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
     $app = App::factory()->for($node, 'node')->create([

@@ -92,6 +92,7 @@ describe('orbit:internal:bake-app-node', function (): void {
             )->toBe([
                 'caddy',
                 'composer',
+                'docker',
                 'gh',
                 'git',
                 'laravel-installer',

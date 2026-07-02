@@ -9,6 +9,7 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Tools\CaddyTool;
 use App\Tools\CodexAppTool;
+use App\Tools\DockerTool;
 use App\Tools\GhTool;
 use App\Tools\GitTool;
 use App\Tools\HermesTool;
@@ -339,6 +340,30 @@ describe('tool catalog definitions', function (): void {
             ->toBeNull();
     });
 
+    it('catalogs Docker as the Linux and macOS Docker-compatible provider capability', function (): void {
+        $catalog = app(ToolCatalog::class);
+        $metadata = $catalog->probeMetadata('docker');
+
+        expect($catalog->definition('docker'))
+            ->toBeInstanceOf(DockerTool::class)
+            ->and($catalog->category('docker'))
+            ->toBe('always')
+            ->and($catalog->supportedOperatingSystems('docker'))
+            ->toBe(['linux', 'macos'])
+            ->and($catalog->hasCapability('docker', 'install'))
+            ->toBeFalse()
+            ->and($catalog->hasCapability('docker', 'safe-adopt'))
+            ->toBeTrue()
+            ->and($metadata)
+            ->toMatchArray([
+                'binary' => 'docker',
+                'version_command' => 'docker --version',
+                'provider_command' => 'docker info',
+            ])
+            ->and($catalog->logCommand('docker', 50))
+            ->toContain('journalctl');
+    });
+
     it('describes caddy as the orbit-caddy Docker container instead of a host Caddy service', function (): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata('caddy');
@@ -348,6 +373,8 @@ describe('tool catalog definitions', function (): void {
 
         expect($catalog->definition('caddy'))
             ->toBeInstanceOf(CaddyTool::class)
+            ->and($catalog->supportedOperatingSystems('caddy'))
+            ->toBe(['linux', 'macos'])
             ->and($metadata)
             ->toMatchArray([
                 'binary' => 'docker',

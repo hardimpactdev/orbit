@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class DockerTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
     public function slug(): string
     {
         return 'docker';
@@ -30,6 +35,7 @@ final class DockerTool extends BaseTool
             'binary' => 'docker',
             'version_command' => 'docker --version',
             'service' => 'docker',
+            'provider_command' => 'docker info',
             'repair_commands' => $this->serviceRepairCommands('docker', restart: true),
         ];
     }

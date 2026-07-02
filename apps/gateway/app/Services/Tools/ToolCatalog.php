@@ -153,13 +153,18 @@ final readonly class ToolCatalog
             return false;
         }
 
-        $operatingSystem = $this->operatingSystemForPlatform($node->platform);
+        return $this->supportsPlatform($tool, $node->platform);
+    }
+
+    public function supportsPlatform(string $tool, ?string $platform): bool
+    {
+        $operatingSystem = $this->operatingSystemForPlatform($platform);
 
         if ($operatingSystem === null) {
             return false;
         }
 
-        return in_array($operatingSystem, $this->supportedOperatingSystems($tool), true);
+        return in_array($operatingSystem, $this->supportedOperatingSystems($tool), strict: true);
     }
 
     public function operatingSystemForPlatform(?string $platform): ?string
@@ -244,6 +249,7 @@ final readonly class ToolCatalog
      *     service?: string,
      *     container?: string,
      *     image?: string,
+     *     provider_command?: string,
      *     update_command?: string,
      *     repair_commands?: array<string, string>,
      * }|null

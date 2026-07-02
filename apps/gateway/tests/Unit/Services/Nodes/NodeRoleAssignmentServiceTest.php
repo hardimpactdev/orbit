@@ -943,8 +943,8 @@ describe('node role assignment service', function (): void {
             'platform' => 'macos_15',
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Role 'app-dev' does not support platform 'macos_15'.");
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-prod', []))
+            ->toThrow(InvalidArgumentException::class, "Role 'app-prod' does not support platform 'macos_15'.");
     });
 
     it('rejects gateway-coupled role assignment through the normal service', function (string $role): void {

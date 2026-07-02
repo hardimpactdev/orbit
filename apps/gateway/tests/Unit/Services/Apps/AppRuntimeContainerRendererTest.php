@@ -104,6 +104,25 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
     ]);
 });
 
+it('mounts the macos app-dev node user packages directory at /packages', function (): void {
+    $node = createTestAppHostNode(['platform' => 'macos_14', 'user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/Users/nckrtl/apps/nckrtl',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect($container->mounts())->toContain([
+        'source' => '/Users/nckrtl/packages',
+        'target' => '/packages',
+        'read_only' => false,
+    ]);
+});
+
 it('renders configured app runtime mounts after built-in mounts', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
     $app = App::factory()->for($node, 'node')->create([

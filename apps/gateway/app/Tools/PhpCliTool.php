@@ -8,6 +8,11 @@ use App\Services\Php\PhpRuntimeCatalog;
 
 final class PhpCliTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
     /** Base URL for the static-php-cli bulk preset downloads. */
     public const string BULK_BASE_URL = 'https://dl.static-php.dev/static-php-cli/bulk';
 

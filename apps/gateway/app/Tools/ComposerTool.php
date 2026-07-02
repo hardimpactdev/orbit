@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class ComposerTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
     public function slug(): string
     {
         return 'composer';
@@ -40,7 +45,15 @@ final class ComposerTool extends BaseTool
             curl -fsSL https://getcomposer.org/installer -o composer-setup.php
 
             # Verify the SHA-384 hash
-            ACTUAL_SIG="$(sha384sum composer-setup.php | awk '{print $1}')"
+            if command -v sha384sum >/dev/null 2>&1; then
+                ACTUAL_SIG="$(sha384sum composer-setup.php | awk '{print $1}')"
+            elif command -v shasum >/dev/null 2>&1; then
+                ACTUAL_SIG="$(shasum -a 384 composer-setup.php | awk '{print $1}')"
+            else
+                echo "ERROR: No SHA-384 checksum utility found." >&2
+                rm -f composer-setup.php
+                exit 1
+            fi
 
             if [ "$EXPECTED_SIG" != "$ACTUAL_SIG" ]; then
                 echo "ERROR: Composer installer signature verification failed." >&2

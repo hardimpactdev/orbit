@@ -6,6 +6,7 @@ namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use RuntimeException;
@@ -14,6 +15,7 @@ final readonly class ProcessServiceCatalog
 {
     public function __construct(
         private NodeWireGuardServiceAddress $serviceAddress,
+        private NodeHostPaths $hostPaths,
     ) {}
 
     /**
@@ -49,7 +51,7 @@ final readonly class ProcessServiceCatalog
             ]);
         }
 
-        $allowedRuntimes = $this->allowedRuntimes($entry);
+        $allowedRuntimes = $this->allowedRuntimes($entry, $node);
 
         if (! in_array($runtime, $allowedRuntimes, true)) {
             throw new GatewayApiException(
@@ -72,7 +74,7 @@ final readonly class ProcessServiceCatalog
         $host = $this->serviceHost($node);
         $serviceName = "orbit-{$processName}";
         $volumeName = "orbit-{$processName}";
-        $dataPath = "/var/lib/orbit/processes/{$processName}";
+        $dataPath = $this->hostPaths->processDataRoot($node, $processName);
         $servicePorts = $this->servicePorts($entry, $host, $resolved['published_port'], $processName);
 
         $runtimeConfig = [
@@ -393,18 +395,27 @@ final readonly class ProcessServiceCatalog
      * @param  array<string, mixed>  $service
      * @return list<ProcessRuntime>
      */
-    private function allowedRuntimes(array $service): array
+    private function allowedRuntimes(array $service, Node $node): array
     {
         $runtimes = $service['runtimes'] ?? null;
 
         if (! is_array($runtimes) || $runtimes === []) {
-            return [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm];
+            $runtimes = [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm];
         }
 
-        return array_values(array_filter(
+        $allowed = array_values(array_filter(
             $runtimes,
             static fn (mixed $runtime): bool => $runtime instanceof ProcessRuntime,
         ));
+
+        if (NodeHostPaths::isMacosPlatform($node->platform)) {
+            return array_values(array_filter(
+                $allowed,
+                static fn (ProcessRuntime $runtime): bool => $runtime !== ProcessRuntime::DockerSwarm,
+            ));
+        }
+
+        return $allowed;
     }
 
     /**

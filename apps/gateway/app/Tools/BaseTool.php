@@ -8,6 +8,11 @@ use App\Contracts\ToolDefinition;
 
 abstract class BaseTool implements ToolDefinition
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux'];
+
     public function requiredNodeRole(): ?string
     {
         return null;
@@ -23,7 +28,7 @@ abstract class BaseTool implements ToolDefinition
      */
     public function supportedOperatingSystems(): array
     {
-        return ['linux'];
+        return static::SUPPORTED_OPERATING_SYSTEMS;
     }
 
     /**

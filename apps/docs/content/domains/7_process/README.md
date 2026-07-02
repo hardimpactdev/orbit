@@ -143,6 +143,9 @@ Supported managed services in this vertical slice:
 `docker-swarm` is also admitted for node-owned managed services whose catalog
 entry declares Swarm support. `node-exporter` declares only `systemd` because
 it observes host resources directly.
+On macOS nodes, managed service processes use the `docker` runtime through the
+node's reachable Docker-compatible container provider; the `docker-swarm` and
+`systemd` runtimes are not supported on macOS.
 PostgreSQL follows the same process-owned product direction, but it is not
 advertised as a supported managed service until its catalog entry lands.
 

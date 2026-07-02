@@ -26,6 +26,12 @@ describe('ComposerTool', function (): void {
             ->toContain('safe-adopt');
     });
 
+    it('supports Linux and macOS hosts', function (): void {
+        $tool = new ComposerTool;
+
+        expect($tool->supportedOperatingSystems())->toBe(['linux', 'macos']);
+    });
+
     it('installScript downloads from the official getcomposer.org installer URL', function (): void {
         $tool = new ComposerTool;
 
@@ -51,6 +57,8 @@ describe('ComposerTool', function (): void {
             ->toContain('composer.github.io/installer.sig')
             ->and($script)
             ->toContain('sha384sum composer-setup.php')
+            ->and($script)
+            ->toContain('shasum -a 384 composer-setup.php')
             ->and($script)
             ->not->toContain('php -r');
     });

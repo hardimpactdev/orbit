@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tools;
 
+use App\Services\Nodes\NodeHostPaths;
+
 final class UserScopedCliUsers
 {
     public const string USERNAME_PATTERN = '/^[a-z_][a-z0-9_-]{0,31}$/';
@@ -39,9 +41,9 @@ final class UserScopedCliUsers
         return $trimmed;
     }
 
-    public static function homeDirectory(string $user): string
+    public static function homeDirectory(string $user, ?string $platform = null): string
     {
-        return $user === 'root' ? '/root' : "/home/{$user}";
+        return NodeHostPaths::homeDirectoryFor($platform, $user);
     }
 
     /**

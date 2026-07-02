@@ -6,16 +6,15 @@ namespace App\Tools;
 
 abstract class UserScopedCliTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
     #[\Override]
     public function category(): string
     {
         return 'runtime';
-    }
-
-    #[\Override]
-    public function supportedOperatingSystems(): array
-    {
-        return ['linux', 'macos'];
     }
 
     #[\Override]

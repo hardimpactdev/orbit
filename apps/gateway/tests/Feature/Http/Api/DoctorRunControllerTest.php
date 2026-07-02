@@ -380,6 +380,44 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.capability_missing');
     });
 
+    it('returns Colima remediation when a macos Docker provider is unreachable', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode([
+            'name' => 'mac-app-1',
+            'platform' => 'macos_14',
+            'status' => 'active',
+        ]);
+        NodeTool::factory()->create(['node_id' => $appNode->id, 'name' => 'docker']);
+        app()->instance(RemoteShell::class, new DoctorRunRemoteShell(
+            perRouteStdout: "/opt/homebrew/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t\t\t\t0\tCannot connect to the Docker daemon\n",
+        ));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/run',
+            [
+                'mode' => 'verify',
+                'families' => ['tool'],
+                'node' => 'mac-app-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.issues.0.key', 'tool.docker_provider_unreachable')
+            ->assertJsonPath('success.data.doctor.issues.0.restorable', false)
+            ->assertJsonPath('success.data.doctor.issues.0.detail.recommended_provider', 'colima')
+            ->assertJsonPath('success.data.doctor.issues.0.detail.remediation_commands.0', 'brew install docker colima')
+            ->assertJsonPath(
+                'success.data.doctor.issues.0.detail.remediation_commands.1',
+                'colima start --runtime docker',
+            );
+    });
+
     it('accepts the app family scope and returns app drift', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);

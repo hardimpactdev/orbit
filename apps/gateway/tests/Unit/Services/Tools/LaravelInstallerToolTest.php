@@ -26,6 +26,12 @@ describe('LaravelInstallerTool', function (): void {
             ->toContain('remove');
     });
 
+    it('supports Linux and macOS hosts', function (): void {
+        $tool = new LaravelInstallerTool;
+
+        expect($tool->supportedOperatingSystems())->toBe(['linux', 'macos']);
+    });
+
     it('installScript runs composer global require laravel/installer', function (): void {
         $tool = new LaravelInstallerTool;
 
@@ -43,7 +49,9 @@ describe('LaravelInstallerTool', function (): void {
 
         expect($tool->installScript(['managed_user' => 'nckrtl']))
             ->toContain("MANAGED_USER='nckrtl'")
-            ->toContain('COMPOSER_HOME="/home/${MANAGED_USER}/.config/composer"')
+            ->toContain('COMPOSER_HOME="$(composer_home)"')
+            ->toContain("Darwin) printf '/Users/%s/.config/composer\\n' \"\${MANAGED_USER}\"")
+            ->toContain("*) printf '/home/%s/.config/composer\\n' \"\${MANAGED_USER}\"")
             ->toContain('sudo -u "${MANAGED_USER}"');
     });
 

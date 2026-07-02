@@ -36,6 +36,12 @@ and does not by itself grant workload-family probes:
 Every node with at least one active role assignment includes `Processes`; a
 client or operator identity with no active role renders only `Node`.
 
+On macOS workload nodes, the `Firewall` category is skipped: macOS nodes are
+not eligible firewall targets and macOS firewall mutation is unsupported in
+v1. Tool checks on macOS report the Docker capability through the node's
+reachable Docker-compatible container provider and recommend Colima when no
+provider is reachable.
+
 `Scheduling` on a `gateway` target surfaces the scheduler daemon's health
 (presence, heartbeat, stuck locks) plus per-target dispatch reachability.
 `Scheduling` on an `app-dev` or `app-prod` target surfaces the

@@ -293,9 +293,9 @@ Each role is supported on a specific set of host platforms.
 | `vpn` | Ubuntu |
 | `router` | Ubuntu |
 | client (no role assignments) | macOS, Ubuntu |
-| `app-dev` | Ubuntu |
+| `app-dev` | Ubuntu, macOS |
 | `app-prod` | Ubuntu |
-| `database` | Ubuntu |
+| `database` | Ubuntu, macOS |
 | `agent` | Ubuntu |
 | `ingress` | Ubuntu |
 | `websocket` | Ubuntu |
@@ -308,6 +308,27 @@ observed host platform is supported for the node's gateway role assignment or
 active workload roles before side effects.
 Registry-only commands use stored gateway metadata and do not perform live
 platform checks; platform drift belongs to `doctor --family=node`.
+
+`app-dev` and `database` role support on macOS applies to adopted/self-managed
+workload nodes. Hosted provisioning through `node:new` templates remains
+Ubuntu-only: a macOS node enters the fleet as an adopted existing node and then
+receives `app-dev` or `database` role assignments. macOS role support requires
+a reachable Docker-compatible container provider. Orbit first uses a Docker
+provider that is already working. When no Docker provider is reachable on a
+macOS node, Orbit recommends Colima:
+
+```bash
+brew install docker colima
+colima start --runtime docker
+```
+
+OrbStack and Docker Desktop are compatible providers when they are already
+installed and licensed or allowed for the user's context. OrbStack is not the
+default recommendation because it requires a license for commercial, business,
+nonprofit, government, and freelance use after evaluation. In v1, Orbit does
+not mutate the macOS firewall or macOS WireGuard self-routes: macOS nodes are
+not eligible firewall targets, and the WireGuard self-route diagnostic reports
+that it is only supported on Linux without mutating routes.
 
 Managed Ubuntu nodes use a Docker-first provisioning baseline. Provisioning
 creates or adopts the node's WireGuard/SSH identity material, the Orbit config

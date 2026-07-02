@@ -129,6 +129,40 @@ describe('ProcessStoreController', function (): void {
             ->toBe(ProcessRuntime::Systemd);
     });
 
+    it('rejects macos app command processes instead of defaulting to systemd', function (): void {
+        $caller = createProcessStoreCallerNode();
+        $appNode = createTestAppHostNode([
+            'name' => 'mac-app-dev-1',
+            'platform' => 'macos_14',
+            'user' => 'nckrtl',
+        ]);
+        grantProcessStoreAccess($caller, $appNode);
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime')
+            ->assertJsonPath('error.meta.value', 'systemd')
+            ->assertJsonPath('error.meta.reason', 'systemd_runtime_requires_linux');
+
+        expect(Process::query()->exists())->toBeFalse();
+    });
+
     it('rejects unauthorized callers before writing intent', function (): void {
         createProcessStoreCallerNode();
         $appNode = createTestAppHostNode();

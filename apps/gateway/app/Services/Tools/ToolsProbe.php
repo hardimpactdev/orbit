@@ -62,11 +62,13 @@ final readonly class ToolsProbe
         $binary = is_string($metadata['binary'] ?? null) ? $metadata['binary'] : $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
+        $providerCommand = $metadata['provider_command'] ?? null;
         $container = $this->expectedContainerName($tool) ?? $metadata['container'] ?? null;
         $script = $this->toolCapabilityProbeScript(
             binary: $binary,
             versionCommand: is_string($versionCommand) ? $versionCommand : '',
             service: is_string($service) ? $service : '',
+            providerCommand: is_string($providerCommand) ? $providerCommand : '',
             container: is_string($container) ? $container : '',
             extraProbe: $this->extraProbeFromMetadata($metadata),
         );
@@ -77,10 +79,11 @@ final readonly class ToolsProbe
                 'binary' => $binary,
                 'version_command' => is_string($versionCommand) ? $versionCommand : '',
                 'service' => is_string($service) ? $service : '',
+                'provider_command' => is_string($providerCommand) ? $providerCommand : '',
                 'container' => is_string($container) ? $container : '',
             ], JSON_THROW_ON_ERROR),
         ]);
-        $parts = explode("\t", trim($result->stdout), 10);
+        $parts = explode(separator: "\t", string: trim($result->stdout), limit: 12);
         $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
 
         return $this->withManagedFileProbes($tool, new ProbeSnapshot([
@@ -96,6 +99,8 @@ final readonly class ToolsProbe
                 'container_exists' => ($parts[7] ?? '') !== '' ? $parts[7] === '1' : null,
                 'container_state' => $containerState,
                 'container_spec_hash' => ($parts[9] ?? '') !== '' ? $parts[9] : null,
+                'provider_reachable' => ($parts[10] ?? '') !== '' ? $parts[10] === '1' : null,
+                'provider_error' => ($parts[11] ?? '') !== '' ? $parts[11] : null,
             ],
         ]));
     }
@@ -145,6 +150,9 @@ final readonly class ToolsProbe
                     ? $metadata['version_command']
                     : '',
                 'service' => is_string($metadata['service'] ?? null) ? $metadata['service'] : '',
+                'provider_command' => is_string($metadata['provider_command'] ?? null)
+                    ? $metadata['provider_command']
+                    : '',
                 'container' =>
                     $this->expectedContainerName($tool)
                         ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
@@ -203,6 +211,7 @@ final readonly class ToolsProbe
         string $binary,
         string $versionCommand,
         string $service,
+        string $providerCommand,
         string $container,
         string $extraProbe = '',
     ): string {
@@ -213,12 +222,15 @@ final readonly class ToolsProbe
             binary=__BINARY__
             version_command=__VERSION_COMMAND__
             service=__SERVICE__
+            provider_command=__PROVIDER_COMMAND__
             container=__CONTAINER__
             extra_probe=__EXTRA_PROBE__
 
             path=''
             version=''
             state='unknown'
+            provider_reachable=''
+            provider_error=''
             config_exists=''
             config_hash=''
             secret_exists=''
@@ -252,6 +264,15 @@ final readonly class ToolsProbe
                 version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
             fi
 
+            if [ -n "$provider_command" ]; then
+                if provider_output=$(sh -c "$provider_command" 2>&1 >/dev/null); then
+                    provider_reachable='1'
+                else
+                    provider_reachable='0'
+                    provider_error=$(printf '%s' "$provider_output" | sed -n '1p')
+                fi
+            fi
+
             if [ -n "$service" ]; then
                 if systemctl is-active --quiet "$service" 2>/dev/null; then
                     state='running'
@@ -283,13 +304,14 @@ final readonly class ToolsProbe
                 fi
             fi
 
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash" "$provider_reachable" "$provider_error"
             SH;
 
         return strtr($script, [
             '__BINARY__' => escapeshellarg($binary),
             '__VERSION_COMMAND__' => escapeshellarg($versionCommand),
             '__SERVICE__' => escapeshellarg($service),
+            '__PROVIDER_COMMAND__' => escapeshellarg($providerCommand),
             '__CONTAINER__' => escapeshellarg($container),
             '__EXTRA_PROBE__' => escapeshellarg($extraProbe),
         ]);
@@ -319,10 +341,41 @@ final readonly class ToolsProbe
         $definition = $catalog->definition($tool->name);
 
         if (! $definition instanceof UserScopedCliTool) {
+            return $this->probeMetadataForNode($tool, $metadata);
+        }
+
+        return $this->probeMetadataForNode(
+            $tool,
+            $definition->probeMetadataForUser($this->userScopedCliProbeUser($tool, $definition)),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    private function probeMetadataForNode(NodeTool $tool, array $metadata): array
+    {
+        if ($tool->name !== 'docker' || $this->toolNodeOperatingSystem($tool) !== 'macos') {
             return $metadata;
         }
 
-        return $definition->probeMetadataForUser($this->userScopedCliProbeUser($tool, $definition));
+        unset($metadata['service'], $metadata['repair_commands']);
+
+        return $metadata;
+    }
+
+    private function toolNodeOperatingSystem(NodeTool $tool): ?string
+    {
+        $tool->loadMissing('node');
+
+        if (! $tool->node instanceof Node) {
+            return null;
+        }
+
+        $catalog = $this->catalog ?? app(ToolCatalog::class);
+
+        return $catalog->operatingSystemForPlatform($tool->node->platform);
     }
 
     private function userScopedCliProbeUser(NodeTool $tool, UserScopedCliTool $definition): string
@@ -340,7 +393,7 @@ final readonly class ToolsProbe
     }
 
     /**
-     * @param  array<string, array{binary: mixed, version_command: string, service: string, container: string, extra_probe: string}>  $batch
+     * @param  array<string, array{binary: mixed, version_command: string, service: string, provider_command: string, container: string, extra_probe: string}>  $batch
      */
     private function batchedToolCapabilityProbeScript(array $batch): string
     {
@@ -354,6 +407,7 @@ final readonly class ToolsProbe
                 '            binary='.escapeshellarg((string) ($tool['binary'] ?? '')),
                 '            version_command='.escapeshellarg($tool['version_command']),
                 '            service='.escapeshellarg($tool['service']),
+                '            provider_command='.escapeshellarg($tool['provider_command']),
                 '            container='.escapeshellarg($tool['container']),
                 '            extra_probe='.escapeshellarg($tool['extra_probe']),
                 '            ;;',
@@ -384,6 +438,7 @@ final readonly class ToolsProbe
                 binary=''
                 version_command=''
                 service=''
+                provider_command=''
                 container=''
                 extra_probe=''
 
@@ -397,6 +452,8 @@ final readonly class ToolsProbe
                 path=''
                 version=''
                 state='unknown'
+                provider_reachable='null'
+                provider_error=''
                 container_exists='null'
                 container_state=''
                 container_spec_hash=''
@@ -420,6 +477,15 @@ final readonly class ToolsProbe
 
                 if [ -n "$path" ] && [ -n "$version_command" ]; then
                     version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
+                fi
+
+                if [ -n "$path" ] && [ -n "$provider_command" ]; then
+                    if provider_output=$(sh -c "$provider_command" 2>&1 >/dev/null); then
+                        provider_reachable='true'
+                    else
+                        provider_reachable='false'
+                        provider_error=$(printf '%s' "$provider_output" | sed -n '1p')
+                    fi
                 fi
 
                 if [ -n "$path" ] && [ -n "$service" ]; then
@@ -459,7 +525,7 @@ final readonly class ToolsProbe
                     installed='false'
                 fi
 
-                printf '{"name":"%s","installed":%s,"path":%s,"version":%s,"state":%s,"container_exists":%s,"container_state":%s,"container_spec_hash":%s}\n' \
+                printf '{"name":"%s","installed":%s,"path":%s,"version":%s,"state":%s,"container_exists":%s,"container_state":%s,"container_spec_hash":%s,"provider_reachable":%s,"provider_error":%s}\n' \
                     "$(json_escape "$name")" \
                     "$installed" \
                     "$(json_string_or_null "$path")" \
@@ -467,7 +533,9 @@ final readonly class ToolsProbe
                     "$(json_string_or_null "$state")" \
                     "$container_exists" \
                     "$(json_string_or_null "$container_state")" \
-                    "$(json_string_or_null "$container_spec_hash")"
+                    "$(json_string_or_null "$container_spec_hash")" \
+                    "$provider_reachable" \
+                    "$(json_string_or_null "$provider_error")"
             done <<'ORBIT_TOOLS'
             __NAMES__
             ORBIT_TOOLS
@@ -540,6 +608,7 @@ final readonly class ToolsProbe
             ...$this->checkNodeEligibility($tool, $allowProvisioning),
             ...$this->checkDefinition($tool),
             ...$this->checkCapabilityPresence($tool, $snapshot),
+            ...$this->checkDockerProviderReachability($tool, $snapshot),
             ...$this->checkContainerState($tool, $snapshot),
             ...$this->checkVersionState($tool, $snapshot),
             ...$this->checkConfigState($tool, $snapshot),
@@ -700,6 +769,62 @@ final readonly class ToolsProbe
                 detail: [
                     'tool' => $tool->name,
                 ],
+            ),
+        ];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkDockerProviderReachability(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        if ($tool->name !== 'docker' || $tool->expected_state === 'absent') {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['installed'] ?? null) !== true || ($observed['provider_reachable'] ?? null) !== false) {
+            return [];
+        }
+
+        $operatingSystem = $this->toolNodeOperatingSystem($tool);
+        $summary = $operatingSystem === 'macos'
+            ? 'No reachable Docker-compatible provider was found on the macOS node.'
+            : 'Docker is installed but the Docker provider is not reachable on the target node.';
+        $detail = [
+            'tool' => $tool->name,
+            'provider' => 'docker-compatible',
+        ];
+
+        if (is_string($observed['provider_error'] ?? null) && trim($observed['provider_error']) !== '') {
+            $detail['provider_error'] = trim($observed['provider_error']);
+        }
+
+        if ($operatingSystem === 'macos') {
+            $detail = [
+                ...$detail,
+                'recommended_provider' => 'colima',
+                'remediation_commands' => [
+                    'brew install docker colima',
+                    'colima start --runtime docker',
+                ],
+                'compatible_existing_providers' => [
+                    'colima',
+                    'orbstack',
+                    'docker-desktop',
+                ],
+                'provider_note' => 'OrbStack and Docker Desktop are compatible when already installed and licensed or allowed; Colima is the default recommendation when no provider is reachable.',
+            ];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'tool.docker_provider_unreachable',
+                kind: DriftKind::Missing,
+                summary: $summary,
+                detail: $detail,
             ),
         ];
     }

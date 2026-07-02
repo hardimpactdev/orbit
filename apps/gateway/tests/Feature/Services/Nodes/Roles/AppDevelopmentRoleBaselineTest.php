@@ -224,6 +224,52 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
         ]);
     });
 
+    it('converges macos app-dev to Docker-compatible runtime tools without apt-managed tools', function (): void {
+        $node = appDevBaselineNode([
+            'name' => 'mac-app-dev-1',
+            'platform' => 'macos_14',
+            'user' => 'nckrtl',
+            'host' => '10.6.0.44',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        $assignment = appDevBaselineAssignment($node);
+
+        $baseline = new AppDevelopmentRoleBaseline(
+            new DevelopmentDnsMappingEnactor($this->configDir),
+        );
+
+        $baseline->converge($node, $assignment);
+
+        $tools = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+        $caddy = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'caddy')
+            ->firstOrFail();
+
+        expect($tools)
+            ->toBe(['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
+            ->and($caddy->config['container']['mounts'])
+            ->toContain([
+                'source' => '/Users',
+                'target' => '/Users',
+                'read_only' => true,
+            ])
+            ->toContain([
+                'source' => '/Users/nckrtl/.local/share/orbit/caddy/data',
+                'target' => '/data/caddy',
+                'read_only' => false,
+            ])
+            ->not->toContain([
+                'source' => '/home',
+                'target' => '/home',
+                'read_only' => true,
+            ]);
+    });
+
     it('removes host toolchain rows on role removal', function (): void {
         $node = appDevBaselineNode();
         $assignment = appDevBaselineAssignment($node);

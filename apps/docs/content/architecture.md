@@ -197,7 +197,7 @@ production app, and agent roles. The `agent` role remains exclusive and
 conflicts with both `metrics` and `analytics`. The full compatibility matrix
 lives in [Node Concepts](domains/1_node/node-concepts.md#role-compatibility).
 
-Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
+Each role has a **driver** — the code that knows how to install, configure, and verify that role on a node. A role can only be assigned to a node whose host operating system is supported by that role's driver. New OS support for an existing role is a driver change, not an architecture change. Most role drivers support Ubuntu only; `app-dev` and `database` also support macOS on adopted/self-managed workload nodes backed by a reachable Docker-compatible container provider. Current driver OS support is enumerated in [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support).
 
 Nodes other than the gateway do not own durable Orbit state and do not run a local control plane. The Orbit CLI can run on any node, but only as a client that calls the gateway like any other caller.
 

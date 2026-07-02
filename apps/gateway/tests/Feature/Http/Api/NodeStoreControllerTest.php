@@ -377,6 +377,7 @@ describe('NodeStoreController', function (): void {
         )->toBe([
             'caddy',
             'composer',
+            'docker',
             'gh',
             'git',
             'laravel-installer',

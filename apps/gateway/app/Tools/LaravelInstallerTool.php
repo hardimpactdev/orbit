@@ -6,6 +6,11 @@ namespace App\Tools;
 
 final class LaravelInstallerTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
     public function slug(): string
     {
         return 'laravel-installer';
@@ -32,8 +37,16 @@ final class LaravelInstallerTool extends BaseTool
             set -e
 
             MANAGED_USER=__MANAGED_USER__
-            COMPOSER_HOME="/home/${MANAGED_USER}/.config/composer"
             GITHUB_TOKEN_FILE=__GITHUB_TOKEN_FILE__
+
+            composer_home() {
+                case "$(uname -s)" in
+                    Darwin) printf '/Users/%s/.config/composer\n' "${MANAGED_USER}" ;;
+                    *) printf '/home/%s/.config/composer\n' "${MANAGED_USER}" ;;
+                esac
+            }
+
+            COMPOSER_HOME="$(composer_home)"
 
             configure_github_auth() {
                 if [ -z "\${GITHUB_TOKEN_FILE}" ] || [ ! -f "\${GITHUB_TOKEN_FILE}" ]; then
@@ -70,8 +83,16 @@ final class LaravelInstallerTool extends BaseTool
             set -e
 
             MANAGED_USER=__MANAGED_USER__
-            COMPOSER_HOME="/home/${MANAGED_USER}/.config/composer"
             GITHUB_TOKEN_FILE=__GITHUB_TOKEN_FILE__
+
+            composer_home() {
+                case "$(uname -s)" in
+                    Darwin) printf '/Users/%s/.config/composer\n' "${MANAGED_USER}" ;;
+                    *) printf '/home/%s/.config/composer\n' "${MANAGED_USER}" ;;
+                esac
+            }
+
+            COMPOSER_HOME="$(composer_home)"
 
             configure_github_auth() {
                 if [ -z "\${GITHUB_TOKEN_FILE}" ] || [ ! -f "\${GITHUB_TOKEN_FILE}" ]; then
@@ -102,7 +123,15 @@ final class LaravelInstallerTool extends BaseTool
             set -e
 
             MANAGED_USER=__MANAGED_USER__
-            COMPOSER_HOME="/home/${MANAGED_USER}/.config/composer"
+
+            composer_home() {
+                case "$(uname -s)" in
+                    Darwin) printf '/Users/%s/.config/composer\n' "${MANAGED_USER}" ;;
+                    *) printf '/home/%s/.config/composer\n' "${MANAGED_USER}" ;;
+                esac
+            }
+
+            COMPOSER_HOME="$(composer_home)"
 
             sudo -u "${MANAGED_USER}" -H bash -lc "COMPOSER_HOME=${COMPOSER_HOME} composer global remove laravel/installer --no-interaction 2>/dev/null || true"
 

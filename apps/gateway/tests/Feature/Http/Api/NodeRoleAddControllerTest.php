@@ -9,6 +9,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
@@ -209,6 +210,69 @@ describe('NodeRoleAddController', function (): void {
 
         expect($selfGrant?->permissions)->toBe(['workspace:setup'])->and($selfGrant?->custom_permissions)->toBe([]);
     });
+
+    it('allows macos workload role additions through platform validation', function (
+        string $role,
+        array $settings,
+    ): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $target->forceFill(['platform' => 'macos_14'])->save();
+
+        app()->instance(NodeRoleBaselineConverger::class, new NodeRoleAddNoopConverger);
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => $role,
+            'settings' => $settings,
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.node', 'target-1')
+            ->assertJsonPath('success.data.assignment.role', $role)
+            ->assertJsonPath('success.data.assignment.status', 'active');
+    })->with([
+        'app-dev' => ['app-dev', ['tld' => 'test']],
+        'database' => ['database', []],
+    ]);
+
+    it('keeps ubuntu-only roles unsupported on macos workload nodes', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $target->forceFill(['platform' => 'macos_14'])->save();
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'ingress',
+            'settings' => [],
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.message', "Role 'ingress' does not support platform 'macos_14'.")
+            ->assertJsonPath('error.meta.role', 'ingress')
+            ->assertJsonMissingPath('success');
+    });
+
+    it('converges database role baseline on macos nodes by recording docker tool intent', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $target->forceFill(['platform' => 'macos_14'])->save();
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'database',
+            'settings' => [],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.node', 'target-1')
+            ->assertJsonPath('success.data.assignment.role', 'database');
+
+        $tool = NodeTool::query()
+            ->where('node_id', $target->id)
+            ->where('name', 'docker')
+            ->sole();
+
+        expect($tool->expected_state)->toBe('installed');
+    });
 });
 
 final class NodeRoleAddMetricsRecordingShell implements RemoteShell
@@ -231,4 +295,20 @@ final class NodeRoleAddMetricsRecordingShell implements RemoteShell
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+final class NodeRoleAddNoopConverger extends NodeRoleBaselineConverger
+{
+    public function __construct()
+    {
+        parent::__construct(
+            app(GatewayRoleBaseline::class),
+            app(AppDevelopmentRoleBaseline::class),
+            app(AppProductionRoleBaseline::class),
+            app(DatabaseRoleBaseline::class),
+            app(AgentRoleBaseline::class),
+        );
+    }
+
+    public function converge(Node $node, NodeRoleAssignment $assignment): void {}
 }

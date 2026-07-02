@@ -10,6 +10,7 @@ use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Runtime\DockerCommandBuilder;
 use RuntimeException;
 use Throwable;
@@ -550,11 +551,13 @@ final readonly class AppRuntimeContainerManager
 
     private function userForSafeConfiguredMountSource(string $source): ?string
     {
-        if (preg_match('#^/home/(?<user>[A-Za-z0-9._-]+)/(?<path>.+)$#', $source, $matches) !== 1) {
+        $match = NodeHostPaths::safeUserPath($source);
+
+        if ($match === null) {
             return null;
         }
 
-        $path = $matches['path'];
+        $path = $match['path'];
 
         foreach (['.aws', '.config', '.gnupg', '.ssh'] as $sensitiveDirectory) {
             if ($path === $sensitiveDirectory || str_starts_with($path, "{$sensitiveDirectory}/")) {
@@ -570,7 +573,7 @@ final readonly class AppRuntimeContainerManager
             return null;
         }
 
-        return $matches['user'];
+        return $match['user'];
     }
 
     private function findPhpIniMountSource(AppRuntimeContainer $container): string

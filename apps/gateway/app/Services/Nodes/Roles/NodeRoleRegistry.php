@@ -98,7 +98,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Agent->value,
                     NodeRoleName::Ingress->value,
                 ],
-                supportedPlatforms: ['ubuntu'],
+                supportedPlatforms: ['ubuntu', 'macos'],
                 settingsClass: AppDevelopmentRoleSettings::class,
             ),
             NodeRoleName::AppProduction->value => new NodeRoleDefinition(
@@ -127,7 +127,7 @@ final class NodeRoleRegistry
                     NodeRoleName::Agent->value,
                     NodeRoleName::Ingress->value,
                 ],
-                supportedPlatforms: ['ubuntu'],
+                supportedPlatforms: ['ubuntu', 'macos'],
                 settingsClass: DatabaseRoleSettings::class,
             ),
             NodeRoleName::Agent->value => new NodeRoleDefinition(

@@ -26,6 +26,12 @@ describe('PhpCliTool', function (): void {
             ->toContain('safe-adopt');
     });
 
+    it('supports Linux and macOS hosts', function (): void {
+        $tool = new PhpCliTool;
+
+        expect($tool->supportedOperatingSystems())->toBe(['linux', 'macos']);
+    });
+
     it('installScript downloads from dl.static-php.dev bulk preset', function (): void {
         $tool = new PhpCliTool;
 

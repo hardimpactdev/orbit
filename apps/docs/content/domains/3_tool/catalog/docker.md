@@ -10,7 +10,7 @@ These fields describe the Docker tool's identity, backend, and support model in 
 | --- | --- |
 | Slug | `docker` |
 | Label | Docker |
-| Backend | system service |
+| Backend | system service on Linux; Docker-compatible container provider on macOS |
 | Support model | Required baseline, adopted and kept converged |
 | Category | `always` |
 
@@ -23,6 +23,27 @@ service drift once the node bootstrap contract provides Docker.
 
 `tool:install docker` and `tool:remove docker` are not supported by the tool
 family.
+
+## macOS Provider Support
+
+On macOS workload nodes, a container provider that is Docker-compatible and
+reachable supplies the Docker capability; there is no host system service.
+Orbit first uses a Docker provider that is already working: it probes the
+current `docker` command and context, does not mutate the global Docker
+context, and does not install or start providers during role convergence. When no Docker provider is
+reachable on a macOS node, Orbit recommends Colima:
+
+```bash
+brew install docker colima
+colima start --runtime docker
+```
+
+OrbStack and Docker Desktop are compatible providers when they are already
+installed and licensed or allowed for the user's context. OrbStack is not the
+default recommendation because it requires a license for commercial, business,
+nonprofit, government, and freelance use after evaluation. Linux repair
+behavior is unchanged; Orbit does not emit systemd repair commands for Docker
+on macOS.
 
 ## Credentials
 

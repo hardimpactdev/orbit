@@ -7,12 +7,15 @@ namespace App\Services\Apps;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 
 final readonly class AppDevelopmentPackagesMount
 {
     public const string Target = '/packages';
 
-    private const string SafeSourcePattern = '#^/home/(?!(?:\.{1,2})/)(?<user>[A-Za-z0-9._-]+)/packages$#';
+    public function __construct(
+        private NodeHostPaths $hostPaths = new NodeHostPaths,
+    ) {}
 
     public static function isSafeSource(string $source): bool
     {
@@ -21,11 +24,7 @@ final readonly class AppDevelopmentPackagesMount
 
     public static function userForSafeSource(string $source): ?string
     {
-        if (preg_match(self::SafeSourcePattern, $source, $matches) !== 1) {
-            return null;
-        }
-
-        return $matches['user'];
+        return NodeHostPaths::userForPackagesDirectory($source);
     }
 
     /**
@@ -50,7 +49,7 @@ final readonly class AppDevelopmentPackagesMount
         }
 
         return [
-            'source' => "/home/{$nodeUser}/packages",
+            'source' => $this->hostPaths->packagesDirectory($app->node),
             'target' => self::Target,
             'read_only' => false,
         ];

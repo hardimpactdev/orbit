@@ -272,6 +272,82 @@ it('requires service process endpoints to use the owner node WireGuard address',
         ->not->toBe('database-1');
 });
 
+it('uses macos user share paths for Docker service process data mounts', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'mac-database-1',
+        'platform' => 'macos_14',
+        'user' => 'nckrtl',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+
+    $descriptor = app(ProcessServiceCatalog::class)->resolve(
+        service: 'mysql',
+        version: '8',
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'mysql8',
+    );
+
+    expect($descriptor->runtimeConfig['mounts'][0]['source'])
+        ->toBe('/Users/nckrtl/.local/share/orbit/processes/mysql8')
+        ->and($descriptor->runtimeConfig['mounts'][0]['target'])
+        ->toBe('/var/lib/mysql');
+});
+
+it('allows database services on macos through Docker but not Docker Swarm', function (
+    string $service,
+    ?string $version,
+): void {
+    $node = Node::factory()->create([
+        'name' => "mac-{$service}-1",
+        'platform' => 'macos_14',
+        'user' => 'nckrtl',
+        'wireguard_address' => '10.6.0.44',
+    ]);
+    $catalog = app(ProcessServiceCatalog::class);
+
+    $descriptor = $catalog->resolve(
+        service: $service,
+        version: $version,
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: $service,
+    );
+
+    expect($descriptor->runtimeConfig['service'])
+        ->toBe($service)
+        ->and($descriptor->runtimeConfig['mounts'][0]['source'])
+        ->toBe("/Users/nckrtl/.local/share/orbit/processes/{$service}");
+
+    try {
+        $catalog->resolve(
+            service: $service,
+            version: $version,
+            runtime: ProcessRuntime::DockerSwarm,
+            node: $node,
+            processName: $service,
+        );
+    } catch (GatewayApiException $exception) {
+        expect($exception->errorCode())
+            ->toBe('validation_failed')
+            ->and($exception->errorMeta())
+            ->toMatchArray([
+                'field' => 'runtime',
+                'value' => 'docker-swarm',
+                'reason' => 'process_service_runtime_unsupported',
+                'allowed' => ['docker'],
+            ]);
+
+        return;
+    }
+
+    $this->fail('Expected macOS Docker Swarm service runtime to be rejected.');
+})->with([
+    'mysql' => ['mysql', '8'],
+    'postgres' => ['postgres', '16'],
+    'redis' => ['redis', '7'],
+]);
+
 it('rejects service process endpoints when the owning node has no WireGuard address', function (): void {
     $node = Node::factory()->create([
         'name' => 'database-1',

@@ -52,6 +52,7 @@ interface ToolDefinition
      *     service?: string,
      *     container?: string,
      *     image?: string,
+     *     provider_command?: string,
      *     update_command?: string,
      *     repair_commands?: array<string, string>,
      * }

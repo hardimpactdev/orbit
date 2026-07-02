@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeHostPaths;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
@@ -31,9 +32,7 @@ final readonly class ProcessOwnerContext
             return $this->app;
         }
 
-        $home = ($this->node->user ?: 'orbit') === 'root'
-            ? '/root'
-            : '/home/'.($this->node->user ?: 'orbit');
+        $home = new NodeHostPaths()->homeDirectory($this->node);
 
         $app = new App([
             'name' => $this->node->name,
@@ -56,6 +55,10 @@ final readonly class ProcessOwnerContext
 
     public function allowsRuntime(ProcessRuntime $runtime): bool
     {
+        if (! $this->runtimeSupportedByNode($runtime)) {
+            return false;
+        }
+
         if ($this->owner instanceof Node) {
             return true;
         }
@@ -65,6 +68,18 @@ final readonly class ProcessOwnerContext
 
     public function assertRuntimeAllowed(ProcessRuntime $runtime): void
     {
+        if (! $this->runtimeSupportedByNode($runtime)) {
+            throw new GatewayApiException(
+                $this->nodeRuntimeViolationMessage($runtime),
+                'validation_failed',
+                [
+                    'field' => 'runtime',
+                    'value' => $runtime->value,
+                    'reason' => $this->nodeRuntimeViolationReason($runtime),
+                ],
+            );
+        }
+
         if ($this->allowsRuntime($runtime)) {
             return;
         }
@@ -79,6 +94,33 @@ final readonly class ProcessOwnerContext
                 'reason' => $runtime->appWorkspaceCommandViolationReason(),
             ],
         );
+    }
+
+    private function runtimeSupportedByNode(ProcessRuntime $runtime): bool
+    {
+        if (! NodeHostPaths::isMacosPlatform($this->node->platform)) {
+            return true;
+        }
+
+        return ! in_array($runtime, [ProcessRuntime::DockerSwarm, ProcessRuntime::Systemd], strict: true);
+    }
+
+    private function nodeRuntimeViolationReason(ProcessRuntime $runtime): string
+    {
+        return match ($runtime) {
+            ProcessRuntime::DockerSwarm => 'docker_swarm_runtime_requires_linux',
+            ProcessRuntime::Systemd => 'systemd_runtime_requires_linux',
+            ProcessRuntime::Docker => 'runtime_unsupported_on_node',
+        };
+    }
+
+    private function nodeRuntimeViolationMessage(ProcessRuntime $runtime): string
+    {
+        return match ($runtime) {
+            ProcessRuntime::DockerSwarm => 'The docker-swarm runtime is only supported on Linux nodes.',
+            ProcessRuntime::Systemd => 'The systemd runtime is only supported on Linux nodes.',
+            ProcessRuntime::Docker => 'The selected runtime is not supported on this node.',
+        };
     }
 
     /**

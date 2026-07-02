@@ -10,6 +10,11 @@ use App\Services\Runtime\OrbitCaddyContainer;
 
 final class CaddyTool extends BaseTool
 {
+    /**
+     * @var list<string>
+     */
+    protected const array SUPPORTED_OPERATING_SYSTEMS = ['linux', 'macos'];
+
     public function slug(): string
     {
         return 'caddy';

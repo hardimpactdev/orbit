@@ -82,6 +82,28 @@ function toolsProbeCapabilityStdout(string $path, string $version = '', string $
     return implode("\t", [$path, $version, $state, '', '', '', '', '', '', ''])."\n";
 }
 
+function toolsProbeDockerProviderStdout(
+    string $path,
+    string $version = 'Docker version 27.0.0',
+    bool $providerReachable = true,
+    string $providerError = '',
+): string {
+    return implode("\t", [
+        $path,
+        $version,
+        'unknown',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        $providerReachable ? '1' : '0',
+        $providerError,
+    ])."\n";
+}
+
 function toolsProbeManagedFileStdout(bool $exists, ?string $hash, ?string $mode): string
 {
     return json_encode([
@@ -425,13 +447,72 @@ describe('ToolsProbe', function (): void {
             ->and($shell->script)
             ->toContain('# orbit-tool-probe:capability')
             ->and($shell->script)
-            ->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
+            ->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
             ->and($snapshot->get('composer'))
             ->toMatchArray([
                 'installed' => true,
                 'path' => '/usr/local/bin/composer',
                 'version' => 'Composer version 2.8.0',
                 'state' => 'stopped',
+            ]);
+    });
+
+    it('probes Docker provider reachability on macOS without a systemd service intent', function (): void {
+        $node = createToolsProbeAppHostNode(['platform' => 'macos_14']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'docker']);
+        $shell = new RecordingToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: toolsProbeDockerProviderStdout('/opt/homebrew/bin/docker'),
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshot = $probe->introspect($tool);
+        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($input)
+            ->toMatchArray([
+                'binary' => 'docker',
+                'version_command' => 'docker --version',
+                'service' => '',
+                'provider_command' => 'docker info',
+            ])
+            ->and($snapshot->get('docker'))
+            ->toMatchArray([
+                'installed' => true,
+                'path' => '/opt/homebrew/bin/docker',
+                'version' => 'Docker version 27.0.0',
+                'provider_reachable' => true,
+            ]);
+    });
+
+    it('reports Colima remediation when Docker is present but no provider is reachable on macOS', function (): void {
+        $node = createToolsProbeAppHostNode(['platform' => 'macos_14']);
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'docker']);
+        $probe = new ToolsProbe;
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'docker' => [
+                'installed' => true,
+                'path' => '/opt/homebrew/bin/docker',
+                'version' => 'Docker version 27.0.0',
+                'provider_reachable' => false,
+                'provider_error' => 'Cannot connect to the Docker daemon',
+            ],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.docker_provider_unreachable')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.docker_provider_unreachable')?->summary)
+            ->toContain('Docker-compatible provider')
+            ->and(toolProbeIssue($drift, 'tool.docker_provider_unreachable')?->detail)
+            ->toMatchArray([
+                'tool' => 'docker',
+                'provider' => 'docker-compatible',
+                'recommended_provider' => 'colima',
+                'remediation_commands' => [
+                    'brew install docker colima',
+                    'colima start --runtime docker',
+                ],
             ]);
     });
 
