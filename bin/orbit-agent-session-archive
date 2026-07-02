@@ -932,9 +932,11 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
     $sessionMapPath = null;
     $source = 'claude_session_jsonl';
     $match = 'pid_session_map';
+    $checked = [];
 
     if (is_int($pid)) {
         $candidateSessionMapPath = "{$home}/.claude/sessions/{$pid}.json";
+        $checked[] = $candidateSessionMapPath;
 
         if (is_file($candidateSessionMapPath)) {
             $sessionMap = json_decode((string) file_get_contents($candidateSessionMapPath), true);
@@ -945,12 +947,15 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
                 $sessionMapPath = $candidateSessionMapPath;
             }
         }
+    } else {
+        $checked[] = "{$home}/.claude/sessions/<pid>.json (Solo process pid unavailable)";
     }
 
     if ($projectFile === null) {
         $soloProcessId = normalizeOptionalInt($process['id'] ?? $process['processId'] ?? null);
 
         if ($soloProcessId !== null) {
+            $checked[] = "{$home}/.claude/projects (Solo process ID: {$soloProcessId} marker scan)";
             $projectFile = findClaudeProjectFileForSoloProcess($home, $soloProcessId, $marker);
             $source = 'claude_session_jsonl_solo_marker';
             $match = 'solo_process_marker';
@@ -958,7 +963,15 @@ function extractClaudeSession(string $home, string $cwd, array $process, ?string
     }
 
     if ($projectFile === null) {
-        return missing(is_int($pid) ? 'claude_project_jsonl_missing' : 'claude_session_pid_missing');
+        $encodedProjectDir = claudeProjectDirForCwd($home, $cwd);
+        $checked[] = "{$encodedProjectDir}/*.jsonl";
+        $projectFile = findClaudeProjectFileForCwd($encodedProjectDir, $marker);
+        $source = 'claude_session_jsonl_project_dir';
+        $match = 'project_dir_cwd';
+    }
+
+    if ($projectFile === null) {
+        return missing('claude_session_not_found', ['checked' => $checked]);
     }
 
     if ($marker !== null && !fileContains($projectFile, $marker)) {
@@ -1062,6 +1075,28 @@ function findClaudeProjectFileForSoloProcess(string $home, int $soloProcessId, ?
     return $matches[0] ?? null;
 }
 
+function claudeProjectDirForCwd(string $home, string $cwd): string
+{
+    return "{$home}/.claude/projects/" . preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
+}
+
+function findClaudeProjectFileForCwd(string $projectDir, ?string $marker): ?string
+{
+    if (!is_dir($projectDir)) {
+        return null;
+    }
+
+    $files = array_values(array_filter(glob("{$projectDir}/*.jsonl") ?: [], 'is_file'));
+
+    if ($marker !== null) {
+        $files = array_values(array_filter($files, fn(string $file): bool => fileContains($file, $marker)));
+    }
+
+    usort($files, fn(string $a, string $b): int => (filemtime($b) ?: 0) <=> (filemtime($a) ?: 0));
+
+    return $files[0] ?? null;
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -1075,9 +1110,20 @@ function extractCodexSession(
 ): array {
     $root = "{$home}/.codex/sessions";
     $candidates = [];
+    $rolloutsScanned = 0;
+    $rejected = [
+        'marker_not_found' => 0,
+        'token_count_or_session_meta_missing' => 0,
+        'cwd_mismatch' => 0,
+        'start_distance_exceeded' => 0,
+    ];
 
     foreach (findFiles($root, 'rollout-*.jsonl') as $file) {
+        $rolloutsScanned++;
+
         if ($marker !== null && !fileContains($file, $marker)) {
+            $rejected['marker_not_found']++;
+
             continue;
         }
 
@@ -1109,12 +1155,17 @@ function extractCodexSession(
         }
 
         if ($sessionMeta === null || $lastTokenCount === null) {
+            $rejected['token_count_or_session_meta_missing']++;
+
             continue;
         }
 
         $sessionCwd = $sessionMeta['payload']['cwd'] ?? null;
+        $cwdMatches = is_string($sessionCwd) && canonicalPath($sessionCwd) === canonicalPath($cwd);
 
-        if ($requireCwdMatch && (!is_string($sessionCwd) || canonicalPath($sessionCwd) !== canonicalPath($cwd))) {
+        if ($requireCwdMatch && !$cwdMatches) {
+            $rejected['cwd_mismatch']++;
+
             continue;
         }
 
@@ -1124,23 +1175,35 @@ function extractCodexSession(
 
         $distance = $startedAt === null ? 0 : abs((int) $createdAt - $startedAt);
 
-        if ($startedAt !== null && $distance > $maxStartDistance) {
+        if (!$cwdMatches && $startedAt !== null && $distance > $maxStartDistance) {
+            $rejected['start_distance_exceeded']++;
+
             continue;
         }
 
         $candidates[] = [
             'file' => $file,
+            'cwd_match' => $cwdMatches,
             'distance' => $distance,
+            'created_at' => (int) $createdAt,
             'payload' => $lastTokenCount,
             'messages' => $messages,
         ];
     }
 
-    usort($candidates, fn(array $a, array $b): int => $a['distance'] <=> $b['distance']);
+    usort($candidates, fn(array $a, array $b): int => [$b['cwd_match'], $a['distance'], $b['created_at']]
+        <=> [$a['cwd_match'], $b['distance'], $a['created_at']]);
     $candidate = $candidates[0] ?? null;
 
     if ($candidate === null) {
-        return missing('codex_token_count_not_found');
+        return missing('codex_token_count_not_found', [
+            'checked' => [
+                "{$root}/**/rollout-*.jsonl",
+                'event_msg payload.type=token_count with session_meta payload.cwd=' . $cwd,
+            ],
+            'rollouts_scanned' => $rolloutsScanned,
+            'rejected' => $rejected,
+        ]);
     }
 
     $usage = $candidate['payload']['info']['total_token_usage'] ?? [];
@@ -1149,6 +1212,7 @@ function extractCodexSession(
         'status' => 'ok',
         'source' => 'codex_jsonl_token_count',
         'metric_confidence' => 'measured',
+        'artifact_match' => $candidate['cwd_match'] ? 'cwd' : 'start_distance',
         'artifact' => $candidate['file'],
         'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
         'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
@@ -1176,16 +1240,29 @@ function extractGrokSession(
 ): array {
     $roots = grokSessionRoots($home, $cwd, $requireCwdMatch);
     $candidates = [];
+    $sessionsScanned = 0;
+    $rejected = [
+        'marker_not_found' => 0,
+        'signals_invalid' => 0,
+        'cwd_mismatch' => 0,
+        'start_distance_exceeded' => 0,
+    ];
 
     foreach ($roots as $root) {
         foreach (glob("{$root}/*/signals.json") ?: [] as $signalsFile) {
+            $sessionsScanned++;
             $sessionDir = dirname($signalsFile);
+            $cwdMatches = grokSessionMatchesCwd($sessionDir, $cwd);
 
-            if ($requireCwdMatch && !grokSessionMatchesCwd($sessionDir, $cwd)) {
+            if ($requireCwdMatch && !$cwdMatches) {
+                $rejected['cwd_mismatch']++;
+
                 continue;
             }
 
             if ($marker !== null && !sessionDirContains($sessionDir, $marker)) {
+                $rejected['marker_not_found']++;
+
                 continue;
             }
 
@@ -1202,19 +1279,25 @@ function extractGrokSession(
             $signals = json_decode((string) file_get_contents($signalsFile), true);
 
             if (!is_array($signals)) {
+                $rejected['signals_invalid']++;
+
                 continue;
             }
 
             $distance = $startedAt === null ? 0 : abs((int) $createdAt - $startedAt);
 
-            if ($startedAt !== null && $distance > $maxStartDistance) {
+            if (!$cwdMatches && $startedAt !== null && $distance > $maxStartDistance) {
+                $rejected['start_distance_exceeded']++;
+
                 continue;
             }
 
             $candidates[] = [
                 'dir' => $sessionDir,
                 'file' => $signalsFile,
+                'cwd_match' => $cwdMatches,
                 'distance' => $distance,
+                'created_at' => (int) $createdAt,
                 'signals' => $signals,
                 'messages' => extractGrokMessages($sessionDir),
                 'source_files' => grokSourceFiles($sessionDir),
@@ -1222,11 +1305,19 @@ function extractGrokSession(
         }
     }
 
-    usort($candidates, fn(array $a, array $b): int => $a['distance'] <=> $b['distance']);
+    usort($candidates, fn(array $a, array $b): int => [$b['cwd_match'], $a['distance'], $b['created_at']]
+        <=> [$a['cwd_match'], $b['distance'], $a['created_at']]);
     $candidate = $candidates[0] ?? null;
 
     if ($candidate === null) {
-        return missing('grok_signals_not_found');
+        return missing('grok_signals_not_found', [
+            'checked' => [
+                "{$home}/.grok/sessions/" . rawurlencode($cwd) . '/*/signals.json',
+                "{$home}/.grok/sessions/*/*/signals.json",
+            ],
+            'sessions_scanned' => $sessionsScanned,
+            'rejected' => $rejected,
+        ]);
     }
 
     $signals = $candidate['signals'];
@@ -1235,6 +1326,7 @@ function extractGrokSession(
         'status' => 'ok',
         'source' => 'grok_signals_json',
         'metric_confidence' => 'proxy',
+        'artifact_match' => $candidate['cwd_match'] ? 'cwd' : 'start_distance',
         'artifact' => $candidate['file'],
         'model' => $signals['primaryModelId'] ?? null,
         'context_tokens_used' => (int) ($signals['contextTokensUsed'] ?? 0),
@@ -1690,6 +1782,7 @@ function providerManifest(
             'provider' => $provider,
             'status' => $status,
             'reason' => $result['reason'] ?? null,
+            'checked' => $result['checked'] ?? null,
             'slug' => $slug,
             'relative_dir' => $relativeDir,
             'solo_process_id' => $result['solo_process_id'] ?? null,

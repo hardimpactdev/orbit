@@ -16,6 +16,7 @@ manifests.
 - Do not publish releases from separate source repositories. The split repos
   are generated outputs:
   - `hardimpactdev/orbit-core` from `packages/core`
+  - `hardimpactdev/orbit-sdk-laravel` from `packages/sdk`
   - `hardimpactdev/orbit-cli` from `apps/cli`
   - `hardimpactdev/orbit-gateway` from `apps/gateway`
 - Release artifacts are built once as release candidates and exposed through a

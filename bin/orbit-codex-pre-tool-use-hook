@@ -4,23 +4,31 @@
 declare(strict_types=1);
 
 const BLOCK_EXIT_CODE = 2;
+const USAGE_EXIT_CODE = 64;
 
-$command = command_from_argv($argv) ?? extract_command(stream_get_contents(STDIN));
+const LOOP_OUTCOME_ENUM = ['complete', 'blocked', 'complete + loop improvement'];
+const PLACEHOLDER_TOKENS = ['pending', 'tbd', 'todo', 'not yet'];
+
+if (($argv[1] ?? null) === '--lint') {
+    exit(run_lint($argv[2] ?? './.orbit/loop.md'));
+}
+
+$command = command_from_argv($argv) ?? extract_command((string) stream_get_contents(STDIN));
 
 if ($command === null || $command === '') {
-    exit(0);
+    exit(unclassifiable_exit('no command was provided to classify'));
 }
 
 $action = classify_command($command);
 
 if ($action === null) {
-    exit(0);
+    exit(unclassifiable_exit("could not classify command as a merge, worktree-remove, or branch-delete boundary: {$command}"));
 }
 
 $root = git_root(getcwd());
 
 if ($root === null || ! is_file($root.'/HARNESS.md') || ! is_file($root.'/AGENTS.md')) {
-    exit(0);
+    exit(unclassifiable_exit('not inside an Orbit checkout (missing HARNESS.md or AGENTS.md at the git root)'));
 }
 
 $check = match ($action['type']) {
@@ -29,13 +37,47 @@ $check = match ($action['type']) {
     'branch-delete' => check_branch_delete($root, $action['branch']),
 };
 
+foreach ($check['warnings'] as $warning) {
+    fwrite(STDERR, "WARNING: {$warning}\n");
+}
+
 if ($check['ok']) {
+    fwrite(STDOUT, 'FINALIZATION: PASS '.action_summary($action)."\n");
     exit(0);
 }
 
+fwrite(STDERR, 'FINALIZATION: BLOCKED '.$check['reason']."\n\n");
 fwrite(STDERR, block_message($check['subject'], $check['reason']));
 
 exit(BLOCK_EXIT_CODE);
+
+/**
+ * Silent exit 0 preserves the PreToolUse contract for unrelated commands.
+ * Explicit wrapper invocations (ORBIT_FINALIZATION_EXPLICIT=1) fail loudly
+ * with exit 64 instead of silently passing.
+ */
+function unclassifiable_exit(string $message): int
+{
+    if (getenv('ORBIT_FINALIZATION_EXPLICIT') !== '1') {
+        return 0;
+    }
+
+    fwrite(STDERR, "orbit finalization gate: {$message}\n");
+
+    return USAGE_EXIT_CODE;
+}
+
+/**
+ * @param  array{type: 'merge', target: string}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}  $action
+ */
+function action_summary(array $action): string
+{
+    return match ($action['type']) {
+        'merge' => "git merge {$action['target']}",
+        'worktree-remove' => "git worktree remove {$action['path']}",
+        'branch-delete' => "git branch delete {$action['branch']}",
+    };
+}
 
 /**
  * @param  list<string>  $argv
@@ -229,7 +271,7 @@ function git_root(string $cwd): ?string
 }
 
 /**
- * @return array{ok: bool, subject: string, reason: string}
+ * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
  */
 function check_merge(string $root, string $target): array
 {
@@ -249,21 +291,43 @@ function check_merge(string $root, string $target): array
         return ok();
     }
 
+    $branchTip = trim(run_git($root, ['rev-parse', 'refs/heads/'.$branch])['stdout']);
+    $mergeBase = trim(run_git($root, ['merge-base', 'HEAD', $branch])['stdout']);
+
+    if ($branchTip !== '' && $branchTip === $mergeBase) {
+        return block_result(
+            $branch,
+            "feature branch `{$branch}` tip equals the merge base, so there are no commits to merge; "
+                .'commit the feature worktree work first (or drop the merge if nothing should land)',
+        );
+    }
+
     $worktree = worktree_for_branch($root, $branch);
 
     if ($worktree === null) {
-        return [
-            'ok' => false,
-            'subject' => $branch,
-            'reason' => 'local branch exists, but no linked feature worktree was found, so `.orbit/loop.md` final distillation cannot be inspected',
-        ];
+        return block_result(
+            $branch,
+            'local branch exists, but no linked feature worktree was found, so `.orbit/loop.md` final distillation cannot be inspected',
+        );
     }
 
-    return final_distillation_check($root, $worktree, $branch);
+    $dirtyStatus = trim(run_git($worktree, ['status', '--porcelain', '--untracked-files=no'])['stdout']);
+
+    if ($dirtyStatus !== '') {
+        $firstStatusLine = trim((string) strtok($dirtyStatus, "\n"));
+
+        return block_result(
+            $branch,
+            "feature worktree {$worktree} has uncommitted tracked changes ({$firstStatusLine}); "
+                .'commit or stash them so the merged branch matches the verified state',
+        );
+    }
+
+    return final_distillation_check($root, $worktree, $branch, requireAnalyzer: true);
 }
 
 /**
- * @return array{ok: bool, subject: string, reason: string}
+ * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
  */
 function check_worktree_remove(string $root, string $path): array
 {
@@ -275,11 +339,23 @@ function check_worktree_remove(string $root, string $path): array
 
     $branch = branch_for_worktree($root, $worktree) ?? $worktree;
 
-    return final_distillation_check($root, $worktree, $branch);
+    $check = final_distillation_check($root, $worktree, $branch);
+
+    if (! $check['ok']) {
+        return $check;
+    }
+
+    $archiveProblem = session_archive_problem($root, $branch);
+
+    if ($archiveProblem !== null) {
+        return block_result($branch, $archiveProblem, $check['warnings']);
+    }
+
+    return $check;
 }
 
 /**
- * @return array{ok: bool, subject: string, reason: string}
+ * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
  */
 function check_branch_delete(string $root, string $branch): array
 {
@@ -295,85 +371,252 @@ function check_branch_delete(string $root, string $branch): array
         return ok();
     }
 
-    return final_distillation_check($root, $worktree, $branch);
+    $check = final_distillation_check($root, $worktree, $branch);
+
+    if (! $check['ok']) {
+        return $check;
+    }
+
+    $archiveProblem = session_archive_problem($root, $branch);
+
+    if ($archiveProblem !== null) {
+        return block_result($branch, $archiveProblem, $check['warnings']);
+    }
+
+    return $check;
 }
 
 /**
- * @return array{ok: bool, subject: string, reason: string}
+ * Worktree removal and branch deletion additionally require a session archive
+ * in the primary checkout so cleanup never destroys the only loop evidence.
  */
-function final_distillation_check(string $root, string $worktree, string $subject): array
+function session_archive_problem(string $root, string $branch): ?string
+{
+    $sessionsDirectory = $root.'/.orbit/sessions';
+    $slug = archive_slug($branch);
+    $hint = 'run bin/orbit-session-archive from the feature worktree before cleanup';
+
+    if (! is_dir($sessionsDirectory)) {
+        return "no session archives exist at {$sessionsDirectory}; {$hint}";
+    }
+
+    $candidates = [];
+
+    foreach (new DirectoryIterator($sessionsDirectory) as $entry) {
+        if ($entry->isDot() || ! $entry->isDir()) {
+            continue;
+        }
+
+        $name = $entry->getFilename();
+
+        if ($name === $slug || preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-'.preg_quote($slug, '/').'$/', $name) === 1) {
+            $candidates[] = $entry->getPathname();
+        }
+    }
+
+    if ($candidates === []) {
+        return "no session archive matching slug `{$slug}` was found under {$sessionsDirectory}; {$hint}";
+    }
+
+    foreach ($candidates as $candidate) {
+        if (is_file($candidate.'/loop.md') && is_file($candidate.'/agent-sessions/manifest.json')) {
+            return null;
+        }
+    }
+
+    return "session archive for `{$slug}` under {$sessionsDirectory} is missing loop.md or agent-sessions/manifest.json; re-{$hint}";
+}
+
+function archive_slug(string $value): string
+{
+    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
+    $slug = trim($slug, '-');
+
+    return $slug === '' ? 'session' : $slug;
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string, warnings: list<string>}
+ */
+function final_distillation_check(string $root, string $worktree, string $subject, bool $requireAnalyzer = false): array
 {
     $loopPath = rtrim($worktree, '/').'/.orbit/loop.md';
 
     if (! is_file($loopPath)) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "missing finalization state at {$loopPath}",
-        ];
+        return block_result($subject, "missing finalization state at {$loopPath}");
     }
 
     $contents = (string) file_get_contents($loopPath);
     $section = markdown_section($contents, 'Final Distillation');
 
     if ($section === null) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "{$loopPath} has no `Final Distillation` section",
-        ];
+        return block_result($subject, "{$loopPath} has no `Final Distillation` section");
     }
 
-    if (preg_match('/<[^>\n]+>/', $section) === 1) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "{$loopPath} still contains template placeholders in `Final Distillation`",
-        ];
+    $placeholderLine = section_placeholder_line($section);
+
+    if ($placeholderLine !== null) {
+        return block_result(
+            $subject,
+            "{$loopPath} still contains template placeholders in `Final Distillation`: {$placeholderLine}",
+        );
     }
 
     $loopOutcome = loop_outcome($section);
 
     if ($loopOutcome === null) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "{$loopPath} does not record a `Loop outcome` in `Final Distillation`",
-        ];
+        return block_result($subject, "{$loopPath} does not record a `Loop outcome` in `Final Distillation`");
     }
 
     if (! is_mergeable_loop_outcome($loopOutcome)) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "{$loopPath} loop outcome is blocked or ambiguous: {$loopOutcome}",
-        ];
+        return block_result(
+            $subject,
+            "{$loopPath} loop outcome is blocked or ambiguous: {$loopOutcome}; the value "
+                .'must be exactly one of: complete | blocked | complete + loop improvement, '
+                .'and only complete outcomes may pass a merge/cleanup boundary',
+        );
     }
 
     $requirements = verification_requirements($root, $worktree, $subject);
     $requiredVerificationProblem = required_verification_problem($section, $worktree, $requirements);
 
     if ($requiredVerificationProblem !== null) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "{$loopPath} required verification is incomplete: {$requiredVerificationProblem}",
-        ];
+        return block_result($subject, "{$loopPath} required verification is incomplete: {$requiredVerificationProblem}");
     }
 
-    $outcomes = final_outcome_values($section);
+    if ($requireAnalyzer) {
+        $analyzerProblem = fresh_analyzer_problem($section);
 
-    foreach ($outcomes as $value) {
-        if (is_meaningful_outcome($value)) {
-            return ok();
+        if ($analyzerProblem !== null) {
+            return block_result($subject, "{$loopPath} {$analyzerProblem}");
         }
     }
 
-    return [
-        'ok' => false,
-        'subject' => $subject,
-        'reason' => "{$loopPath} does not record an accepted update, rejected/already-covered signal, deferred follow-up, or no-new-signal rationale",
-    ];
+    $warnings = [];
+    $deferredAnalyzer = fresh_analyzer_deferred_value($section);
+
+    if ($deferredAnalyzer !== null) {
+        $warnings[] = "Fresh analyzer deferred: {$deferredAnalyzer}";
+    }
+
+    $signalProblem = signal_outcome_problem($section);
+
+    if ($signalProblem !== null) {
+        return block_result($subject, "{$loopPath} {$signalProblem}", $warnings);
+    }
+
+    $reconstructionWarning = reconstruction_smell_warning($contents, $section);
+
+    if ($reconstructionWarning !== null) {
+        $warnings[] = $reconstructionWarning;
+    }
+
+    return ok($warnings);
+}
+
+/**
+ * Validate only the Final Distillation packet shape of a loop.md file without
+ * requiring a git action, so orchestrators can dry-run before merge time.
+ */
+function run_lint(string $path): int
+{
+    if (! is_file($path)) {
+        fwrite(STDOUT, "BLOCKED: no loop packet found at {$path}\n");
+
+        return BLOCK_EXIT_CODE;
+    }
+
+    $contents = (string) file_get_contents($path);
+    $section = markdown_section($contents, 'Final Distillation');
+
+    if ($section === null) {
+        fwrite(STDOUT, "BLOCKED: {$path} has no `Final Distillation` section\n");
+
+        return BLOCK_EXIT_CODE;
+    }
+
+    $problems = [];
+    $warnings = [];
+
+    $placeholderLine = section_placeholder_line($section);
+
+    if ($placeholderLine !== null) {
+        $problems[] = "template placeholders remain in `Final Distillation`: {$placeholderLine}";
+    }
+
+    $loopOutcome = loop_outcome($section);
+
+    if ($loopOutcome === null) {
+        $problems[] = 'missing `- Loop outcome:` value';
+    } elseif (! in_array(normalize_outcome_value($loopOutcome), LOOP_OUTCOME_ENUM, true)) {
+        $problems[] = "loop outcome must be exactly one of: complete | blocked | complete + loop improvement; found: {$loopOutcome}";
+    }
+
+    $verificationValues = markdown_list_values($section, ['Required verification']);
+
+    if ($verificationValues === []) {
+        $problems[] = 'missing `Required verification` rows';
+    } else {
+        foreach (['Retained topology proof', '`composer quality-check`'] as $requiredLabel) {
+            if (! has_required_verification_row($verificationValues, $requiredLabel)) {
+                $problems[] = "missing {$requiredLabel} verification row";
+            }
+        }
+
+        foreach ($verificationValues as $value) {
+            if (is_placeholder_row_value($value)) {
+                $problems[] = "placeholder value in required verification row: {$value}";
+            }
+        }
+
+        if ($loopOutcome !== null && is_mergeable_loop_outcome($loopOutcome)) {
+            foreach ($verificationValues as $value) {
+                if (is_blocked_verification_value($value)) {
+                    $problems[] = "loop outcome is complete while required verification is blocked: {$value}";
+                }
+            }
+        }
+    }
+
+    $analyzerProblem = fresh_analyzer_problem($section);
+
+    if ($analyzerProblem !== null) {
+        $problems[] = $analyzerProblem;
+    }
+
+    $deferredAnalyzer = fresh_analyzer_deferred_value($section);
+
+    if ($deferredAnalyzer !== null) {
+        $warnings[] = "Fresh analyzer deferred: {$deferredAnalyzer}";
+    }
+
+    $signalProblem = signal_outcome_problem($section);
+
+    if ($signalProblem !== null) {
+        $problems[] = $signalProblem;
+    }
+
+    $reconstructionWarning = reconstruction_smell_warning($contents, $section);
+
+    if ($reconstructionWarning !== null) {
+        $warnings[] = $reconstructionWarning;
+    }
+
+    foreach ($warnings as $warning) {
+        fwrite(STDOUT, "WARNING: {$warning}\n");
+    }
+
+    if ($problems !== []) {
+        foreach ($problems as $problem) {
+            fwrite(STDOUT, "BLOCKED: {$problem}\n");
+        }
+
+        return BLOCK_EXIT_CODE;
+    }
+
+    fwrite(STDOUT, "PASS: {$path} Final Distillation packet shape is valid\n");
+
+    return 0;
 }
 
 function markdown_section(string $contents, string $heading): ?string
@@ -403,6 +646,17 @@ function markdown_section(string $contents, string $heading): ?string
     }
 
     return trim(implode("\n", $section));
+}
+
+function section_placeholder_line(string $section): ?string
+{
+    foreach (preg_split('/\R/', $section) as $line) {
+        if (preg_match('/<[^>\n]+>/', $line) === 1) {
+            return trim($line);
+        }
+    }
+
+    return null;
 }
 
 function loop_outcome(string $section): ?string
@@ -442,6 +696,12 @@ function required_verification_problem(string $section, string $worktree, array 
     foreach ($values as $value) {
         if (is_blocked_verification_value($value)) {
             return $value;
+        }
+    }
+
+    foreach ($values as $value) {
+        if (is_placeholder_row_value($value)) {
+            return "placeholder value in required verification row: {$value}";
         }
     }
 
@@ -487,7 +747,7 @@ function required_verification_problem(string $section, string $worktree, array 
 function verification_requirements(string $root, string $worktree, string $subject): array
 {
     $changedFiles = changed_files($root, $worktree, $subject);
-    $docsOnly = $changedFiles !== [] && every($changedFiles, fn (string $path): bool => is_markdown_file($path));
+    $docsOnly = $changedFiles !== [] && every($changedFiles, fn (string $path): bool => is_docs_class_file($path));
     $phpFiles = array_values(array_filter($changedFiles, fn (string $path): bool => is_php_file($path)));
     $topologyRelevantPhpFiles = array_values(array_filter($phpFiles, fn (string $path): bool => is_topology_relevant_php_file($path)));
 
@@ -558,6 +818,26 @@ function every(array $items, callable $callback): bool
 function is_markdown_file(string $path): bool
 {
     return preg_match('/\.md$/i', $path) === 1;
+}
+
+/**
+ * Docs-class diffs are satisfied by docs-lint evidence: Markdown anywhere plus
+ * non-PHP harness surfaces (.agents/, docs/, harness-signals/, LOOP.md.example).
+ */
+function is_docs_class_file(string $path): bool
+{
+    if (is_markdown_file($path)) {
+        return true;
+    }
+
+    if (is_php_file($path)) {
+        return false;
+    }
+
+    return str_starts_with($path, '.agents/')
+        || str_starts_with($path, 'docs/')
+        || str_starts_with($path, 'harness-signals/')
+        || $path === 'LOOP.md.example';
 }
 
 function is_php_file(string $path): bool
@@ -644,6 +924,22 @@ function is_blocked_verification_value(string $value): bool
     $normalized = strtolower(trim($value));
 
     return preg_match('/^(?:[^:]+:\s*)?(?:blocked|pending|missing|skipped|deferred|unresolved|not\s+run)\b/', $normalized) === 1;
+}
+
+function is_placeholder_row_value(string $value): bool
+{
+    $status = preg_match('/^[^:]+:\s*(.*)$/', $value, $matches) === 1 ? $matches[1] : $value;
+
+    return is_placeholder_text($status);
+}
+
+function is_placeholder_text(string $value): bool
+{
+    if (preg_match('/<[^>\n]+>/', $value) === 1) {
+        return true;
+    }
+
+    return in_array(normalize_outcome_value($value), PLACEHOLDER_TOKENS, true);
 }
 
 function is_passed_verification_value(string $value): bool
@@ -761,6 +1057,101 @@ function final_outcome_values(string $section): array
     ]);
 }
 
+function signal_outcome_problem(string $section): ?string
+{
+    $values = final_outcome_values($section);
+
+    foreach ($values as $value) {
+        if (is_placeholder_text($value)) {
+            return "records a placeholder signal outcome instead of a real value: {$value}";
+        }
+    }
+
+    foreach ($values as $value) {
+        if (is_meaningful_outcome($value)) {
+            return null;
+        }
+    }
+
+    return 'does not record an accepted update, rejected/already-covered signal, deferred follow-up, or no-new-signal rationale';
+}
+
+function fresh_analyzer_problem(string $section): ?string
+{
+    if (! markdown_label_exists($section, 'Fresh analyzer')) {
+        return 'has no `- Fresh analyzer:` row in `Final Distillation`; record the analyzer verdict, or `deferred - <reason>` when analyzer infrastructure failed';
+    }
+
+    foreach (markdown_list_values($section, ['Fresh analyzer']) as $value) {
+        if (trim($value) !== '') {
+            return null;
+        }
+    }
+
+    return 'has an empty `- Fresh analyzer:` row in `Final Distillation`; record the analyzer verdict, or `deferred - <reason>` when analyzer infrastructure failed';
+}
+
+function fresh_analyzer_deferred_value(string $section): ?string
+{
+    foreach (markdown_list_values($section, ['Fresh analyzer']) as $value) {
+        $normalized = strtolower(trim($value));
+        $afterLabel = preg_match('/^[^:]+:\s*(.*)$/', $value, $matches) === 1
+            ? strtolower(trim($matches[1]))
+            : $normalized;
+
+        if (str_starts_with($normalized, 'deferred') || str_starts_with($afterLabel, 'deferred')) {
+            return $value;
+        }
+    }
+
+    return null;
+}
+
+function reconstruction_smell_warning(string $contents, string $section): ?string
+{
+    if (! candidate_signals_are_empty($contents)) {
+        return null;
+    }
+
+    foreach (markdown_list_values($section, ['Accepted durable updates']) as $value) {
+        if (is_meaningful_outcome($value)) {
+            return 'Accepted durable updates are recorded while `Candidate Signals While Working` is empty or none; '
+                .'signals look reconstructed post-hoc instead of captured during the loop';
+        }
+    }
+
+    return null;
+}
+
+function candidate_signals_are_empty(string $contents): bool
+{
+    $section = markdown_section($contents, 'Candidate Signals While Working');
+
+    if ($section === null) {
+        return true;
+    }
+
+    foreach (preg_split('/\R/', $section) as $line) {
+        if (preg_match('/^\s*-\s+(.+)$/', $line, $matches) !== 1) {
+            continue;
+        }
+
+        $value = trim($matches[1]);
+
+        if ($value === '' || preg_match('/<[^>\n]+>/', $value) === 1) {
+            continue;
+        }
+
+        if (in_array(normalize_outcome_value($value), ['none', 'n/a', 'na', 'not applicable'], true)) {
+            continue;
+        }
+
+        return false;
+    }
+
+    return true;
+}
+
 /**
  * @param  list<string>  $labels
  * @return list<string>
@@ -771,8 +1162,6 @@ function markdown_list_values(string $section, array $labels): array
     $activeLabel = null;
 
     foreach (preg_split('/\R/', $section) as $line) {
-        $trimmed = trim($line);
-
         if (preg_match('/^-\s+([^:]+):\s*(.*)$/', $line, $matches) === 1) {
             $label = $matches[1];
             $activeLabel = in_array($label, $labels, true) ? $label : null;
@@ -792,6 +1181,17 @@ function markdown_list_values(string $section, array $labels): array
     return $values;
 }
 
+function markdown_label_exists(string $section, string $label): bool
+{
+    foreach (preg_split('/\R/', $section) as $line) {
+        if (preg_match('/^-\s+'.preg_quote($label, '/').':/', $line) === 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function is_meaningful_outcome(string $value): bool
 {
     $normalized = normalize_outcome_value($value);
@@ -800,7 +1200,7 @@ function is_meaningful_outcome(string $value): bool
         return false;
     }
 
-    return ! in_array($normalized, ['none', 'n/a', 'na', 'not applicable', 'pending', 'todo', 'tbd', 'blocked'], true);
+    return ! in_array($normalized, ['none', 'n/a', 'na', 'not applicable', 'pending', 'todo', 'tbd', 'not yet', 'blocked'], true);
 }
 
 function normalize_outcome_value(string $value): string
@@ -948,11 +1348,20 @@ function run_process(array $command, string $cwd): array
 }
 
 /**
- * @return array{ok: true, subject: string, reason: string}
+ * @return array{ok: true, subject: string, reason: string, warnings: list<string>}
  */
-function ok(): array
+function ok(array $warnings = []): array
 {
-    return ['ok' => true, 'subject' => '', 'reason' => ''];
+    return ['ok' => true, 'subject' => '', 'reason' => '', 'warnings' => $warnings];
+}
+
+/**
+ * @param  list<string>  $warnings
+ * @return array{ok: false, subject: string, reason: string, warnings: list<string>}
+ */
+function block_result(string $subject, string $reason, array $warnings = []): array
+{
+    return ['ok' => false, 'subject' => $subject, 'reason' => $reason, 'warnings' => $warnings];
 }
 
 function block_message(string $subject, string $reason): string
@@ -967,6 +1376,7 @@ Before merging or deleting the feature worktree, review `.orbit/` evidence,
 fill `.orbit/loop.md` -> `Final Distillation`, and record one of:
 - an exact loop outcome: `complete` or `complete + loop improvement`,
 - required verification rows with `passed`, `blocked`, or `not applicable`,
+- a fresh analyzer verdict (or `deferred - <reason>`) for merge boundaries,
 - an accepted durable guardrail update,
 - a rejected or already-covered signal,
 - a deferred follow-up with owner and trigger, or
@@ -974,7 +1384,12 @@ fill `.orbit/loop.md` -> `Final Distillation`, and record one of:
 
 Blocked, pending, skipped, missing, deferred, unresolved, or not-run required
 verification must be reported as a `blocked` feature-loop outcome instead of a
-completed merge/cleanup boundary.
+completed merge/cleanup boundary. Worktree removal and branch deletion also
+require a `bin/orbit-session-archive` archive in the primary checkout's
+`.orbit/sessions/`.
+
+Dry-run the packet shape first with:
+bin/orbit-feature-finalization-check --lint <worktree>/.orbit/loop.md
 
 Then rerun the same git command.
 

@@ -58,7 +58,7 @@ follow during retained-Incus re-verification.
 
 ## Reappearance Check
 
-If a gateway call 500s immediately after `composer e2e:incus --sync`, restart
+If a gateway call 500s immediately after `composer e2e:incus -- --sync`, restart
 the gateway lease containers on the gateway VM first, then re-test. Only after a
 restart still 500s should the change itself be suspected. Stronger fix
 (follow-up): make `--sync` restart the gateway lease container automatically.

@@ -240,17 +240,22 @@ Skill discipline:
   preferred frame, then present the revised fix. Don't argue the original.
 - Track approvals in a task list so the walkthrough state is recoverable.
 
-### 9. Apply approved fixes
+### 9. Route approved fixes through an implementation worktree
 
-After every finding is resolved:
+The audit itself is read-only. After every finding is resolved, route the
+approved fixes through the `implementing-features` skill in a
+`bin/orbit-prepare-worktree` implementation worktree — do not edit docs
+in place from the audit session:
 
-1. Apply each docs change in the order the user prefers (default: A-tier first
-   because they tend to unblock other edits).
-2. For each finding flagged with a "code follow-up" note (e.g. retire a tool
-   row, change a column name, rewire a renderer), follow up with the
-   `implementing-features` skill in a worktree.
-3. Run `composer docs-lint` after the docs pass.
-4. Run `composer quality-check` after any code follow-up.
+1. Hand the approved findings (final synthesis scratchpad plus per-finding
+   approvals) to the implementation worktree. Apply docs changes in the order
+   the user prefers (default: A-tier first because they tend to unblock other
+   edits).
+2. Findings flagged with a "code follow-up" note (e.g. retire a tool row,
+   change a column name, rewire a renderer) go through the same
+   `implementing-features` flow, as their own slice when independent.
+3. Run `composer docs-lint` in the worktree after the docs pass.
+4. Run `composer quality-check` in the worktree after any code follow-up.
 
 ## Common Contradiction Patterns
 
@@ -285,13 +290,13 @@ These keep showing up. Look for them first.
 
 ## Authority Updates That Unblock Other Fixes
 
-Some authoritative sections, when added, retire whole classes of drift downstream.
-If any of the following are missing in the authority docs, add them first:
-
-- `architecture.md#self-grants-and-self-serving` — closes "exception" framing.
-- `architecture.md#dns-responsibilities` — closes the 4-way DNS ownership ambiguity.
-- `architecture.md` Doctor flag+mode table — sanctions `verify`/`interactive` named modes.
-- `architecture.md` driver concept (each role has a driver; OS support is driver capability) — closes negative platform-support framing.
+Some authoritative sections, when added, retire whole classes of drift
+downstream. When findings cluster around one missing authoritative concept,
+propose adding the authority section first, then align the downstream docs to
+it. Verify against the current `apps/docs/content/architecture.md` before
+queueing a candidate — earlier queue entries here (the self-grants and
+self-serving section, the DNS responsibilities section, the doctor flag+mode
+table, and the role driver concept) have all since landed.
 
 ## Report Shape
 

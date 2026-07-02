@@ -7,8 +7,8 @@ Last reviewed: 2026-06-25
 Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer; doctor-progress-scheduler; pre-merge-finalization-hook
 Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice; pending pre-merge-finalization-hook commit
 Signal type: review-comment
-Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md, .codex/hooks.json, .claude/settings.json, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; loop-hardening-session-guardrails; pending pre-merge-finalization-hook commit
+Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-analyzer.md, .codex/hooks.json, .claude/settings.json, bin/orbit-codex-pre-tool-use-hook
+Guardrail change: 38ff38aa; post-feature-session-review; post-feature analyzer persona slice; loop-hardening-session-guardrails; pre-merge finalization hook landed as bin/orbit-feature-finalization-check plus Codex/Claude PreToolUse hooks
 Related signals:
 harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md,
 harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md,
@@ -97,8 +97,8 @@ instead of happening in a project worktree while the feature was still running.
 
 ## Guardrail Change
 
-The implementation skill now makes agents read `HARNESS.md`, `LOOP.md`, and
-`HARNESS_SIGNALS.md`; triage durable signals during the slice; and include a
+The implementation skill now makes agents read `HARNESS.md`, `LOOP.md.example`,
+and `HARNESS_SIGNALS.md`; triage durable signals during the slice; and include a
 `Harness signals` block in the implementation report.
 
 The implementation skill now also requires a Post-Feature Session Review before
@@ -147,7 +147,7 @@ shows the workflow hooks, and `composer docs-lint` exited 0.
 For the post-feature-review recurrence, run:
 
 ```bash
-rg -n "Post-Feature Session Review|post-feature session review|feature thread|human corrections|harness-signals|post-feature distillation|promotion gate|Candidate classifications|Final Distillation" HARNESS.md LOOP.md.example HARNESS_SIGNALS.md .agents/skills/implementing-features/SKILL.md .agents/review-personas/post-feature-distillation.md harness-signals
+rg -n "Post-Feature Session Review|post-feature session review|feature thread|human corrections|harness-signals|post-feature analyzer|promotion gate|Candidate classifications|Final Distillation" HARNESS.md LOOP.md.example HARNESS_SIGNALS.md .agents/skills/implementing-features/SKILL.md .agents/review-personas/post-feature-analyzer.md harness-signals
 ```
 
 This shows that the root harness, implementation workflow, report shape, and
@@ -193,9 +193,9 @@ intercept every shell execution path. If the explicit check was skipped,
 tighten the implementation workflow. If the explicit check ran and allowed
 pending final-distillation state, tighten `bin/orbit-codex-pre-tool-use-hook`
 and add the missing command shape to `bin/orbit-codex-pre-tool-use-hook-test`.
-If fresh reviewers start promoting weak one-off findings, tighten the
-post-feature distillation reviewer or the promotion gate instead of adding more
-signal records.
+If fresh reviewers start promoting weak one-off findings, tighten
+`.agents/review-personas/post-feature-analyzer.md` or the promotion gate
+instead of adding more signal records.
 
 If a future loop-improver only updates a scratchpad after repeated user
 corrections and does not patch, reject, or explicitly defer the project

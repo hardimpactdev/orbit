@@ -55,11 +55,13 @@ Responsibilities:
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
   active slice only, rewriting it when the next slice starts. Before rewriting
-  `.orbit/loop.md`, archive the completed active `.orbit/` state into the
-  persistent project archive home defined by `HARNESS.md`, using
-  `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
-  compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
-  names. Copy every active `.orbit/` entry except `.orbit/sessions/`. If the
+  `.orbit/loop.md`, archive the completed active `.orbit/` state with
+  `bin/orbit-session-archive`; the tool generates the archive name and
+  refreshes an existing archive instead of duplicating it. Archive directories
+  use `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not
+  use compact timestamps, `T` separators, `Z`, or UTC offsets in archive
+  directory names. `HARNESS.md` Session Archives is the authority for archive
+  policy. If the
   source roadmap lives in another Solo project or machine, create a reachable
   execution-project scratchpad that links back to the source and mirrors the
   source roadmap's feature request, slice order, current-slice acceptance
@@ -105,6 +107,10 @@ Responsibilities:
   executable gate usage.
 - Own final commit, merge-back, preserved-worktree post-analysis handoff,
   feature completion cleanup, and the implementation report.
+
+Solo `spawn_agent` returns `agent_instructions`. Prepend them before everything
+else in every spawned first prompt; the prompt shapes in this skill assume that
+prefix, and nothing else may come before it.
 
 Do not make substantive implementation edits yourself unless the user explicitly
 approves bypassing the Solo worker lane. Small orchestration-only edits,
@@ -189,9 +195,8 @@ Done Contract location, candidate worker plan, and any blocker.
 Discover the available Solo implementation worker for the current environment
 and spawn it through Solo. Prefer Grok for bounded PHP/CLI/Pest implementation
 when available, but the hard requirement is Solo tracking, not the model brand.
-Prepend Solo's returned `agent_instructions` to the first prompt. If the current
-feature owner cannot reach a Solo worker, stop and report the blocker instead of
-using an untracked background model or shell.
+If the current feature owner cannot reach a Solo worker, stop and report the
+blocker instead of using an untracked background model or shell.
 
 Use this prompt shape:
 
@@ -236,12 +241,23 @@ Rules:
   challenge or propose changes to it, but do not silently weaken scope,
   evidence, reviewer checks, stop conditions, or pivot conditions.
 - Use TDD: failing Pest coverage first, then implementation.
-- After reading the required local files named in this prompt, produce the
-  first narrow diff before doing broad repository discovery. Prefer a
-  test-only first diff for behavior changes or a docs-only first diff for
-  documentation-owned work. If the first diff cannot be made from the handoff,
-  report the missing context instead of continuing to search.
-- Run the focused verification assigned to this slice.
+- Read budget: scale required reading to the size of the expected diff. Read
+  the files listed above plus the docs and tests the handoff names; the
+  harness-injected AGENTS.md content does not need to be re-read. Skip
+  discovery reads a small diff does not need.
+- First-outcome budget: after the required reads, report the first narrow diff
+  or an explicit missing-context blocker within roughly a dozen commands.
+  Prefer a test-only first diff for behavior changes or a docs-only first diff
+  for documentation-owned work. Do not spend broad repository discovery before
+  that first narrow diff or blocker. If the first diff cannot be made from the
+  handoff, report the missing context instead of continuing to search.
+- Run the focused verification assigned to this slice with the app-local
+  runners; there is no root `artisan` or root `vendor/bin`. Use
+  `bin/orbit-gateway-pest --compact` for apps/gateway, `bin/orbit-cli-pest`
+  for apps/cli, `bin/orbit-docs-pest` for apps/docs,
+  `cd packages/<pkg> && vendor/bin/pest --compact` for packages, and
+  `bin/orbit-gateway-vendor-bin mago format --check` or
+  `cd apps/cli && vendor/bin/mago format --check` for owned-file formatting.
 - Capture implementation signals as they appear. When a failure, review
   correction, docs conflict, or setup problem reveals missing durable context,
   search harness-signals/ for prior occurrences, then use `.orbit/loop.md` and
@@ -276,8 +292,7 @@ authority docs; full-repo drift audits use
 `.agents/skills/auditing-docs-drift/SKILL.md` only when explicitly requested.
 
 When running inside Solo, discover the live Claude-capable tool with
-`list_agent_tools`, spawn it with `spawn_agent`, and prepend Solo's returned
-`agent_instructions` to the first prompt.
+`list_agent_tools` and spawn it with `spawn_agent`.
 
 Use this prompt shape:
 
@@ -337,11 +352,9 @@ orchestrator steering notes. Include the Codex thread id or transcript path for
 the feature orchestrator when available, plus Solo scratchpads or process ids
 needed to inspect worker and reviewer reports.
 
-Spawn a fresh Solo-managed analyzer as Claude Opus at medium effort: discover
-the enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
-`extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is not
-available through Solo, stop and report the blocker instead of substituting
-another model. Give it only the packet, Codex/Solo session pointers, changed
+Spawn a fresh Solo-managed Claude Opus analyzer using the spawn recipe and
+unavailability rule in the `HARNESS.md` Solo Role Matrix. Give it only the
+packet, Codex/Solo session pointers, changed
 diff, relevant harness docs, and named evidence pointers. Use
 `.agents/review-personas/post-feature-analyzer.md`. The analyzer reports
 whether the loop was performed properly and classifies guardrail decisions as
@@ -382,7 +395,8 @@ create, bootstrap, and verify the worktree. Do not hand-roll these steps.
 
 A new worktree starts empty — Orbit ignores `.env`, `vendor/`, and `.env.e2e`,
 so the worktree must be bootstrapped before any test or quality-check command
-will pass. Skip any of these and `php artisan test` fails at boot
+will pass. Skip any of these and the app-local Pest runs (for example
+`bin/orbit-gateway-pest`) fail at boot
 (encrypted-cast tests need `APP_KEY`; E2E composer scripts source `.env.e2e`).
 
 Orbit conventions:
@@ -684,8 +698,13 @@ command address/output transcript.
    slice outcomes in the feature scratchpad. The Done Contract must include raw
    acceptance examples or a precise pointer to them, plus explicit deferrals for
    any part of the user's request that is not in the current slice.
-5. Confirm owned files or domains and existing dirty work before editing.
-6. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
+5. Lint the local packet shape at the first checkpoint: once the Done Contract
+   is filled, run `bin/orbit-feature-finalization-check --lint` (defaults to
+   `./.orbit/loop.md`) and fix any BLOCKED finding early instead of
+   discovering it at the merge boundary. Re-run `--lint` after final
+   distillation is filled.
+6. Confirm owned files or domains and existing dirty work before editing.
+7. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
    verification lanes, owned files, provider resources, shared temp/state paths,
    and dependencies in `.orbit/loop.md`, the feature scratchpad, or the worker
    plan. A serial plan for isolated goals, slices, or lanes is incomplete unless
@@ -701,10 +720,10 @@ command address/output transcript.
    worker's owned files and run broad dirty-file tooling only after worker diffs
    are reconciled. Add a Claude documenter/librarian worker when documentation
    is substantial and the docs-owned surface is clear.
-7. If a Claude documenter/librarian worker is used, spawn it first or in
+8. If a Claude documenter/librarian worker is used, spawn it first or in
    parallel only after the docs-owned slice is explicit. The feature owner must
    inspect the docs result and accept the docs contract before code relies on it.
-8. Spawn the Solo implementation worker(s) with the worktree path, handoff,
+9. Spawn the Solo implementation worker(s) with the worktree path, handoff,
    owned scope, documentation authority, TDD requirement, focused verification,
    and the rule that workers must not commit, merge to `main`, or clean up the
    worktree unless the feature owner explicitly assigns that exact step. Require
@@ -712,7 +731,7 @@ command address/output transcript.
    If the agent starts in `~/orbit` or another checkout, stop it and relaunch
    through a Solo terminal that `cd`s into the assigned worktree before starting
    the agent.
-9. Monitor workers, inspect diffs, and send correction prompts until the
+10. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. Worker handoffs must
    request the complete owned outcome in one continuous feature loop: align docs
    when needed, create the first failing test or docs diff, implement the fix,
@@ -732,11 +751,11 @@ command address/output transcript.
    `.orbit/loop.md` and `HARNESS_SIGNALS.md`. If a reviewer or human points to
    behavior already present in the raw request, reclassify it as a blocking
    contract gap unless it was explicitly deferred before editing.
-10. Align documentation inside this worktree when the handoff identifies missing
+11. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
    owns the related behavior.
-11. For every failed verification, review comment, human correction, docs
+12. For every failed verification, review comment, human correction, docs
    conflict, setup problem, or agent mistake encountered during the slice,
    search `harness-signals/` for related prior records, then decide whether it
    is local cleanup or a durable harness signal. If the search returns stale,
@@ -746,17 +765,17 @@ command address/output transcript.
    signal record and update the smallest guardrail target in the same worktree.
    If it is durable but broader than the slice, report a scoped follow-up
    instead of expanding ownership.
-12. Check whether the project-owned Orbit skill under `.agents/skills/orbit/**` is
+13. Check whether the project-owned Orbit skill under `.agents/skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-13. Ensure the implementation worker followed TDD (see Test-Driven Development
+14. Ensure the implementation worker followed TDD (see Test-Driven Development
     below): failing Pest tests first, literal failing output captured, then
     implementation. A narrative claim that a test failed is not sufficient when
     the failure was used to prove red.
-14. Keep the smallest working vertical slice that makes the tests pass.
-15. For CLI command behavior, run retained topology proof from this worktree
+15. Keep the smallest working vertical slice that makes the tests pass.
+16. For CLI command behavior, run retained topology proof from this worktree
     when the behavior touches topology, VM runtime, or operator-visible command
     execution. For human rendering, progress, prompts, or streaming output, run
     CLI reviewer PTY frame analysis before user inspection. Give the user a
@@ -767,12 +786,12 @@ command address/output transcript.
     directory and label older artifacts as stale in the report. If this cannot
     be completed, report the blocker explicitly instead of widening the release
     path.
-16. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+17. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-17. Run focused in-memory verification for the active slice. For multi-slice
+18. Run focused in-memory verification for the active slice. For multi-slice
     features, do not spend prepared E2E on every internal slice by default. Run
     retained topology proof as the feature-level topology gate when the final
     branch diff needs real topology evidence. When retained topology proof is
@@ -781,16 +800,13 @@ command address/output transcript.
     clean up, or run final loop-improvement extraction while required retained
     topology proof is still blocked; record the blocker, owner, and unblock
     condition in `.orbit/loop.md` and the report.
-18. Run the applicable reviewer persona from the `HARNESS.md` routing table once
+19. Run the applicable reviewer persona from the `HARNESS.md` routing table once
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
-    Spawn any code-reviewer or CLI-reviewer persona as Claude Opus through Solo
-    at medium effort: discover the enabled `Claude` tool with
-    `list_agent_tools`, then `spawn_agent` with
-    `extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is
-    not available through Solo, stop and report the blocker instead of
-    substituting another model.
+    Spawn any code-reviewer or CLI-reviewer persona as a Solo-managed Claude
+    Opus reviewer using the spawn recipe and unavailability rule in the
+    `HARNESS.md` Solo Role Matrix.
     Resolve or explicitly report findings before commit.
     If the reviewer finds a mismatch between implementation evidence and the
     raw user examples, treat it as a contract mismatch first; only downgrade it
@@ -817,34 +833,37 @@ command address/output transcript.
     them to loop improvements only when the review process itself missed a
     recurring class of issue, or existing reviewer guidance would not catch the
     same issue next time.
-19. Do not run artifact-backed E2E verification. If the user manually runs an
+20. Do not run artifact-backed E2E verification. If the user manually runs an
     artifact-backed E2E command, record the provided output or existing
     `.orbit/quality-gates/` artifact.
-20. Do not run provider provision gates. If the user manually runs a provider
+21. Do not run provider provision gates. If the user manually runs a provider
     provision command, record the provided output or existing artifact and keep
     it separate from the retained topology feature gate.
-21. If PHP changed, run:
+22. If PHP changed, run the owning app's Mago check; there is no root
+    `vendor/bin/mago`:
 
    ```bash
-   vendor/bin/mago format --check
+   bin/orbit-gateway-vendor-bin mago format --check   # apps/gateway
+   cd apps/cli && vendor/bin/mago format --check      # apps/cli (same shape for apps/docs and packages/*)
    ```
 
-22. Before reporting completion, run the verification gate implied by the final
+    `composer mago:format:check` fans the same check across every app/package.
+
+23. Before reporting completion, run the verification gate implied by the final
     diff:
 
    ```bash
-   composer docs-lint       # docs-only markdown diffs
+   composer docs-lint       # docs-class diffs
    composer quality-check   # PHP or broader repo diffs
    ```
 
     `HARNESS.md` -> `Merge Boundary Gate` is the authority for the exact
-    finalization requirement. The gate reads the branch diff and existing
-    `.orbit/quality-gates/` artifacts: docs-only diffs need successful
-    docs-lint or broader quality-check evidence, other diffs need successful
-    quality-check evidence, and production PHP diffs also need retained
-    topology proof. Do not rerun expensive gates from the finalization check.
+    finalization requirement, and `bin/orbit-feature-finalization-check` is
+    the executable gate: it derives the required proof from the branch diff
+    and reads existing `.orbit/quality-gates/` artifacts. Do not rerun
+    expensive gates from the finalization check.
 
-23. Before committing or reporting completion, inspect the timing evidence
+24. Before committing or reporting completion, inspect the timing evidence
     already produced by the applicable gates:
 
    ```bash
@@ -860,7 +879,7 @@ command address/output transcript.
     without rerunning the gates. Retained topology proof is recorded in
     `.orbit/loop.md` or `.orbit/evidence/`; the finalization hook validates the
     row status but does not run topology commands.
-24. Before committing or reporting completion, run a Post-Feature Session
+25. Before committing or reporting completion, run a Post-Feature Session
     Review. Treat `.orbit/loop.md` as the canonical local final packet and
     point it at the feature thread or handoff, Solo worker sessions, reviewer
     output, retained terminal or PTY evidence when applicable, verification
@@ -871,7 +890,10 @@ command address/output transcript.
     spawn a fresh post-feature analyzer with
     `.agents/review-personas/post-feature-analyzer.md`; for tiny local changes,
     fill the `.orbit/loop.md` final-distillation section with the no-analysis
-    rationale. Use the analyzer report to classify each guardrail decision as
+    rationale. The analyzer runs before merge: record its verdict in the
+    packet's `- Fresh analyzer:` row (`deferred - <reason>` when analyzer
+    infrastructure fails), which the finalization gate checks at the merge
+    boundary. Use the analyzer report to classify each guardrail decision as
     correct-noop, missed, redundant, wrong-target, or deferred; then classify
     each candidate as local cleanup, already covered by existing
     `harness-signals/` records, rejected, deferred, or a new durable signal.
@@ -898,28 +920,34 @@ command address/output transcript.
     `complete + loop improvement`. If no new durable signal remains, say that
     in `.orbit/loop.md` and the report. Re-run the narrow check that proves any
     changed guardrail target is reachable. After final distillation is complete,
-    archive the completed active `.orbit/` state into the persistent project
-    archive home before cleanup and before any later `.orbit/loop.md` rewrite.
-    Name the archive directory as `YYYY-MM-DD-HHMMSS-<feature-slug>` in the
-    checkout's local time. Do not use compact timestamps, `T` separators, `Z`,
-    or UTC offsets in archive directory names.
-    Copy every active `.orbit/` entry except `.orbit/sessions/`.
-25. Commit the verified worktree changes on the worktree branch.
-26. Merge the branch back into `main` from the primary `~/orbit` checkout by
-    following `HARNESS.md` merge and cleanup boundaries. Leave `~/orbit` on
+    archive the completed active `.orbit/` state with `bin/orbit-session-archive`
+    before cleanup and before any later `.orbit/loop.md` rewrite. The tool
+    generates the archive name, links the archive under the packet's
+    `## Evidence Links`, and refreshes an existing archive instead of
+    duplicating it; `HARNESS.md` Session Archives is the authority.
+26. Commit the verified worktree changes on the worktree branch.
+27. Merge the branch back into `main` from the primary `~/orbit` checkout by
+    following `HARNESS.md` merge and cleanup boundaries. Run the full gate at
+    the boundary — `bin/orbit-feature-finalization-check git merge <branch>` —
+    and resolve any BLOCKED verdict before merging. Leave `~/orbit` on
     updated `main`. Preserve unrelated dirty files in `~/orbit`; if they
     overlap with the merge, stop for direction instead of discarding them.
-27. If release was explicitly agreed or specifically discussed as part of the
+    Keep the feature worktree and branch intact after merge until the
+    post-feature signal audit completes (`HARNESS.md` Feature Cleanup).
+28. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
     the release artifacts are accepted, run `doctor` again, compare the before
     and after results, and either fix regressions immediately or record scoped
     follow-up tasks for intentional migration work.
-28. When the user confirms live topology behavior or explicitly says the
+29. When the user confirms live topology behavior or explicitly says the
     feature is complete, run feature completion cleanup: archive the feature
     scratchpad, close or resolve related Solo todos, and stand down related
     Solo agents or retained terminals. If the completed active `.orbit/` session
-    has not already been archived, archive it per `HARNESS.md` before cleanup.
+    has not already been archived, archive it with `bin/orbit-session-archive`
+    before cleanup; the finalization gate blocks `git worktree remove` and
+    `git branch -d` for the feature branch until a matching session archive
+    exists in the primary checkout.
     Keep this scoped to the feature and report anything intentionally preserved.
 
 ## Test-Driven Development
@@ -932,7 +960,9 @@ Normal feature work follows a staged verification model:
 
 - **Pest unit/feature tests** in `tests/Unit/` or `tests/Feature/` that pin the
   internal contract: command output shape, JSON schema, validation, branching
-  logic, error paths. These run under `php artisan test --compact`.
+  logic, error paths. These run under the app-local Pest runners:
+  `bin/orbit-gateway-pest --compact`, `bin/orbit-cli-pest`, or
+  `bin/orbit-docs-pest`.
 - **Source/dev topology checks** for behavior that needs a live topology during
   iteration. Use source-mounted Docker feature tests or retained Incus dev
   topologies for fast diagnosis, then codify the finding in Pest.
@@ -1046,9 +1076,11 @@ verification.
 - Retire tests only when current docs reject the behavior or replacement coverage exists.
 - Stop for direction if the docs and requested behavior conflict.
 - Stay inside owned scope and leave unrelated dirty files untouched.
-- Completed work does not stay stranded in `.worktrees/`: it is committed,
-  merged into `main`, and cleaned up unless the user explicitly asks for a PR or
-  preserved branch.
+- Completed work does not stay stranded in `.worktrees/`: it is committed and
+  merged into `main` unless the user explicitly asks for a PR or preserved
+  branch. The worktree and branch stay intact after merge until the
+  post-feature signal audit completes or the user explicitly approves cleanup
+  (`HARNESS.md` Feature Cleanup).
 - Solo feature state does not stay open after the feature is accepted complete:
   archive the feature scratchpad, close or resolve related Solo todos, and stop
   or archive related Solo agents. Do this only after user/live acceptance, and
@@ -1135,7 +1167,8 @@ Tests:
 - Red-test evidence: <literal failing command/output path or not applicable>
 
 Verification:
-- `php artisan test --compact`: <result>
+- Focused Pest (`bin/orbit-gateway-pest --compact` or the owning app's
+  runner): <result>
 - Retained topology proof: <topology id/kind, instance or node, terminal/session
   or artifact, command results, or not applicable>
 - PTY frame analysis before user review: <artifact paths, launcher, exit code,

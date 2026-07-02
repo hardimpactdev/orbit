@@ -12,7 +12,7 @@ Use this skill to prove terminal rendering behavior with timed PTY frames. The g
 ## Workflow
 
 1. Reproduce the reported CLI behavior in the same runtime context when possible: local terminal, Solo retained terminal, Incus VM, bundled binary, dev launcher, CI shell, or non-interactive pipe.
-2. Run the command through `scripts/capture_pty_frames.py` so stdout/stderr are attached to a pseudo-terminal.
+2. Run the command through `.agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py` so stdout/stderr are attached to a pseudo-terminal.
 3. Prove whether the CLI believed the stream was decorated/live. Record relevant
    environment such as `NO_COLOR`, `TERM`, the launcher path, and when possible
    the framework decoration check (for example `isDecorated=true`). If
@@ -26,26 +26,6 @@ Use this skill to prove terminal rendering behavior with timed PTY frames. The g
    directory. Do not ask for human UX review from stale pre-correction
    transcripts.
 9. Keep the raw artifacts in `/tmp` or another disposable path unless they are needed as test evidence.
-
-## Bordered Output Checks
-
-When the command renders a box, panel, tree, or other fixed-width human output,
-strip ANSI codes before judging the frame. Inspect the whole final frame, not
-only the rows that changed.
-
-Reject the proof when any visible line:
-
-- exceeds the renderer-owned panel width;
-- places content directly against the right border because wrapping did not
-  happen;
-- has a missing, duplicated, or shifted right border;
-- relies on terminal auto-wrap instead of renderer-owned continuation lines; or
-- duplicates a full issue/error detail in a summary row while also listing the
-  same detail below.
-
-For long issue details, resource labels, or failure messages, the acceptable
-shape is renderer-owned wrapping with the border preserved on every
-continuation line.
 
 ## Bordered Output Checks
 
@@ -64,8 +44,8 @@ Reject the proof when any visible line:
   same detail below.
 
 For long issue details, resource labels, or failure messages, the acceptable
-shape is renderer-owned wrapping with the border preserved on every continuation
-line.
+shape is renderer-owned wrapping with the border preserved on every
+continuation line.
 
 ## Quick Start
 
@@ -74,7 +54,7 @@ python3 .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py \
   --output-dir /tmp/orbit-pty-capture \
   --timeout 120 \
   --idle-timeout 15 \
-  -- orbit update:all
+  -- orbit node:list
 ```
 
 The command after `--` is executed exactly as the PTY child command. Use the absolute path to a binary when validating an installed artifact instead of a development launcher.
@@ -136,4 +116,4 @@ raw byte stream or final settled frame before reporting a renderer bug.
 
 ## Script
 
-Use `scripts/capture_pty_frames.py`. Read the script only when changing its behavior; otherwise run it directly.
+Use `.agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py`. Read the script only when changing its behavior; otherwise run it directly.

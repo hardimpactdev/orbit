@@ -8,6 +8,8 @@ declare(strict_types=1);
  * session files under the same persisted session directory.
  */
 
+const ARCHIVE_BASENAME_PATTERN = '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[a-z0-9-]+$';
+
 $options = getopt('', [
     'source-orbit-dir:',
     'archive-dir:',
@@ -36,9 +38,11 @@ if (array_key_exists('help', $options)) {
 
         Options:
           --source-orbit-dir=<path>     Active .orbit directory to archive. Defaults to <cwd>/.orbit.
-          --archive-dir=<path>          Exact destination session archive directory.
+          --archive-dir=<path>          Exact destination session archive directory. Its basename must
+                                        match ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[a-z0-9-]+$.
           --archive-root=<path>         Root directory for generated archives. Defaults to the primary checkout's .orbit/sessions.
-          --slug=<slug>                 Short feature slug when --archive-dir is omitted.
+          --slug=<slug>                 Short feature slug when --archive-dir is omitted. Defaults to the
+                                        current branch name sanitized to kebab-case.
           --timestamp=<value>           Timestamp prefix when --archive-dir is omitted. Defaults to current local time as YYYY-MM-DD-HHMMSS.
           --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
 
@@ -47,10 +51,18 @@ if (array_key_exists('help', $options)) {
           --home, --marker, --solo-app-data-dir, --solo-db, --solo-cli,
           --max-start-distance, --only-ok.
 
+        The active <source-orbit-dir>/loop.md is required. When the newest archive
+        for the same slug already contains a byte-identical loop.md, that archive is
+        refreshed in place instead of minting a near-duplicate directory. After a
+        successful archive the "- Session archive: .orbit/sessions/<basename>"
+        bullet is appended or updated under "## Evidence Links" in the active
+        loop.md, and loop.md is re-copied so archive and source match.
+
         If no explicit provider process context is supplied, this command scans
         <source-orbit-dir>/loop.md for Solo process ids and passes them as a
         comma-separated --solo-process-id list. Without discovered process ids,
-        agent session archiving safely writes an empty manifest.
+        agent session archiving safely writes an empty manifest and a WARNING is
+        printed naming the missing context.
         EOF);
 
     exit(0);
@@ -67,20 +79,51 @@ if (!is_dir($sourceOrbitDir)) {
     exit(2);
 }
 
-$archiveDir = archiveDirectory($options, $cwd, $sourceOrbitDir);
+$activeLoopPath = "{$sourceOrbitDir}/loop.md";
 
-if (directoryHasEntries($archiveDir)) {
+if (!is_file($activeLoopPath)) {
+    fwrite(STDERR, "Active loop.md is missing, refusing to archive: {$activeLoopPath}\n");
+    exit(2);
+}
+
+[$archiveDir, $mode] = resolveArchiveDirectory($options, $cwd, $sourceOrbitDir, $activeLoopPath);
+
+if ($mode === 'refreshed') {
+    fwrite(STDERR, "Refreshing existing session archive with identical loop.md instead of minting a duplicate: {$archiveDir}\n");
+    clearDirectoryEntries($archiveDir);
+} elseif (directoryHasEntries($archiveDir)) {
     fwrite(STDERR, "Archive directory already exists and is not empty: {$archiveDir}\n");
     exit(2);
 }
 
 $copiedEntries = copyActiveOrbitEntries($sourceOrbitDir, $archiveDir);
-$loopProcessIds = shouldDiscoverLoopProcessIds($options) ? loopSoloProcessIds("{$sourceOrbitDir}/loop.md") : [];
+
+if ($copiedEntries === []) {
+    fwrite(STDERR, "No .orbit entries were copied from {$sourceOrbitDir} into {$archiveDir}.\n");
+    exit(2);
+}
+
+$loopDiscoveryAttempted = shouldDiscoverLoopProcessIds($options);
+$loopProcessIds = $loopDiscoveryAttempted ? loopSoloProcessIds($activeLoopPath) : [];
+
+if ($loopDiscoveryAttempted && $loopProcessIds === []) {
+    fwrite(
+        STDERR,
+        'WARNING: no Solo process context available — no --processes-json/--solo-process-id/--solo-project-id/'
+        . '--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, and no Solo process ids found in '
+        . "{$activeLoopPath}; agent-sessions will contain an empty manifest.\n",
+    );
+}
+
 $agentResults = runAgentSessionArchive($options, $cwd, $archiveDir, $loopProcessIds);
+
+writeSessionArchiveLink($activeLoopPath, basename($archiveDir));
+copyFileOrFail($activeLoopPath, "{$archiveDir}/loop.md");
 
 $summary = [
     'schema_version' => 1,
     'generated_at' => gmdate('c'),
+    'mode' => $mode,
     'source_orbit_dir' => $sourceOrbitDir,
     'archive_dir' => $archiveDir,
     'agent_sessions_dir' => "{$archiveDir}/agent-sessions",
@@ -95,20 +138,44 @@ echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THR
 
 /**
  * @param array<string, mixed> $options
+ *
+ * @return array{0: string, 1: string}
  */
-function archiveDirectory(array $options, string $cwd, string $sourceOrbitDir): string
+function resolveArchiveDirectory(array $options, string $cwd, string $sourceOrbitDir, string $activeLoopPath): array
 {
     if (isset($options['archive-dir'])) {
-        return rtrim((string) $options['archive-dir'], '/');
+        $archiveDir = rtrim((string) $options['archive-dir'], '/');
+        $basename = basename($archiveDir);
+
+        if (preg_match('/' . ARCHIVE_BASENAME_PATTERN . '/', $basename) !== 1) {
+            fwrite(
+                STDERR,
+                'Archive directory basename must match ' . ARCHIVE_BASENAME_PATTERN
+                . " (YYYY-MM-DD-HHMMSS-<feature-slug> in local time): {$basename}\n",
+            );
+            exit(2);
+        }
+
+        $mode = directoryHasEntries($archiveDir) && archiveLoopMatchesActive($archiveDir, $activeLoopPath)
+            ? 'refreshed'
+            : 'created';
+
+        return [$archiveDir, $mode];
     }
 
     $archiveRoot = isset($options['archive-root'])
         ? rtrim((string) $options['archive-root'], '/')
         : defaultArchiveRoot($cwd, $sourceOrbitDir);
-    $timestamp = archiveTimestamp($options);
-    $slug = isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd);
+    $slug = slugify(isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd));
+    $existingArchiveDir = newestArchiveForSlug($archiveRoot, $slug);
 
-    return "{$archiveRoot}/{$timestamp}-" . slugify($slug);
+    if ($existingArchiveDir !== null && archiveLoopMatchesActive($existingArchiveDir, $activeLoopPath)) {
+        return [$existingArchiveDir, 'refreshed'];
+    }
+
+    $timestamp = archiveTimestamp($options);
+
+    return ["{$archiveRoot}/{$timestamp}-{$slug}", 'created'];
 }
 
 /**
@@ -116,7 +183,7 @@ function archiveDirectory(array $options, string $cwd, string $sourceOrbitDir): 
  */
 function archiveTimestamp(array $options): string
 {
-    $timestamp = isset($options['timestamp']) ? (string) $options['timestamp'] : date('Y-m-d-His');
+    $timestamp = isset($options['timestamp']) ? (string) $options['timestamp'] : localArchiveTimestamp();
 
     if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}$/', $timestamp) === 1) {
         return $timestamp;
@@ -124,6 +191,127 @@ function archiveTimestamp(array $options): string
 
     fwrite(STDERR, "Archive timestamp must use YYYY-MM-DD-HHMMSS in local time: {$timestamp}\n");
     exit(2);
+}
+
+/**
+ * PHP CLI often runs with date.timezone=UTC, which silently produces
+ * UTC-derived basenames. Prefer the system clock, which uses the checkout's
+ * local timezone, and fall back to PHP time only when the system call fails.
+ */
+function localArchiveTimestamp(): string
+{
+    $systemLocalTimestamp = trim((string) shell_exec("date '+%Y-%m-%d-%H%M%S' 2>/dev/null"));
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}$/', $systemLocalTimestamp) === 1) {
+        return $systemLocalTimestamp;
+    }
+
+    return date('Y-m-d-His');
+}
+
+function newestArchiveForSlug(string $archiveRoot, string $slug): ?string
+{
+    if (!is_dir($archiveRoot)) {
+        return null;
+    }
+
+    $matches = [];
+
+    foreach (new FilesystemIterator($archiveRoot, FilesystemIterator::SKIP_DOTS) as $entry) {
+        if (!$entry->isDir()) {
+            continue;
+        }
+
+        $name = $entry->getFilename();
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-([a-z0-9-]+)$/', $name, $found) !== 1 || $found[1] !== $slug) {
+            continue;
+        }
+
+        $matches[] = $name;
+    }
+
+    if ($matches === []) {
+        return null;
+    }
+
+    rsort($matches, SORT_STRING);
+
+    return "{$archiveRoot}/{$matches[0]}";
+}
+
+function archiveLoopMatchesActive(string $archiveDir, string $activeLoopPath): bool
+{
+    $archivedLoopPath = "{$archiveDir}/loop.md";
+
+    if (!is_file($archivedLoopPath)) {
+        return false;
+    }
+
+    return file_get_contents($archivedLoopPath) === file_get_contents($activeLoopPath);
+}
+
+function writeSessionArchiveLink(string $loopPath, string $archiveBasename): void
+{
+    $bullet = "- Session archive: .orbit/sessions/{$archiveBasename}";
+    $content = (string) file_get_contents($loopPath);
+    $updated = upsertEvidenceLinkBullet($content, $bullet);
+
+    if ($updated === $content) {
+        return;
+    }
+
+    if (file_put_contents($loopPath, $updated) === false) {
+        fwrite(STDERR, "Failed to write session archive link into active loop.md: {$loopPath}\n");
+        exit(2);
+    }
+}
+
+function upsertEvidenceLinkBullet(string $content, string $bullet): string
+{
+    $lines = explode("\n", $content);
+    $sectionStart = null;
+
+    foreach ($lines as $index => $line) {
+        if (preg_match('/^##\s+Evidence Links\s*$/', $line) === 1) {
+            $sectionStart = $index;
+
+            break;
+        }
+    }
+
+    if ($sectionStart === null) {
+        return rtrim($content, "\n") . "\n\n## Evidence Links\n\n{$bullet}\n";
+    }
+
+    $lineCount = count($lines);
+    $sectionEnd = $lineCount;
+
+    for ($index = $sectionStart + 1; $index < $lineCount; $index++) {
+        if (str_starts_with($lines[$index], '## ')) {
+            $sectionEnd = $index;
+
+            break;
+        }
+    }
+
+    for ($index = $sectionStart + 1; $index < $sectionEnd; $index++) {
+        if (str_starts_with($lines[$index], '- Session archive:')) {
+            $lines[$index] = $bullet;
+
+            return implode("\n", $lines);
+        }
+    }
+
+    $insertAt = $sectionEnd;
+
+    while ($insertAt > $sectionStart + 1 && trim($lines[$insertAt - 1]) === '') {
+        $insertAt--;
+    }
+
+    array_splice($lines, $insertAt, 0, [$bullet]);
+
+    return implode("\n", $lines);
 }
 
 function defaultArchiveRoot(string $cwd, string $sourceOrbitDir): string
@@ -160,6 +348,28 @@ function directoryHasEntries(string $directory): bool
     return $iterator->valid();
 }
 
+function clearDirectoryEntries(string $directory): void
+{
+    foreach (new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS) as $entry) {
+        removePath($entry->getPathname());
+    }
+}
+
+function removePath(string $path): void
+{
+    if (is_dir($path) && !is_link($path)) {
+        foreach (new FilesystemIterator($path, FilesystemIterator::SKIP_DOTS) as $child) {
+            removePath($child->getPathname());
+        }
+
+        rmdir($path);
+
+        return;
+    }
+
+    unlink($path);
+}
+
 /**
  * @return list<string>
  */
@@ -187,7 +397,7 @@ function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): arr
             copyDirectory($source, $target);
         } elseif ($entry->isFile()) {
             ensureDirectory(dirname($target));
-            copy($source, $target);
+            copyFileOrFail($source, $target);
         } else {
             continue;
         }
@@ -220,9 +430,19 @@ function copyDirectory(string $source, string $target): void
 
         if ($entry->isFile()) {
             ensureDirectory(dirname($destination));
-            copy($entry->getPathname(), $destination);
+            copyFileOrFail($entry->getPathname(), $destination);
         }
     }
+}
+
+function copyFileOrFail(string $source, string $target): void
+{
+    if (@copy($source, $target)) {
+        return;
+    }
+
+    fwrite(STDERR, "Failed to copy .orbit entry: {$source} -> {$target}\n");
+    exit(2);
 }
 
 /**

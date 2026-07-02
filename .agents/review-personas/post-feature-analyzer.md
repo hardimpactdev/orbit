@@ -1,5 +1,25 @@
 # Post-Feature Analyzer
 
+## REQUIRED PROOF
+
+Before reading anything else, run:
+
+```bash
+cd <assigned worktree> && pwd && git branch --show-current && git status --short --branch
+```
+
+Then print a single `CHECKOUT_PROOF: <pwd> | <branch> | <status summary>` line
+before any other output. A report without a `CHECKOUT_PROOF:` line is invalid.
+
+End the report with exactly one machine-parseable final line:
+
+```text
+VERDICT: <yes|flawed|blocked-by-missing-evidence>
+```
+
+The allowed values are the loop-proper vocabulary defined under
+`Verdict Vocabulary` below.
+
 Use this analyzer after an Orbit feature implementation has produced evidence.
 It replaces the outer loop-improver watcher for normal feature work: the
 feature implementer runs the feature loop, then this analyzer reviews the
@@ -12,13 +32,9 @@ or human uses the report to decide the next action.
 
 ## Default Agent
 
-Run this analyzer as Claude Opus through Solo at medium effort. Discover the
-enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
-`extra_args=["--model", "opus", "--effort", "medium"]` and a fresh context. If
-Claude Opus is not available through Solo, stop and report the blocker instead
-of substituting another model. The model choice does not relax the read-only
-boundary above: Claude Opus analyzes and reports, it does not implement,
-approve merge, or run cleanup.
+Spawn per the Solo Role Matrix in HARNESS.md. The agent selection does not
+relax the read-only boundary above: the analyzer analyzes and reports; it does
+not implement, approve merge, or run cleanup.
 
 ## Inputs
 
@@ -34,7 +50,8 @@ The prompt should provide as many of these pointers as exist:
 - Any human corrections made during or after the implementation.
 
 If the Codex session id or worktree path is missing and the prompt does not
-provide enough equivalent evidence, report `blocked: insufficient evidence`.
+provide enough equivalent evidence, report
+`VERDICT: blocked-by-missing-evidence`.
 
 ## Required Context
 
@@ -111,21 +128,33 @@ A missed guardrail recommendation must name:
 Redundant and correct-noop decisions must name the existing coverage or the
 reason the evidence should not become durable guidance.
 
-## Completion Review
+## Verdict Vocabulary
 
-Classify the loop outcome independently of the feature owner's claim:
+The analyzer's verdicts use exactly two fixed vocabularies. Do not invent
+additional values.
 
-- `complete`: implementation and required verification are done; no unresolved
-  blocker remains.
-- `blocked`: required evidence, verification, acceptance, or analyzer evidence
-  is missing and cannot be safely inferred.
-- `complete + loop improvement`: the feature is verified and at least one
-  valid durable guardrail update was accepted.
+Loop-proper verdict, exactly one per report
+(`yes|flawed|blocked-by-missing-evidence`):
 
-Do not accept `complete` when required verification is pending, skipped,
-missing, deferred, unresolved, or not run. Required E2E that cannot be completed
-is a blocked feature-loop outcome first; treat it as a guardrail issue only
-when the blocker exposes a recurring process gap.
+- `yes`: the loop was performed properly. Implementation and required
+  verification are done, claims are backed by evidence, and guardrail
+  decisions match the evidence.
+- `flawed`: the loop reached an outcome, but at least one real process issue
+  exists: broken actor boundary, skipped or mismatched verification, claims
+  not backed by evidence, or guardrail decisions that do not match the
+  evidence.
+- `blocked-by-missing-evidence`: required evidence, verification, or
+  acceptance material is missing and cannot be safely inferred, so the loop
+  cannot be judged.
+
+Per-guardrail classification, exactly one per candidate
+(`correct-noop|missed|redundant|wrong-target|defer`), as defined in the
+Guardrail Review table above.
+
+Do not report `yes` when required verification is pending, skipped, missing,
+deferred, unresolved, or not run. Required E2E that cannot be completed makes
+the loop `blocked-by-missing-evidence` first; treat it as a guardrail issue
+only when the blocker exposes a recurring process gap.
 
 ## Report Format
 
@@ -134,9 +163,8 @@ Report concisely:
 ```markdown
 ## Verdict
 
-Loop outcome: <complete | blocked | complete + loop improvement>
-Loop quality: <proper | proper with issues | flawed | blocked: insufficient evidence>
-Guardrail verdict: <correct-noop | missed | redundant | wrong-target | mixed | blocked>
+Loop proper: <yes | flawed | blocked-by-missing-evidence>
+Guardrail decisions: <one classification per candidate: correct-noop | missed | redundant | wrong-target | defer>
 
 ## Evidence Reviewed
 
@@ -171,7 +199,10 @@ Guardrail verdict: <correct-noop | missed | redundant | wrong-target | mixed | b
 ## Packet Gaps
 
 - <missing evidence or none>
+
+VERDICT: <yes|flawed|blocked-by-missing-evidence>
 ```
 
 If there are no findings, say `No findings` under `## Findings` and still
-explain why the no-guardrail or accepted-guardrail outcome was correct.
+explain why the no-guardrail or accepted-guardrail outcome was correct. The
+`VERDICT:` line is always the last line of the report.

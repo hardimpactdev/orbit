@@ -1,0 +1,389 @@
+<?php
+
+declare(strict_types=1);
+
+use Symfony\Component\Process\Process;
+
+it('session archive generates local time basenames from an explicit slug', function (): void {
+    $workspace = session_archive_workspace(suffix: 'name-generation');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $beforeTimestamp = system_local_timestamp();
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=loop-hardening',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+        $afterTimestamp = system_local_timestamp();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary(process: $process);
+        $basename = basename((string) $summary['archive_dir']);
+
+        expect($summary)
+            ->toHaveKey('mode', 'created')
+            ->and($basename)
+            ->toMatch('/^\d{4}-\d{2}-\d{2}-\d{6}-loop-hardening$/')
+            ->and((string) $summary['archive_dir'])
+            ->toBeDirectory();
+
+        $archiveTimestamp = substr($basename, 0, 17);
+
+        expect($archiveTimestamp >= $beforeTimestamp)
+            ->toBeTrue("Archive timestamp {$archiveTimestamp} predates local run start {$beforeTimestamp}.")
+            ->and($archiveTimestamp <= $afterTimestamp)
+            ->toBeTrue("Archive timestamp {$archiveTimestamp} postdates local run end {$afterTimestamp}.");
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive falls back to the kebab-cased current branch name as slug', function (): void {
+    $workspace = session_archive_workspace(suffix: 'branch-slug');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+
+        new Process(['git', 'init', '--quiet', '--initial-branch=Feature/Loop_Hardening', $paths['cwd']])
+            ->mustRun();
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-01-100305',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary(process: $process);
+
+        expect($summary)
+            ->toHaveKey('mode', 'created')
+            ->and(basename((string) $summary['archive_dir']))
+            ->toBe('2026-07-01-100305-feature-loop-hardening');
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive rejects explicit archive dir basenames outside the naming contract', function (): void {
+    $workspace = session_archive_workspace(suffix: 'invalid-archive-dir');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $invalidArchiveDir = "{$paths['archiveRoot']}/20260701T112409Z-orbit-laravel-vite-env";
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-dir={$invalidArchiveDir}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and($process->getErrorOutput())->toContain(
+                '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[a-z0-9-]+$',
+            )->and($invalidArchiveDir)
+            ->not->toBeDirectory();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive fails loudly when the active loop file is missing', function (): void {
+    $workspace = session_archive_workspace(suffix: 'missing-loop');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace, withLoop: false);
+        file_put_contents("{$paths['sourceOrbitDir']}/evidence/proof.txt", "proof\n");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=missing-loop',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($process->getErrorOutput())
+            ->toContain("{$paths['sourceOrbitDir']}/loop.md");
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive refreshes the newest slug archive instead of minting duplicates', function (): void {
+    $workspace = session_archive_workspace(suffix: 'idempotency');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $baseArguments = [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--slug=idempotent-slice',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ];
+
+        $firstRun = run_session_archive(arguments: [...$baseArguments, '--timestamp=2026-07-01-100000']);
+
+        expect($firstRun->getExitCode())->toBe(0, $firstRun->getErrorOutput());
+
+        $firstSummary = session_archive_summary(process: $firstRun);
+        $firstArchiveDir = (string) $firstSummary['archive_dir'];
+
+        $secondRun = run_session_archive(arguments: $baseArguments);
+
+        expect($secondRun->getExitCode())->toBe(0, $secondRun->getErrorOutput());
+
+        $secondSummary = session_archive_summary(process: $secondRun);
+
+        expect($secondSummary)
+            ->toHaveKey('mode', 'refreshed')
+            ->toHaveKey('archive_dir', $firstArchiveDir)
+            ->and($secondRun->getErrorOutput())
+            ->toContain('Refresh')
+            ->and(session_archive_directories(archiveRoot: $paths['archiveRoot']))
+            ->toBe(['2026-07-01-100000-idempotent-slice'])
+            ->and("{$firstArchiveDir}/agent-sessions/manifest.json")
+            ->toBeFile();
+
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/loop.md",
+            "changed slice state\n",
+            FILE_APPEND,
+        );
+
+        $thirdRun = run_session_archive(arguments: [...$baseArguments, '--timestamp=2026-07-01-120000']);
+
+        expect($thirdRun->getExitCode())->toBe(0, $thirdRun->getErrorOutput());
+
+        $thirdSummary = session_archive_summary(process: $thirdRun);
+
+        expect($thirdSummary)
+            ->toHaveKey('mode', 'created')
+            ->and(session_archive_directories(archiveRoot: $paths['archiveRoot']))
+            ->toBe(['2026-07-01-100000-idempotent-slice', '2026-07-01-120000-idempotent-slice']);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive writes its path back into the active loop evidence links', function (): void {
+    $workspace = session_archive_workspace(suffix: 'write-back');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        file_put_contents($paths['loopPath'], <<<'MARKDOWN'
+            # Orbit Current Slice State
+
+            ## Evidence Links
+
+            - Red output: .orbit/evidence/red.txt
+            - Session archive: .orbit/sessions/2026-01-01-000000-stale-name
+
+            ## Final Distillation
+
+            - Outcome: shipped
+
+            MARKDOWN);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-01-100305',
+            '--slug=write-back',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary(process: $process);
+        $archiveDir = (string) $summary['archive_dir'];
+        $activeLoop = (string) file_get_contents($paths['loopPath']);
+
+        expect($activeLoop)
+            ->toContain('- Session archive: .orbit/sessions/2026-07-01-100305-write-back')
+            ->not
+            ->toContain('2026-01-01-000000-stale-name')
+            ->and(substr_count($activeLoop, '- Session archive:'))
+            ->toBe(1)
+            ->and(strpos($activeLoop, '- Session archive:'))
+            ->toBeGreaterThan((int) strpos($activeLoop, '## Evidence Links'))
+            ->toBeLessThan((int) strpos($activeLoop, '## Final Distillation'))
+            ->and((string) file_get_contents("{$archiveDir}/loop.md"))
+            ->toBe($activeLoop);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive appends an evidence links section when the active loop lacks one', function (): void {
+    $workspace = session_archive_workspace(suffix: 'write-back-append');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        file_put_contents($paths['loopPath'], "# Orbit Current Slice State\n");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-01-100306',
+            '--slug=write-back-append',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $activeLoop = (string) file_get_contents($paths['loopPath']);
+        $summary = session_archive_summary(process: $process);
+
+        expect($activeLoop)
+            ->toContain('## Evidence Links')
+            ->toContain('- Session archive: .orbit/sessions/2026-07-01-100306-write-back-append')
+            ->and((string) file_get_contents((string) $summary['archive_dir'].'/loop.md'))
+            ->toBe($activeLoop);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive warns loudly when no solo process context exists', function (): void {
+    $workspace = session_archive_workspace(suffix: 'context-warning');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-01-100307',
+            '--slug=context-warning',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary(process: $process);
+        $manifest = json_decode(
+            (string) file_get_contents((string) $summary['archive_dir'].'/agent-sessions/manifest.json'),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($process->getErrorOutput())
+            ->toContain('WARNING')
+            ->toContain("{$paths['sourceOrbitDir']}/loop.md")
+            ->and($manifest['sessions'])
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+function system_local_timestamp(): string
+{
+    $process = new Process(['date', '+%Y-%m-%d-%H%M%S']);
+
+    $process->mustRun();
+
+    return trim($process->getOutput());
+}
+
+function session_archive_workspace(string $suffix): string
+{
+    $workspace = sys_get_temp_dir().'/orbit-session-archive-'.$suffix.'-'.bin2hex(random_bytes(6));
+
+    mkdir($workspace, recursive: true);
+
+    return $workspace;
+}
+
+/**
+ * @return array{cwd: string, home: string, sourceOrbitDir: string, archiveRoot: string, loopPath: string}
+ */
+function session_archive_paths(string $workspace, bool $withLoop = true): array
+{
+    $cwd = "{$workspace}/worktree";
+    $home = "{$workspace}/home";
+    $sourceOrbitDir = "{$cwd}/.orbit";
+    $archiveRoot = "{$workspace}/archive-root";
+    $loopPath = "{$sourceOrbitDir}/loop.md";
+
+    mkdir("{$sourceOrbitDir}/evidence", recursive: true);
+    mkdir($home, recursive: true);
+
+    if ($withLoop) {
+        file_put_contents($loopPath, "# Orbit Current Slice State\n\nNo worker sessions.\n");
+        file_put_contents("{$sourceOrbitDir}/evidence/proof.txt", "proof\n");
+    }
+
+    return [
+        'cwd' => $cwd,
+        'home' => $home,
+        'sourceOrbitDir' => $sourceOrbitDir,
+        'archiveRoot' => $archiveRoot,
+        'loopPath' => $loopPath,
+    ];
+}
+
+/**
+ * @param list<string> $arguments
+ */
+function run_session_archive(array $arguments): Process
+{
+    $process = new Process(
+        [repo_path('bin/orbit-session-archive'), ...$arguments],
+        repo_path(),
+        [
+            'SOLO_PROCESS_ID' => false,
+            'SOLO_PROJECT_ID' => false,
+        ],
+    );
+
+    $process->run();
+
+    return $process;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function session_archive_summary(Process $process): array
+{
+    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_directories(string $archiveRoot): array
+{
+    $directories = array_map(
+        'basename',
+        array_filter(glob("{$archiveRoot}/*") ?: [], 'is_dir'),
+    );
+
+    sort($directories, SORT_STRING);
+
+    return array_values($directories);
+}
+
+function remove_session_archive_workspace(string $path): void
+{
+    if ($path === '' || ! str_contains($path, '/orbit-session-archive-')) {
+        return;
+    }
+
+    new Process(['rm', '-rf', $path])->run();
+}

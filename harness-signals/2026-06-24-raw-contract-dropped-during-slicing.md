@@ -8,7 +8,7 @@ Source worktree: doctor-progress-scheduler
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, .agents/skills/implementing-features/SKILL.md, .agents/review-personas/cli-command.md
-Guardrail change: pending loop-hardening-session-guardrails commit
+Guardrail change: landed — HARNESS.md Done Contract raw-examples requirement; .agents/skills/implementing-features/SKILL.md raw acceptance examples and explicit deferrals; .agents/review-personas/cli-command.md raw-contract comparison
 Related signals: harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md, harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
 Superseded by: none
 Tags: contract, slicing, prompt, cli, review

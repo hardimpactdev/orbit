@@ -1,5 +1,27 @@
 # CLI Command Reviewer
 
+## REQUIRED PROOF
+
+Before reading anything else, run:
+
+```bash
+cd <assigned worktree> && pwd && git branch --show-current && git status --short --branch
+```
+
+Then print a single `CHECKOUT_PROOF: <pwd> | <branch> | <status summary>` line
+before any other output. A report without a `CHECKOUT_PROOF:` line is invalid.
+
+End the report with exactly one machine-parseable final line:
+
+```text
+VERDICT: <pass|findings|blocked>
+```
+
+- `pass`: no finding blocks acceptance of the reviewed change.
+- `findings`: at least one finding must be resolved before acceptance.
+- `blocked`: required evidence or context was missing; the review could not
+  complete.
+
 Use this reviewer for Orbit CLI command changes, command contract reviews, and
 post-implementation checks when a command's human output, JSON output,
 verification lane, or runtime proof is part of the acceptance surface.
@@ -11,12 +33,8 @@ diff exists.
 
 ## Default Agent
 
-Run this CLI reviewer as Claude Opus through Solo at medium effort. Discover the
-enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
-`extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is not
-available through Solo, stop and report the blocker instead of substituting
-another model. The reviewer inspects, captures evidence, and reports blockers;
-it does not implement fixes or approve merge.
+Spawn per the Solo Role Matrix in HARNESS.md. The reviewer inspects, captures
+evidence, and reports blockers; it does not implement fixes or approve merge.
 
 ## Required Context
 
@@ -251,6 +269,8 @@ Use this shape:
 - Stale/downgraded evidence checked:
 - E2E/live proof:
 - JSON samples:
+
+VERDICT: <pass|findings|blocked>
 ```
 
 ## Guardrail Follow-Up

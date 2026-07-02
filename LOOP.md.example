@@ -147,3 +147,39 @@ meaningful value.
 - No-new-signal rationale:
   - <why local cleanup, existing guardrails, already-landed fixes, or rejection
     was enough>
+
+---
+
+## Appendix: Compact Single-Slice Variant
+
+Use the full template above for multi-slice loops. When the request truly fits
+one slice, you may collapse the start gate and the parallelization scan to one
+line each while keeping every mechanical label the finalization gate keys on.
+
+In the compact variant, replace the `Active slice start gate` and
+`Parallelization scan` blocks under `## Done Contract` with exactly these two
+lines:
+
+- Single-slice: yes - <why this request fits one slice>
+- Parallelization: serial - <concrete dependency, shared-state,
+  provider-capacity, or merge-order reason>
+
+Everything else keeps the same labels as the full template. The gate still
+requires, verbatim: `## Final Distillation`, `- Loop outcome:`,
+`- Required verification:` with the `Retained topology proof` and
+`` `composer quality-check` `` rows, `- Fresh analyzer:` (a value of
+`deferred - <reason>` is accepted with a warning), and at least one meaningful
+value among `- Accepted durable updates:`,
+`- Rejected or already-covered signals:`, `- Deferred follow-ups:`, or
+`- No-new-signal rationale:`. The `- Loop outcome:` value must be exactly one
+of `complete`, `blocked`, or `complete + loop improvement`.
+
+Archiving is unchanged: `bin/orbit-session-archive` generates the archive
+directory name; run it instead of hand-writing timestamps, and see the tool's
+`--help` for slug and destination options.
+
+Validate either variant before merge with:
+
+```bash
+bin/orbit-feature-finalization-check --lint .orbit/loop.md
+```

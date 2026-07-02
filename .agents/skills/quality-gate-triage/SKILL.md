@@ -106,8 +106,8 @@ Use one primary category and optional secondary categories:
 ## Timing Evidence Model
 
 Participating test wrappers and quality-gate timing commands emit timing
-evidence when they run. `composer quality-check`, `composer quality-check:fix`,
-`composer test:e2e`, `composer test:e2e:docker`,
+evidence when they run. `composer docs-lint`, `composer quality-check`,
+`composer quality-check:fix`, `composer test:e2e`, `composer test:e2e:docker`,
 `composer test:e2e:docker:canary`, and `composer test:e2e:incus` store
 machine-local artifacts under `.orbit/quality-gates/`. Store supporting
 transcripts, PTY summaries, screenshots, or topology pointers under
@@ -227,7 +227,7 @@ code. The analyzer prints a routing hint to
    repeated `ssh true` latency before trusting phase comparisons. For Incus,
    verify source checkout, storage pool, host slots, prepared topology, and
    cache mode.
-5. Classify the slowdown using the categories below.
+5. Classify the slowdown using the Classification Categories section above.
 6. Recommend the next narrow command or owner action. Do not rerun expensive
    gates unless classification proves the rerun is diagnostic.
 
@@ -260,13 +260,18 @@ work before analysis starts. Treat these as separate lanes by default:
 
 Dispatch independent lane triage or optimization through separate Solo workers
 unless a concrete dependency, shared state path, provider-capacity limit, or
-merge-order reason is recorded. Docker and Incus use different provider
-systems, so they should normally run in parallel. Do not finish all Pest,
-package, or app-level timing work before starting Docker or Incus investigation
-when those lanes are part of the same goal and have no dependency on the
-in-memory result. Do not overlap aggregate `composer quality-check` with active
-provider E2E unless shared E2E support state is proven isolated; schedule that
-aggregate check after provider lanes are idle.
+merge-order reason is recorded. Parallel lanes here mean parallel triage of
+existing artifacts and evidence: workers inspect Docker or Incus E2E artifacts,
+timing baselines, and harness code, but never run `composer test:e2e*`
+commands themselves — E2E runs only when the user explicitly invokes the
+Composer command from a shell. Docker and Incus artifacts come from different
+provider systems, so their triage should normally proceed in parallel. Do not
+finish all Pest, package, or app-level timing triage before starting Docker or
+Incus artifact investigation when those lanes are part of the same goal and
+have no dependency on the in-memory result. Do not overlap aggregate
+`composer quality-check` with user-invoked provider E2E that is still running
+unless shared E2E support state is proven isolated; schedule that aggregate
+check after provider lanes are idle.
 
 Each lane report must say whether it produced a concrete optimization diff, a
 no-op classification, or a deferred follow-up. If a lane is not dispatched, the

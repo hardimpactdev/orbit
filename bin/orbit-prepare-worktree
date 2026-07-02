@@ -188,9 +188,10 @@ run "${ROOT}/bin/quality-gate-seed-baselines" "$main_checkout" "$worktree_path"
 step "Installing Composer dependencies"
 run_in "$worktree_path" composer install
 
-for directory in packages/core packages/sdk apps/gateway apps/docs apps/cli apps/e2e; do
-    if [ -f "${worktree_path}/${directory}/composer.json" ]; then
-        run_in "${worktree_path}/${directory}" composer install
+# Packages install before apps so app installs can resolve path repositories.
+for composer_manifest in "${worktree_path}"/packages/*/composer.json "${worktree_path}"/apps/*/composer.json; do
+    if [ -f "$composer_manifest" ]; then
+        run_in "$(dirname "$composer_manifest")" composer install
     fi
 done
 

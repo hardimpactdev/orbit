@@ -8,7 +8,7 @@ Source worktree: main; doctor-progress-scheduler; quality-check-progress-monoton
 Source commit: dc44eb42487a5687ea54b9dc85b0ee68c9eefd53
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, .agents/skills/cli-output-pty-capture/SKILL.md, .agents/skills/implementing-features/SKILL.md, .agents/review-personas/cli-command.md
-Guardrail change: pending loop-hardening-session-guardrails commit
+Guardrail change: landed — HARNESS.md Root Routing CLI row (PTY frame capture and reviewer analysis before human UX review); .agents/skills/cli-output-pty-capture/SKILL.md; .agents/skills/implementing-features/SKILL.md PTY-before-user steps; .agents/review-personas/cli-command.md PTY artifact checks
 Related signals: harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md
 Superseded by: none
 Tags: cli, pty, cadence, terminal-ux, retained-vm, review

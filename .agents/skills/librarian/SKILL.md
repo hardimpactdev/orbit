@@ -10,20 +10,26 @@ and generated indexes aligned in Laravel projects.
 
 ## When To Use
 
-- A Laravel project has or needs a `docs/` spine managed by Librarian.
+- A Laravel project has or needs a Librarian-managed docs spine; in Orbit this
+  is `apps/docs/content/`.
 - Documentation domains need to be added, inserted, or renumbered.
-- Generated docs such as `docs/README.md` or `docs/concepts.md` are stale.
+- Generated docs such as `apps/docs/content/README.md` or
+  `apps/docs/content/concepts.md` are stale.
 - `librarian:lint` reports structure, generated-doc, link, placeholder, or prose
   findings.
 
 ## Core Commands
 
+In this monorepo there is no root `artisan`; Librarian lives in the docs app.
+Run Librarian commands through `bin/orbit-docs-artisan` from the repo root (or
+`php artisan` from `apps/docs/`):
+
 ```bash
-php artisan librarian:init
-php artisan librarian:domain billing
-php artisan librarian:domains:normalize
-php artisan librarian:build
-php artisan librarian:lint
+bin/orbit-docs-artisan librarian:init
+bin/orbit-docs-artisan librarian:domain billing
+bin/orbit-docs-artisan librarian:domains:normalize
+bin/orbit-docs-artisan librarian:build
+bin/orbit-docs-artisan librarian:lint
 ```
 
 Use `librarian:build` after changing docs that affect generated indexes. Use
@@ -31,8 +37,11 @@ Use `librarian:build` after changing docs that affect generated indexes. Use
 
 ## Documentation Spine
 
+Orbit's Librarian-managed docs spine lives at `apps/docs/content/`
+(`config/librarian.php` points `path` at `base_path('content')`):
+
 ```text
-docs/
+apps/docs/content/
   README.md
   mission.md
   architecture.md
@@ -41,10 +50,11 @@ docs/
   domains/
 ```
 
-Do not hand-edit `docs/README.md` or `docs/concepts.md`; Librarian regenerates
-them. Put product intent in `mission.md`, system shape in `architecture.md`,
-implementation choices in `tech-stack.md`, and domain-specific notes under
-`docs/domains`.
+Do not hand-edit `apps/docs/content/README.md` or
+`apps/docs/content/concepts.md`; Librarian regenerates them. Put product intent
+in `mission.md`, system shape in `architecture.md`, implementation choices in
+`tech-stack.md`, and domain-specific notes under `apps/docs/content/domains`.
+In other Laravel projects the spine defaults to `docs/`.
 
 ## Domain Workflow
 

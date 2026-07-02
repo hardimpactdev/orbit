@@ -12,6 +12,9 @@ Claude becomes the Orbit feature owner and must use
 `.agents/skills/implementing-features/SKILL.md` until the todo's success
 criteria are met or a real blocker is proven.
 
+`/goal` is the Claude Code goal-setting slash command: the body after `/goal`
+becomes the spawned agent's standing objective, pursued until met or blocked.
+
 This skill does not create or refine the todo. It starts after the user names a
 Solo todo id or URL.
 
@@ -26,18 +29,20 @@ Solo todo id or URL.
 3. Convert the todo into a `/goal` body with one objective, concrete success
    criteria, verification expectations, and the todo URL. Preserve links to raw
    examples instead of pasting long transcripts.
-4. Keep the `/goal` body at or below 4000 characters. If the Solo UI or agent
-   surface counts the required `agent_instructions` in the same field, reserve
-   that space and shrink the `/goal` body accordingly. Do not send an over-limit
-   goal.
+4. Keep the `/goal` body at or below 4000 characters. Prepended
+   `agent_instructions` are not part of the body, but if the Solo UI or agent
+   surface counts them in the same field, reserve that space and shrink the
+   `/goal` body accordingly. Do not send an over-limit goal.
 5. Use `list_agent_tools` and select the enabled `Claude` tool. Spawn it with
    `spawn_agent`, `extra_args=["--model", "opus", "--effort", "medium"]`, and a
    name such as `todo-<todo-id>-opus`. If Claude Opus is not available, stop and
    report the available tools instead of silently using Sonnet.
-6. Send the first prompt with `send_input`. The exact text passed to
-   `send_input.input` must start with `/goal`. If Solo returns
-   `agent_instructions`, include them inside the `/goal` body under the
-   `Solo context` section; never prepend anything before `/goal`.
+6. Send the first prompt with `send_input`. If Solo returns
+   `agent_instructions`, prepend them verbatim before everything else in
+   `send_input.input`, then place the `/goal` body verbatim after them —
+   the same prepend-first rule as every Solo spawn in
+   `implementing-features`. When no `agent_instructions` are returned, the
+   input starts directly with `/goal`.
 7. Report the Solo process id/name, todo URL, and `/goal` character count. The
    handoff is complete once `send_input` succeeds. Do not poll, supervise, or
    send follow-up prompts unless the user explicitly asks to inspect or resume
@@ -45,10 +50,10 @@ Solo todo id or URL.
 
 ## Prompt Rules
 
-- The `/goal` body starts with `/goal`.
-- The submitted prompt starts with `/goal` as its first characters. No Solo
-  orchestration context, preamble, whitespace, or commentary may appear before
-  `/goal`.
+- The `/goal` body starts with `/goal` and stays verbatim.
+- Solo `agent_instructions`, when returned, are prepended before the `/goal`
+  body and are the only content allowed ahead of it. Add no other
+  orchestration preamble, padding, or commentary before or inside the body.
 - The goal says `implement`, not `investigate`, unless the todo is explicitly
   research-only.
 - Include a direct reference to the Solo todo.
@@ -82,7 +87,7 @@ Success criteria:
 
 Context:
 - Solo todo: <solo URL>
-- Solo context: <paste Solo's agent_instructions here, or "none returned">
+- Solo context: <"agent_instructions prepended above" or "none returned">
 - Linked scratchpad or raw examples: <solo URL/heading, short pointer, or none>
 - Likely owned surface: <paths, command family, docs, or "discover narrowly after required reads">
 
