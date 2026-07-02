@@ -68,6 +68,7 @@ final readonly class ToolsProbe
             versionCommand: is_string($versionCommand) ? $versionCommand : '',
             service: is_string($service) ? $service : '',
             container: is_string($container) ? $container : '',
+            extraProbe: $this->extraProbeFromMetadata($metadata),
         );
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
@@ -147,6 +148,7 @@ final readonly class ToolsProbe
                 'container' =>
                     $this->expectedContainerName($tool)
                         ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
+                'extra_probe' => $this->extraProbeFromMetadata($metadata),
             ];
             $batchedTools[$tool->name] = $tool;
         }
@@ -202,6 +204,7 @@ final readonly class ToolsProbe
         string $versionCommand,
         string $service,
         string $container,
+        string $extraProbe = '',
     ): string {
         $script = <<<'SH'
             set -eu
@@ -211,6 +214,7 @@ final readonly class ToolsProbe
             version_command=__VERSION_COMMAND__
             service=__SERVICE__
             container=__CONTAINER__
+            extra_probe=__EXTRA_PROBE__
 
             path=''
             version=''
@@ -236,6 +240,12 @@ final readonly class ToolsProbe
 
             if [ -z "$path" ]; then
                 exit 1
+            fi
+
+            if [ -n "$extra_probe" ]; then
+                if ! sh -c "$extra_probe" >/dev/null 2>&1; then
+                    exit 1
+                fi
             fi
 
             if [ -n "$version_command" ]; then
@@ -281,7 +291,22 @@ final readonly class ToolsProbe
             '__VERSION_COMMAND__' => escapeshellarg($versionCommand),
             '__SERVICE__' => escapeshellarg($service),
             '__CONTAINER__' => escapeshellarg($container),
+            '__EXTRA_PROBE__' => escapeshellarg($extraProbe),
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function extraProbeFromMetadata(array $metadata): string
+    {
+        $probe = $metadata['probe'] ?? null;
+
+        if (! is_string($probe) || $probe === '' || $probe === 'docker_images') {
+            return '';
+        }
+
+        return $probe;
     }
 
     /**
@@ -315,7 +340,7 @@ final readonly class ToolsProbe
     }
 
     /**
-     * @param  array<string, array{binary: mixed, version_command: string, service: string, container: string}>  $batch
+     * @param  array<string, array{binary: mixed, version_command: string, service: string, container: string, extra_probe: string}>  $batch
      */
     private function batchedToolCapabilityProbeScript(array $batch): string
     {
@@ -330,6 +355,7 @@ final readonly class ToolsProbe
                 '            version_command='.escapeshellarg($tool['version_command']),
                 '            service='.escapeshellarg($tool['service']),
                 '            container='.escapeshellarg($tool['container']),
+                '            extra_probe='.escapeshellarg($tool['extra_probe']),
                 '            ;;',
             ]);
         }
@@ -359,6 +385,7 @@ final readonly class ToolsProbe
                 version_command=''
                 service=''
                 container=''
+                extra_probe=''
 
                 case "$name" in
             __CASES__
@@ -384,6 +411,12 @@ final readonly class ToolsProbe
                         path=$(command -v "$binary" 2>/dev/null || true)
                         ;;
                 esac
+
+                if [ -n "$path" ] && [ -n "$extra_probe" ]; then
+                    if ! sh -c "$extra_probe" >/dev/null 2>&1; then
+                        path=''
+                    fi
+                fi
 
                 if [ -n "$path" ] && [ -n "$version_command" ]; then
                     version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)

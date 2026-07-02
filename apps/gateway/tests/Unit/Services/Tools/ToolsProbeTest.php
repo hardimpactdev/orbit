@@ -284,6 +284,130 @@ describe('ToolsProbe', function (): void {
             ->toContain('json_decode(stream_get_contents(STDIN), true);');
     });
 
+    it('runs metadata extra probe commands after binary resolution and treats probe failure as not installed', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'orbstack-probe']);
+        $orbstackCatalog = new ToolCatalog(new ToolDefinitionRegistry([
+            new class extends BaseTool {
+                public function slug(): string
+                {
+                    return 'orbstack-probe';
+                }
+
+                public function probeMetadata(): array
+                {
+                    return [
+                        'binary' => '/bin/sh',
+                        'version_command' => '/bin/sh -c "echo OrbStack 1.0.0"',
+                        'probe' => 'test -x /usr/local/bin/orbctl && test -d /Applications/OrbStack.app',
+                    ];
+                }
+            },
+        ]));
+        $recordingShell = new RecordingToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: toolsProbeCapabilityStdout('/bin/sh', version: 'OrbStack 1.0.0'),
+        );
+        $probe = new ToolsProbe($recordingShell, $orbstackCatalog);
+
+        $probe->introspect($tool);
+
+        expect($recordingShell->script)
+            ->toContain('extra_probe=')
+            ->and($recordingShell->script)
+            ->toContain('test -x /usr/local/bin/orbctl')
+            ->and($recordingShell->script)
+            ->toContain('/Applications/OrbStack.app')
+            ->and($recordingShell->script)
+            ->toContain('sh -c "$extra_probe"');
+
+        $failingCatalog = new ToolCatalog(new ToolDefinitionRegistry([
+            new class extends BaseTool {
+                public function slug(): string
+                {
+                    return 'orbstack-probe';
+                }
+
+                public function probeMetadata(): array
+                {
+                    return [
+                        'binary' => '/bin/sh',
+                        'version_command' => '/bin/sh -c "echo OrbStack 1.0.0"',
+                        'probe' => 'test -e /orbit-orbstack-extra-probe-sentinel-does-not-exist',
+                    ];
+                }
+            },
+        ]));
+        $snapshot = new ToolsProbe(new ExecutingToolsProbeRemoteShell, $failingCatalog)->introspect($tool);
+
+        expect($snapshot->get('orbstack-probe'))
+            ->toMatchArray([
+                'installed' => false,
+            ]);
+    });
+
+    it('runs metadata extra probe commands in batched capability probes and treats probe failure as not installed', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'orbstack-probe']);
+        $orbstackCatalog = new ToolCatalog(new ToolDefinitionRegistry([
+            new class extends BaseTool {
+                public function slug(): string
+                {
+                    return 'orbstack-probe';
+                }
+
+                public function probeMetadata(): array
+                {
+                    return [
+                        'binary' => '/bin/sh',
+                        'version_command' => '/bin/sh -c "echo OrbStack 1.0.0"',
+                        'probe' => 'test -x /usr/local/bin/orbctl && test -d /Applications/OrbStack.app',
+                    ];
+                }
+            },
+        ]));
+        $recordingShell = new RecordingToolsProbeRemoteShell;
+        $probe = new ToolsProbe($recordingShell, $orbstackCatalog);
+
+        $probe->introspectMany([$tool]);
+
+        expect($recordingShell->script)
+            ->toContain('# orbit-tool-probe:capability-batch')
+            ->and($recordingShell->script)
+            ->toContain('extra_probe=')
+            ->and($recordingShell->script)
+            ->toContain('test -x /usr/local/bin/orbctl')
+            ->and($recordingShell->script)
+            ->toContain('/Applications/OrbStack.app')
+            ->and($recordingShell->script)
+            ->toContain('sh -c "$extra_probe"');
+
+        $failingCatalog = new ToolCatalog(new ToolDefinitionRegistry([
+            new class extends BaseTool {
+                public function slug(): string
+                {
+                    return 'orbstack-probe';
+                }
+
+                public function probeMetadata(): array
+                {
+                    return [
+                        'binary' => '/bin/sh',
+                        'version_command' => '/bin/sh -c "echo OrbStack 1.0.0"',
+                        'probe' => 'test -e /orbit-orbstack-extra-probe-sentinel-does-not-exist',
+                    ];
+                }
+            },
+        ]));
+        $snapshot = new ToolsProbe(new ExecutingToolsProbeRemoteShell, $failingCatalog)
+            ->introspectMany([$tool])['orbstack-probe'];
+
+        expect($snapshot->get('orbstack-probe'))
+            ->toMatchArray([
+                'installed' => false,
+            ]);
+    });
+
     it('uses POSIX shell for single tool capability probes while preserving tab output parsing', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);

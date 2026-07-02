@@ -19,6 +19,9 @@ These terms define how process definitions are identified, scoped, and ordered.
   such as `php-cli`, `viteplus`, `opencode`, or `polyscope`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
+- **External macOS runtime provider:** macOS applications such as OrbStack may
+  be managed as tool capabilities without a process row until a future external
+  runtime/process model admits lifecycle ownership in Orbit.
 - **Managed service:** Catalog entry selected with `process:add --service` for
   a runnable service such as MySQL, PostgreSQL, Redis, ClickHouse, Prometheus,
   Grafana, node-exporter, or Plausible CE. Service version, runtime, endpoint,

@@ -280,6 +280,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process identity slug**
 - **Process scope**
 - **Process tool dependency**
+- **External macOS runtime provider**
 - **Managed service**
 - **Process order**
 - **Runtime unit**

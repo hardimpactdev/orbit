@@ -78,6 +78,7 @@ use App\Tools\MailpitTool;
 use App\Tools\NodeExporterTool;
 use App\Tools\OpenClawTool;
 use App\Tools\OpenCodeCliTool;
+use App\Tools\OrbStackTool;
 use App\Tools\PhpCliTool;
 use App\Tools\PhpTool;
 use App\Tools\PolyscopeServerTool;
@@ -182,6 +183,7 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(NodeExporterTool::class),
                     $app->make(PolyscopeServerTool::class),
                     $app->make(OpenCodeCliTool::class),
+                    $app->make(OrbStackTool::class),
                     $app->make(OpenClawTool::class),
                     $app->make(HermesTool::class),
                     $app->make(LaravelInstallerTool::class),

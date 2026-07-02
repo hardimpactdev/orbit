@@ -96,6 +96,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |
+| [`orbstack`](catalog/orbstack.md) | OrbStack | macOS application and CLI (`orb`, `orbctl`) | Installable macOS runtime-provider capability | `infrastructure` | install, update, adopt; no Orbit process lifecycle in this slice |
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` creates those tools from scratch only when the

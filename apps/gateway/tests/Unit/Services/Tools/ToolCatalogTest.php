@@ -13,6 +13,7 @@ use App\Tools\GhTool;
 use App\Tools\GitTool;
 use App\Tools\HermesTool;
 use App\Tools\OpenCodeCliTool;
+use App\Tools\OrbStackTool;
 use App\Tools\PolyscopeServerTool;
 use App\Tools\SeaweedfsTool;
 use Tests\TestCase;
@@ -29,6 +30,27 @@ describe('tool catalog definitions', function (): void {
 
         expect($catalog->definition('polyscope-server'))
             ->toBeInstanceOf(PolyscopeServerTool::class);
+    });
+
+    it('catalogs OrbStack as a macOS infrastructure runtime-provider tool', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->definition('orbstack'))
+            ->toBeInstanceOf(OrbStackTool::class)
+            ->and($catalog->category('orbstack'))
+            ->toBe('infrastructure')
+            ->and($catalog->supportedOperatingSystems('orbstack'))
+            ->toBe(['macos'])
+            ->and($catalog->hasCapability('orbstack', 'install'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'update'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'safe-adopt'))
+            ->toBeTrue()
+            ->and($catalog->relatedProcess('orbstack'))
+            ->toBeNull()
+            ->and($catalog->logCommand('orbstack', 50))
+            ->toBeNull();
     });
 
     it('catalogs Codex App as a macOS operator tool', function (): void {
