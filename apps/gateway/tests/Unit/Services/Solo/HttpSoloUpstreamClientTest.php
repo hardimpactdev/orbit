@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Solo\HttpSoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamTarget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,7 +28,7 @@ it('sends configured bearer tokens and normalizes solo success envelopes', funct
         ]),
     ]);
 
-    $node = Node::factory()->create(['name' => 'gateway']);
+    $node = create_solo_gateway_upstream_node();
     $token = bin2hex(random_bytes(16));
 
     $target = new SoloUpstreamTarget(
@@ -63,7 +65,7 @@ it('normalizes solo error envelopes', function (): void {
         ], 401),
     ]);
 
-    $node = Node::factory()->create(['name' => 'gateway']);
+    $node = create_solo_gateway_upstream_node();
     $target = new SoloUpstreamTarget(
         node: $node,
         url: 'http://127.0.0.1:24678/api',
@@ -98,7 +100,7 @@ it('maps solo discovery agent tools to the orbit tools key', function (): void {
         ]),
     ]);
 
-    $node = Node::factory()->create(['name' => 'gateway']);
+    $node = create_solo_gateway_upstream_node();
     $target = new SoloUpstreamTarget(
         node: $node,
         url: 'http://127.0.0.1:24678/api',
@@ -129,7 +131,7 @@ it('maps solo todo delete receipts to the orbit todo key', function (): void {
         ]),
     ]);
 
-    $node = Node::factory()->create(['name' => 'gateway']);
+    $node = create_solo_gateway_upstream_node();
     $target = new SoloUpstreamTarget(
         node: $node,
         url: 'http://127.0.0.1:24678/api',
@@ -145,3 +147,14 @@ it('maps solo todo delete receipts to the orbit todo key', function (): void {
         ->and($response->data['todo']['deleted'] ?? null)
         ->toBeTrue();
 });
+
+function create_solo_gateway_upstream_node(): Node
+{
+    $node = Node::factory()->create(['name' => 'gateway']);
+
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => NodeRoleName::Gateway->value,
+    ]);
+
+    return $node;
+}

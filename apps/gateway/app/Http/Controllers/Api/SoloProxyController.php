@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Authorization\ServingNodeResolver;
@@ -32,16 +31,21 @@ final class SoloProxyController implements Loggable
 
     private ActivityLogType $activityEffect = ActivityLogType::Read;
 
-    #[RequiresPermission('solo:*', servingNode: ServingNode::Gateway)]
-    public function tools(Request $request, SoloProxy $proxy): JsonResponse
+    public function tools(Request $request, SoloProxy $proxy, NodeAccessAuthorizer $authorizer): JsonResponse
     {
         $this->operation = 'tools';
         $this->captureActivitySubject($request);
 
+        $authorization = $this->authorizeOperation($request, $authorizer, 'solo:*');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $node = $this->activitySubject;
 
         if (! $node instanceof Node) {
-            return $this->missingGatewaySubject('solo:*');
+            return $this->missingServingSubject('solo:*');
         }
 
         return $this->run(
@@ -50,16 +54,21 @@ final class SoloProxyController implements Loggable
         );
     }
 
-    #[RequiresPermission('solo:*', servingNode: ServingNode::Gateway)]
-    public function projects(Request $request, SoloProxy $proxy): JsonResponse
+    public function projects(Request $request, SoloProxy $proxy, NodeAccessAuthorizer $authorizer): JsonResponse
     {
         $this->operation = 'projects';
         $this->captureActivitySubject($request);
 
+        $authorization = $this->authorizeOperation($request, $authorizer, 'solo:*');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $node = $this->activitySubject;
 
         if (! $node instanceof Node) {
-            return $this->missingGatewaySubject('solo:*');
+            return $this->missingServingSubject('solo:*');
         }
 
         return $this->run(
@@ -68,9 +77,12 @@ final class SoloProxyController implements Loggable
         );
     }
 
-    #[RequiresPermission('solo:*', servingNode: ServingNode::Gateway)]
-    public function read(string $operation, Request $request, SoloProxy $proxy): JsonResponse
-    {
+    public function read(
+        string $operation,
+        Request $request,
+        SoloProxy $proxy,
+        NodeAccessAuthorizer $authorizer,
+    ): JsonResponse {
         try {
             $readOperation = SoloReadOperationCatalog::find($operation);
         } catch (SoloProxyException $exception) {
@@ -80,10 +92,16 @@ final class SoloProxyController implements Loggable
         $this->operation = $readOperation->apiPath;
         $this->captureActivitySubject($request);
 
+        $authorization = $this->authorizeOperation($request, $authorizer, 'solo:*');
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $node = $this->activitySubject;
 
         if (! $node instanceof Node) {
-            return $this->missingGatewaySubject('solo:*');
+            return $this->missingServingSubject('solo:*');
         }
 
         return $this->run(
@@ -108,7 +126,7 @@ final class SoloProxyController implements Loggable
         $this->activityEffect = ActivityLogType::Write;
         $this->captureActivitySubject($request);
 
-        $authorization = $this->authorizeMutation($request, $authorizer, $mutation->permission);
+        $authorization = $this->authorizeOperation($request, $authorizer, $mutation->permission);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -124,7 +142,7 @@ final class SoloProxyController implements Loggable
         $node = $this->activitySubject;
 
         if (! $node instanceof Node) {
-            return $this->missingGatewaySubject($mutation->permission);
+            return $this->missingServingSubject($mutation->permission);
         }
 
         return $this->run(
@@ -177,12 +195,13 @@ final class SoloProxyController implements Loggable
 
     private function captureActivitySubject(Request $request): void
     {
-        $node = app(ServingNodeResolver::class)->resolve($request, ServingNode::Gateway);
+        $resolver = app(ServingNodeResolver::class);
+        $node = $resolver->resolve($request, ServingNode::Target) ?? $resolver->resolve($request, ServingNode::Gateway);
 
         $this->activitySubject = $node instanceof Node ? $node : null;
     }
 
-    private function missingGatewaySubject(string $permission): JsonResponse
+    private function missingServingSubject(string $permission): JsonResponse
     {
         return $this->error(
             'authorization_failed',
@@ -246,7 +265,7 @@ final class SoloProxyController implements Loggable
         return null;
     }
 
-    private function authorizeMutation(
+    private function authorizeOperation(
         Request $request,
         NodeAccessAuthorizer $authorizer,
         string $permission,

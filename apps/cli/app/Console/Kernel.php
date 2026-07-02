@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console;
 
+use App\Commands\Solo\SoloCommandSignature;
+use App\Commands\Solo\SoloCommandTargetPayload;
 use App\Commands\Solo\SoloExtensionPlaceholderCommand;
 use App\Commands\Solo\SoloMutatingCommand;
 use App\Commands\Solo\SoloMutatingOperationCatalog;
@@ -31,9 +33,12 @@ final class Kernel extends LaravelZeroKernel
                     match (true) {
                         $readOperation instanceof SoloReadOperationDefinition => new SoloReadOnlyCommand(
                             $readOperation,
+                            app(SoloCommandSignature::class),
                         ),
                         $mutatingOperation instanceof SoloMutatingOperationDefinition => new SoloMutatingCommand(
                             $mutatingOperation,
+                            app(SoloCommandSignature::class),
+                            app(SoloCommandTargetPayload::class),
                         ),
                         default => new SoloExtensionPlaceholderCommand($commandName),
                     },

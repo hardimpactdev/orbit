@@ -27,6 +27,7 @@ final class DataList extends Prompt
         $this->prompt();
     }
 
+    #[\Override]
     public function prompt(): bool
     {
         $this->capturePreviousNewLines();
@@ -43,6 +44,7 @@ final class DataList extends Prompt
         return true;
     }
 
+    #[\Override]
     protected function getRenderer(): callable
     {
         return new DataListRenderer($this);
