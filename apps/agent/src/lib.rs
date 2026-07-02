@@ -619,8 +619,25 @@ impl JobExecutor for LocalJobExecutor {
 }
 
 impl LocalJobExecutor {
-    fn launchd_safe_path() -> &'static str {
-        "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    fn launchd_safe_path() -> String {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+
+        [
+            format!("{home}/.orbstack/bin"),
+            format!("{home}/.docker/bin"),
+            format!("{home}/.local/bin"),
+            format!("{home}/.composer/vendor/bin"),
+            "/Applications/OrbStack.app/Contents/MacOS/xbin".to_string(),
+            "/Applications/Docker.app/Contents/Resources/bin".to_string(),
+            "/opt/homebrew/bin".to_string(),
+            "/opt/homebrew/sbin".to_string(),
+            "/usr/local/bin".to_string(),
+            "/usr/bin".to_string(),
+            "/bin".to_string(),
+            "/usr/sbin".to_string(),
+            "/sbin".to_string(),
+        ]
+        .join(":")
     }
 
     fn script_with_launchd_safe_path(script: &str) -> String {
@@ -653,10 +670,11 @@ impl LocalJobExecutor {
 
     fn run_script(&self, label: &str, script: &str) -> Result<(), GatewayError> {
         let script = Self::script_with_launchd_safe_path(script);
+        let path = Self::launchd_safe_path();
         let output = Command::new("/bin/bash")
             .arg("-lc")
             .arg(script)
-            .env("PATH", Self::launchd_safe_path())
+            .env("PATH", path)
             .output()
             .map_err(|error| {
                 GatewayError::Transport(format!("{label} failed to start: {error}"))
@@ -1299,18 +1317,22 @@ bearer_token = "dev-token-placeholder"
 
     #[test]
     fn local_executor_uses_launchd_safe_path_for_tool_scripts() {
-        assert_eq!(
-            LocalJobExecutor::launchd_safe_path(),
-            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        );
+        let path = LocalJobExecutor::launchd_safe_path();
+
+        assert!(path.contains("/.orbstack/bin"));
+        assert!(path.contains("/.docker/bin"));
+        assert!(path.contains("/opt/homebrew/bin"));
+        assert!(path.contains("/usr/local/bin"));
     }
 
     #[test]
     fn launchd_safe_path_export_keeps_login_shells_from_hiding_homebrew() {
-        assert_eq!(
-            LocalJobExecutor::script_with_launchd_safe_path("docker --version"),
-            "export PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}\"\ndocker --version"
-        );
+        let script = LocalJobExecutor::script_with_launchd_safe_path("docker --version");
+
+        assert!(script.starts_with("export PATH=\""));
+        assert!(script.contains("/.orbstack/bin"));
+        assert!(script.contains("/opt/homebrew/bin"));
+        assert!(script.ends_with("\ndocker --version"));
     }
 
     #[test]
