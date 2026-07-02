@@ -28,6 +28,11 @@ function remove_tool_list_config_store(OrbitConfigStore $store): void
     }
 }
 
+function strip_tool_list_ansi(string $value): string
+{
+    return preg_replace('/\e\[[0-9;?]*[a-zA-Z]/', '', $value) ?? $value;
+}
+
 describe('tool:list', function (): void {
     it('returns a canonical success envelope in JSON mode and forwards explicit node filters', function (): void {
         fakeGateway(fakeSuccessEnvelope([
@@ -175,7 +180,7 @@ describe('tool:list', function (): void {
         remove_tool_list_config_store($store);
     });
 
-    it('renders human data list output containing tool fields', function (): void {
+    it('renders human output with the Prompts data-list component', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'tools' => [
                 [
@@ -191,20 +196,24 @@ describe('tool:list', function (): void {
         ]));
 
         [$exitCode, $output] = runCommand($this, 'tool:list', ['--node' => 'app-1']);
+        $plain = strip_tool_list_ansi($output);
 
         expect($exitCode)
             ->toBe(0)
-            ->and($output)
-            ->toContain('Node: app-1')
-            ->and($output)
-            ->toContain('composer')
-            ->and($output)
-            ->toContain('Expected: installed')
-            ->and($output)
-            ->toContain('Managed: yes')
-            ->and($output)
-            ->toContain('Version: —')
-            ->and($output)
+            ->and($plain)
+            ->toContain('┌ Node: app-1')
+            ->and($plain)
+            ->toContain('│ composer')
+            ->and($plain)
+            ->toContain('│   Expected: installed')
+            ->and($plain)
+            ->toContain('│   Managed: yes')
+            ->and($plain)
+            ->toContain('│   Version: —')
+            ->and($plain)
+            ->toContain('└')
+            ->and($plain)
+            ->not->toContain('  composer')->and($plain)
             ->not->toContain('TOOL');
     });
 

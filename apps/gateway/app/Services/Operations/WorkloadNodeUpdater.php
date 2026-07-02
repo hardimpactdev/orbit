@@ -13,13 +13,12 @@ use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use JsonException;
 use RuntimeException;
 use Throwable;
 
 final readonly class WorkloadNodeUpdater
 {
-    private const string DoctorCommand = 'orbit doctor --self --json';
+    private const string DoctorCommand = 'orbit doctor --self --stream-json';
 
     private const int DoctorTimeoutSeconds = 120;
 
@@ -31,6 +30,7 @@ final readonly class WorkloadNodeUpdater
         private FleetUpdateTargetSelector $targets,
         private FleetVersionProbe $fleetVersions,
         private GatewayCliArtifactRelay $artifactRelay,
+        private WorkloadNodeDoctorIssueParser $doctorIssues,
     ) {}
 
     /**
@@ -181,7 +181,7 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
-     * Run `orbit doctor` in verify mode for the node as the final per-node step.
+     * Run streaming `orbit doctor` in verify mode for the node as the final per-node step.
      * The verify is non-fatal: a non-zero issue count is surfaced per node but
      * does not by itself fail the node's update, and any failure to resolve the
      * count yields `null` (unknown).
@@ -200,34 +200,7 @@ final readonly class WorkloadNodeUpdater
             return null;
         }
 
-        return $this->doctorIssuesFromOutput($result->output());
-    }
-
-    private function doctorIssuesFromOutput(string $output): ?int
-    {
-        $output = trim($output);
-
-        if ($output === '') {
-            return null;
-        }
-
-        try {
-            $decoded = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return null;
-        }
-
-        if (! is_array($decoded)) {
-            return null;
-        }
-
-        $envelope = $decoded['success'] ?? $decoded['error'] ?? null;
-        $data = is_array($envelope) ? $envelope['data'] ?? null : null;
-        $doctor = is_array($data) ? $data['doctor'] ?? null : null;
-        $summary = is_array($doctor) ? $doctor['summary'] ?? null : null;
-        $issues = is_array($summary) ? $summary['issues'] ?? null : null;
-
-        return is_int($issues) ? $issues : null;
+        return $this->doctorIssues->fromOutput($result->output());
     }
 
     private function updatedMessage(Node $node, ?int $issues): string

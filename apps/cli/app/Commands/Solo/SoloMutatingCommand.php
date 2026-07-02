@@ -12,6 +12,10 @@ final class SoloMutatingCommand extends GatewayCommand
 {
     use RequiresLocalExtension;
 
+    private const array ARGUMENT_PAYLOAD_KEYS = [
+        'processCommand' => 'command',
+    ];
+
     #[\Override]
     protected $signature;
 
@@ -20,8 +24,10 @@ final class SoloMutatingCommand extends GatewayCommand
 
     public function __construct(
         private readonly SoloMutatingOperationDefinition $operation,
+        private readonly SoloCommandSignature $soloCommandSignature,
+        private readonly SoloCommandTargetPayload $targetPayload,
     ) {
-        $this->signature = $operation->signature;
+        $this->signature = $this->soloCommandSignature->withNodeOption($operation->signature);
         $this->description = "Run {$operation->command} through the Solo gateway proxy.";
 
         parent::__construct();
@@ -40,7 +46,7 @@ final class SoloMutatingCommand extends GatewayCommand
         }
 
         /** @var array<string, mixed> $payload */
-        $payload = [];
+        $payload = $this->targetPayload->forNode($this->stringOptionValue('node'));
 
         foreach ($this->operation->requiredArguments as $argument) {
             $value = $this->stringArgumentValue($argument);
@@ -103,8 +109,15 @@ final class SoloMutatingCommand extends GatewayCommand
         return is_scalar($value) && (string) $value !== '' ? (string) $value : null;
     }
 
+    private function stringOptionValue(string $option): ?string
+    {
+        $value = $this->option($option);
+
+        return is_scalar($value) && (string) $value !== '' ? (string) $value : null;
+    }
+
     private function payloadKeyForArgument(string $argument): string
     {
-        return $argument === 'processCommand' ? 'command' : $argument;
+        return self::ARGUMENT_PAYLOAD_KEYS[$argument] ?? $argument;
     }
 }

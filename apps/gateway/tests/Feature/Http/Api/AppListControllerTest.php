@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\App;
+use App\Models\AppDependencyAuditSummary;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
@@ -220,6 +221,10 @@ describe('AppListController', function (): void {
                 'worker_enabled' => false,
                 'worker_config' => null,
                 'adopted' => false,
+                'dependency_audit_status' => 'unknown',
+                'dependency_warning_count' => 0,
+                'dependency_danger_count' => 0,
+                'last_dependency_audit_at' => null,
                 'workspaces' => [
                     [
                         'name' => 'feature-docs',
@@ -228,6 +233,32 @@ describe('AppListController', function (): void {
                     ],
                 ],
             ]);
+    });
+
+    it('includes dependency audit posture aggregates in app list JSON', function (): void {
+        $caller = createAppListCallerNode();
+        assignAppListGatewayRole($caller);
+        $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+        ]);
+        AppDependencyAuditSummary::factory()
+            ->findings()
+            ->create([
+                'app_id' => $app->id,
+                'audited_at' => '2026-07-02 08:15:00',
+            ]);
+
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.apps.0.dependency_audit_status', 'findings')
+            ->assertJsonPath('success.data.apps.0.dependency_warning_count', 14)
+            ->assertJsonPath('success.data.apps.0.dependency_danger_count', 2)
+            ->assertJsonPath('success.data.apps.0.last_dependency_audit_at', '2026-07-02T08:15:00+00:00');
     });
 
     it('returns runtime=static for static apps', function (): void {

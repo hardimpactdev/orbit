@@ -9,12 +9,12 @@
 **Prerequisites:**
 - The local Solo extension is enabled on the CLI node.
 - The gateway Solo extension is enabled before proxy execution.
-- The caller has `solo:todo:comment` on the serving gateway node.
+- The caller has `solo:todo:comment` on the target node, or on the gateway node when `--node` is omitted.
 
 ## Signature
 
 ```bash
-orbit solo:todo:comment:update <comment> [--body=<body>] [--json]
+orbit solo:todo:comment:update <comment> [--node=<node>] [--body=<body>] [--json]
 ```
 
 ## Input Contract
@@ -29,15 +29,15 @@ The command checks local Solo extension state before making a gateway request. D
 
 ### Gateway Proxy
 
-The command calls `PATCH /api/solo/todo/comment/update` through the configured gateway client. Gateway execution requires gateway Solo extension state and the caller permission listed above.
+The command calls `PATCH /api/solo/todo/comment/update` through the configured gateway client. Gateway execution requires gateway Solo extension state and the caller permission listed above on the target node, or on the gateway node when `--node` is omitted.
 
 ### Upstream Boundary
 
-The gateway proxies only to the Solo API configured as a loopback URL on the serving gateway node. Solo ports are not exposed directly to WireGuard.
+The gateway proxies only to the Solo API configured as a loopback URL on the target node, or on the gateway node when `--node` is omitted. Solo ports are not exposed directly to WireGuard.
 
 ### Activity
 
-The gateway records Orbit activity for each Solo operation with the resolved gateway node as the target.
+The gateway records Orbit activity for each Solo operation with the resolved Solo target node.
 
 ## Failure Semantics
 

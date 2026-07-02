@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\App;
+use App\Models\AppDependencyAuditSummary;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -72,13 +73,59 @@ describe('AppShowController', function (): void {
             ->assertJsonPath('success.data.app.url', 'https://docs.example.com')
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
+            ->assertJsonPath('success.data.app.dependency_audit_status', 'unknown')
+            ->assertJsonPath('success.data.app.dependency_warning_count', 0)
+            ->assertJsonPath('success.data.app.dependency_danger_count', 0)
+            ->assertJsonPath('success.data.app.last_dependency_audit_at', null)
             ->assertJsonPath('success.data.details.domain', 'docs.example.com')
             ->assertJsonPath('success.data.details.document_root', '/srv/docs/public')
             ->assertJsonPath('success.data.details.node.name', 'app-1')
             ->assertJsonPath('success.data.details.node.host', '10.6.0.7')
+            ->assertJsonPath('success.data.details.dependency_audits', [])
             ->assertJsonPath('success.data.details.workspaces', [])
             ->assertJsonPath('success.data.details.processes', [])
             ->assertJsonPath('success.data.details.routes.0.host', 'docs.example.com');
+    });
+
+    it('returns dependency audit posture details by app name', function (): void {
+        $caller = createAppShowCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        grantAppShowAccess($caller, $node);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $node->id,
+        ]);
+        AppDependencyAuditSummary::factory()
+            ->findings()
+            ->create([
+                'app_id' => $app->id,
+                'audited_at' => '2026-07-02 08:15:00',
+                'advisory_summary' => [
+                    [
+                        'package_name' => 'guzzlehttp/guzzle',
+                        'severity' => 'high',
+                        'title' => 'Example advisory',
+                    ],
+                ],
+            ]);
+
+        $response = $this->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.app.dependency_audit_status', 'findings')
+            ->assertJsonPath('success.data.app.dependency_warning_count', 14)
+            ->assertJsonPath('success.data.app.dependency_danger_count', 2)
+            ->assertJsonPath('success.data.app.last_dependency_audit_at', '2026-07-02T08:15:00+00:00')
+            ->assertJsonPath('success.data.details.dependency_audits.0.manager', 'composer')
+            ->assertJsonPath('success.data.details.dependency_audits.0.status', 'findings')
+            ->assertJsonPath('success.data.details.dependency_audits.0.severity_counts.high', 2)
+            ->assertJsonPath('success.data.details.dependency_audits.0.severity_counts.medium', 14)
+            ->assertJsonPath(
+                'success.data.details.dependency_audits.0.advisory_summary.0.package_name',
+                'guzzlehttp/guzzle',
+            );
     });
 
     it('resolves by hostname when no app name matches', function (): void {

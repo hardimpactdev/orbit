@@ -6,15 +6,20 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 
 final readonly class AppResponsePayload
 {
+    public function __construct(
+        private AppDependencyAuditAggregatePayload $dependencyAuditPayload,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
     public function forApp(App $app): array
     {
-        $app->loadMissing('node');
+        $app->loadMissing(['node', 'dependencyAuditSummaries']);
         $runtime = $app->runtimeKind();
 
         return [
@@ -30,6 +35,7 @@ final readonly class AppResponsePayload
             'worker_enabled' => $app->worker_enabled,
             'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
             'adopted' => $app->adopted,
+            ...$this->dependencyAuditPayload->forApp($app),
         ];
     }
 }

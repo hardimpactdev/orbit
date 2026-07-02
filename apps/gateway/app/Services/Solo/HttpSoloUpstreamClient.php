@@ -4,15 +4,25 @@ declare(strict_types=1);
 
 namespace App\Services\Solo;
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use JsonException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:too-many-methods
  */
-final class HttpSoloUpstreamClient implements SoloUpstreamClient
+final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
 {
+    public function __construct(
+        private NodeRoleAssignments $roles,
+        private RemoteShell $remoteShell,
+        private SoloRemoteCurlScript $remoteCurlScript,
+    ) {}
+
     public function get(SoloUpstreamTarget $target, string $path): SoloUpstreamResponse
     {
         return $this->request($target, 'GET', $path);
@@ -47,6 +57,10 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
         string $path,
         array $payload = [],
     ): SoloUpstreamResponse {
+        if (! $this->roles->nodeIsGateway($target->node)) {
+            return $this->remoteRequest($target, $method, $path, $payload);
+        }
+
         try {
             $pending = Http::acceptJson()
                 ->withHeader('X-Orbit-Node', $target->identity)
@@ -81,9 +95,85 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
         return $this->failure($target, $response->status(), $payload);
     }
 
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function remoteRequest(
+        SoloUpstreamTarget $target,
+        string $method,
+        string $path,
+        array $payload,
+    ): SoloUpstreamResponse {
+        $input = $payload === [] ? null : json_encode($payload, JSON_THROW_ON_ERROR);
+        $result = $this->remoteShell->run(
+            $target->node,
+            $this->remoteCurlScript->forRequest($target, $method, $this->url($target, $path), $payload),
+            array_filter(
+                [
+                    'timeout' => 10,
+                    'throw' => false,
+                    'input' => $input,
+                ],
+                static fn (mixed $value): bool => $value !== null,
+            ),
+        );
+
+        if (! $result->successful()) {
+            return SoloUpstreamResponse::failure(
+                code: 'solo_upstream_unavailable',
+                message: "Solo API is unavailable on {$target->node->name}.",
+                meta: ['node' => $target->node->name],
+                status: 503,
+            );
+        }
+
+        $remoteResponse = $this->remoteResponse($result);
+
+        if ($remoteResponse === null) {
+            return SoloUpstreamResponse::failure(
+                code: 'solo_upstream_error',
+                message: "Solo API response was invalid on {$target->node->name}.",
+                meta: ['node' => $target->node->name],
+                status: 502,
+            );
+        }
+
+        [$status, $responsePayload] = $remoteResponse;
+
+        if ($status >= 200 && $status < 300) {
+            return $this->success($responsePayload);
+        }
+
+        return $this->failure($target, $status, $responsePayload);
+    }
+
     private function url(SoloUpstreamTarget $target, string $path): string
     {
         return rtrim($target->url, characters: '/').'/'.ltrim($path, characters: '/');
+    }
+
+    /**
+     * @return array{int, array<string, mixed>}|null
+     */
+    private function remoteResponse(RemoteShellResult $result): ?array
+    {
+        [$status, $body] = array_pad(
+            array: explode(separator: "\n", string: $result->stdout, limit: 2),
+            length: 2,
+            value: '',
+        );
+
+        if (! ctype_digit($status)) {
+            return null;
+        }
+
+        try {
+            $payload = json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        return [(int) $status, $this->stringKeyedArray($payload)];
     }
 
     /**
@@ -120,7 +210,12 @@ final class HttpSoloUpstreamClient implements SoloUpstreamClient
             $data['tools'] = $data['agentTools'];
         }
 
-        if (! array_key_exists('todo', $data) && isset($data['id'], $data['projectId'], $data['deleted'])) {
+        if (
+            ! array_key_exists('todo', $data)
+            && array_key_exists('id', $data)
+            && array_key_exists('projectId', $data)
+            && array_key_exists('deleted', $data)
+        ) {
             $data['todo'] = $data;
         }
 

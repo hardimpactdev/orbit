@@ -7743,6 +7743,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -7811,6 +7812,7 @@
                 "name"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -7879,6 +7881,7 @@
                 "name"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -7945,6 +7948,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -8013,6 +8017,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -8082,6 +8087,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -8151,6 +8157,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "input",
                 "json"
             ],
@@ -8218,6 +8225,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -8286,6 +8294,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "lines",
                 "json"
             ],
@@ -8355,6 +8364,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "name",
                 "json"
             ],
@@ -8424,6 +8434,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -8493,6 +8504,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -8561,6 +8573,7 @@
                 "processCommand"
             ],
             "options": [
+                "node",
                 "project",
                 "json"
             ],
@@ -8630,6 +8643,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -8699,6 +8713,7 @@
                 "process"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -8768,6 +8783,7 @@
                 "name"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -8836,6 +8852,7 @@
                 "project"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -8903,6 +8920,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -8971,6 +8989,7 @@
                 "project"
             ],
             "options": [
+                "node",
                 "name",
                 "json"
             ],
@@ -9040,6 +9059,7 @@
                 "project"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -9108,6 +9128,7 @@
                 "project"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -9176,6 +9197,7 @@
                 "project"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -9244,6 +9266,7 @@
                 "project"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -9312,6 +9335,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -9387,6 +9411,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -9462,6 +9487,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -9537,6 +9563,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -9612,6 +9639,7 @@
                 "name"
             ],
             "options": [
+                "node",
                 "content",
                 "json"
             ],
@@ -9681,6 +9709,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -9756,6 +9785,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -9831,6 +9861,7 @@
                 "query"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -9897,6 +9928,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -9965,6 +9997,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -10040,6 +10073,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -10108,6 +10142,7 @@
                 "scratchpad"
             ],
             "options": [
+                "node",
                 "content",
                 "heading",
                 "search",
@@ -10181,6 +10216,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -10249,6 +10285,7 @@
                 "timer"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -10315,6 +10352,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -10383,6 +10421,7 @@
                 "timer"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -10451,6 +10490,7 @@
                 "timer"
             ],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {
@@ -10519,6 +10559,7 @@
                 "name"
             ],
             "options": [
+                "node",
                 "seconds",
                 "json"
             ],
@@ -10588,6 +10629,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "body",
                 "json"
             ],
@@ -10657,6 +10699,7 @@
                 "comment"
             ],
             "options": [
+                "node",
                 "force",
                 "json"
             ],
@@ -10726,6 +10769,7 @@
                 "comment"
             ],
             "options": [
+                "node",
                 "body",
                 "json"
             ],
@@ -10795,6 +10839,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "title",
                 "body",
@@ -10867,6 +10912,7 @@
                 "title"
             ],
             "options": [
+                "node",
                 "project",
                 "body",
                 "json"
@@ -10937,6 +10983,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "title",
                 "body",
@@ -11007,6 +11054,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "project",
                 "json"
             ],
@@ -11076,6 +11124,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "title",
                 "body",
@@ -11148,6 +11197,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "title",
                 "body",
@@ -11220,6 +11270,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "json"
             ],
@@ -11289,6 +11340,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "title",
                 "body",
@@ -11361,6 +11413,7 @@
                 "todo"
             ],
             "options": [
+                "node",
                 "project",
                 "title",
                 "body",
@@ -11431,6 +11484,7 @@
             "family": "solo",
             "arguments": [],
             "options": [
+                "node",
                 "json"
             ],
             "renderers": {

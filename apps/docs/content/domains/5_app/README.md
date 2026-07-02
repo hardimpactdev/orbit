@@ -100,6 +100,17 @@ These rules govern all app family commands.
 - `app:prune` is source-of-truth cleanup, not doctor drift repair. It checks
   configured agent IDE adapters for the app, uses workspace removal semantics
   for stale workspaces, and can be scheduled through normal schedules.
+- App dependency audit posture is gateway-owned summary state for registered
+  app source paths. The v1 storage and presentation slice records compact
+  per-manager summaries derived from lockfile-aware audit commands such as
+  `composer audit --format=json` and `npm audit --json`, treats Bun as a
+  separate manager status, and exposes aggregate `dependency_audit_status`,
+  `dependency_warning_count`, `dependency_danger_count`, and
+  `last_dependency_audit_at` on `app:list` and `app:show` JSON. It does not
+  store full package inventories, mutate source, read logs as dependency truth,
+  or auto-remediate findings. Remote audit refresh execution, workspace
+  coverage, nightly fleet refresh, and full Bun vulnerability normalization are
+  follow-up slices.
 
 Read commands over app registry state are fast gateway database reads unless
 their command contract explicitly opts into live inspection. App runtime drift

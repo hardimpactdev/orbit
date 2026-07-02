@@ -70,6 +70,30 @@ describe('Solo mutating commands', function (): void {
             ->toBe('orbit');
     });
 
+    it('passes the target node to gateway-backed mutations', function (): void {
+        enable_solo_mutating_extension();
+        fakeGateway(fakeSuccessEnvelope(['scratchpad' => ['name' => 'plan', 'revision' => 8]]));
+
+        [$exitCode] = runCommand($this, command: 'solo:scratchpad:write', params: [
+            'scratchpad' => 'plan',
+            '--content' => 'updated plan',
+            '--expected-revision' => '7',
+            '--node' => 'NMBP',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PUT'
+                && str_contains($request->url(), '/api/solo/scratchpad/write')
+                && ($request->data()['scratchpad'] ?? null) === 'plan'
+                && ($request->data()['node'] ?? null) === 'NMBP'
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('requires force before destructive non-interactive commands call the gateway', function (): void {
         enable_solo_mutating_extension();
         fakeGateway(fakeSuccessEnvelope(['todo' => ['id' => 42]]));

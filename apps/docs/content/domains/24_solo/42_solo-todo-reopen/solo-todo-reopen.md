@@ -5,14 +5,14 @@ Reopen a Solo todo.
 ## Usage
 
 ```bash
-orbit solo:todo:reopen <todo> [--title=<title>] [--body=<body>] [--force] [--json]
+orbit solo:todo:reopen <todo> [--node=<node>] [--title=<title>] [--body=<body>] [--force] [--json]
 ```
 
 ## Contract
 
-`solo:todo:reopen` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `POST /api/solo/todo/reopen`; the gateway must also have the Solo extension enabled before execution reaches the node-local Solo API.
+`solo:todo:reopen` is available only when the local Solo extension is enabled with `orbit extension:enable solo`. The command calls the gateway Solo proxy route `POST /api/solo/todo/reopen`; the gateway must also have the Solo extension enabled. Use `--node=<node>` to target that node's configured node-local Solo API; when omitted, Orbit targets the gateway node.
 
-The gateway authorizes the caller with `solo:todo:write` and records Orbit activity for the operation. Solo upstream traffic targets the gateway node's configured loopback Solo API URL; Orbit does not expose Solo localhost ports directly to WireGuard.
+The gateway authorizes the caller with `solo:todo:write` on the target node and records Orbit activity for the operation. Solo upstream traffic targets the requested node's configured loopback Solo API URL, or the gateway node when `--node` is omitted; Orbit does not expose Solo localhost ports directly to WireGuard.
 
 ## Output
 
@@ -23,5 +23,5 @@ Use `--json` for the canonical Orbit JSON envelope with one top-level `success` 
 These errors are stable for automation and human troubleshooting.
 
 - `extension_disabled`: Solo is disabled locally or on the gateway.
-- `authorization_failed`: The caller lacks the required gateway permission.
+- `authorization_failed`: The caller lacks the required permission on the target node.
 - `solo_upstream_unavailable`: The configured Solo API on the node cannot be reached.

@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\GatewayExtension;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeTool;
+use App\Services\Solo\HttpSoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamResponse;
+use App\Services\Solo\SoloUpstreamTarget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -74,6 +78,33 @@ function create_solo_target_node(array $toolConfig = [], string $name = 'gateway
         'expected_state' => 'installed',
         'config' => array_merge([
             'api_url' => 'http://127.0.0.1:4678',
+            'node_identity' => $name,
+        ], $toolConfig),
+    ]);
+
+    return $node;
+}
+
+function create_solo_operator_node(array $toolConfig = [], string $name = 'NMBP'): Node
+{
+    $node = Node::factory()->create([
+        'name' => $name,
+        'host' => '10.6.0.3',
+        'wireguard_address' => '10.6.0.3',
+        'platform' => 'macos',
+        'status' => 'active',
+    ]);
+
+    if (! $node instanceof Node) {
+        throw new RuntimeException('Expected Solo operator node.');
+    }
+
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'solo',
+        'expected_state' => 'installed',
+        'config' => array_merge([
+            'api_url' => 'http://127.0.0.1:24678',
             'node_identity' => $name,
         ], $toolConfig),
     ]);
@@ -189,6 +220,104 @@ describe('Solo proxy API', function (): void {
             ->toBe('tools')
             ->and($properties['target_node'] ?? null)
             ->toBe('gateway-1');
+    });
+
+    it('proxies read-only Solo operations to the requested target node', function (): void {
+        create_solo_target_node();
+        $target = create_solo_operator_node(name: 'NMBP');
+        $caller = create_solo_proxy_caller_node();
+        grant_solo_proxy_gateway_access($caller, $target, ['solo:*']);
+        enable_solo_gateway_extension();
+        $upstream = bind_solo_proxy_upstream(new FakeSoloUpstreamClient([
+            '/projects' => SoloUpstreamResponse::success(data: [
+                'projects' => [
+                    ['name' => 'orbit'],
+                ],
+            ]),
+        ]));
+
+        solo_proxy_request(method: 'GET', uri: '/api/solo/projects?node=NMBP')
+            ->assertOk()
+            ->assertJsonPath('success.data.projects.0.name', 'orbit');
+
+        expect($upstream->calls)
+            ->toHaveCount(1)
+            ->and($upstream->calls[0]['target']->node->is($target))
+            ->toBeTrue()
+            ->and($upstream->calls[0]['target']->url)
+            ->toBe('http://127.0.0.1:24678')
+            ->and($upstream->calls[0]['target']->identity)
+            ->toBe('NMBP');
+
+        $properties = solo_proxy_activity_properties(solo_proxy_activity_entry());
+
+        expect($properties['target_node'] ?? null)->toBe('NMBP');
+    });
+
+    it('executes non-gateway Solo upstream requests on the target node loopback', function (): void {
+        $target = create_solo_operator_node(name: 'NMBP');
+        $remoteShell = new class(new RemoteShellResult(
+            exitCode: 0,
+            stdout: "200\n"
+                .json_encode([
+                    'ok' => true,
+                    'data' => [
+                        'projects' => [
+                            ['name' => 'orbit'],
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        )) implements RemoteShell {
+            /**
+             * @var list<Node>
+             */
+            public array $nodes = [];
+
+            /**
+             * @var list<string>
+             */
+            public array $scripts = [];
+
+            /**
+             * @var list<array<string, mixed>>
+             */
+            public array $options = [];
+
+            public function __construct(
+                private readonly RemoteShellResult $result,
+            ) {}
+
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                $this->nodes[] = $node;
+                $this->scripts[] = $script;
+                $this->options[] = $options;
+
+                return $this->result;
+            }
+        };
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = app(HttpSoloUpstreamClient::class)->get(
+            new SoloUpstreamTarget($target, 'http://127.0.0.1:24678', 'NMBP', 'secret-token'),
+            '/projects',
+        );
+
+        expect($response->ok)
+            ->toBeTrue()
+            ->and($response->data['projects'][0]['name'] ?? null)
+            ->toBe('orbit')
+            ->and($remoteShell->nodes[0]->is($target))
+            ->toBeTrue()
+            ->and($remoteShell->scripts[0])
+            ->toContain('curl')
+            ->toContain('status="$(\'curl\'')
+            ->toContain('http://127.0.0.1:24678/projects')
+            ->toContain('Authorization: Bearer secret-token')
+            ->and($remoteShell->options[0])
+            ->not->toHaveKey('metadata');
     });
 
     it('proxies projects and maps upstream unavailable responses', function (): void {
@@ -326,6 +455,27 @@ describe('Solo proxy API', function (): void {
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'solo:scratchpad:write')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
+    });
+
+    it('authorizes Solo mutations against the requested target node', function (): void {
+        create_solo_target_node();
+        $target = create_solo_operator_node(name: 'NMBP');
+        $caller = create_solo_proxy_caller_node();
+        grant_solo_proxy_gateway_access($caller, $target, ['solo:project:create']);
+        enable_solo_gateway_extension();
+        bind_solo_proxy_upstream(new FakeSoloUpstreamClient);
+
+        solo_proxy_json_request(method: 'PUT', uri: '/api/solo/scratchpad/write', payload: [
+            'node' => 'NMBP',
+            'scratchpad' => 'plan',
+            'content' => 'updated',
+            'expected_revision' => 7,
+        ])
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.reason', 'missing_permission')
+            ->assertJsonPath('error.meta.missing_permission', 'solo:scratchpad:write')
+            ->assertJsonPath('error.meta.serving_node', 'NMBP');
     });
 
     it('proxies Solo mutations to the configured node-local API and records activity', function (): void {

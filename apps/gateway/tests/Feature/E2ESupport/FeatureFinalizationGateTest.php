@@ -857,6 +857,49 @@ it('blocks topology-relevant php finalization when retained topology proof is no
     }
 });
 
+it('allows topology-relevant php finalization when live proof is deferred to a main-based rc release lane', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - merge-boundary proof cannot run before the requested main-based RC artifact is built and deployed; live topology proof is owned by the release acceptance lane with live update:all and Solo command checks for --node=NMBP and --node=mini.
+          - `composer quality-check`: passed - composer quality-check
+        - Accepted durable updates:
+          - apps/gateway/app/Example.php changed production behavior for a release candidate that must be proven after main-based artifact publication.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - Release acceptance keeps the goal active until `orbit update:all` and Solo --node= checks pass on the live topology.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'apps/gateway/app/Example.php',
+        contents: "<?php\n\ndeclare(strict_types=1);\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'quality-check',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
 it('allows docs app php finalization with artifact-backed quality-check and no retained topology proof', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State

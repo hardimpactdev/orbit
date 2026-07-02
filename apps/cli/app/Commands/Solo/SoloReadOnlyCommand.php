@@ -20,8 +20,9 @@ final class SoloReadOnlyCommand extends GatewayCommand
 
     public function __construct(
         private readonly SoloReadOperationDefinition $operation,
+        private readonly SoloCommandSignature $soloCommandSignature,
     ) {
-        $this->signature = $operation->signature;
+        $this->signature = $this->soloCommandSignature->withNodeOption($operation->signature);
         $this->description = "Run {$operation->command} through the Solo gateway proxy.";
 
         parent::__construct();
@@ -34,6 +35,11 @@ final class SoloReadOnlyCommand extends GatewayCommand
         }
 
         $query = [];
+        $node = $this->stringOptionValue('node');
+
+        if ($node !== null) {
+            $query['node'] = $node;
+        }
 
         foreach ($this->operation->requiredArguments as $argument) {
             $value = $this->stringArgumentValue($argument);
@@ -80,6 +86,13 @@ final class SoloReadOnlyCommand extends GatewayCommand
     private function stringArgumentValue(string $argument): ?string
     {
         $value = $this->argument($argument);
+
+        return is_scalar($value) && (string) $value !== '' ? (string) $value : null;
+    }
+
+    private function stringOptionValue(string $option): ?string
+    {
+        $value = $this->option($option);
 
         return is_scalar($value) && (string) $value !== '' ? (string) $value : null;
     }

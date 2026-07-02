@@ -72,6 +72,30 @@ describe('Solo read-only commands', function (): void {
             ->toBe('solo');
     });
 
+    it('passes the target node to gateway-backed read-only commands', function (): void {
+        enable_solo_read_extension();
+        fakeGateway(fakeSuccessEnvelope([
+            'projects' => [
+                ['name' => 'orbit', 'status' => 'active'],
+            ],
+        ]));
+
+        [$exitCode] = runCommand($this, command: 'solo:project:list', params: [
+            '--node' => 'NMBP',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains($request->url(), '/api/solo/projects')
+                && ($request->data()['node'] ?? null) === 'NMBP'
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('renders project lists for humans', function (): void {
         enable_solo_read_extension();
         fakeGateway(fakeSuccessEnvelope([

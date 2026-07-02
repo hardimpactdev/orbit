@@ -732,7 +732,11 @@ function required_verification_problem(string $section, string $worktree, array 
 
     $retainedTopologyProof = required_verification_row($values, 'Retained topology proof');
 
-    if ($requirements['has_topology_relevant_php'] && ($retainedTopologyProof === null || ! is_passed_verification_value($retainedTopologyProof))) {
+    if (
+        $requirements['has_topology_relevant_php']
+        && ($retainedTopologyProof === null || ! is_passed_verification_value($retainedTopologyProof))
+        && ($retainedTopologyProof === null || ! is_release_acceptance_topology_deferral($retainedTopologyProof, $section))
+    ) {
         $current = $retainedTopologyProof ?? 'missing row';
 
         return "topology-relevant PHP diff requires Retained topology proof: passed with retained topology evidence; current row: {$current}";
@@ -947,6 +951,25 @@ function is_passed_verification_value(string $value): bool
     $normalized = strtolower(trim($value));
 
     return preg_match('/^(?:[^:]+:\s*)?passed\b/', $normalized) === 1;
+}
+
+function is_release_acceptance_topology_deferral(string $retainedTopologyProof, string $section): bool
+{
+    $normalizedProof = strtolower(trim($retainedTopologyProof));
+
+    if (preg_match('/^(?:retained topology proof:\s*)?not\s+applicable\b/', $normalizedProof) !== 1) {
+        return false;
+    }
+
+    $normalizedSection = strtolower($section);
+
+    foreach (['main-based rc', 'release acceptance', 'update:all', 'solo', '--node='] as $requiredPhrase) {
+        if (! str_contains($normalizedSection, $requiredPhrase)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /**
