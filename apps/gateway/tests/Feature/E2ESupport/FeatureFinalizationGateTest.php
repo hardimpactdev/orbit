@@ -868,6 +868,8 @@ it('allows topology-relevant php finalization when live proof is deferred to a m
         - Required verification:
           - Retained topology proof: not applicable - merge-boundary proof cannot run before the requested main-based RC artifact is built and deployed; live topology proof is owned by the release acceptance lane with live update:all and Solo command checks for --node=NMBP and --node=mini.
           - `composer quality-check`: passed - composer quality-check
+        - Fresh analyzer:
+          - Verdict: pass - release lane deferral accepted.
         - Accepted durable updates:
           - apps/gateway/app/Example.php changed production behavior for a release candidate that must be proven after main-based artifact publication.
         - Rejected or already-covered signals:

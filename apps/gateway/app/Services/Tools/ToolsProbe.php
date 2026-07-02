@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
+use App\Data\Convergence\ManagedFileDriftSignals;
 use App\Data\Convergence\ManagedFilePlan;
 use App\Data\Convergence\ManagedFileProbe;
 use App\Data\Doctor\DriftEntry;
@@ -989,10 +990,12 @@ final readonly class ToolsProbe
             tool: $tool,
             plan: $file->plan($probe),
             probe: $probe,
-            missingKey: 'tool.config_missing',
-            mismatchKey: 'tool.config_mismatch',
-            probeFailedKey: 'tool.config_probe_failed',
-            label: 'managed configuration',
+            signals: new ManagedFileDriftSignals(
+                missingKey: 'tool.config_missing',
+                mismatchKey: 'tool.config_mismatch',
+                probeFailedKey: 'tool.config_probe_failed',
+                label: 'managed configuration',
+            ),
         );
     }
 
@@ -1056,10 +1059,12 @@ final readonly class ToolsProbe
             tool: $tool,
             plan: $file->plan($probe),
             probe: $probe,
-            missingKey: 'tool.credentials_missing',
-            mismatchKey: 'tool.credentials_mismatch',
-            probeFailedKey: 'tool.credentials_probe_failed',
-            label: 'managed credential material',
+            signals: new ManagedFileDriftSignals(
+                missingKey: 'tool.credentials_missing',
+                mismatchKey: 'tool.credentials_mismatch',
+                probeFailedKey: 'tool.credentials_probe_failed',
+                label: 'managed credential material',
+            ),
         );
     }
 
@@ -1207,10 +1212,7 @@ final readonly class ToolsProbe
         NodeTool $tool,
         ManagedFilePlan $plan,
         ManagedFileProbe $probe,
-        string $missingKey,
-        string $mismatchKey,
-        string $probeFailedKey,
-        string $label,
+        ManagedFileDriftSignals $signals,
     ): array {
         if ($plan->status === ConvergenceStatus::Ok) {
             return [];
@@ -1225,9 +1227,9 @@ final readonly class ToolsProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: $probeFailedKey,
+                    key: $signals->probeFailedKey,
                     kind: DriftKind::Unverifiable,
-                    summary: "Tool {$tool->name} {$label} could not be inspected.",
+                    summary: "Tool {$tool->name} {$signals->label} could not be inspected.",
                     detail: $detail,
                 ),
             ];
@@ -1241,9 +1243,9 @@ final readonly class ToolsProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: $missingKey,
+                    key: $signals->missingKey,
                     kind: DriftKind::Missing,
-                    summary: "Tool {$tool->name} {$label} is missing.",
+                    summary: "Tool {$tool->name} {$signals->label} is missing.",
                     detail: $detail,
                 ),
             ];
@@ -1252,9 +1254,9 @@ final readonly class ToolsProbe
         return [
             new DriftEntry(
                 family: $this->key(),
-                key: $mismatchKey,
+                key: $signals->mismatchKey,
                 kind: DriftKind::Divergent,
-                summary: "Tool {$tool->name} {$label} differs from gateway intent.",
+                summary: "Tool {$tool->name} {$signals->label} differs from gateway intent.",
                 detail: $detail,
             ),
         ];

@@ -9,6 +9,7 @@ use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -63,6 +64,7 @@ it('installs the WebSocket Reverb runtime source through a Docker-first script',
 
 it('ships a bootable Laravel Reverb source artifact without committed vendor files', function (): void {
     $sourcePath = repo_path('apps/reverb');
+    $committedVendorFiles = Process::path(repo_path())->run(['git', 'ls-files', '-z', '--', 'apps/reverb/vendor']);
 
     expect("{$sourcePath}/artisan")
         ->toBeFile()
@@ -73,9 +75,12 @@ it('ships a bootable Laravel Reverb source artifact without committed vendor fil
         ->and("{$sourcePath}/composer.lock")
         ->toBeFile()
         ->and("{$sourcePath}/config/reverb.php")
-        ->toBeFile()
-        ->and("{$sourcePath}/vendor")
-        ->not->toBeDirectory();
+        ->toBeFile();
+
+    expect($committedVendorFiles->successful())
+        ->toBeTrue()
+        ->and(collect(explode("\0", $committedVendorFiles->output()))->filter()->values()->all())
+        ->toBeEmpty();
 
     expect(file_get_contents("{$sourcePath}/config/reverb.php"))->toContain('ORBIT_WEBSOCKET_APPS_CONFIG');
 

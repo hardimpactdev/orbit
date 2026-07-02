@@ -39,16 +39,17 @@ final readonly class ToolLifecycleManager
         }
 
         $model->loadMissing('node');
+        $targetNode = $model->node;
 
-        if (! $model->node instanceof Node) {
+        if (! $targetNode instanceof Node) {
             return ToolRegistryFailure::remoteActionFailed($tool, '', $action, 1, 'Target node is missing.');
         }
 
-        if (! $this->catalog->supportsNode($tool, $model->node)) {
+        if (! $this->catalog->supportsNode($tool, $targetNode)) {
             return ToolRegistryFailure::unsupportedOnNode(
                 tool: $tool,
-                node: $model->node->name,
-                platform: $model->node->platform,
+                node: $targetNode->name,
+                platform: $targetNode->platform,
                 supportedOperatingSystems: $this->catalog->supportedOperatingSystems($tool),
             );
         }
@@ -60,12 +61,12 @@ final readonly class ToolLifecycleManager
             return ToolRegistryFailure::unsupportedAction($tool, $action);
         }
 
-        $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
+        $result = $this->remoteShell->run($targetNode, $script, ['throw' => false]);
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 tool: $tool,
-                node: $model->node->name,
+                node: $targetNode->name,
                 action: $action,
                 exitCode: $result->exitCode,
                 stderr: trim($result->stderr),
@@ -74,7 +75,7 @@ final readonly class ToolLifecycleManager
 
         return [
             'name' => $tool,
-            'node' => $model->node->name,
+            'node' => $targetNode->name,
             'action' => $action,
         ];
     }
