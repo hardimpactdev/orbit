@@ -35,6 +35,8 @@ diff exists.
 
 Spawn per the Solo Role Matrix in HARNESS.md. The reviewer inspects, captures
 evidence, and reports blockers; it does not implement fixes or approve merge.
+If the selected reviewer has no provider-session archive support, preserve the
+reviewer report itself as the evidence artifact.
 
 ## Required Context
 

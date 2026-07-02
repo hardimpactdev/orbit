@@ -73,8 +73,8 @@ Responsibilities:
 - Grok is the default implementation model when available, but another suitable
   Solo-managed worker may own the slice if that is the active toolchain.
 - Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Claude
-  documenter/librarian worker for substantial docs-first or documentation-heavy
-  slices when its ownership is separable.
+  Opus documenter/librarian worker for substantial docs-first or
+  documentation-heavy slices when its ownership is separable.
 - Make each worktree-scoped Solo worker prove its starting directory and branch
   before broad reads or edits: `pwd` must be the assigned worktree and
   `git branch --show-current` must match the assigned branch. If Solo
@@ -131,16 +131,20 @@ watching or to bypass the Solo orchestrator handoff:
    deferrals, and source thread pointer in the feature scratchpad or the
    handoff prompt.
 2. Prepare the dedicated worktree with `bin/orbit-prepare-worktree`.
-3. Spawn a Solo-managed Codex orchestrator for the same Solo project.
+3. Discover the enabled `Claude` tool with `list_agent_tools`, then spawn a
+   Solo-managed Claude Sonnet orchestrator for the same Solo project with
+   `spawn_agent` and `extra_args=["--model", "sonnet"]`. If Claude Sonnet is
+   not available through Solo, stop and report the blocker instead of
+   substituting another model.
 4. Record the Solo project id, orchestrator process id/name, worktree path,
    branch, source thread pointer, and prompt/scratchpad pointer in the feature
    scratchpad and `.orbit/loop.md` when that file exists.
-5. Send the Solo Codex orchestrator a complete implementation prompt.
+5. Send the Solo Claude Sonnet orchestrator a complete implementation prompt.
 6. After prompt delivery and a visible first checkpoint or explicit delivery
    blocker, report the handoff result and stop. Resume only if the user asks for
    watcher or recovery work.
 
-The Solo Codex orchestrator continues this same skill from Orchestrator Role.
+The Solo Claude Sonnet orchestrator continues this same skill from Orchestrator Role.
 It owns `.orbit/loop.md`, worker planning, implementation delegation, review,
 verification, finalization, merge-back, and cleanup. It must spawn
 implementation, documenter, reviewer, analyzer, and retained-terminal lanes
@@ -153,14 +157,14 @@ Use this prompt shape:
 ```text
 <prepend the agent_instructions returned by Solo spawn_agent>
 
-You are the Solo-managed Codex feature orchestrator for one Orbit
+You are the Solo-managed Claude Sonnet feature orchestrator for one Orbit
 implementation loop. Continue .agents/skills/implementing-features/SKILL.md
 from Orchestrator Role.
 
 Solo identity:
 - Solo project id: <project id>
 - Orchestrator process id: <process id returned by Solo>
-- Source discussion: <Codex thread id/transcript pointer or none>
+- Source discussion: <source thread id/transcript pointer or none>
 - Feature scratchpad: <solo://... or none>
 
 Worktree:
@@ -278,9 +282,9 @@ Report changed files, tests, harness signals, verification commands/results,
 blockers, and risks.
 ```
 
-## Claude Documenter / Librarian Delegation
+## Claude Opus Documenter / Librarian Delegation
 
-Use a Claude documenter/librarian worker when documentation is substantial
+Use a Claude Opus documenter/librarian worker when documentation is substantial
 enough to own separately: command contracts, product authority edits,
 documentation-first handoffs, or focused docs drift analysis inside the changed
 surface. Do not spawn it for routine small copy edits.
@@ -292,14 +296,16 @@ authority docs; full-repo drift audits use
 `.agents/skills/auditing-docs-drift/SKILL.md` only when explicitly requested.
 
 When running inside Solo, discover the live Claude-capable tool with
-`list_agent_tools` and spawn it with `spawn_agent`.
+`list_agent_tools`, then spawn it with `spawn_agent` and
+`extra_args=["--model", "opus"]`. Prepend Solo's returned
+`agent_instructions` to the first prompt.
 
 Use this prompt shape:
 
 ```text
 <prepend the agent_instructions returned by Solo spawn_agent>
 
-You are the documentation/librarian worker for one scoped Orbit feature slice.
+You are the Claude Opus documentation/librarian worker for one scoped Orbit feature slice.
 Keep ownership narrow and do not edit code unless the feature owner explicitly
 asks for a mechanical docs-support change.
 
@@ -348,13 +354,15 @@ of `.orbit/loop.md`. Do not commit the packet. Include objective, final diff or
 commit, verification results, the Solo orchestrator process id when the feature
 was handed off from the Codex app, worker/reviewer ids or summaries, terminal or
 PTY artifacts, quality-gate evidence, human corrections, and factual
-orchestrator steering notes. Include the Codex thread id or transcript path for
+orchestrator steering notes. Include the source thread id or transcript path for
 the feature orchestrator when available, plus Solo scratchpads or process ids
 needed to inspect worker and reviewer reports.
 
-Spawn a fresh Solo-managed Claude Opus analyzer using the spawn recipe and
-unavailability rule in the `HARNESS.md` Solo Role Matrix. Give it only the
-packet, Codex/Solo session pointers, changed
+Spawn a fresh Solo-managed analyzer as Claude Opus at medium effort: discover
+the enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
+`extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is not
+available through Solo, stop and report the blocker instead of substituting
+another model. Give it only the packet, orchestrator/Solo session pointers, changed
 diff, relevant harness docs, and named evidence pointers. Use
 `.agents/review-personas/post-feature-analyzer.md`. The analyzer reports
 whether the loop was performed properly and classifies guardrail decisions as
@@ -683,7 +691,7 @@ command address/output transcript.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. If implementation started from the Codex app or another non-Solo-visible
    discussion surface, use Codex App To Solo Orchestrator Handoff now. The
-   Solo-managed Codex orchestrator resumes this workflow from the assigned
+   Solo-managed Claude Sonnet orchestrator resumes this workflow from the assigned
    worktree. The app handoff session stops after delivery and first-checkpoint
    proof or an explicit delivery blocker.
 4. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
@@ -718,9 +726,9 @@ command address/output transcript.
    shared E2E support state is proven isolated. In parallel-worker mode, forbid broad
    dirty-file formatters/fixers inside workers; scope formatting/checks to the
    worker's owned files and run broad dirty-file tooling only after worker diffs
-   are reconciled. Add a Claude documenter/librarian worker when documentation
+   are reconciled. Add a Claude Opus documenter/librarian worker when documentation
    is substantial and the docs-owned surface is clear.
-8. If a Claude documenter/librarian worker is used, spawn it first or in
+8. If a Claude Opus documenter/librarian worker is used, spawn it first or in
    parallel only after the docs-owned slice is explicit. The feature owner must
    inspect the docs result and accept the docs contract before code relies on it.
 9. Spawn the Solo implementation worker(s) with the worktree path, handoff,
@@ -752,7 +760,7 @@ command address/output transcript.
    behavior already present in the raw request, reclassify it as a blocking
    contract gap unless it was explicitly deferred before editing.
 11. Align documentation inside this worktree when the handoff identifies missing
-   or contradictory docs. Use the Claude documenter/librarian for substantial
+   or contradictory docs. Use the Claude Opus documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
    owns the related behavior.
 12. For every failed verification, review comment, human correction, docs
@@ -804,9 +812,10 @@ command address/output transcript.
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
-    Spawn any code-reviewer or CLI-reviewer persona as a Solo-managed Claude
-    Opus reviewer using the spawn recipe and unavailability rule in the
-    `HARNESS.md` Solo Role Matrix.
+    Spawn any code-reviewer or CLI-reviewer persona using the spawn recipe and
+    unavailability rule in the `HARNESS.md` Solo Role Matrix. Preserve the
+    reviewer report itself as the evidence artifact when the selected reviewer
+    has no provider-session archive support.
     Resolve or explicitly report findings before commit.
     If the reviewer finds a mismatch between implementation evidence and the
     raw user examples, treat it as a contract mismatch first; only downgrade it
@@ -820,7 +829,7 @@ command address/output transcript.
     verdict. Include the exact diff command and base the reviewer should inspect,
     such as `git diff HEAD -- <owned files>` for an uncommitted post-review fix,
     instead of leaving the reviewer to choose a broad branch comparison. Give
-    Claude and comparable reviewers minute-scale read time when the output shows
+    Antigravity and comparable reviewers minute-scale read time when the output shows
     active file reads, tool use, or generation; do not interrupt productive
     review work just because it exceeds a short Solo wait deadline. Interrupt
     once with a proof-and-verdict prompt only when the reviewer is in the wrong
@@ -886,7 +895,7 @@ command address/output transcript.
     output, human corrections, and factual orchestrator steering notes. Record
     candidate signals as they appear so final review classifies an existing
     packet instead of reconstructing the session. Include the orchestrator
-    Codex thread id or transcript path when available. For non-trivial loops,
+    thread id or transcript path when available. For non-trivial loops,
     spawn a fresh post-feature analyzer with
     `.agents/review-personas/post-feature-analyzer.md`; for tiny local changes,
     fill the `.orbit/loop.md` final-distillation section with the no-analysis
@@ -932,6 +941,9 @@ command address/output transcript.
     and resolve any BLOCKED verdict before merging. Leave `~/orbit` on
     updated `main`. Preserve unrelated dirty files in `~/orbit`; if they
     overlap with the merge, stop for direction instead of discarding them.
+    Do not call the feature done until the verified branch has been merged back
+    into `main`; before merge, report it as implemented and verified on the
+    feature branch, not complete.
     Keep the feature worktree and branch intact after merge until the
     post-feature signal audit completes (`HARNESS.md` Feature Cleanup).
 28. If release was explicitly agreed or specifically discussed as part of the
@@ -1023,8 +1035,8 @@ Workflow per change:
    reporting completion.
 
 A feature is not done until the relevant in-memory checks and retained topology
-proof pass. Provider provision gates are not part of agent-run feature
-verification.
+proof pass and the verified branch has been merged back into `main`. Provider
+provision gates are not part of agent-run feature verification.
 
 ## Implementation Rules
 

@@ -36,6 +36,14 @@ This is a focused reviewer persona. It is not the full docs drift audit. Use
 for a broad docs consistency scan, contradiction audit, stale terminology sweep,
 or anchor audit.
 
+## Default Agent
+
+Run documentation/librarian workers and substantial docs-focused reviews as
+Claude Opus through Solo. Discover the enabled `Claude` tool with
+`list_agent_tools`, then `spawn_agent` with `extra_args=["--model", "opus"]`.
+If Claude Opus is not available through Solo, stop and report the blocker
+instead of substituting another model.
+
 ## Required Context
 
 Read only the files needed for the changed documentation surface:
@@ -116,8 +124,9 @@ current review into a broad sweep.
   a `linked_test_files` row must name only behavior exercised by the cited test
   body. If the behavior is not exercised, narrow the row or record an explicit
   coverage gap.
-- If a Claude documenter/librarian worker produced docs and a Grok worker
-  implemented code, Codex reconciled the two outputs before commit.
+- If a Claude Opus documenter/librarian worker produced docs and a Grok worker
+  implemented code, the feature orchestrator reconciled the two outputs before
+  commit.
 - The docs contract was accepted before parallel code work relied on it.
 
 ## Findings Format

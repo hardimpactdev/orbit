@@ -23,7 +23,7 @@ The allowed values are the loop-proper vocabulary defined under
 Use this analyzer after an Orbit feature implementation has produced evidence.
 It replaces the outer loop-improver watcher for normal feature work: the
 feature implementer runs the feature loop, then this analyzer reviews the
-completed loop from the Codex/Solo session messages and worktree artifacts.
+completed loop from the orchestrator/Solo session messages and worktree artifacts.
 
 This is a read-only analyzer persona. It must not steer live work, implement
 fixes, edit harness files, create `harness-signals/` records, approve merge,
@@ -41,7 +41,7 @@ not implement, approve merge, or run cleanup.
 The prompt should provide as many of these pointers as exist:
 
 - Feature objective, acceptance criteria, and explicit deferrals.
-- Orchestrator Codex thread id or transcript path.
+- Orchestrator thread id or transcript path.
 - Solo worker, reviewer, retained terminal, and scratchpad links.
 - Feature worktree path, branch, final diff, commit, or merge commit.
 - `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, and persisted
@@ -49,8 +49,8 @@ The prompt should provide as many of these pointers as exist:
 - Verification commands and results, including blocked or skipped lanes.
 - Any human corrections made during or after the implementation.
 
-If the Codex session id or worktree path is missing and the prompt does not
-provide enough equivalent evidence, report
+If the orchestrator session id or worktree path is missing and the prompt does
+not provide enough equivalent evidence, report
 `VERDICT: blocked-by-missing-evidence`.
 
 ## Required Context
@@ -67,7 +67,7 @@ Read only the materials needed to analyze the completed feature loop:
   persisted `.orbit/sessions/` archives named by `.orbit/loop.md`, the feature
   report, or the prompt
 - Final diff, final commit, or merge commit under review
-- Codex session messages for the orchestrator thread, limited to the feature
+- Orchestrator session messages for the orchestrator thread, limited to the feature
   implementation turns needed to reconstruct decisions, corrections, claimed
   evidence, and final status
 - Solo scratchpads, worker reports, reviewer reports, retained terminal
@@ -168,7 +168,7 @@ Guardrail decisions: <one classification per candidate: correct-noop | missed | 
 
 ## Evidence Reviewed
 
-- Codex session:
+- Orchestrator session:
 - Worktree:
 - Diff or commit:
 - `.orbit` packet:
