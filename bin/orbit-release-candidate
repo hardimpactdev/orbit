@@ -1,0 +1,433 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+repo_root="${ORBIT_RELEASE_CANDIDATE_ROOT:-$(cd "${script_dir}/.." >/dev/null 2>&1 && pwd)}"
+state_root="${repo_root}/.orbit/release-candidates"
+latest_pointer="${state_root}/latest"
+
+work_dir=""
+ghcr_docker_config=""
+
+cleanup() {
+    if [ -n "$work_dir" ] && [ -d "$work_dir" ]; then
+        rm -rf "$work_dir"
+    fi
+
+    if [ -n "$ghcr_docker_config" ] && [ -d "$ghcr_docker_config" ]; then
+        rm -rf "$ghcr_docker_config"
+    fi
+}
+trap cleanup EXIT
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-release-candidate build
+  bin/orbit-release-candidate env [--build-id=<id>]
+  bin/orbit-release-candidate verify [--build-id=<id>] [--release-image=<ref>]
+
+Formalizes the release-candidate publication flow from step 7 of
+.agents/skills/release/SKILL.md.
+
+  build   Preflight (VERSION, HEAD == origin/main), build CLI binaries and the
+          candidate gateway image, push to GHCR, generate the candidate
+          manifest, upload artifacts plus the channel manifest through the
+          gateway orbit-artifacts disk, then record durable state under
+          .orbit/release-candidates/<build_id>/ (candidate.env includes
+          sha256_linux_amd64 and sha256_darwin_arm64) and update the
+          .orbit/release-candidates/latest pointer file.
+  env     Print eval-able `export key=value` lines from the recorded
+          candidate.env of the latest (or --build-id) candidate.
+  verify  Recompute sha256 hashes of the stored CLI artifacts against
+          candidate.env, and with --release-image compare the image digest
+          from `docker buildx imagetools inspect` against gateway_digest.
+
+This helper never creates GitHub releases, never pushes tags, and never
+promotes images. `build` ends at candidate channel publication; GitHub
+promotion stays a human-approved step in the release skill.
+EOF
+}
+
+fail() {
+    printf 'orbit-release-candidate: %s\n' "$*" >&2
+    exit 1
+}
+
+compute_sha256() {
+    local file="$1"
+
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$file" | awk '{ print $1 }'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$file" | awk '{ print $1 }'
+    else
+        openssl dgst -sha256 -r "$file" | awk '{ print $1 }'
+    fi
+}
+
+state_value() {
+    local key="$1"
+    local file="$2"
+
+    awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2); exit }' "$file"
+}
+
+resolve_state_dir() {
+    local build_id="$1"
+
+    if [ -z "$build_id" ]; then
+        if [ ! -f "$latest_pointer" ]; then
+            fail "No release candidate state found: missing ${latest_pointer}. Run \`bin/orbit-release-candidate build\` first."
+        fi
+
+        build_id="$(tr -d '[:space:]' < "$latest_pointer")"
+
+        if [ -z "$build_id" ]; then
+            fail "No release candidate state found: ${latest_pointer} is empty."
+        fi
+    fi
+
+    local build_id_pattern='^[0-9]{8}T[0-9]{6}Z-[0-9a-f]+$'
+
+    if ! [[ "$build_id" =~ $build_id_pattern ]]; then
+        fail "invalid build id [${build_id}]: expected the pattern ${build_id_pattern}."
+    fi
+
+    local dir="${state_root}/${build_id}"
+
+    if [ ! -f "${dir}/candidate.env" ]; then
+        fail "No release candidate state found for build id ${build_id}: missing ${dir}/candidate.env."
+    fi
+
+    printf '%s\n' "$dir"
+}
+
+cmd_build() {
+    [ $# -eq 0 ] || fail "build takes no options. Usage: bin/orbit-release-candidate build"
+
+    cd "$repo_root"
+
+    local version source_commit origin_main_commit
+    version="$("${repo_root}/bin/orbit-version")"
+    source_commit="$(git rev-parse HEAD)"
+    origin_main_commit="$(git ls-remote origin refs/heads/main | awk '{ print $1 }')"
+
+    if [ "$source_commit" != "$origin_main_commit" ]; then
+        echo "Candidate artifacts must be built from the pushed origin/main commit." >&2
+        exit 1
+    fi
+
+    local tracked_tree_status
+    tracked_tree_status="$(git status --porcelain)"
+
+    if [ -n "$tracked_tree_status" ]; then
+        echo "Candidate artifacts must be built from a clean checkout of the pushed origin/main commit; commit or stash these changes first:" >&2
+        printf '%s\n' "$tracked_tree_status" >&2
+        exit 1
+    fi
+
+    local build_id candidate_tag candidate_image candidate_prefix candidate_channel
+    build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
+    candidate_tag="${version}-candidate-${build_id}"
+    candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
+    candidate_prefix="candidates/${build_id}"
+    candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
+
+    work_dir="$(mktemp -d)"
+
+    # Prepared worktrees symlink the primary checkout's root .env. Source that
+    # local release env into this shell before Laravel reads apps/gateway
+    # config. The env must include ORBIT_ARTIFACTS_BASE_URL and either
+    # ORBIT_ARTIFACTS_* keys or the S3_UPCLOUD_* fallback keys.
+    local primary_checkout primary_env
+    primary_checkout="${ORBIT_PRIMARY_CHECKOUT:-${HOME}/orbit}"
+    primary_env="${ORBIT_RELEASE_ENV_FILE:-}"
+
+    if [ -z "$primary_env" ]; then
+        if [ -f ".env" ]; then
+            primary_env=".env"
+        else
+            primary_env="${primary_checkout}/.env"
+        fi
+    fi
+
+    if [ -f "$primary_env" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "$primary_env"
+        set +a
+    fi
+
+    local artifact_base_url
+    artifact_base_url="$("${repo_root}/bin/orbit-gateway-artisan" tinker --execute='echo rtrim((string) config("orbit.artifacts.base_url"), "/");')"
+
+    if [ -z "$artifact_base_url" ]; then
+        echo "ORBIT_ARTIFACTS_BASE_URL is required for candidate artifact publishing." >&2
+        exit 1
+    fi
+
+    local artifact_disk_ready
+    artifact_disk_ready="$("${repo_root}/bin/orbit-gateway-artisan" tinker --execute='echo collect([
+    config("filesystems.disks.orbit-artifacts.key"),
+    config("filesystems.disks.orbit-artifacts.secret"),
+    config("filesystems.disks.orbit-artifacts.bucket"),
+    config("filesystems.disks.orbit-artifacts.endpoint"),
+])->every(fn ($value) => filled($value)) ? "yes" : "no";')"
+
+    if [ "$artifact_disk_ready" != "yes" ]; then
+        echo "orbit-artifacts disk config is incomplete; check ORBIT_ARTIFACTS_* or S3_UPCLOUD_* env values." >&2
+        exit 1
+    fi
+
+    local candidate_asset_base_url="${artifact_base_url}/${candidate_prefix}"
+
+    "${repo_root}/bin/orbit-build-cli-binary" mac arm "$version"
+    "${repo_root}/bin/orbit-build-cli-binary" linux x64 "$version"
+
+    cp apps/cli/builds/dist/linux/linux-x64 "${work_dir}/orbit-linux-x64"
+    cp apps/cli/builds/dist/mac/mac-arm "${work_dir}/orbit-macos-arm64"
+
+    docker buildx build \
+        --platform linux/amd64 \
+        -f docker/orbit-gateway/Dockerfile \
+        --tag "$candidate_image" \
+        --load \
+        .
+
+    gh auth status -h github.com
+
+    # Helper-free GHCR auth (release skill Failure Handling): write a minimal
+    # Docker config so no credential helper runs. The token is never echoed,
+    # teed, or written outside the throwaway config directory.
+    ghcr_docker_config="$(mktemp -d)"
+    local ghcr_user ghcr_auth
+    ghcr_user="$(gh api user -q .login)"
+    ghcr_auth="$(printf '%s:%s' "$ghcr_user" "$(gh auth token)" | base64 | tr -d '\n')"
+    (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$ghcr_auth" > "${ghcr_docker_config}/config.json")
+    unset ghcr_auth
+
+    DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
+
+    rm -rf "$ghcr_docker_config"
+    ghcr_docker_config=""
+
+    local gateway_digest
+    gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/gateway-image-push.log" | tail -1)"
+
+    if [ -z "$gateway_digest" ]; then
+        echo "Failed to capture the pushed gateway image digest." >&2
+        exit 1
+    fi
+
+    "${repo_root}/bin/orbit-release-manifest" \
+        --version="$version" \
+        --source=topology-candidate \
+        --build-id="$build_id" \
+        --asset-base-url="$candidate_asset_base_url" \
+        --gateway-image="$candidate_image" \
+        --gateway-digest="$gateway_digest" \
+        --cli-artifact="linux-amd64=orbit-linux-x64=${work_dir}/orbit-linux-x64" \
+        --cli-artifact="darwin-arm64=orbit-macos-arm64=${work_dir}/orbit-macos-arm64" \
+        --role-image="orbit-caddy=caddy:2-alpine" \
+        --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
+        --output="${work_dir}/orbit-release-manifest.candidate.json"
+
+    ORBIT_CANDIDATE_PREFIX="$candidate_prefix" \
+    ORBIT_CANDIDATE_DIR="$work_dir" \
+    ORBIT_CANDIDATE_CHANNEL="$candidate_channel" \
+        "${repo_root}/bin/orbit-gateway-artisan" tinker --execute='
+            $disk = Illuminate\Support\Facades\Storage::disk(config("orbit.artifacts.disk"));
+            $prefix = trim((string) getenv("ORBIT_CANDIDATE_PREFIX"), "/");
+            $dir = rtrim((string) getenv("ORBIT_CANDIDATE_DIR"), "/");
+            $channel = trim((string) getenv("ORBIT_CANDIDATE_CHANNEL"), "/");
+
+            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
+                $disk->put("{$prefix}/{$asset}", file_get_contents("{$dir}/{$asset}"), "public");
+            }
+
+            $disk->put(
+                "channels/{$channel}/orbit-release-manifest.json",
+                file_get_contents("{$dir}/orbit-release-manifest.candidate.json"),
+                "public",
+            );
+        '
+
+    local sha256_linux_amd64 sha256_darwin_arm64
+    sha256_linux_amd64="$(compute_sha256 "${work_dir}/orbit-linux-x64")"
+    sha256_darwin_arm64="$(compute_sha256 "${work_dir}/orbit-macos-arm64")"
+
+    local state_dir="${state_root}/${build_id}"
+    mkdir -p "$state_dir"
+
+    cp "${work_dir}/orbit-linux-x64" "${state_dir}/orbit-linux-x64"
+    cp "${work_dir}/orbit-macos-arm64" "${state_dir}/orbit-macos-arm64"
+    cp "${work_dir}/orbit-release-manifest.candidate.json" "${state_dir}/orbit-release-manifest.candidate.json"
+    cp "${work_dir}/gateway-image-push.log" "${state_dir}/gateway-image-push.log"
+
+    local candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
+
+    {
+        printf 'version=%s\n' "$version"
+        printf 'build_id=%s\n' "$build_id"
+        printf 'commit=%s\n' "$source_commit"
+        printf 'candidate_image=%s\n' "$candidate_image"
+        printf 'candidate_dir=%s\n' "$state_dir"
+        printf 'candidate_prefix=%s\n' "$candidate_prefix"
+        printf 'candidate_channel=%s\n' "$candidate_channel"
+        printf 'candidate_asset_base_url=%s\n' "$candidate_asset_base_url"
+        printf 'gateway_digest=%s\n' "$gateway_digest"
+        printf 'candidate_channel_manifest_url=%s\n' "$candidate_channel_manifest_url"
+        printf 'sha256_linux_amd64=%s\n' "$sha256_linux_amd64"
+        printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"
+    } > "${state_dir}/candidate.env"
+
+    printf '%s\n' "$build_id" > "$latest_pointer"
+
+    echo "Candidate channel manifest: ${candidate_channel_manifest_url}"
+    echo "Release candidate state: ${state_dir}"
+}
+
+cmd_env() {
+    local build_id=""
+    local arg
+
+    for arg in "$@"; do
+        case "$arg" in
+            --build-id=*)
+                build_id="${arg#--build-id=}"
+                ;;
+            *)
+                fail "unknown env option: ${arg}. Usage: bin/orbit-release-candidate env [--build-id=<id>]"
+                ;;
+        esac
+    done
+
+    local state_dir
+    state_dir="$(resolve_state_dir "$build_id")"
+
+    local line key value
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+
+        key="${line%%=*}"
+        value="${line#*=}"
+
+        if ! [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+            fail "invalid state key [${key}] in ${state_dir}/candidate.env."
+        fi
+
+        printf 'export %s=%q\n' "$key" "$value"
+    done < "${state_dir}/candidate.env"
+}
+
+cmd_verify() {
+    local build_id=""
+    local release_image=""
+    local arg
+
+    for arg in "$@"; do
+        case "$arg" in
+            --build-id=*)
+                build_id="${arg#--build-id=}"
+                ;;
+            --release-image=*)
+                release_image="${arg#--release-image=}"
+                ;;
+            *)
+                fail "unknown verify option: ${arg}. Usage: bin/orbit-release-candidate verify [--build-id=<id>] [--release-image=<ref>]"
+                ;;
+        esac
+    done
+
+    local state_dir
+    state_dir="$(resolve_state_dir "$build_id")"
+    local state_file="${state_dir}/candidate.env"
+
+    local failures=0
+    local pair key artifact expected actual
+
+    for pair in 'sha256_linux_amd64:orbit-linux-x64' 'sha256_darwin_arm64:orbit-macos-arm64'; do
+        key="${pair%%:*}"
+        artifact="${state_dir}/${pair#*:}"
+        expected="$(state_value "$key" "$state_file")"
+
+        if [ -z "$expected" ]; then
+            printf 'FAIL %s: key missing from %s\n' "$key" "$state_file"
+            failures=$((failures + 1))
+            continue
+        fi
+
+        if [ ! -f "$artifact" ]; then
+            printf 'FAIL %s: artifact missing at %s\n' "$key" "$artifact"
+            failures=$((failures + 1))
+            continue
+        fi
+
+        actual="$(compute_sha256 "$artifact")"
+
+        if [ "$actual" = "$expected" ]; then
+            printf 'PASS %s %s\n' "$key" "$actual"
+        else
+            printf 'FAIL %s: expected %s got %s for %s\n' "$key" "$expected" "$actual" "$artifact"
+            failures=$((failures + 1))
+        fi
+    done
+
+    if [ -n "$release_image" ]; then
+        local expected_digest actual_digest inspect_output
+        expected_digest="$(state_value gateway_digest "$state_file")"
+
+        if [ -z "$expected_digest" ]; then
+            printf 'FAIL gateway_digest: key missing from %s\n' "$state_file"
+            failures=$((failures + 1))
+        elif ! inspect_output="$(docker buildx imagetools inspect "$release_image")"; then
+            printf 'FAIL gateway_digest: imagetools inspect failed for %s\n' "$release_image"
+            failures=$((failures + 1))
+        else
+            actual_digest="$(awk '/^Digest:/ { print $2; exit }' <<< "$inspect_output")"
+
+            if [ "$actual_digest" = "$expected_digest" ]; then
+                printf 'PASS gateway_digest %s\n' "$actual_digest"
+            else
+                printf 'FAIL gateway_digest: expected %s got %s for %s\n' "$expected_digest" "$actual_digest" "$release_image"
+                failures=$((failures + 1))
+            fi
+        fi
+    fi
+
+    if [ "$failures" -gt 0 ]; then
+        printf 'orbit-release-candidate: verify failed with %s mismatch(es) for %s\n' "$failures" "$state_dir" >&2
+        exit 1
+    fi
+}
+
+subcommand="${1:-}"
+
+case "$subcommand" in
+    build)
+        shift
+        cmd_build "$@"
+        ;;
+    env)
+        shift
+        cmd_env "$@"
+        ;;
+    verify)
+        shift
+        cmd_verify "$@"
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    '')
+        usage >&2
+        exit 2
+        ;;
+    *)
+        printf 'orbit-release-candidate: unknown subcommand [%s].\n' "$subcommand" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

@@ -234,8 +234,22 @@ it('keeps the Solo Codex analyzer spawn recipe canonical in the HARNESS role mat
     expect($harness)
         ->toContain('## Solo Role Matrix')
         ->toContain('| Post-feature analyzer | Solo-managed Codex analyzer |')
-        ->toContain('Post-feature analyzers use the enabled `Codex` tool through Solo')
-        ->not->toContain('extra_args');
+        ->toContain('Post-feature analyzers use the enabled `Codex` tool through Solo');
+
+    $roleMatrixStart = strpos($harness, '## Solo Role Matrix');
+    $roleMatrixEnd = strpos($harness, "\n## ", $roleMatrixStart + 1);
+    $roleMatrix = substr(
+        $harness,
+        $roleMatrixStart,
+        $roleMatrixEnd === false ? null : $roleMatrixEnd - $roleMatrixStart,
+    );
+
+    expect($roleMatrix)
+        ->toContain('extra_args')
+        ->toContain('--cd')
+        ->toContain('--cwd')
+        ->and(substr_count($harness, 'extra_args'))
+        ->toBe(substr_count($roleMatrix, 'extra_args'));
 
     foreach ([$analyzer, $cliReviewer, $docsLibrarian] as $persona) {
         expect($persona)

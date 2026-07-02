@@ -75,11 +75,17 @@ Responsibilities:
 - Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Codex
   documenter/librarian worker for substantial docs-first or
   documentation-heavy slices when its ownership is separable.
-- Make each worktree-scoped Solo worker prove its starting directory and branch
-  before broad reads or edits: `pwd` must be the assigned worktree and
-  `git branch --show-current` must match the assigned branch. If Solo
-  `spawn_agent` opens at the project root, relaunch through a Solo terminal
-  that first `cd`s into the worktree.
+- Pin each worktree-scoped worker's working directory at launch: Solo
+  `spawn_agent` has no cwd parameter, so pass the assigned worktree through
+  `extra_args` using the agent CLI's working-directory flag per the canonical
+  spawn recipe in the `HARNESS.md` Solo Role Matrix; for agent CLIs without
+  such a flag, spawn a Solo terminal that first `cd`s into the worktree and
+  launch the agent inside it.
+- Launch-time pinning does not replace verification. Make each worktree-scoped
+  Solo worker prove its starting directory and branch before broad reads or
+  edits: `pwd` must be the assigned worktree and `git branch --show-current`
+  must match the assigned branch. If the worker still opens at the project
+  root, relaunch through a Solo terminal that first `cd`s into the worktree.
 - In parallel-worker mode, do not let workers run broad dirty-file formatters
   or fixers. Workers run owned-file-only formatting/checks; the feature owner
   runs broad dirty-file tooling after worker diffs are reconciled.
@@ -732,11 +738,15 @@ command address/output transcript.
 9. Spawn the Solo implementation worker(s) with the worktree path, handoff,
    owned scope, documentation authority, TDD requirement, focused verification,
    and the rule that workers must not commit, merge to `main`, or clean up the
-   worktree unless the feature owner explicitly assigns that exact step. Require
-   each worker's first command to prove `pwd` and `git branch --show-current`.
-   If the agent starts in `~/orbit` or another checkout, stop it and relaunch
-   through a Solo terminal that `cd`s into the assigned worktree before starting
-   the agent.
+   worktree unless the feature owner explicitly assigns that exact step. Pin
+   each worker's cwd at spawn: pass the assigned worktree through `extra_args`
+   using the agent CLI's working-directory flag per the canonical spawn recipe
+   in the `HARNESS.md` Solo Role Matrix, or, for agent CLIs without such a
+   flag, spawn a Solo terminal that `cd`s into the worktree and launch the
+   agent inside it. Still require each worker's first command to prove `pwd`
+   and `git branch --show-current`. If the agent starts in `~/orbit` or another
+   checkout, stop it and relaunch through a Solo terminal that `cd`s into the
+   assigned worktree before starting the agent.
 10. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. Worker handoffs must
    request the complete owned outcome in one continuous feature loop: align docs
