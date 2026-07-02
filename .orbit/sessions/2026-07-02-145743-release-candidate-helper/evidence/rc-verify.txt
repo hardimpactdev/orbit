@@ -1,0 +1,55 @@
+rc-verify lane evidence
+Date: 2026-07-02
+Worktree: /Users/nckrtl/orbit/.worktrees/release-candidate-helper
+Branch: release-candidate-helper
+CHECKOUT_PROOF: pwd=/Users/nckrtl/orbit/.worktrees/release-candidate-helper, git branch --show-current=release-candidate-helper
+
+(1) Pest — bin/orbit-gateway-pest --compact --filter=ReleaseCandidateHelper
+Result: PASS
+Output: {"tool":"pest","result":"passed","tests":5,"passed":5,"assertions":70,"duration_ms":2623}
+
+(2) bash -n bin/orbit-release-candidate
+Result: PASS (exit 0, no syntax errors)
+
+(3) Functional smoke (no docker/gh touched)
+Fake state root: /private/tmp/claude-501/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e/scratchpad/rc-smoke.saSdLn
+Mechanism: helper honors ORBIT_RELEASE_CANDIDATE_ROOT env var (script line 6) as the repo root
+for .orbit/release-candidates state; created <root>/.orbit/release-candidates/20260702T000000Z-abc1234/
+with candidate.env, two fixture artifacts (orbit-linux-x64, orbit-macos-arm64), correct
+sha256_linux_amd64 / sha256_darwin_arm64 keys, and a latest pointer file.
+
+3a. env --build-id=20260702T000000Z-abc1234
+Result: PASS — printed 12 "export key=%q" lines; eval'd in a subshell:
+EVAL_OK version=0.9.9 build_id=20260702T000000Z-abc1234 sha256_linux_amd64=92d137f59a003167fc26696e6e6ddc98a84ed8956b815d598498db82b16f41b3
+env with no --build-id resolved via the latest pointer (same output).
+(A "printf: write error: Broken pipe" line appeared only when the test harness piped env
+through `head -2`; SIGPIPE from head, not a helper defect.)
+
+3b. verify --build-id=... (untampered)
+Result: PASS, exit 0
+PASS sha256_linux_amd64 92d137f59a003167fc26696e6e6ddc98a84ed8956b815d598498db82b16f41b3
+PASS sha256_darwin_arm64 7420939a45eba8015f6fc5fc43fa2e33b7b56bbc83563716f7bda40709d7f72b
+
+3c. verify after appending one byte to orbit-linux-x64 (tamper)
+Result: FAIL as expected, exit 1, names the sha key:
+FAIL sha256_linux_amd64: expected 92d137f59a003167fc26696e6e6ddc98a84ed8956b815d598498db82b16f41b3 got 5eb1817a448656e79d91bd785011cf4359b0ef43c95011af32809fd68ffa1bfc for .../orbit-linux-x64
+PASS sha256_darwin_arm64 7420939a45eba8015f6fc5fc43fa2e33b7b56bbc83563716f7bda40709d7f72b
+orbit-release-candidate: verify failed with 1 mismatch(es) for .../release-candidates/20260702T000000Z-abc1234
+
+(4) composer docs-lint
+Result: PASS, exit 0. Librarian: errors=0 (54 pre-existing bullet_complexity warnings in
+docs/domains/24_solo/**, unrelated to this lane). Command catalog, monorepo unit map, and
+harness signal index all up to date.
+
+(5) Consistency greps
+- .agents/skills/release/SKILL.md step 7 (lines 129-180) references
+  `bin/orbit-release-candidate build` at line 133. PASS
+- No `docker buildx build` occurrences remain anywhere in the release SKILL. PASS
+- eval "$(bin/orbit-release-candidate env)" appears at lines 169 (step 7, post-build state
+  load), 195 (step 9), 230 (step 12), 253 (step 13). Steps 9/12/13 each contain the eval. PASS
+- HARNESS.md mentions `--cd` (line 554) and `--cwd` (line 555) extra_args pinning exactly once
+  each, inside the "## Solo Role Matrix" section (heading at line 525). PASS
+- .agents/skills/implementing-features/SKILL.md points at the HARNESS.md Solo Role Matrix
+  canonical spawn recipe for extra_args working-directory pinning (lines 78-84 and 740-745). PASS
+
+Overall: all 5 verification items PASS. No failures.

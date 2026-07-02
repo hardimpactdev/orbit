@@ -1,0 +1,38 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T12:57:43+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/release-candidate-helper/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-145743-release-candidate-helper",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-145743-release-candidate-helper/agent-sessions",
+    "copied_entries": [
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": [
+        {
+            "solo_process_id": 732,
+            "process_name": "Claude",
+            "command": "claude --dangerously-skip-permissions",
+            "agent": "claude",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/release-candidate-helper",
+            "status": "ok",
+            "source": "claude_session_jsonl",
+            "metric_confidence": "measured",
+            "artifact_match": "pid_session_map",
+            "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e.jsonl",
+            "models": [
+                "claude-fable-5",
+                "<synthetic>"
+            ],
+            "input_tokens": 102892,
+            "output_tokens": 174611,
+            "cache_read_tokens": 43601166,
+            "cache_write_tokens": 891807,
+            "archive_path": "claude/claude-732"
+        }
+    ]
+}

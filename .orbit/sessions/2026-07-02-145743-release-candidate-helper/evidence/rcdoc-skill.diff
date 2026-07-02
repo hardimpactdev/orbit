@@ -1,0 +1,259 @@
+diff --git a/.agents/skills/release/SKILL.md b/.agents/skills/release/SKILL.md
+index c612e5bc..c15b6fd2 100644
+--- a/.agents/skills/release/SKILL.md
++++ b/.agents/skills/release/SKILL.md
+@@ -127,138 +127,46 @@ ## Workflow
+    status. Do not infer Mini state from another machine.
+ 
+ 7. Build and publish the release candidate artifacts once from the pushed
+-   source commit. Use the central artifact store for files and GHCR for the
+-   gateway image. Do not use S3
+-   image tarballs as the normal gateway image path; Docker Swarm must consume an
+-   OCI registry reference.
++   source commit with the release-candidate helper:
+ 
+    ```bash
+-   version="$(bin/orbit-version)"
+-   source_commit="$(git rev-parse HEAD)"
+-   origin_main_commit="$(git ls-remote origin refs/heads/main | awk '{ print $1 }')"
+-   if [ "$source_commit" != "$origin_main_commit" ]; then
+-     echo "Candidate artifacts must be built from the pushed origin/main commit." >&2
+-     exit 1
+-   fi
+-
+-   build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
+-   candidate_tag="${version}-candidate-${build_id}"
+-   candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
+-   candidate_dir="$(mktemp -d)"
+-   candidate_prefix="candidates/${build_id}"
+-   candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
+-
+-   # Prepared worktrees symlink the primary checkout's root .env. Source that
+-   # local release env into this shell before Laravel reads apps/gateway config.
+-   # The env must include ORBIT_ARTIFACTS_BASE_URL and either ORBIT_ARTIFACTS_*
+-   # keys or the S3_UPCLOUD_* fallback keys.
+-   primary_checkout="${ORBIT_PRIMARY_CHECKOUT:-${HOME}/orbit}"
+-   primary_env="${ORBIT_RELEASE_ENV_FILE:-}"
+-   if [ -z "$primary_env" ]; then
+-     if [ -f ".env" ]; then
+-       primary_env=".env"
+-     else
+-       primary_env="${primary_checkout}/.env"
+-     fi
+-   fi
+-
+-   if [ -f "$primary_env" ]; then
+-     set -a
+-     source "$primary_env"
+-     set +a
+-   fi
+-
+-   artifact_base_url="$(bin/orbit-gateway-artisan tinker --execute='echo rtrim((string) config("orbit.artifacts.base_url"), "/");')"
+-   if [ -z "$artifact_base_url" ]; then
+-     echo "ORBIT_ARTIFACTS_BASE_URL is required for candidate artifact publishing." >&2
+-     exit 1
+-   fi
+-
+-   artifact_disk_ready="$(bin/orbit-gateway-artisan tinker --execute='echo collect([
+-       config("filesystems.disks.orbit-artifacts.key"),
+-       config("filesystems.disks.orbit-artifacts.secret"),
+-       config("filesystems.disks.orbit-artifacts.bucket"),
+-       config("filesystems.disks.orbit-artifacts.endpoint"),
+-   ])->every(fn ($value) => filled($value)) ? "yes" : "no";')"
+-   if [ "$artifact_disk_ready" != "yes" ]; then
+-     echo "orbit-artifacts disk config is incomplete; check ORBIT_ARTIFACTS_* or S3_UPCLOUD_* env values." >&2
+-     exit 1
+-   fi
+-
+-   candidate_asset_base_url="${artifact_base_url}/${candidate_prefix}"
+-
+-   bin/orbit-build-cli-binary mac arm "$version"
+-   bin/orbit-build-cli-binary linux x64 "$version"
+-
+-   cp apps/cli/builds/dist/linux/linux-x64 "${candidate_dir}/orbit-linux-x64"
+-   cp apps/cli/builds/dist/mac/mac-arm "${candidate_dir}/orbit-macos-arm64"
+-
+-   docker buildx build \
+-     --platform linux/amd64 \
+-     -f docker/orbit-gateway/Dockerfile \
+-     --tag "$candidate_image" \
+-     --load \
+-     .
+-
+-   gh auth status -h github.com
+-   ghcr_docker_config="$(mktemp -d)"
+-   trap 'rm -rf "$ghcr_docker_config"' EXIT
+-   gh auth token \
+-     | DOCKER_CONFIG="$ghcr_docker_config" docker login ghcr.io \
+-       -u "$(gh api user -q .login)" \
+-       --password-stdin
+-
+-   DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" \
+-     | tee "${candidate_dir}/gateway-image-push.log"
+-   rm -rf "$ghcr_docker_config"
+-   trap - EXIT
+-
+-   gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${candidate_dir}/gateway-image-push.log" | tail -1)"
+-   if [ -z "$gateway_digest" ]; then
+-     echo "Failed to capture the pushed gateway image digest." >&2
+-     exit 1
+-   fi
+-
+-   bin/orbit-release-manifest \
+-     --version="$version" \
+-     --source=topology-candidate \
+-     --build-id="$build_id" \
+-     --asset-base-url="$candidate_asset_base_url" \
+-     --gateway-image="$candidate_image" \
+-     --gateway-digest="$gateway_digest" \
+-     --cli-artifact="linux-amd64=orbit-linux-x64=${candidate_dir}/orbit-linux-x64" \
+-     --cli-artifact="darwin-arm64=orbit-macos-arm64=${candidate_dir}/orbit-macos-arm64" \
+-     --role-image="orbit-caddy=caddy:2-alpine" \
+-     --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
+-     --output="${candidate_dir}/orbit-release-manifest.candidate.json"
+-
+-   ORBIT_CANDIDATE_PREFIX="$candidate_prefix" \
+-   ORBIT_CANDIDATE_DIR="$candidate_dir" \
+-   ORBIT_CANDIDATE_CHANNEL="$candidate_channel" \
+-     bin/orbit-gateway-artisan tinker --execute='
+-       $disk = Illuminate\Support\Facades\Storage::disk(config("orbit.artifacts.disk"));
+-       $prefix = trim((string) getenv("ORBIT_CANDIDATE_PREFIX"), "/");
+-       $dir = rtrim((string) getenv("ORBIT_CANDIDATE_DIR"), "/");
+-       $channel = trim((string) getenv("ORBIT_CANDIDATE_CHANNEL"), "/");
+-
+-       foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
+-           $disk->put("{$prefix}/{$asset}", file_get_contents("{$dir}/{$asset}"), "public");
+-       }
+-
+-       $disk->put(
+-           "channels/{$channel}/orbit-release-manifest.json",
+-           file_get_contents("{$dir}/orbit-release-manifest.candidate.json"),
+-           "public",
+-       );
+-     '
+-
+-   candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
+-   echo "Candidate channel manifest: ${candidate_channel_manifest_url}"
++   bin/orbit-release-candidate build
+    ```
+ 
+-   Point the target gateway at the stable channel URL:
++   The helper sources the release env before Laravel reads `apps/gateway`
++   config: `ORBIT_RELEASE_ENV_FILE` when set, else `./.env` in the repo root
++   (prepared worktrees symlink the primary checkout's root `.env`), else
++   `${ORBIT_PRIMARY_CHECKOUT:-$HOME/orbit}/.env`. That env must provide
++   `ORBIT_ARTIFACTS_BASE_URL` and either the `ORBIT_ARTIFACTS_*` keys or the
++   `S3_UPCLOUD_*` fallback keys; `build` fails fast when either is missing.
++   The candidate channel defaults to `live-test` and can be overridden with
++   `ORBIT_RELEASE_CANDIDATE_CHANNEL`.
++
++   `build` re-runs the origin/main preflight (it exits 1 with "Candidate
++   artifacts must be built from the pushed origin/main commit." when HEAD
++   differs from `origin/main`), builds both CLI binaries, builds and pushes
++   the candidate gateway image to GHCR, captures the pushed digest, generates
++   the `topology-candidate` manifest, uploads the immutable candidate assets
++   under `candidates/<build_id>/`, and publishes the stable channel manifest.
++   It stops at candidate channel publication — it never creates GitHub
++   releases, pushes tags, or promotes images — and finishes by printing
++   `Candidate channel manifest: <url>` and `Release candidate state: <dir>`.
++   Do not use S3 image tarballs as the normal gateway image path; Docker Swarm
++   must consume the OCI registry reference recorded in the manifest.
++
++   Durable candidate state lands in `.orbit/release-candidates/<build_id>/`:
++   `candidate.env` (version, build id, commit, candidate image, gateway
++   digest, channel manifest URL, and the sha256 of each CLI binary), the
++   image push log, both CLI binaries, and the candidate manifest. No secrets
++   are written to state or logs. `.orbit/release-candidates/latest` holds the
++   newest build id; `env` and `verify` read it when `--build-id` is absent,
++   and an explicit `--build-id=<id>` always wins over the pointer.
++
++   Load the candidate state into the shell and point the target gateway at
++   the stable channel URL:
+ 
+    ```bash
++   eval "$(bin/orbit-release-candidate env)"
+    orbit manifest:update "$candidate_channel_manifest_url"
+    ```
+ 
+@@ -284,7 +192,7 @@    # keys or the S3_UPCLOUD_* fallback keys.
+    the selected candidate manifest.
+ 
+    ```bash
+-   version="$(bin/orbit-version)"
++   eval "$(bin/orbit-release-candidate env)"
+    ORBIT_RELEASE_MANIFEST_URL="$candidate_channel_manifest_url" ./apps/cli/orbit update:all --stream-json
+    orbit activity:show <activity-id> --json
+    orbit gateway:status --json
+@@ -315,29 +223,37 @@    # keys or the S3_UPCLOUD_* fallback keys.
+     `build_id`, commit, CLI hashes, and gateway digest.
+ 
+ 12. After approval, promote the accepted gateway image digest to the final GHCR
+-    version tag without rebuilding:
++    version tag without rebuilding, then verify the promotion against the
++    stored candidate state:
+ 
+    ```bash
+-   version="$(bin/orbit-version)"
+-   candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${version}-candidate-${build_id}"
++   eval "$(bin/orbit-release-candidate env)"
+    release_image="ghcr.io/hardimpactdev/orbit-gateway:${version}"
+ 
+    docker buildx imagetools create \
+      -t "$release_image" \
+      "${candidate_image}@${gateway_digest}"
+ 
+-   docker buildx imagetools inspect "$release_image"
++   bin/orbit-release-candidate verify --release-image="$release_image"
+    ```
+ 
+-13. Generate the final GitHub manifest from the same tested local assets. It must
+-    have `source=github-release` and the same CLI hashes and gateway digest as the
+-    accepted candidate:
++   `verify` recomputes the sha256 of the stored CLI binaries against
++   `candidate.env` and compares the promoted image digest (via
++   `docker buildx imagetools inspect`) against the recorded gateway digest.
++   It prints a `PASS`/`FAIL` line per key and exits 1 on any `FAIL`; do not
++   continue past a failed verify.
++
++13. Generate the final GitHub manifest from the stored candidate artifacts. It
++    must have `source=github-release` and the same CLI hashes and gateway
++    digest as the accepted candidate; copying the binaries from the durable
++    candidate state dir (already hash-verified in step 12) guarantees
++    byte-identical assets:
+ 
+    ```bash
+-   version="$(bin/orbit-version)"
++   eval "$(bin/orbit-release-candidate env)"
+ 
+-   cp apps/cli/builds/dist/linux/linux-x64 orbit-linux-x64
+-   cp apps/cli/builds/dist/mac/mac-arm orbit-macos-arm64
++   cp "${candidate_dir}/orbit-linux-x64" orbit-linux-x64
++   cp "${candidate_dir}/orbit-macos-arm64" orbit-macos-arm64
+ 
+    bin/orbit-release-manifest \
+      --version="$version" \
+@@ -388,8 +304,13 @@    # keys or the S3_UPCLOUD_* fallback keys.
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    DOCKER_CONFIG="$tmp" docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"
++   bin/orbit-release-candidate verify --release-image="ghcr.io/hardimpactdev/orbit-gateway:${version}"
+    ```
+ 
++   The final `verify` proves the published version tag still resolves to the
++   accepted candidate's gateway digest and that the stored CLI binaries still
++   match their recorded hashes.
++
+ 17. If doctor output changed after `update:all`, classify the delta before
+     accepting the release. Fix release-caused regressions immediately when
+     feasible. For intentional or pre-existing live-topology migration work,
+@@ -417,7 +338,9 @@ ## Failure Handling
+ - If Mini's Docker credential helper fails or asks for interaction, use a
+   helper-free temporary `DOCKER_CONFIG` for `docker login` and `docker push`.
+   Remove it after the push and verify no auth token strings were written into
+-  evidence directories.
++  evidence directories. `bin/orbit-release-candidate build` already uses this
++  helper-free temporary `DOCKER_CONFIG` login internally for the candidate
++  image push; the manual recipe below is for ad hoc pushes outside the helper.
+ - If `docker login` still invokes the macOS credential helper even with a
+   temporary config, write a minimal helper-free config instead of retrying
+   interactively:
