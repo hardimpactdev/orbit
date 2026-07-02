@@ -224,12 +224,27 @@ final readonly class WorkloadNodeUpdater
             'set -euo pipefail',
             'tmp="$(mktemp -d)"',
             'trap \'rm -rf "$tmp"\' EXIT',
+            'ORBIT_CLI_SHA256='.$this->quote($artifact['sha256']),
+            'check_sha256() {',
+            '    file="$1"',
+            '    if command -v sha256sum >/dev/null 2>&1; then',
+            '        printf \'%s  %s\n\' "$ORBIT_CLI_SHA256" "$file" | sha256sum -c -',
+            '        return',
+            '    fi',
+            '    if command -v shasum >/dev/null 2>&1; then',
+            '        actual="$(shasum -a 256 "$file" | awk \'{ print $1 }\')"',
+            '        test "$actual" = "$ORBIT_CLI_SHA256"',
+            '        return',
+            '    fi',
+            '    echo "No SHA-256 checksum tool found." >&2',
+            '    return 127',
+            '}',
             'INSTALL_ROOT="${ORBIT_INSTALL_PATH:-'.$installRoot.'}"',
             'BIN_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"',
             'SHARED_BINARY_PATH="${ORBIT_SHARED_BINARY_PATH:-}"',
             'echo download_cli',
             'curl -fksSL '.$this->quote($artifact['url']).' -o "$tmp/orbit"',
-            "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$tmp/orbit" | sha256sum -c -',
+            'check_sha256 "$tmp/orbit"',
             'echo install_cli',
             'install -d "$INSTALL_ROOT/bin"',
             'install -m 0755 "$tmp/orbit" "$INSTALL_ROOT/bin/orbit-binary"',
@@ -274,10 +289,10 @@ final readonly class WorkloadNodeUpdater
             '        ;;',
             'esac',
             'echo verify_cli',
-            "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$INSTALL_ROOT/bin/orbit-binary" | sha256sum -c -',
-            "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$link_target" | sha256sum -c -',
+            'check_sha256 "$INSTALL_ROOT/bin/orbit-binary"',
+            'check_sha256 "$link_target"',
             'resolved_binary="$(readlink -f "$BIN_PATH" 2>/dev/null || printf %s "$BIN_PATH")"',
-            "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$resolved_binary" | sha256sum -c -',
+            'check_sha256 "$resolved_binary"',
             '"$BIN_PATH" --version --local',
         ];
 
@@ -298,7 +313,7 @@ final readonly class WorkloadNodeUpdater
 
     private function recordInstalledCli(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void
     {
-        $platform = $this->platformKey($node);
+        $platform = CliArtifactPlatform::forNode($node);
         $artifact = $plan->cli_artifacts[$platform] ?? null;
 
         if (
@@ -330,34 +345,9 @@ final readonly class WorkloadNodeUpdater
      */
     private function cliArtifact(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
-        $platform = $this->platformKey($node);
+        $platform = CliArtifactPlatform::forNode($node);
 
         return $this->artifactRelay->artifactFor($operationRun, $plan, $platform);
-    }
-
-    private function platformKey(Node $node): string
-    {
-        $platform = strtolower(trim((string) $node->platform));
-
-        if (str_contains($platform, 'arm64') || str_contains($platform, 'aarch64')) {
-            return 'linux-arm64';
-        }
-
-        if (
-            $platform === ''
-            || str_contains($platform, 'linux')
-            || str_contains($platform, 'ubuntu')
-            || str_contains($platform, 'debian')
-            || str_contains($platform, 'amd64')
-            || str_contains($platform, 'x86_64')
-            || str_contains($platform, 'x64')
-        ) {
-            return 'linux-amd64';
-        }
-
-        throw new RuntimeException(
-            "Unsupported workload update platform [{$node->platform}] for node [{$node->name}].",
-        );
     }
 
     /**

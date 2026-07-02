@@ -292,6 +292,61 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->toBe('candidate-build');
 });
 
+it('updates macos workload nodes with darwin arm64 CLI artifacts and portable checksum verification', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'NMBP',
+            'platform' => 'macos_26-5-1',
+            'orbit_path' => '/Users/nckrtl/.local/share/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            manifestSource: 'topology-candidate',
+            cliArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-linux-x64',
+                    'sha256' => str_repeat('b', 64),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64',
+                    'sha256' => str_repeat('f', 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'NMBP',
+                'node' => 'NMBP',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->scriptFor('NMBP'))
+        ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake")
+        ->toContain('check_sha256 "$tmp/orbit"')
+        ->toContain('command -v sha256sum')
+        ->toContain('shasum -a 256 "$file"')
+        ->and($node->fresh()->installed_cli?->platform)
+        ->toBe('darwin-arm64')
+        ->and($node->fresh()->installed_cli?->sha256)
+        ->toBe(str_repeat('f', 64))
+        ->and($node->fresh()->installed_cli?->artifactUrl)
+        ->toBe('https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64');
+});
+
 it('runs orbit doctor after a node update and reports the issue count in the done message', function (): void {
     $shell = new WorkloadUpdaterFakeShell(
         doctorIssues: ['app-dev-1' => 2, 'app-prod-1' => 0],

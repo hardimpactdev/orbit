@@ -128,6 +128,54 @@ it('reports all current when the gateway digest and workload hashes match', func
     expect($report->outdatedCount)->toBe(0)->and($report->allCurrent())->toBeTrue();
 });
 
+it('compares macos workload nodes against darwin arm64 CLI artifacts', function (): void {
+    $run = fleetVersionProbeRun();
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+        ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'nmbp',
+            'platform' => 'macos_26-5-1',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(
+                platform: 'darwin-arm64',
+                sha256: str_repeat('f', 64),
+                artifactUrl: 'https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64',
+            ),
+        ]);
+
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVersionProbeSnapshot(
+            '2.0.0',
+            cliArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-linux-x64',
+                    'sha256' => str_repeat('b', 64),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64',
+                    'sha256' => str_repeat('f', 64),
+                ],
+            ],
+        ),
+    );
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($report->nodeVersions)
+        ->toBe(['nmbp' => '2.0.0'])
+        ->and($report->outdatedCount)
+        ->toBe(0)
+        ->and($report->allCurrent())
+        ->toBeTrue();
+});
+
 it('falls back to the baked app version when no gateway node exists', function (): void {
     config()->set('app.version', '2.0.0');
 
@@ -153,11 +201,14 @@ function fleetVersionProbeRun(): OperationRun
     );
 }
 
-function fleetVersionProbeSnapshot(string $targetVersion): OperationUpdatePlanSnapshot
+/**
+ * @param  array<string, array{url: string, sha256: string}>|null  $cliArtifacts
+ */
+function fleetVersionProbeSnapshot(string $targetVersion, ?array $cliArtifacts = null): OperationUpdatePlanSnapshot
 {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:'.$targetVersion.'@sha256:'.str_repeat('a', 64);
 
-    $cliArtifacts = [
+    $cliArtifacts ??= [
         'linux-amd64' => [
             'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v'.$targetVersion.'/orbit-linux-amd64',
             'sha256' => str_repeat('b', 64),
@@ -185,15 +236,18 @@ function fleetVersionProbeSnapshot(string $targetVersion): OperationUpdatePlanSn
     );
 }
 
-function fleetVersionProbeInstalledCliArtifact(string $sha256 = ''): InstalledCliArtifact
-{
+function fleetVersionProbeInstalledCliArtifact(
+    string $sha256 = '',
+    string $platform = 'linux-amd64',
+    string $artifactUrl = 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+): InstalledCliArtifact {
     return InstalledCliArtifact::record(
         version: '2.0.0',
-        platform: 'linux-amd64',
+        platform: $platform,
         sha256: $sha256 !== '' ? $sha256 : str_repeat('b', 64),
         source: 'github-release',
         buildId: null,
-        artifactUrl: 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+        artifactUrl: $artifactUrl,
         installedPath: '/home/orbit/orbit/bin/orbit-binary',
         operationRunId: (string) Str::uuid(),
     );
