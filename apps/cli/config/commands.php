@@ -128,7 +128,10 @@ use App\Commands\Tool\ToolInstallCommand;
 use App\Commands\Tool\ToolListCommand;
 use App\Commands\Tool\ToolReconfigureCommand;
 use App\Commands\Tool\ToolRemoveCommand;
+use App\Commands\Tool\ToolRestartCommand;
 use App\Commands\Tool\ToolShowCommand;
+use App\Commands\Tool\ToolStartCommand;
+use App\Commands\Tool\ToolStopCommand;
 use App\Commands\Tool\ToolUpdateCommand;
 use App\Commands\Vpn\VpnClientDisableCommand;
 use App\Commands\Vpn\VpnClientEnableCommand;
@@ -291,7 +294,10 @@ return [
         ToolListCommand::class,
         ToolReconfigureCommand::class,
         ToolRemoveCommand::class,
+        ToolRestartCommand::class,
         ToolShowCommand::class,
+        ToolStartCommand::class,
+        ToolStopCommand::class,
         ToolUpdateCommand::class,
         VpnClientDisableCommand::class,
         VpnClientEnableCommand::class,

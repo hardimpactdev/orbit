@@ -2,7 +2,10 @@
 
 Generic surface for installable, role-baseline, and observational node
 capabilities. A tool is not itself the lifecycle-managed runnable unit;
-processes own lifecycle. The catalog is fixed and lives in
+processes own lifecycle for runnable services. Explicit lifecycle-capable tools
+can declare `tool:start`, `tool:stop`, and `tool:restart`; the first supported
+tool is macOS-only `orbstack`. `tool:logs` and `tool:reload` are not part of the
+tool command surface. The catalog is fixed and lives in
 [`apps/docs/content/domains/3_tool/catalog/`](../../../apps/docs/content/domains/3_tool/catalog/).
 
 ## Catalog
@@ -25,6 +28,7 @@ and the node-exporter host binary on metrics/workload nodes. The
 - `polyscope-server`  -  Polyscope headless coding-agent server
 - `opencode-server`  -  OpenCode HTTP server for programmatic LLM interaction
 - `openclaw`, `hermes`  -  first-party autonomous agent runtimes on `agent` nodes
+- `orbstack`  -  macOS-only Docker-compatible provider; supports explicit start/stop/restart through `orbctl`
 
 HTTP/WS tool endpoints surface as tool-owned proxy routes. TCP service
 endpoints are WireGuard-only host/port records. Database connection inventory,
@@ -84,6 +88,17 @@ Update a managed tool to the catalog target version.
 
 ```bash
 orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v>] [--json|--stream-json]
+```
+
+## `orbit tool:start|stop|restart <tool>`
+
+Control lifecycle-capable tools. Initial support is macOS-only `orbstack`.
+Unsupported tools and unsupported node platforms fail before host commands run.
+
+```bash
+orbit tool:start orbstack --node=<mac-node> [--json|--stream-json]
+orbit tool:stop orbstack --node=<mac-node> [--json|--stream-json]
+orbit tool:restart orbstack --node=<mac-node> [--json|--stream-json]
 ```
 
 ## `orbit tool:remove <tool>`

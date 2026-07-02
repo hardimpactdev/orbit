@@ -170,6 +170,7 @@ class AppServiceProvider extends ServiceProvider
                 $definitions = [
                     $app->make(CaddyTool::class),
                     $app->make(DockerTool::class),
+                    $app->make(OrbStackTool::class),
                     $app->make(VitePlusTool::class),
                     $app->make(PhpCliTool::class),
                     $app->make(GhTool::class),

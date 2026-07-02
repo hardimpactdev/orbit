@@ -107,10 +107,11 @@ These rules define what tool commands may and may not change.
 
 - **Tool-family boundaries:** Tool commands own capability inventory,
   installation, update, adoption, removal, configuration, declared service
-  endpoints, and tool catalog membership. Tools do not own start, stop,
-  restart, or log lifecycle because one tool can back multiple processes;
-  the `process:*` family owns that lifecycle through the related process
-  record.
+  endpoints, tool catalog membership, and explicit tool-owned lifecycle actions
+  for lifecycle-capable tools. Generic service lifecycle still belongs to
+  `process:*`; `tool:start`, `tool:stop`, and `tool:restart` must be declared by
+  the tool definition and initially apply only to macOS `orbstack`. Tool log
+  streaming and reload commands remain outside the tool command surface.
 - They do not own apps, workspaces, process lifecycle, schedules, custom proxy
   routes, or non-tool firewall policy. Tool-specific or capability-specific
   command families (such as `php:*`) are admitted only when the workflow is

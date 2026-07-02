@@ -336,6 +336,120 @@ describe('tool write commands', function (): void {
             ->toHaveCount(1);
     });
 
+    it('uses canonical json envelopes for lifecycle tool commands', function (string $command, string $action): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'tool' => [
+                'name' => 'orbstack',
+                'node' => 'mac-1',
+                'action' => $action,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'tool' => 'orbstack',
+            '--node' => 'mac-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === "https://gateway.test/api/tools/orbstack/{$action}"
+                && $request->data() === ['node' => 'mac-1']
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toHaveKey('success')
+            ->not
+            ->toHaveKey('event')
+            ->and($decoded['success']['data']['tool']['action'])
+            ->toBe($action);
+    })->with([
+        'start' => ['tool:start', 'start'],
+        'stop' => ['tool:stop', 'stop'],
+        'restart' => ['tool:restart', 'restart'],
+    ]);
+
+    it('streams lifecycle tool commands when requested', function (string $command, string $action): void {
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'tool' => [
+                    'name' => 'orbstack',
+                    'node' => 'mac-1',
+                    'action' => $action,
+                ],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            'tool' => 'orbstack',
+            '--node' => 'mac-1',
+            '--stream-json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === "https://gateway.test/api/tools/orbstack/{$action}"
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === ['node' => 'mac-1']
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['success']['data']['tool']['action'])
+            ->toBe($action);
+    })->with([
+        'start' => ['tool:start', 'start'],
+        'stop' => ['tool:stop', 'stop'],
+        'restart' => ['tool:restart', 'restart'],
+    ]);
+
+    it('preserves lifecycle gateway error envelopes', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'tool.unsupported_action',
+            "Tool 'composer' does not support start.",
+            [
+                'tool' => 'composer',
+                'action' => 'start',
+            ],
+        ), 400);
+
+        [$exitCode, $output] = runCommand($this, 'tool:start', [
+            'tool' => 'composer',
+            '--node' => 'mac-1',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/composer/start'
+                && $request->data() === ['node' => 'mac-1']
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('tool.unsupported_action')
+            ->and($decoded['error']['meta']['action'])
+            ->toBe('start');
+    });
+
     it('streams tool:reconfigure password payloads to the gateway', function (): void {
         fakeGatewayProgressStream(gatewayProgressFrame('complete', [
             'exit_code' => 0,

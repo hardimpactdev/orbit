@@ -219,7 +219,10 @@ final class NodePermissionRegistry
             'tool:read',
             'tool:reconfigure',
             'tool:remove',
+            'tool:restart',
             'tool:show',
+            'tool:start',
+            'tool:stop',
             'tool:update',
             'tool:update:agent-tools',
 

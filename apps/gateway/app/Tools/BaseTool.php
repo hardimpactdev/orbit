@@ -54,6 +54,21 @@ abstract class BaseTool implements ToolDefinition
         return null;
     }
 
+    public function startScript(array $config = []): ?string
+    {
+        return $this->lifecycleScript('start', $config);
+    }
+
+    public function stopScript(array $config = []): ?string
+    {
+        return $this->lifecycleScript('stop', $config);
+    }
+
+    public function restartScript(array $config = []): ?string
+    {
+        return $this->lifecycleScript('restart', $config);
+    }
+
     public function credentialsScript(array $config = []): ?string
     {
         return null;
@@ -94,6 +109,11 @@ abstract class BaseTool implements ToolDefinition
         $composePath = $config['compose_path'] ?? '/opt/orbit/docker-compose.yml';
 
         return "docker compose -f '{$composePath}' stop '{$service}' && docker compose -f '{$composePath}' rm -f '{$service}'";
+    }
+
+    protected function lifecycleScript(string $action, array $config): ?string
+    {
+        return null;
     }
 
     protected function aptInstallScript(string ...$packages): string

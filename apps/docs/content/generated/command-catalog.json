@@ -11898,6 +11898,73 @@
                 }
             }
         },
+        "tool:restart": {
+            "name": "tool:restart",
+            "slug": "tool-restart",
+            "family": "tool",
+            "arguments": [
+                "tool"
+            ],
+            "options": [
+                "app",
+                "node",
+                "json",
+                "stream-json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": true
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/3_tool/7_tool-restart",
+                "public": "domains/3_tool/7_tool-restart/tool-restart.md",
+                "technical": "domains/3_tool/7_tool-restart/technical/1_tool-restart.md",
+                "repo_directory": "apps/docs/content/domains/3_tool/7_tool-restart",
+                "repo_public": "apps/docs/content/domains/3_tool/7_tool-restart/tool-restart.md",
+                "repo_technical": "apps/docs/content/domains/3_tool/7_tool-restart/technical/1_tool-restart.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": true
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/OrbStackToolTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/OrbStackToolTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
         "tool:show": {
             "name": "tool:show",
             "slug": "tool-show",
@@ -11978,6 +12045,148 @@
                     "class": "Orbit\\Sdk\\Laravel\\Responses\\Tools\\ToolShowResponse",
                     "path": "packages/sdk/src/Responses/Tools/ToolShowResponse.php"
                 }
+            }
+        },
+        "tool:start": {
+            "name": "tool:start",
+            "slug": "tool-start",
+            "family": "tool",
+            "arguments": [
+                "tool"
+            ],
+            "options": [
+                "app",
+                "node",
+                "json",
+                "stream-json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": true
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/3_tool/5_tool-start",
+                "public": "domains/3_tool/5_tool-start/tool-start.md",
+                "technical": "domains/3_tool/5_tool-start/technical/1_tool-start.md",
+                "repo_directory": "apps/docs/content/domains/3_tool/5_tool-start",
+                "repo_public": "apps/docs/content/domains/3_tool/5_tool-start/tool-start.md",
+                "repo_technical": "apps/docs/content/domains/3_tool/5_tool-start/technical/1_tool-start.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": true
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/OrbStackToolTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/OrbStackToolTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/ToolCatalogTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/ToolCatalogTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/ToolCatalogTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
+            }
+        },
+        "tool:stop": {
+            "name": "tool:stop",
+            "slug": "tool-stop",
+            "family": "tool",
+            "arguments": [
+                "tool"
+            ],
+            "options": [
+                "app",
+                "node",
+                "json",
+                "stream-json"
+            ],
+            "renderers": {
+                "json": true,
+                "stream_json": true
+            },
+            "extension": null,
+            "destructive_consent": null,
+            "docs": {
+                "directory": "domains/3_tool/6_tool-stop",
+                "public": "domains/3_tool/6_tool-stop/tool-stop.md",
+                "technical": "domains/3_tool/6_tool-stop/technical/1_tool-stop.md",
+                "repo_directory": "apps/docs/content/domains/3_tool/6_tool-stop",
+                "repo_public": "apps/docs/content/domains/3_tool/6_tool-stop/tool-stop.md",
+                "repo_technical": "apps/docs/content/domains/3_tool/6_tool-stop/technical/1_tool-stop.md"
+            },
+            "public_options_documented": {
+                "json": true,
+                "stream_json": true
+            },
+            "linked_test_files": [
+                "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                "apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php"
+            ],
+            "verification_hints": [
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/ToolLifecycleControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Unit/Services/Tools/OrbStackToolTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Unit/Services/Tools/OrbStackToolTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/Tools/OrbStackToolTest.php"
+                }
+            ],
+            "p4_mapping": {
+                "sdk_request": null,
+                "gateway_route": null,
+                "gateway_controller": null,
+                "authorization_permission": null,
+                "response_dto": null
             }
         },
         "tool:update": {

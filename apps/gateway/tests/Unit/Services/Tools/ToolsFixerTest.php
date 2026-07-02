@@ -851,6 +851,21 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
         return null;
     }
 
+    public function startScript(array $config = []): ?string
+    {
+        return null;
+    }
+
+    public function stopScript(array $config = []): ?string
+    {
+        return null;
+    }
+
+    public function restartScript(array $config = []): ?string
+    {
+        return null;
+    }
+
     public function latestSupportedVersion(): ?string
     {
         return null;

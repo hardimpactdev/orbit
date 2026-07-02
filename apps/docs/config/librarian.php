@@ -151,9 +151,9 @@ return [
             'allow_paths' => [],
         ],
         [
-            'terms' => ['tool:start', 'tool:stop', 'tool:restart', 'tool:logs', 'tool:reload'],
-            'decision' => '2026-06-06 tool lifecycle is process-owned (solo todo #703)',
-            'replacement' => '`process:start` / `process:stop` / `process:restart` / `process:logs`',
+            'terms' => ['tool:logs', 'tool:reload'],
+            'decision' => '2026-06-06 tool logs and reload remain process-owned (solo todo #703)',
+            'replacement' => '`process:logs` or a process-owned reload/restart flow',
             'allow_paths' => [],
         ],
         [

@@ -26,7 +26,7 @@ final class OrbStackTool extends BaseTool
     #[\Override]
     public function capabilities(): array
     {
-        return ['install', 'update', 'safe-adopt'];
+        return ['install', 'update', 'safe-adopt', 'start', 'stop', 'restart'];
     }
 
     #[\Override]
@@ -64,7 +64,30 @@ final class OrbStackTool extends BaseTool
             'binary' => '/usr/local/bin/orb',
             'version_command' => '/usr/local/bin/orb version 2>/dev/null | head -n 1',
             'probe' => 'test -x /usr/local/bin/orb && test -x /usr/local/bin/orbctl && test -d /Applications/OrbStack.app',
+            'provider_command' => '/usr/local/bin/orbctl status',
             'update_command' => $this->updateScript(),
         ];
+    }
+
+    #[\Override]
+    protected function lifecycleScript(string $action, array $config): string
+    {
+        return <<<BASH
+            #!/usr/bin/env bash
+            # orbit {$action} orbstack
+            set -e
+
+            case "\$(uname -s)" in
+                Darwin) ;;
+                *) echo "orbstack: unsupported os" >&2; exit 64 ;;
+            esac
+
+            if ! command -v orbctl >/dev/null 2>&1; then
+                echo "orbstack: orbctl is required" >&2
+                exit 64
+            fi
+
+            orbctl {$action}
+            BASH;
     }
 }

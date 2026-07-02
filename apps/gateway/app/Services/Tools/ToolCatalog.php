@@ -217,6 +217,23 @@ final readonly class ToolCatalog
         return $this->definition($tool)?->updateScript($config);
     }
 
+    public function lifecycleScript(string $tool, string $action, array $config = []): ?string
+    {
+        if (! in_array($action, ['start', 'stop', 'restart'], true)) {
+            return null;
+        }
+
+        if (! $this->hasCapability($tool, $action)) {
+            return null;
+        }
+
+        return match ($action) {
+            'start' => $this->definition($tool)?->startScript($config),
+            'stop' => $this->definition($tool)?->stopScript($config),
+            'restart' => $this->definition($tool)?->restartScript($config),
+        };
+    }
+
     public function latestSupportedVersion(string $tool): ?string
     {
         return $this->definition($tool)?->latestSupportedVersion();

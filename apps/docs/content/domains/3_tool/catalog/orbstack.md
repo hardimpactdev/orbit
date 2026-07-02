@@ -4,8 +4,8 @@
 
 ## Catalog
 
-These fields describe the OrbStack tool's identity, backend, and support model in
-Orbit.
+These fields describe the OrbStack tool's identity, backend, and support model
+in Orbit.
 
 | Field | Value |
 | --- | --- |
@@ -19,16 +19,16 @@ Orbit.
 ## Capabilities
 
 `orbstack` is a macOS-only managed tool for the external OrbStack runtime
-provider. Orbit can install, update, probe, and safely adopt OrbStack through
-the generic `tool:*` surface and `doctor --family=tool`. The tool does not
-declare credentials, reconfigure, or remove capabilities in this slice.
+provider. Orbit can install, update, probe, safely adopt, start, stop, and
+restart OrbStack through the generic `tool:*` surface and
+`doctor --family=tool`. The tool does not declare credentials, reconfigure, or
+remove capabilities in this slice.
 
 `orbstack` does not create a process row, declare `relatedProcess()`, or expose
-lifecycle or log commands. OrbStack start, stop, restart, and Docker lifecycle
-operations remain outside Orbit ownership until a future product decision admits
-them.
+logs/reload commands. The lifecycle commands are tool-owned because OrbStack is
+itself an external host runtime provider, not an Orbit process row.
 
-## Install and Update
+## Install, update, and lifecycle
 
 Install uses the official Homebrew distribution channel documented by OrbStack:
 
@@ -46,8 +46,18 @@ Update uses the greedy Homebrew cask upgrade channel:
 brew upgrade --greedy orbstack
 ```
 
-Install and update scripts do not run `orb start`, `orb stop`, or
-`orb restart docker`.
+Tool-owned lifecycle uses OrbStack's own CLI:
+
+```bash
+orbctl start
+orbctl stop
+orbctl restart
+```
+
+`orbctl stop` without arguments stops the OrbStack service, including Docker and
+all machines. Orbit treats `tool:stop orbstack` and `tool:restart orbstack` as
+host lifecycle mutations that operators requested explicitly; tests must fake
+command execution.
 
 ## Probe
 
@@ -58,21 +68,21 @@ Orbit probes OrbStack through:
 - presence checks for `/usr/local/bin/orbctl` and `/Applications/OrbStack.app`
 
 `orb status` state parsing is deferred. Probe metadata does not include
-`service`, `container`, or lifecycle repair commands, and log commands are
-unsupported for this tool.
+`service`, `container`, log commands, reload commands, or process repair
+commands for this tool.
 
 ## Doctor Relationship
 
 `doctor --family=tool` reports OrbStack capability drift on supported macOS
-nodes. Runtime state inside OrbStack remains owned by OrbStack until a future
-external runtime/process model lands.
+nodes. Runtime state inside OrbStack remains owned by OrbStack. Orbit only
+dispatches lifecycle when the operator explicitly runs `tool:start`,
+`tool:stop`, or `tool:restart` for `orbstack`.
 
 ## Scope Boundaries
 
 `orbstack` must not:
 
 - Create or manage an Orbit process row.
-- Expose generic tool lifecycle restart/control commands or `orbstack:*`
-  lifecycle commands in this slice.
+- Expose tool log streaming or reload commands.
 - Run lifecycle-mutating OrbStack commands during install, update, probe, or
   doctor repair flows.

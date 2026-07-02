@@ -93,9 +93,8 @@ materialized by their owning role and only required on nodes carrying that role:
 
 ## Installable Tools
 
-These tools are provisioned by `tool:install` and verified by
-`doctor --family=tool`. Entries that declare removal support are removed by
-`tool:remove`.
+These tools are provisioned by `tool:install`, removed by `tool:remove` when the
+tool supports removal, and verified by `doctor --family=tool`.
 
 ### Runtime and communication
 
@@ -136,9 +135,9 @@ membership.
 ### macOS runtime providers
 
 These installable tools represent external macOS runtime-provider capabilities.
-They use the generic `tool:*` surface for install, update, probe, and adoption,
-but do not create Orbit process rows or expose lifecycle/log commands in the
-current slice.
+They use the generic `tool:*` surface for install, update, probe, adoption, and
+explicit lifecycle when declared, but do not create Orbit process rows or expose
+tool log streaming or reload commands.
 
 14. [`orbstack`](orbstack.md)
 

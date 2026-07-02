@@ -28,6 +28,12 @@ interface ToolDefinition
 
     public function updateScript(array $config = []): ?string;
 
+    public function startScript(array $config = []): ?string;
+
+    public function stopScript(array $config = []): ?string;
+
+    public function restartScript(array $config = []): ?string;
+
     public function credentialsScript(array $config = []): ?string;
 
     public function reconfigureScript(array $config = []): ?string;

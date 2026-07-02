@@ -70,7 +70,9 @@ describe('node permission presets', function (): void {
                 ->not->toContain('tool:credentials')->and($permissions)
                 ->not->toContain('tool:install')->and($permissions)
                 ->not->toContain('tool:remove')->and($permissions)
+                ->not->toContain('tool:start')->and($permissions)
                 ->not->toContain('tool:stop')->and($permissions)
+                ->not->toContain('tool:restart')->and($permissions)
                 ->not->toContain('tool:reconfigure')->and($permissions)
                 ->not->toContain('node:update')->and($permissions)
                 ->not->toContain('firewall_rule:write')->and($permissions)
@@ -274,7 +276,13 @@ describe('node permission presets', function (): void {
                 ->and($permissions)
                 ->toContain('tool:install')
                 ->and($permissions)
-                ->toContain('tool:remove');
+                ->toContain('tool:remove')
+                ->and($permissions)
+                ->toContain('tool:start')
+                ->and($permissions)
+                ->toContain('tool:stop')
+                ->and($permissions)
+                ->toContain('tool:restart');
         });
 
         it('includes agent ide messaging', function (): void {
@@ -302,6 +310,12 @@ describe('node permission presets', function (): void {
                 ->toContain('tool:install')
                 ->and($permissions)
                 ->toContain('tool:remove')
+                ->and($permissions)
+                ->toContain('tool:start')
+                ->and($permissions)
+                ->toContain('tool:stop')
+                ->and($permissions)
+                ->toContain('tool:restart')
                 ->and($permissions)
                 ->toContain('tool:credentials');
         });

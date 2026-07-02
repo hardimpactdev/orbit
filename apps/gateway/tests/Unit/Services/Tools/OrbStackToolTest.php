@@ -23,15 +23,11 @@ describe('OrbStackTool', function (): void {
             ->toBe(['macos']);
     });
 
-    it('declares install, update, and safe-adopt capabilities without credentials or lifecycle ownership', function (): void {
+    it('declares install, update, safe-adopt, and lifecycle capabilities without credentials or process ownership', function (): void {
         $tool = new OrbStackTool;
 
         expect($tool->capabilities())
-            ->toContain('install')
-            ->and($tool->capabilities())
-            ->toContain('update')
-            ->and($tool->capabilities())
-            ->toContain('safe-adopt')
+            ->toBe(['install', 'update', 'safe-adopt', 'start', 'stop', 'restart'])
             ->and($tool->capabilities())
             ->not->toContain('credentials')->and($tool->capabilities())
             ->not->toContain('reconfigure')->and($tool->capabilities())
@@ -68,6 +64,26 @@ describe('OrbStackTool', function (): void {
             ->not->toContain('orb restart');
     });
 
+    it('uses orbctl for explicit lifecycle commands only', function (string $action): void {
+        $tool = new OrbStackTool;
+        $script = match ($action) {
+            'start' => $tool->startScript(),
+            'stop' => $tool->stopScript(),
+            'restart' => $tool->restartScript(),
+        };
+
+        expect($script)
+            ->toContain("orbctl {$action}")
+            ->toContain('Darwin')
+            ->toContain('orbctl is required')
+            ->not->toContain('systemctl')
+            ->not->toContain('docker ');
+    })->with([
+        'start',
+        'stop',
+        'restart',
+    ]);
+
     it('probeMetadata detects orb, orbctl, the app bundle, and version without lifecycle commands', function (): void {
         $tool = new OrbStackTool;
         $metadata = $tool->probeMetadata();
@@ -86,6 +102,8 @@ describe('OrbStackTool', function (): void {
             ->toContain('/Applications/OrbStack.app')
             ->and($metadata['update_command'] ?? null)
             ->toBe($tool->updateScript())
+            ->and($metadata['provider_command'] ?? null)
+            ->toBe('/usr/local/bin/orbctl status')
             ->and($metadata)
             ->not->toHaveKey('service')->and($metadata)
             ->not->toHaveKey('container')->and($metadata)
@@ -94,12 +112,16 @@ describe('OrbStackTool', function (): void {
         foreach ([
             $metadata['version_command'] ?? '',
             $metadata['probe'] ?? '',
+            $metadata['provider_command'] ?? '',
             $metadata['update_command'] ?? '',
         ] as $command) {
             expect($command)
                 ->not->toContain('orb start')
                 ->not->toContain('orb stop')
-                ->not->toContain('orb restart');
+                ->not->toContain('orb restart')
+                ->not->toContain('orbctl start')
+                ->not->toContain('orbctl stop')
+                ->not->toContain('orbctl restart');
         }
     });
 

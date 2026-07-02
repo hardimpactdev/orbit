@@ -175,7 +175,9 @@ command catalog when command completeness matters.
 ### Tools and services  -  [`references/tool.md`](references/tool.md)
 
 Generic surface for node capabilities. Tools do not own start/stop/restart/log
-lifecycle directly; process rows own lifecycle for runnable services.
+lifecycle for runnable services, except explicit tool-owned lifecycle
+capabilities such as macOS-only `orbstack`. Logs and reload remain outside the
+tool command surface.
 
 | Command | What it does |
 |---|---|
@@ -184,6 +186,7 @@ lifecycle directly; process rows own lifecycle for runnable services.
 | `orbit tool:install <tool>` | Install a managed tool (`--status=running` to also start) |
 | `orbit tool:update [tool]` | Update a managed tool |
 | `orbit tool:remove <tool>` | Remove a managed tool |
+| `orbit tool:start\|stop\|restart <tool>` | Control lifecycle-capable tools such as `orbstack` |
 | `orbit tool:reconfigure <tool>` | Rotate auth or re-provision (e.g. `--password=`) |
 | `orbit tool:credentials [tool]` | Read connection credentials |
 

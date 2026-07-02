@@ -450,8 +450,9 @@ exists.
 - **Agent self preset:** Preset used by `agent` self-grants. Contains
   `doctor:verify`, `node:read`, `tool:read`, and `tool:update:agent-tools`.
   Excludes `node:update`, `tool:credentials`, `tool:install`, `tool:remove`,
-  `tool:reconfigure`, firewall writes, grant writes, node role
-  writes, VPN writes, `doctor:restore`, and `doctor:adopt`.
+  `tool:start`, `tool:stop`, `tool:restart`, `tool:reconfigure`, firewall
+  writes, grant writes, node role writes, VPN writes, `doctor:restore`, and
+  `doctor:adopt`.
 - **Operator preset:** Default cross-node preset for nodes with the `agent`
   role and the general-purpose preset for fleet operators. Reads firewall
   rules and database registry or schema metadata, and reports firewall doctor

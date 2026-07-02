@@ -95,6 +95,7 @@ use App\Http\Controllers\Api\ScheduleStoreController;
 use App\Http\Controllers\Api\SoloProxyController;
 use App\Http\Controllers\Api\ToolCredentialsController;
 use App\Http\Controllers\Api\ToolInstallController;
+use App\Http\Controllers\Api\ToolLifecycleController;
 use App\Http\Controllers\Api\ToolListController;
 use App\Http\Controllers\Api\ToolReconfigureController;
 use App\Http\Controllers\Api\ToolRemoveController;
@@ -278,6 +279,9 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/tools', ToolListController::class);
         Route::delete('/tools/{tool}', ToolRemoveController::class);
         Route::post('/tools/{tool}/install', ToolInstallController::class);
+        Route::post('/tools/{tool}/start', ToolLifecycleController::class)->defaults('action', 'start');
+        Route::post('/tools/{tool}/stop', ToolLifecycleController::class)->defaults('action', 'stop');
+        Route::post('/tools/{tool}/restart', ToolLifecycleController::class)->defaults('action', 'restart');
         Route::post('/tools/update', ToolUpdateBulkController::class);
         Route::post('/tools/{tool}/update', ToolUpdateController::class);
         Route::get('/tools/{tool}/credentials', ToolCredentialsController::class);

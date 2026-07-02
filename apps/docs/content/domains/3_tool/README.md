@@ -43,13 +43,19 @@ These rules govern what the tool command family owns and what it may not touch.
 - Tools supply capabilities that other domains depend on, but they do not own
   apps, workspaces, processes, schedules, custom proxy routes, or non-tool
   firewall policy.
-- Tools do not own start, stop, restart, or log lifecycle directly. Processes
+- Tools do not own log streaming or generic service reload directly. Processes
   are the lifecycle-managed long-running units. A process may reference a tool
   with a tool dependency when it needs that node-level capability. A tool
   definition may declare a related singleton process; `tool:install` configures
   that process by default (idempotently) so installing the capability yields a
-  running service, while lifecycle stays process-owned. `--no-process` installs
-  the capability only.
+  running service, while that process row owns runtime lifecycle. `--no-process`
+  installs the capability only.
+- `tool:start`, `tool:stop`, and `tool:restart` are admitted only for tools that
+  explicitly declare a tool-owned lifecycle capability. The initial lifecycle
+  tool is `orbstack` on macOS, where Orbit controls the external runtime
+  provider through OrbStack's own CLI. These commands must not route through
+  related-process compatibility adapters, create process rows, or infer generic
+  lifecycle support for other tools.
 - Tool-specific and capability-specific command families are opt-in product
   surfaces. The tool catalog does not automatically create `redis:*`,
   `mysql:*`, `postgres:*`, or other top-level command families. Generic tool
@@ -96,7 +102,7 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `codex:app` add, remove, list; config presence probe |
-| [`orbstack`](catalog/orbstack.md) | OrbStack | macOS application and CLI (`orb`, `orbctl`) | Installable macOS runtime-provider capability | `infrastructure` | install, update, adopt; no Orbit process lifecycle in this slice |
+| [`orbstack`](catalog/orbstack.md) | OrbStack | macOS application and CLI (`orb`, `orbctl`) | Installable macOS runtime-provider capability | `infrastructure` | install, update, probe, safe adopt, start, stop, restart |
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` creates those tools from scratch only when the
@@ -168,15 +174,24 @@ These commands create or remove an installable tool on a node.
 3. [`orbit tool:install <tool>`](3_tool-install/tool-install.md)
 4. [`orbit tool:remove <tool>`](4_tool-remove/tool-remove.md)
 
+### Tool-owned lifecycle
+
+These commands are available only for lifecycle-capable tools. The first
+supported tool is macOS-only `orbstack`.
+
+5. [`orbit tool:start <tool>`](5_tool-start/tool-start.md)
+6. [`orbit tool:stop <tool>`](6_tool-stop/tool-stop.md)
+7. [`orbit tool:restart <tool>`](7_tool-restart/tool-restart.md)
+
 ### Configuration and credentials
 
-Lifecycle (start, stop, restart, logs) belongs to the `process:*` family; tools
-do not own runtime lifecycle. These commands change tool versions or
-configuration and expose generated credentials.
+Log streaming and reload belong to the `process:*` family or to future
+tool-specific contracts. These commands change tool versions or configuration
+and expose generated credentials.
 
-5. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
-6. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
-7. [`orbit tool:reconfigure [tool]`](12_tool-reconfigure/tool-reconfigure.md)
+8. [`orbit tool:update [tool]`](9_tool-update/tool-update.md)
+9. [`orbit tool:credentials [tool]`](10_tool-credentials/tool-credentials.md)
+10. [`orbit tool:reconfigure [tool]`](12_tool-reconfigure/tool-reconfigure.md)
 
 ## Related
 

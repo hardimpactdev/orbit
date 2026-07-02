@@ -364,6 +364,49 @@ describe('tool catalog definitions', function (): void {
             ->toContain('journalctl');
     });
 
+    it('catalogs OrbStack as a macOS-only lifecycle-capable provider tool', function (): void {
+        $catalog = app(ToolCatalog::class);
+        $metadata = $catalog->probeMetadata('orbstack');
+
+        expect($catalog->definition('orbstack'))
+            ->toBeInstanceOf(OrbStackTool::class)
+            ->and($catalog->category('orbstack'))
+            ->toBe('infrastructure')
+            ->and($catalog->supportedOperatingSystems('orbstack'))
+            ->toBe(['macos'])
+            ->and($catalog->hasCapability('orbstack', 'install'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'update'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'safe-adopt'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'start'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'stop'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'restart'))
+            ->toBeTrue()
+            ->and($catalog->hasCapability('orbstack', 'remove'))
+            ->toBeFalse()
+            ->and($catalog->relatedProcess('orbstack'))
+            ->toBeNull()
+            ->and($catalog->logCommand('orbstack', 50))
+            ->toBeNull()
+            ->and($catalog->lifecycleScript('orbstack', 'start'))
+            ->toContain('orbctl start')
+            ->and($catalog->lifecycleScript('orbstack', 'stop'))
+            ->toContain('orbctl stop')
+            ->and($catalog->lifecycleScript('orbstack', 'restart'))
+            ->toContain('orbctl restart')
+            ->and($catalog->lifecycleScript('docker', 'start'))
+            ->toBeNull()
+            ->and($metadata)
+            ->toMatchArray([
+                'binary' => '/usr/local/bin/orb',
+                'provider_command' => '/usr/local/bin/orbctl status',
+            ]);
+    });
+
     it('describes caddy as the orbit-caddy Docker container instead of a host Caddy service', function (): void {
         $catalog = app(ToolCatalog::class);
         $metadata = $catalog->probeMetadata('caddy');
