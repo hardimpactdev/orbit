@@ -547,10 +547,21 @@ another model.
 Spawned workers and retained verification terminals run through Solo so
 ownership, process ids, and terminal proof remain inspectable. Workers receive
 the active Done Contract, worktree path, owned files or domains, stop and pivot
-conditions, and reporting shape. Worktree-scoped Solo workers must confirm `pwd` and
+conditions, and reporting shape. Solo `spawn_agent` and `spawn_process` have no
+cwd parameter and spawned lanes open at the project root, so pin the working
+directory at launch: pass the assigned worktree through `extra_args` using the
+agent CLI's working-directory flag — Codex lanes use
+`["--cd", "<absolute worktree path>"]`, Grok lanes use
+`["--cwd", "<absolute worktree path>"]`. For agent CLIs without a
+working-directory flag — Claude has none, and Antigravity (`agy`) has none
+(`--add-dir` only widens workspace scope and does not set a working root) —
+spawn a Solo terminal that first `cd`s into the worktree and launch the agent
+inside it. Before relying on any other CLI's working-directory flag, confirm it
+in that CLI's `--help` output. Launch-time pinning is verification input, not a
+substitute for it: worktree-scoped Solo workers must still confirm `pwd` and
 `git branch --show-current` before broad reads or edits; if the spawned agent
-opens at the project root, relaunch through a Solo terminal that first `cd`s
-into the worktree. If those boundaries are hard to state, use one worker
+still opens at the project root, relaunch through a Solo terminal that first
+`cd`s into the worktree. If those boundaries are hard to state, use one worker
 serially instead of parallel workers.
 
 Post-feature analyzers use the enabled `Codex` tool through Solo. Discover it
