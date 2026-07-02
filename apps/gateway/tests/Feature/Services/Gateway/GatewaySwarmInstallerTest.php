@@ -120,11 +120,21 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->and($firewallScript)
         ->toContain('-i "$WG_IFACE" -p tcp --dport 443')
         ->and($firewallScript)
+        ->toContain('-i "$WG_IFACE" -p udp --dport 443')
+        ->and($firewallScript)
         ->toContain('-s "$WG_CIDR" -p tcp --dport 443')
+        ->and($firewallScript)
+        ->toContain('-s "$WG_CIDR" -p udp --dport 443')
+        ->and($firewallScript)
+        ->toContain('-p udp --dport 443 -j DROP')
         ->and($firewallScript)
         ->toContain('sudo ufw allow in on "$WG_IFACE" proto tcp from "$WG_CIDR" to any port 443')
         ->and($firewallScript)
-        ->toContain('sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443');
+        ->toContain('sudo ufw allow in on "$WG_IFACE" proto udp from "$WG_CIDR" to any port 443')
+        ->and($firewallScript)
+        ->toContain('sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443')
+        ->and($firewallScript)
+        ->toContain('sudo ufw deny in proto udp from 0.0.0.0/0 to any port 443');
 
     Process::assertRan("docker info --format '{{.Swarm.LocalNodeState}}'");
     Process::assertRan("docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'");

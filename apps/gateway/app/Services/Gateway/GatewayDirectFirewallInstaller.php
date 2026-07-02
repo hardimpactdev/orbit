@@ -62,20 +62,30 @@ final readonly class GatewayDirectFirewallInstaller
 
             sudo iptables -C DOCKER-USER -i "\$WG_IFACE" -p tcp --dport 443 -j RETURN >/dev/null 2>&1 \\
                 || sudo iptables -I DOCKER-USER 1 -i "\$WG_IFACE" -p tcp --dport 443 -j RETURN
+            sudo iptables -C DOCKER-USER -i "\$WG_IFACE" -p udp --dport 443 -j RETURN >/dev/null 2>&1 \\
+                || sudo iptables -I DOCKER-USER 2 -i "\$WG_IFACE" -p udp --dport 443 -j RETURN
             sudo iptables -C DOCKER-USER -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN >/dev/null 2>&1 \\
-                || sudo iptables -I DOCKER-USER 2 -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN
+                || sudo iptables -I DOCKER-USER 3 -s "\$WG_CIDR" -p tcp --dport 443 -j RETURN
+            sudo iptables -C DOCKER-USER -s "\$WG_CIDR" -p udp --dport 443 -j RETURN >/dev/null 2>&1 \\
+                || sudo iptables -I DOCKER-USER 4 -s "\$WG_CIDR" -p udp --dport 443 -j RETURN
             sudo iptables -C DOCKER-USER -p tcp --dport 443 -j DROP >/dev/null 2>&1 \\
                 || sudo iptables -A DOCKER-USER -p tcp --dport 443 -j DROP
+            sudo iptables -C DOCKER-USER -p udp --dport 443 -j DROP >/dev/null 2>&1 \\
+                || sudo iptables -A DOCKER-USER -p udp --dport 443 -j DROP
 
             if command -v ip6tables >/dev/null 2>&1; then
                 sudo ip6tables -N DOCKER-USER >/dev/null 2>&1 || true
                 sudo ip6tables -C DOCKER-USER -p tcp --dport 443 -j DROP >/dev/null 2>&1 \\
                     || sudo ip6tables -I DOCKER-USER 1 -p tcp --dport 443 -j DROP
+                sudo ip6tables -C DOCKER-USER -p udp --dport 443 -j DROP >/dev/null 2>&1 \\
+                    || sudo ip6tables -I DOCKER-USER 2 -p udp --dport 443 -j DROP
             fi
 
             if command -v ufw >/dev/null 2>&1; then
                 sudo ufw allow in on "\$WG_IFACE" proto tcp from "\$WG_CIDR" to any port 443 >/dev/null || true
+                sudo ufw allow in on "\$WG_IFACE" proto udp from "\$WG_CIDR" to any port 443 >/dev/null || true
                 sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443 >/dev/null || true
+                sudo ufw deny in proto udp from 0.0.0.0/0 to any port 443 >/dev/null || true
             fi
             SH;
     }

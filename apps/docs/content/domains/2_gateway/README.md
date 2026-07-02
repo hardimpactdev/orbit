@@ -43,7 +43,7 @@ Gateway exposure has two modes:
   overlay `orbit-network`, and `orbit-gateway` binds no host ports.
 - `gateway-direct`: `orbit-gateway` publishes gateway HTTPS directly. The leaf
   certificate chains to the Orbit root CA, and firewall rules restrict access
-  to the Orbit/WireGuard path.
+  for TCP/443 and UDP/443 to the Orbit/WireGuard path.
 
 ## Streaming under Docker runtime
 

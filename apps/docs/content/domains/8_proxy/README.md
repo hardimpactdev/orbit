@@ -125,8 +125,8 @@ Document-root policy is part of the route contract. Apps or workspaces that serv
 Custom, redirect, and tool routes are separate route kinds. They may share TLS, DNS, and inventory behavior with app/workspace routes, but they do not inherit the PHP document-root contract unless their own command docs say so.
 
 - **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
-  It terminates public HTTPS and reverse proxies to the active `router` over
-  WireGuard.
+  It terminates public HTTPS on TCP/443 and UDP/443, then reverse proxies to
+  the active `router` over WireGuard.
 - **Private router artifact:** `orbit-caddy` site rendered on the gateway-coupled
   `router` node. It owns private route artifacts, private `.orbit` service
   hostnames, backend pools, and private HTTP/WebSocket/S3 routing before

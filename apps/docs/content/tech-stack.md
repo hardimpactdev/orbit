@@ -79,7 +79,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
 | Gateway to node | SSH through `RemoteShell`, classified by execution lane |
-| Proxy | Dockerized Caddy in one `orbit-caddy` container per node |
+| Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
 | Process manager | Process runtime backends: systemd for Linux host command process units, Docker for containerized process units, Docker Swarm for selected node-owned service processes |
@@ -185,7 +185,8 @@ gateway API traffic to the `orbit-gateway` service alias over the attachable
 overlay `orbit-network`, and `orbit-gateway` publishes no host ports. In
 `gateway-direct` mode, the `orbit-gateway` service publishes gateway HTTPS
 directly. In both modes the gateway leaf certificate chains to the Orbit root
-CA, and WireGuard/firewall policy restricts access to the Orbit control plane.
+CA, and WireGuard/firewall policy restricts TCP/443 and UDP/443 access to the
+Orbit control plane.
 
 In router-colocated mode, the gateway API route is an internal `proxy` entry.
 Its proxy and TLS artifact is repaired by `doctor --family=proxy --restore`,

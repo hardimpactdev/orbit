@@ -15,6 +15,9 @@ These rules govern what the firewall command family owns and what it may not tou
   ingress baseline but accept operator-managed firewall rules.
 - Clients, unsupported platforms, inactive nodes, and role-less identities are not firewall-rule targets.
 - Rules are expressed in Orbit terms: name, node, direction, action, source, destination, protocol, port, and reason.
+- TCP and UDP are distinct rule shapes. Opening HTTPS for HTTP/3-capable
+  traffic requires an explicit UDP/443 rule alongside the TCP/443 rule when
+  the selected firewall policy does not already allow that direction.
 - Rule names are unique on the target node. Reapplying the same named rule with the same policy shape is idempotent; reusing the name for a different policy fails before mutation.
 - Firewall commands resolve input locally, then the gateway writes configuration and applies host policy through the current firewall backend.
 - Role bootstrap policy remains part of the node domain and is not edited through firewall commands.
@@ -33,6 +36,8 @@ Authorization failures use `authorization_failed` with standard
 - Bootstrap policy includes Orbit/WireGuard management access and role-specific
   ingress decisions.
 - Only nodes with active `ingress` expose public production HTTP/HTTPS.
+- HTTPS exposure includes TCP/443 and UDP/443 on listeners that support
+  HTTP/3/QUIC.
 - `app-prod` backend port `80` is private backend traffic and must be
   reachable only through the Orbit/WireGuard network.
 - App and workspace runtime containers are Docker-network backends behind

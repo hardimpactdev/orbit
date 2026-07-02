@@ -346,8 +346,11 @@ is role-aware:
 - nodes with `app-dev` expose Orbit-managed HTTPS routes on the Orbit network.
   When the node has a configured private caller-facing `public_ipv4`, the same
   HTTP/HTTPS listeners are also published on that RFC1918 IPv4 for trusted
-  local resolver overrides; private backend ports remain WireGuard-only;
-- only nodes with active `ingress` expose public production HTTP/HTTPS;
+  local resolver overrides. HTTPS listener intent includes both TCP/443 and
+  UDP/443 so HTTP/3-capable clients can use QUIC instead of silently falling
+  back to HTTP/2. Private backend ports remain WireGuard-only;
+- only nodes with active `ingress` expose public production HTTP/HTTPS, with
+  HTTPS represented as TCP/443 plus UDP/443 on the public listener;
 - `app-prod` backend port `80` is private backend traffic reachable only through the Orbit/WireGuard network;
 - SSH and other node-management access stay on the Orbit network.
 

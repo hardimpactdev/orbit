@@ -45,11 +45,13 @@ These terms define what firewall commands may and may not change.
 - **Bootstrap policy:** Role-baseline firewall policy applied during node
   provisioning, including Orbit/WireGuard management access and ingress
   decisions defined by the node role. Only nodes with active `ingress` expose
-  public production HTTP/HTTPS. `app-prod` backend port `80` is private
-  backend traffic and must be reachable only through the Orbit/WireGuard
-  network. App and workspace runtime containers are Docker-network backends
-  behind `orbit-caddy`; firewall policy targets node listeners rather than
-  individual FrankenPHP containers. Owned by the node domain.
+  public production HTTP/HTTPS. HTTPS listener policy includes TCP/443 and
+  UDP/443 for HTTP/3/QUIC-capable clients. `app-prod` backend port `80` is
+  private backend traffic and must be reachable only through the
+  Orbit/WireGuard network. App and workspace runtime containers are
+  Docker-network backends behind `orbit-caddy`; firewall policy targets node
+  listeners rather than individual FrankenPHP containers. Owned by the node
+  domain.
 - **Operator preset firewall boundary:** Authorization rule that the `operator` permission preset includes `firewall_rule:read` (firewall list/show plus `doctor --family=firewall_rule` findings) but excludes every `firewall_rule:write` permission. Firewall writes require an `admin`-class preset or an explicit `firewall_rule:write` permission on the grant.
 - **Firewall-family boundaries:** Firewall commands own editable rule configuration on eligible nodes.
   - They do not edit bootstrap policy.

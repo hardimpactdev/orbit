@@ -61,8 +61,8 @@ These terms define the types of routes that the proxy family owns and manages.
   `router`. It exists while an active `metrics` role assignment has converged
   route intent and targets the selected metrics node's Grafana backend.
 - **Public route artifact:** `orbit-caddy` site rendered on a `ingress` node.
-  It terminates public HTTPS and reverse proxies to the active `router` over
-  WireGuard.
+  It terminates public HTTPS on TCP/443 and UDP/443, then reverse proxies to
+  the active `router` over WireGuard.
 - **Private router artifact:** `orbit-caddy` site rendered on the gateway-coupled
   `router` node. It owns private route artifacts, private `.orbit` service
   hostnames, backend pools, and private HTTP/WebSocket/S3 routing before
