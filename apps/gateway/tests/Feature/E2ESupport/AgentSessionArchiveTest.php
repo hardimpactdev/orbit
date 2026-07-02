@@ -170,6 +170,82 @@ it('filters multiple target solo processes from fixture exports', function (): v
     }
 });
 
+it('continues past unresolvable target solo processes and records them with an explicit status', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'unresolved-target');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $archiveDir = "{$temp}/archive/agent-sessions";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+
+        $cwd = (string) realpath($cwd);
+
+        write_grok_fixture(home: $home, cwd: $cwd, marker: $marker);
+
+        $soloCliPath = write_agent_session_archive_solo_cli_stub(temp: $temp, cwd: $cwd);
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                '--solo-process-id=103,987654',
+                "--solo-cli={$soloCliPath}",
+                "--solo-db={$temp}/missing-solo.db",
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--marker={$marker}",
+                "--archive-dir={$archiveDir}",
+                '--max-start-distance=3600',
+            ],
+            repo_path(),
+            [
+                'SOLO_PROCESS_ID' => false,
+                'SOLO_PROJECT_ID' => false,
+            ],
+        );
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('WARNING')
+            ->toContain('987654');
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($results)
+            ->toHaveCount(2)
+            ->and(provider_status(results: $results, provider: 'grok'))
+            ->toBe('ok');
+
+        $unresolvedResult = provider_result(results: $results, provider: 'unknown');
+
+        expect($unresolvedResult)
+            ->toMatchArray([
+                'status' => 'solo_process_not_found',
+                'solo_process_id' => 987654,
+            ]);
+
+        $manifest = read_agent_session_archive_json(path: "{$archiveDir}/manifest.json");
+
+        expect($manifest['providers'])
+            ->toMatchArray([
+                'grok' => ['ok' => 1],
+                'unknown' => ['solo_process_not_found' => 1],
+            ])
+            ->and(collect($manifest['sessions'])->firstWhere('solo_process_id', 987654))
+            ->toMatchArray([
+                'provider' => 'unknown',
+                'status' => 'solo_process_not_found',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
 it('archives active orbit state and provider sessions into one session directory', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'session-wrapper');
     $home = "{$temp}/home";
@@ -325,11 +401,29 @@ it('documents session archive directory names as local date time and feature slu
             $normalizedContents = '';
         }
 
-        expect($normalizedContents)
-            ->toContain('YYYY-MM-DD-HHMMSS-<feature-slug>')
-            ->toContain(
-                'Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.',
-            );
+        if ($path === 'HARNESS.md') {
+            expect($normalizedContents)
+                ->toContain('YYYY-MM-DD-HHMMSS-<feature-slug>')
+                ->toContain(
+                    'Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.',
+                );
+
+            continue;
+        }
+
+        $statesNamingContract = str_contains($normalizedContents, 'YYYY-MM-DD-HHMMSS-<feature-slug>')
+        && str_contains(
+            $normalizedContents,
+            'Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.',
+        );
+        $pointsAtArchiveTool = str_contains(
+            $normalizedContents,
+            '`bin/orbit-session-archive` generates and enforces the archive directory name',
+        );
+
+        expect($statesNamingContract || $pointsAtArchiveTool)->toBeTrue(
+            "{$path} must restate the archive naming contract or point at `bin/orbit-session-archive` as the naming authority.",
+        );
     }
 });
 
@@ -574,6 +668,40 @@ function write_agent_session_archive_processes(string $path, string $cwd): void
             'started_at' => '2026-07-01T08:04:00Z',
         ],
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+}
+
+/**
+ * Writes an executable Solo CLI stub that resolves only `processes get 103 --json`
+ * so tests can mix one resolvable and one unresolvable target process id.
+ */
+function write_agent_session_archive_solo_cli_stub(string $temp, string $cwd): string
+{
+    $soloCliPath = "{$temp}/solo-cli-stub";
+    $processJson = json_encode([
+        'process' => [
+            'id' => 103,
+            'name' => 'grok-worker',
+            'kind' => 'agent',
+            'command' => 'grok',
+            'working_dir' => $cwd,
+            'started_at' => '2026-07-01T08:03:00Z',
+        ],
+    ], JSON_UNESCAPED_SLASHES);
+
+    file_put_contents($soloCliPath, <<<BASH
+        #!/bin/sh
+        if [ "\$3" = "processes" ] && [ "\$4" = "get" ] && [ "\$5" = "103" ]; then
+            cat <<'JSON'
+        {$processJson}
+        JSON
+            exit 0
+        fi
+        exit 1
+
+        BASH);
+    chmod($soloCliPath, 0o755);
+
+    return $soloCliPath;
 }
 
 function write_agent_session_archive_fixtures(string $home, string $cwd, string $marker): void

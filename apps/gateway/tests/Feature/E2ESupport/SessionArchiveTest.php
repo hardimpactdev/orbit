@@ -291,6 +291,81 @@ it('session archive warns loudly when no solo process context exists', function 
     }
 });
 
+it('session archive completes with a warning when a prose-mentioned solo process cannot be resolved', function (): void {
+    $workspace = session_archive_workspace(suffix: 'unresolved-process');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        file_put_contents($paths['loopPath'], <<<'MARKDOWN'
+            # Orbit Current Slice State
+
+            Solo process or analyzer: process 987654 handled the review pass.
+
+            MARKDOWN);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-02-100000',
+            '--slug=unresolved-process',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+            "--solo-cli={$workspace}/missing-solo-cli",
+            "--solo-db={$workspace}/missing-solo.db",
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary(process: $process);
+        $archiveDir = (string) $summary['archive_dir'];
+
+        expect($process->getErrorOutput())
+            ->toContain('WARNING')
+            ->toContain('987654')
+            ->and($summary['discovered_solo_process_ids'])
+            ->toBe([987654])
+            ->and("{$archiveDir}/orbit-session-archive.json")
+            ->toBeFile()
+            ->and("{$archiveDir}/evidence/proof.txt")
+            ->toBeFile()
+            ->and("{$archiveDir}/loop.md")
+            ->toBeFile();
+
+        $manifest = json_decode(
+            (string) file_get_contents("{$archiveDir}/agent-sessions/manifest.json"),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($manifest['sessions'])
+            ->toHaveCount(1)
+            ->and($manifest['sessions'][0])
+            ->toMatchArray([
+                'status' => 'solo_process_not_found',
+                'solo_process_id' => 987654,
+            ]);
+
+        $agentResults = $summary['agent_results'];
+
+        expect($agentResults)
+            ->toHaveCount(1)
+            ->and($agentResults[0])
+            ->toMatchArray([
+                'status' => 'solo_process_not_found',
+                'solo_process_id' => 987654,
+            ]);
+
+        $activeLoop = (string) file_get_contents($paths['loopPath']);
+
+        expect($activeLoop)
+            ->toContain('- Session archive: .orbit/sessions/2026-07-02-100000-unresolved-process')
+            ->and((string) file_get_contents("{$archiveDir}/loop.md"))
+            ->toBe($activeLoop);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
 function system_local_timestamp(): string
 {
     $process = new Process(['date', '+%Y-%m-%d-%H%M%S']);
