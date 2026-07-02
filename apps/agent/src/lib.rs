@@ -619,6 +619,10 @@ impl JobExecutor for LocalJobExecutor {
 }
 
 impl LocalJobExecutor {
+    fn launchd_safe_path() -> &'static str {
+        "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    }
+
     fn converge_app_dev(&self, payload: &AppDevConvergencePayload) -> Result<(), GatewayError> {
         for tool in &payload.tools {
             self.converge_tool(*tool)?;
@@ -643,6 +647,7 @@ impl LocalJobExecutor {
         let output = Command::new("/bin/bash")
             .arg("-lc")
             .arg(script)
+            .env("PATH", Self::launchd_safe_path())
             .output()
             .map_err(|error| {
                 GatewayError::Transport(format!("{label} failed to start: {error}"))
@@ -1281,6 +1286,14 @@ bearer_token = "dev-token-placeholder"
     fn laravel_installer_script_repairs_symlink_permissions_and_verifies_output() {
         assert!(LARAVEL_INSTALLER_SCRIPT.contains(r#"sudo chmod -h 0755 /usr/local/bin/laravel"#));
         assert!(LARAVEL_INSTALLER_SCRIPT.contains(r#"grep -q "Laravel Installer""#));
+    }
+
+    #[test]
+    fn local_executor_uses_launchd_safe_path_for_tool_scripts() {
+        assert_eq!(
+            LocalJobExecutor::launchd_safe_path(),
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        );
     }
 
     #[test]
