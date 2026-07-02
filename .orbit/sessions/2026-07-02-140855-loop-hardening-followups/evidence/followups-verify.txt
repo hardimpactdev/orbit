@@ -1,0 +1,69 @@
+LANE verify — loop-hardening-followups
+Date: 2026-07-02
+Worktree: /Users/nckrtl/orbit/.worktrees/loop-hardening-followups
+Branch: loop-hardening-followups
+CHECKOUT_PROOF: pwd=/Users/nckrtl/orbit/.worktrees/loop-hardening-followups, branch=loop-hardening-followups
+
+(1) Targeted Pest suite
+Command:
+  bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/SessionArchiveTest.php tests/Feature/E2ESupport/AgentSessionArchiveTest.php tests/Feature/E2ESupport/FeatureFinalizationGateTest.php tests/Feature/Architecture/McpConfigurationTest.php
+Result:
+  {"tool":"pest","result":"passed","tests":70,"passed":70,"assertions":577,"duration_ms":15018}
+PASS — 70 tests, 70 passed, 577 assertions.
+
+(2) PHP lint
+Command: php -l bin/orbit-session-archive && php -l bin/orbit-agent-session-archive
+Result:
+  No syntax errors detected in bin/orbit-session-archive
+  No syntax errors detected in bin/orbit-agent-session-archive
+PASS.
+
+(3) Functional smoke (mktemp -d)
+Setup: TMP=/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/tmp.yFkvc1Bk2W
+  git init + empty commit; .orbit/loop.md with "## Status" prose
+  "Implementation in progress via Solo process 99999." and an "## Evidence Links" section.
+Command:
+  env -u SOLO_PROCESS_ID -u SOLO_PROJECT_ID \
+    <worktree>/bin/orbit-session-archive --cwd=$TMP --archive-root=$TMP/.orbit/sessions --slug=smoke-test
+Note: SOLO_PROCESS_ID/SOLO_PROJECT_ID had to be unset because the verify lane
+  itself runs as a Solo-managed agent; per shouldDiscoverLoopProcessIds() those
+  env vars intentionally disable loop.md discovery (a first run without env -u
+  archived the runner's own live Claude session via env-based discovery instead —
+  expected documented behavior, not a defect).
+Assertions:
+  - Exit code: 0  PASS
+  - STDERR WARNING mentioning 99999: PASS —
+    "WARNING: could not resolve Solo process 99999 via Solo CLI (/Applications/Solo.app/Contents/MacOS/solo-cli) or local Solo DB (/Users/nckrtl/.config/soloterm/solo.db); recording it as solo_process_not_found and continuing."
+  - Archive dir contains orbit-session-archive.json: PASS —
+    $TMP/.orbit/sessions/2026-07-02-135340-smoke-test/{loop.md,orbit-session-archive.json,agent-sessions/}
+  - Active loop.md gained write-back line: PASS — under "## Evidence Links":
+    "- Session archive: .orbit/sessions/2026-07-02-135340-smoke-test"
+  - agent-sessions/manifest.json records unresolved id: PASS —
+    sessions[0]: {"provider":"unknown","status":"solo_process_not_found","reason":"solo_process_not_found","slug":"unknown-99999","relative_dir":"unknown/unknown-99999","solo_process_id":99999,"raw_files":[]}
+    providers: {"unknown":{"solo_process_not_found":1}}
+  - stdout summary: discovered_solo_process_ids=[99999], mode=created,
+    agent_results[0].status=solo_process_not_found, archive_path=unknown/unknown-99999.
+PASS overall.
+
+(4) composer docs-lint
+Result: exit 0.
+  librarian run 1: {"result":"passed","issues":54,"errors":0,"warnings":54} —
+    all 54 warnings are pre-existing librarian.bullet_complexity warnings in
+    docs/domains/24_solo/**/technical/*.md (line 12 of each), errors=0.
+  librarian run 2: {"result":"passed","issues":0,"errors":0,"warnings":0}
+  librarian run 3: {"result":"passed","issues":0,"errors":0,"warnings":0}
+  "Orbit command catalog is up to date."
+  "Orbit monorepo unit map is up to date."
+  "Harness signal index is up to date."
+PASS.
+
+(5) Grep checks
+  grep -c "^## Default Agent" .agents/review-personas/docs-librarian.md
+    => 1  PASS (exactly one heading)
+  rg -c "compact timestamps" LOOP.md.example harness-signals/README.md HARNESS.md
+    => HARNESS.md:1 (LOOP.md.example: 0 matches, harness-signals/README.md: 0 matches; rg prints no count line for zero-match files; rg exit 0)
+  Normative sentence retained only in HARNESS.md:
+    HARNESS.md:93: "Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive"
+PASS — only HARNESS.md retains the sentence.
+
+VERDICT: all 5 verification steps PASS. No failures.
