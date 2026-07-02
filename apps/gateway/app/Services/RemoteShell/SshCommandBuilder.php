@@ -262,12 +262,21 @@ final class SshCommandBuilder
         }
 
         $path = $this->knownHostsDirectory()."/node-{$node->getKey()}";
-        File::ensureDirectoryExists(dirname($path));
-        @chmod(dirname($path), 0700);
+        $this->ensureKnownHostsDirectory(dirname($path));
         File::put($path, $this->knownHostsContent($node));
         @chmod($path, 0600);
 
         return $path;
+    }
+
+    private function ensureKnownHostsDirectory(string $directory): void
+    {
+        if (! is_dir($directory)) {
+            @mkdir($directory, 0700, true);
+        }
+
+        File::ensureDirectoryExists($directory);
+        @chmod($directory, 0700);
     }
 
     private function knownHostsDirectory(): string
