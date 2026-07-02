@@ -313,6 +313,7 @@ describe('Solo proxy API', function (): void {
             ->toBeTrue()
             ->and($remoteShell->scripts[0])
             ->toContain('curl')
+            ->toContain('status="$(\'curl\'')
             ->toContain('http://127.0.0.1:24678/projects')
             ->toContain('Authorization: Bearer secret-token')
             ->and($remoteShell->options[0])

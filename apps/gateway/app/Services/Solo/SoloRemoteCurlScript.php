@@ -52,7 +52,7 @@ final class SoloRemoteCurlScript
             'set -euo pipefail',
             'body="$(mktemp)"',
             'trap \'rm -f "$body"\' EXIT',
-            'status="('.$this->shellCommand($command).')"',
+            'status="$('.$this->shellCommand($command).')"',
             'printf "%s\n" "$status"',
             'cat "$body"',
         ]);
