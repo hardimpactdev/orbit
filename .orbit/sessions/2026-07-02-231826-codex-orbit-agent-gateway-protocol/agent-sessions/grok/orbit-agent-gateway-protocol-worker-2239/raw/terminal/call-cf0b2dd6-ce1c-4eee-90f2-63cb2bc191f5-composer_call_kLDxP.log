@@ -1,0 +1,14 @@
+/Users/nckrtl/orbit/.worktrees/codex-release-candidate-artifact-automation
+codex/release-candidate-artifact-automation
+## codex/release-candidate-artifact-automation
+ M apps/gateway/tests/Feature/Architecture/McpConfigurationTest.php
+ M apps/gateway/tests/Feature/Release/OrbitCliBinaryBuildScriptTest.php
+ M bin/orbit-build-cli-binary
+?? apps/gateway/app/Console/Commands/Internal/ReleaseCandidateArtifactUploadCommand.php
+?? apps/gateway/app/Services/ReleaseCandidates/
+?? apps/gateway/tests/Feature/Release/ReleaseCandidateArtifactPublisherTest.php
+?? apps/gateway/tests/Feature/Release/ReleaseCandidateDeployScriptTest.php
+?? apps/gateway/tests/Feature/Release/ReleaseCandidateHelperScriptTest.php
+?? apps/gateway/tests/Feature/Release/ReleaseCandidatePublishScriptTest.php
+?? bin/lib/
+?? bin/orbit-release-candidate-publish

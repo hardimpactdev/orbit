@@ -1,0 +1,113 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T21:18:31+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-231826-codex-orbit-agent-gateway-protocol",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-231826-codex-orbit-agent-gateway-protocol/agent-sessions",
+    "copied_entries": [
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [
+        2238,
+        2239,
+        2240,
+        2241,
+        2242
+    ],
+    "agent_results": [
+        {
+            "solo_process_id": 2238,
+            "process_name": "orbit-agent-gateway-protocol-orchestrator",
+            "command": "codex --dangerously-bypass-approvals-and-sandbox --cd /Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "agent": "codex",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "status": "ok",
+            "source": "codex_jsonl_token_count",
+            "metric_confidence": "measured",
+            "artifact_match": "cwd",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-19-13-019f247c-4c1a-7500-ba45-31052b18ed4e.jsonl",
+            "input_tokens": 35007094,
+            "output_tokens": 114861,
+            "reasoning_tokens": 35368,
+            "cached_input_tokens": 34013184,
+            "total_tokens": 35121955,
+            "context_window": 258400,
+            "archive_path": "codex/orbit-agent-gateway-protocol-orchestrator-2238"
+        },
+        {
+            "solo_process_id": 2239,
+            "process_name": "orbit-agent-gateway-protocol-worker",
+            "command": "grok --always-approve --cwd /Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "agent": "grok",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "status": "ok",
+            "source": "grok_signals_json",
+            "metric_confidence": "proxy",
+            "artifact_match": "start_distance",
+            "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit/019f21a9-2a7f-7c52-b105-d1e86a773d09/signals.json",
+            "model": "grok-composer-2.5-fast",
+            "context_tokens_used": 44337,
+            "context_window_tokens": 200000,
+            "context_window_usage_percent": 22,
+            "tool_call_count": 22,
+            "session_duration_seconds": 65,
+            "archive_path": "grok/orbit-agent-gateway-protocol-worker-2239"
+        },
+        {
+            "solo_process_id": 2240,
+            "process_name": "orbit-agent-gateway-protocol-worker-2",
+            "command": "codex --dangerously-bypass-approvals-and-sandbox --cd /Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "agent": "codex",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "status": "ok",
+            "source": "codex_jsonl_token_count",
+            "metric_confidence": "measured",
+            "artifact_match": "cwd",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-48-13-019f2496-d97a-7090-aac1-c6dc074d5775.jsonl",
+            "input_tokens": 1020759,
+            "output_tokens": 13199,
+            "reasoning_tokens": 8999,
+            "cached_input_tokens": 920320,
+            "total_tokens": 1033958,
+            "context_window": 258400,
+            "archive_path": "codex/orbit-agent-gateway-protocol-worker-2-2240"
+        },
+        {
+            "solo_process_id": 2241,
+            "process_name": null,
+            "command": null,
+            "agent": "unknown",
+            "process_metadata_source": "unresolved",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "metric_confidence": "unavailable",
+            "archive_path": "unknown/unknown-2241"
+        },
+        {
+            "solo_process_id": 2242,
+            "process_name": null,
+            "command": null,
+            "agent": "unknown",
+            "process_metadata_source": "unresolved",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-gateway-protocol",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "metric_confidence": "unavailable",
+            "archive_path": "unknown/unknown-2242"
+        }
+    ]
+}

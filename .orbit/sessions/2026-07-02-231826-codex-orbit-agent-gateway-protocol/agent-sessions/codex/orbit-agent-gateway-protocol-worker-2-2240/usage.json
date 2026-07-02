@@ -1,0 +1,13 @@
+{
+    "status": "ok",
+    "source": "codex_jsonl_token_count",
+    "metric_confidence": "measured",
+    "artifact_match": "cwd",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-48-13-019f2496-d97a-7090-aac1-c6dc074d5775.jsonl",
+    "input_tokens": 1020759,
+    "output_tokens": 13199,
+    "reasoning_tokens": 8999,
+    "cached_input_tokens": 920320,
+    "total_tokens": 1033958,
+    "context_window": 258400
+}

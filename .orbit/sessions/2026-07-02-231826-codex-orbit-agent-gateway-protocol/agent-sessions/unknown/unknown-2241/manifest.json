@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "unknown",
+    "status": "solo_process_not_found",
+    "reason": "solo_process_not_found",
+    "checked": [
+        "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+        "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+    ],
+    "slug": "unknown-2241",
+    "relative_dir": "unknown/unknown-2241",
+    "solo_process_id": 2241,
+    "raw_files": []
+}

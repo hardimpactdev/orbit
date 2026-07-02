@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "orbit-agent-gateway-protocol-orchestrator-2238",
+    "relative_dir": "codex/orbit-agent-gateway-protocol-orchestrator-2238",
+    "solo_process_id": 2238,
+    "process_name": "orbit-agent-gateway-protocol-orchestrator",
+    "source": "codex_jsonl_token_count",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-19-13-019f247c-4c1a-7500-ba45-31052b18ed4e.jsonl",
+    "raw_files": [
+        "rollout-2026-07-02T22-19-13-019f247c-4c1a-7500-ba45-31052b18ed4e.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 214
+}

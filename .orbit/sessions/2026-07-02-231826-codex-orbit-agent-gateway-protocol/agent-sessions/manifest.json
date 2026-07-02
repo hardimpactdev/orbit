@@ -1,0 +1,112 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T21:18:31+00:00",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-231826-codex-orbit-agent-gateway-protocol/agent-sessions",
+    "providers": {
+        "codex": {
+            "ok": 2
+        },
+        "grok": {
+            "ok": 1
+        },
+        "unknown": {
+            "solo_process_not_found": 2
+        }
+    },
+    "sessions": [
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "ok",
+            "slug": "orbit-agent-gateway-protocol-orchestrator-2238",
+            "relative_dir": "codex/orbit-agent-gateway-protocol-orchestrator-2238",
+            "solo_process_id": 2238,
+            "process_name": "orbit-agent-gateway-protocol-orchestrator",
+            "source": "codex_jsonl_token_count",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-19-13-019f247c-4c1a-7500-ba45-31052b18ed4e.jsonl",
+            "raw_files": [
+                "rollout-2026-07-02T22-19-13-019f247c-4c1a-7500-ba45-31052b18ed4e.jsonl"
+            ],
+            "usage_path": "usage.json",
+            "messages_path": "messages.jsonl",
+            "message_count": 214
+        },
+        {
+            "schema_version": 1,
+            "provider": "grok",
+            "status": "ok",
+            "slug": "orbit-agent-gateway-protocol-worker-2239",
+            "relative_dir": "grok/orbit-agent-gateway-protocol-worker-2239",
+            "solo_process_id": 2239,
+            "process_name": "orbit-agent-gateway-protocol-worker",
+            "source": "grok_signals_json",
+            "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit/019f21a9-2a7f-7c52-b105-d1e86a773d09/signals.json",
+            "raw_files": [
+                "chat_history.jsonl",
+                "events.jsonl",
+                "hunk_records.jsonl",
+                "prompt_context.json",
+                "resources_state.json",
+                "rewind_points.jsonl",
+                "signals.json",
+                "summary.json",
+                "summary.json.lock",
+                "system_prompt.txt",
+                "terminal/call-07dba202-1144-4542-ad76-07536a8bb132-composer_call_ADQJ9.log",
+                "terminal/call-4407fefe-181b-4a8c-859a-8cab25111a7d-composer_call_ADQJ9.log",
+                "terminal/call-bc71fe9c-2a4d-4100-a152-0952cf85cc8a-composer_call_ADQJ9.log",
+                "terminal/call-cf0b2dd6-ce1c-4eee-90f2-63cb2bc191f5-composer_call_kLDxP.log",
+                "terminal/call-ffd35fcf-98e6-4d57-bd90-3dfef8c5c4d2-composer_call_kLDxP.log",
+                "updates.jsonl"
+            ],
+            "usage_path": "usage.json",
+            "messages_path": "messages.jsonl",
+            "message_count": 9
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "ok",
+            "slug": "orbit-agent-gateway-protocol-worker-2-2240",
+            "relative_dir": "codex/orbit-agent-gateway-protocol-worker-2-2240",
+            "solo_process_id": 2240,
+            "process_name": "orbit-agent-gateway-protocol-worker-2",
+            "source": "codex_jsonl_token_count",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-48-13-019f2496-d97a-7090-aac1-c6dc074d5775.jsonl",
+            "raw_files": [
+                "rollout-2026-07-02T22-48-13-019f2496-d97a-7090-aac1-c6dc074d5775.jsonl"
+            ],
+            "usage_path": "usage.json",
+            "messages_path": "messages.jsonl",
+            "message_count": 18
+        },
+        {
+            "schema_version": 1,
+            "provider": "unknown",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "slug": "unknown-2241",
+            "relative_dir": "unknown/unknown-2241",
+            "solo_process_id": 2241,
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "unknown",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "slug": "unknown-2242",
+            "relative_dir": "unknown/unknown-2242",
+            "solo_process_id": 2242,
+            "raw_files": []
+        }
+    ]
+}

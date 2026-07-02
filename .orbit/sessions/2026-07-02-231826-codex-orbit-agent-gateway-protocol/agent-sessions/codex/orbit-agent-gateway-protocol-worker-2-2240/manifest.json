@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "orbit-agent-gateway-protocol-worker-2-2240",
+    "relative_dir": "codex/orbit-agent-gateway-protocol-worker-2-2240",
+    "solo_process_id": 2240,
+    "process_name": "orbit-agent-gateway-protocol-worker-2",
+    "source": "codex_jsonl_token_count",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T22-48-13-019f2496-d97a-7090-aac1-c6dc074d5775.jsonl",
+    "raw_files": [
+        "rollout-2026-07-02T22-48-13-019f2496-d97a-7090-aac1-c6dc074d5775.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 18
+}

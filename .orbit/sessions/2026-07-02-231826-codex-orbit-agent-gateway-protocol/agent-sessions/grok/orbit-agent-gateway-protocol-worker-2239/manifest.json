@@ -1,0 +1,32 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "ok",
+    "slug": "orbit-agent-gateway-protocol-worker-2239",
+    "relative_dir": "grok/orbit-agent-gateway-protocol-worker-2239",
+    "solo_process_id": 2239,
+    "process_name": "orbit-agent-gateway-protocol-worker",
+    "source": "grok_signals_json",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit/019f21a9-2a7f-7c52-b105-d1e86a773d09/signals.json",
+    "raw_files": [
+        "chat_history.jsonl",
+        "events.jsonl",
+        "hunk_records.jsonl",
+        "prompt_context.json",
+        "resources_state.json",
+        "rewind_points.jsonl",
+        "signals.json",
+        "summary.json",
+        "summary.json.lock",
+        "system_prompt.txt",
+        "terminal/call-07dba202-1144-4542-ad76-07536a8bb132-composer_call_ADQJ9.log",
+        "terminal/call-4407fefe-181b-4a8c-859a-8cab25111a7d-composer_call_ADQJ9.log",
+        "terminal/call-bc71fe9c-2a4d-4100-a152-0952cf85cc8a-composer_call_ADQJ9.log",
+        "terminal/call-cf0b2dd6-ce1c-4eee-90f2-63cb2bc191f5-composer_call_kLDxP.log",
+        "terminal/call-ffd35fcf-98e6-4d57-bd90-3dfef8c5c4d2-composer_call_kLDxP.log",
+        "updates.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 9
+}

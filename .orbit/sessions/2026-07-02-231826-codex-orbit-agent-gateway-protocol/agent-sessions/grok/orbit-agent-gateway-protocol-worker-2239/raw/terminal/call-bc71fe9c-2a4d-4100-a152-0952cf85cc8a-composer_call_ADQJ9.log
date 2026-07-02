@@ -1,0 +1,45 @@
+
+  [31;1m⨯[39;22m[31;1m⨯[39;22m
+  [31m────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Release\ReleaseCandidateReportScriptTest[22m [90m>[39m it defin…   
+[39;1m  Failed asserting that file "/Users/nckrtl/orbit/.worktrees/codex-release-candidate-artifact-automation/bin/orbit-release-candidate-report" exists.[39;22m
+
+  at [32mtests/Feature/Release/ReleaseCandidateReportScriptTest.php[39m:[32m8[39m
+      4▕ 
+      5▕ it('defines the release candidate report maintainer script', function (): void {
+      6▕     $scriptPath = repo_path('bin/orbit-release-candidate-report');
+      7▕ 
+  ➜   8▕     expect($scriptPath)->toBeFile()->and(is_executable($scriptPath))->toBeTrue();
+      9▕ 
+     10▕     $script = file_get_contents($scriptPath);
+     11▕ 
+     12▕     expect($script)
+
+  [33m1   [39m[39;1mtests/Feature/Release/ReleaseCandidateReportScriptTest.php[39;22m:[39;1m8[39;22m
+
+  [31m────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Release\ReleaseCandidateReportScriptTest[22m [90m>[39m it docum…   
+[39;1m  Expected: [39;22m[31m---\n[39m[39;1m
+  [39;22m[31mname: release\n[39m[39;1m
+  [39;22m[31mdescription: Use when creating a new Orbit release, publishing release artifacts, bumping Orbit versions, or handling requests like "let's create a new release".\n[39m[39;1m
+  [39;22m[90m... (444 more lines)[39m[39;1m
+
+  To contain: [39;22m[32m## Maintainer RC Scripts[39m
+
+  at [32mtests/Feature/Release/ReleaseCandidateReportScriptTest.php[39m:[32m35[39m
+     31▕ 
+     32▕     $skill = file_get_contents($skillPath);
+     33▕ 
+     34▕     expect($skill)
+  ➜  35▕         ->toContain('## Maintainer RC Scripts')
+     36▕         ->toContain('bin/orbit-release-candidate-publish')
+     37▕         ->toContain('bin/orbit-release-candidate-deploy')
+     38▕         ->toContain('bin/orbit-release-candidate-report')
+     39▕         ->not->toContain('ORBIT_CANDIDATE_PREFIX="$candidate_prefix"');
+
+  [33m1   [39m[39;1mtests/Feature/Release/ReleaseCandidateReportScriptTest.php[39;22m:[39;1m35[39;22m
+
+
+  [90mTests:[39m    [31;1m2 failed[39;22m[90m (3 assertions)[39m
+  [90mDuration:[39m [39m0.11s[39m
+

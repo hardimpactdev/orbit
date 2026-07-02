@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f21a9-2a7f-7c52-b105-d1e86a773d09",
+    "cwd": "/Users/nckrtl/orbit"
+  },
+  "session_summary": "Implement orbit-release-candidate-report Script + Release SKILL.md Update",
+  "created_at": "2026-07-02T07:09:22.528523Z",
+  "updated_at": "2026-07-02T21:09:46.770853Z",
+  "num_messages": 98,
+  "num_chat_messages": 47,
+  "current_model_id": "grok-composer-2.5-fast",
+  "next_trace_turn": 1,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "8275c268d2d0cc7f0362317c0a11dc5105085d4c",
+  "head_branch": "main",
+  "request_id": "ef011857-151b-45b7-888a-f05751dc24ed",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-02T07:10:28.231414Z",
+  "generated_title": "Implement orbit-release-candidate-report Script + Release SKILL.md Update",
+  "agent_name": "cursor",
+  "sandbox_profile": "off"
+}
