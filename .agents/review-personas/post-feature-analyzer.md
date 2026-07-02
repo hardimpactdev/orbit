@@ -20,6 +20,13 @@ VERDICT: <yes|flawed|blocked-by-missing-evidence>
 The allowed values are the loop-proper vocabulary defined under
 `Verdict Vocabulary` below.
 
+If the feature owner interrupts or corrects you only because the final
+`VERDICT:` line is missing after you already produced findings, evidence,
+guardrail classifications, or substantive analysis, do not re-read files or
+continue the analysis. Respond in the next message with only the required
+`VERDICT: <yes|flawed|blocked-by-missing-evidence>` line from the evidence
+already gathered.
+
 Use this analyzer after an Orbit feature implementation has produced evidence.
 It replaces the outer loop-improver watcher for normal feature work: the
 feature implementer runs the feature loop, then this analyzer reviews the

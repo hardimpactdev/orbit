@@ -24,6 +24,9 @@ The node family owns these facts:
   permissions for home directories set during bake;
 - node update posture: managed Ubuntu server update readiness through a
   supported update driver, starting with Ubuntu `unattended-upgrades`;
+- future Orbit Agent readiness on agent-capable nodes: typed-job delivery
+  posture, local process reachability, and privilege prompt capability when
+  that lane exists;
 - node-related defaults: `app-dev` and `agent` assignment TLD
   settings, development and agent DNS mappings for those TLDs, DNS resolver
   safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`,
@@ -148,6 +151,13 @@ The node probe reads gateway node records and checks these layers:
 
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
+
+Future macOS Orbit Agent-capable nodes may surface OS privilege prompts when
+`doctor --restore`, role convergence, updates, or another typed job submitted
+by the gateway needs protected local work. V1 has no separate Orbit approval UI:
+there is no pending/approve queue for doctor, node, or update jobs. The result
+of the job and any privilege-requested, success, or failure event belongs in
+gateway operation/activity history.
 
 The SSH/bootstrap endpoint and gateway endpoint are operator-supplied
 connectivity facts. Node doctor may verify that an endpoint works for the node

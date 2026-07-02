@@ -22,6 +22,12 @@ VERDICT: <pass|findings|blocked>
 - `blocked`: required evidence or context was missing; the review could not
   complete.
 
+If the feature owner interrupts or corrects you only because the final
+`VERDICT:` line is missing after you already produced findings, evidence, or
+substantive analysis, do not re-read files or continue the review. Respond in
+the next message with only the required `VERDICT: <pass|findings|blocked>` line
+from the evidence already gathered.
+
 ## Default Agent
 
 Spawn per the Solo Role Matrix in HARNESS.md. Run documentation/librarian

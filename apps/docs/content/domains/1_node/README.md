@@ -79,9 +79,11 @@ Gateway maintenance uses `bin/orbit-gateway-artisan` or direct
 `php apps/gateway/artisan` from a controlled gateway shell; the public `orbit`
 command never dispatches to gateway Artisan.
 
-Nodes do not own fleet state or run a local Orbit capability layer. They run
-workload services, call the gateway when a local command is invoked, and receive
-gateway-applied changes over SSH.
+Nodes do not own fleet state or run a local control plane. They run workload
+services, call the gateway when a local command is invoked, and currently
+receive gateway-applied changes over SSH. The future Orbit Agent runs on the
+node and lets supported nodes receive typed jobs owned by the gateway through
+polling, but it does not make the node a source of truth.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
@@ -322,15 +324,31 @@ Node transport has different rules before and after bootstrap:
   `vpn-web-ui:*` commands run against the active `vpn` role runtime, so in v1 a
   client initiating them needs SSH access to the gateway-coupled host over
   Orbit/WireGuard.
-- The gateway uses SSH to communicate with nodes. On-node work such as file
-  writes, service control, log access, package installation, and shell execution
-  is simpler and more explicit over SSH than through an HTTP capability API on
-  the node.
+- The gateway currently uses SSH to communicate with nodes. On-node work such
+  as file writes, service control, log access, package installation, and shell
+  execution is explicit over SSH.
+- The future Orbit Agent lane is reserved for supported nodes, starting with
+  macOS `app-dev` and self-managed workload nodes. The Orbit Agent polls the
+  gateway for typed Orbit jobs; it is not arbitrary shell transport, not a
+  WebSocket requirement, and not an HTTP capability API on the node.
+- On macOS agent-capable nodes, a gateway-submitted typed job may trigger the
+  OS privilege prompt through the Orbit Agent when protected work needs sudo or
+  administrator access. V1 has no separate Orbit approval UI or pending/approve
+  flow. The macOS menu icon only means the process is running; opening the menu
+  may perform a one-shot gateway ping that shows Connected or Disconnected,
+  node name, and gateway name/host, plus Restart and Quit actions. It does not
+  show job history; job history remains in gateway operation/activity history.
+- Orbit Agent is distinct from the existing `agent` workload role and from
+  Agent IDE adapters.
 
-The steady-state paths are therefore:
+The current steady-state paths are therefore:
 
 1. CLI caller to gateway over HTTPS through WireGuard;
 2. gateway to node over SSH when node-side work is required.
+
+On future agent-capable nodes, the second path may become dispatch of typed
+jobs owned by the gateway through the polling Orbit Agent lane, with SSH
+retained for bootstrap, recovery, and fallback.
 
 ## Role Bootstrap Network Policy
 

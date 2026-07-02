@@ -845,7 +845,13 @@ command address/output transcript.
     generating without useful progress for an extended window. If it still does
     not return, close or replace that reviewer and record the process finding
     through `harness-signals/` before proceeding only on defensible direct
-    evidence.
+    evidence. If the reviewer already produced findings, evidence, or
+    substantive analysis but omitted the required machine-parseable verdict
+    line, send one narrow verdict-line checkpoint prompt that asks for only the
+    required final `VERDICT:` line from already gathered evidence. If it still
+    does not emit the line, close or replace that reviewer and record the
+    finding; do not keep prompting a reviewer that has stalled at the final
+    verdict contract.
     Reviewer findings fixed before merge are normal feature-loop work. Promote
     them to loop improvements only when the review process itself missed a
     recurring class of issue, or existing reviewer guidance would not catch the
@@ -910,7 +916,14 @@ command address/output transcript.
     rationale. The analyzer runs before merge: record its verdict in the
     packet's `- Fresh analyzer:` row (`deferred - <reason>` when analyzer
     infrastructure fails), which the finalization gate checks at the merge
-    boundary. Use the analyzer report to classify each guardrail decision as
+    boundary. If the analyzer produces substantive classifications or evidence
+    but omits the prompt's required final verdict line, send one narrow
+    verdict-line checkpoint prompt that asks for only that final line from
+    already gathered evidence. If it still does not emit the line, close or
+    replace the analyzer, prefer an alternate runtime for the replacement when
+    practical, and record the candidate signal before continuing only from
+    defensible direct evidence. Use the analyzer report to classify each
+    guardrail decision as
     correct-noop, missed, redundant, wrong-target, or deferred; then classify
     each candidate as local cleanup, already covered by existing
     `harness-signals/` records, rejected, deferred, or a new durable signal.

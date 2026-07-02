@@ -13,8 +13,8 @@ Client
   -> HTTPS over WireGuard
   -> gateway HTTPS exposure
   -> orbit-gateway
-  -> RemoteShell over WireGuard
   -> node execution lane
+     (current SSH/RemoteShell; future Orbit Agent where supported)
 
 Public production HTTP:
 
@@ -78,7 +78,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
-| Gateway to node | SSH through `RemoteShell`, classified by execution lane |
+| Gateway to node | Current: SSH through `RemoteShell`, classified by execution lane. Future: node-local Orbit Agent for supported agent-capable nodes, starting with macOS `app-dev` and self-managed workload nodes. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
@@ -219,7 +219,14 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 
 ### Gateway to node
 
-See [Architecture: Trust And Transport](architecture.md#trust-and-transport) for why this edge is SSH (not another HTTP API) and what that buys us.
+See [Architecture: Trust And Transport](architecture.md#trust-and-transport)
+for the current SSH/RemoteShell edge and the future Orbit Agent direction.
+
+The implemented gateway-to-node path today is SSH through `RemoteShell`. The
+future Orbit Agent runs on supported nodes, starting with macOS `app-dev` and
+self-managed workload nodes. It is not implemented by this document:
+SSH/RemoteShell remains bootstrap, recovery, fallback, and the current path
+anywhere the Orbit Agent lane does not exist.
 
 Gateway-to-node work is split into `RemoteHostExecutor` for host substrate
 work, gateway-container execution for gateway Laravel/artisan/PDO work inside
@@ -269,6 +276,37 @@ Scripts are composed on the gateway. Remote shell work is non-interactive — pr
 The current sudo model intentionally grants the managed maintenance user broad
 passwordless sudo on managed nodes. Least-privilege sudo wrappers are not part
 of the current security baseline.
+
+That passwordless sudo contract applies to the current SSH/RemoteShell lane. It
+is not the intended privilege UX for the future macOS Orbit Agent lane. On an
+agent-capable macOS node, a typed Orbit job submitted by the gateway may
+execute user-level work locally and may invoke the macOS/sudo OS prompt when a
+protected step needs administrator access. V1 has no separate Orbit approval UI
+or pending/approve flow.
+
+#### Future Orbit Agent lane
+
+Orbit Agent is the future node-local executor for gateway-owned typed jobs on
+supported nodes. The gateway remains authoritative for intent, authorization,
+release manifests, immutable update plans, operation history, and activity logs.
+The Orbit Agent receives typed jobs, executes them locally, reports lifecycle,
+privilege-requested, success, and failure events back to the gateway, and does
+not create a separate control plane.
+
+V1 is scoped narrowly:
+
+- typed Orbit jobs only, not arbitrary shell transport;
+- polling for jobs, with no WebSocket requirement;
+- one-shot gateway ping when the macOS menu opens, showing Connected or
+  Disconnected plus node name and gateway name/host;
+- menu icon state means the process is running, with Restart and Quit actions;
+- no menu job history;
+- no separate approval UI beyond OS privilege prompts.
+
+Orbit Agent is distinct from the existing `agent` workload role and from Agent
+IDE adapters. The `agent` role runs autonomous agent tools such as OpenClaw and
+Hermes as managed workloads; Agent IDE adapters support human-driven coding
+sessions. Orbit Agent is a node-local execution lane for Orbit operations.
 
 ### Proxy
 

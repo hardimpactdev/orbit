@@ -402,14 +402,23 @@ These terms describe how nodes communicate and how authority is enforced.
 - **Gateway maintenance edge:** `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell. The public `orbit`
   command does not dispatch to gateway Artisan.
-- **Gateway-to-node edge:** SSH through `RemoteShell` for node-side applying
-  from the gateway.
+- **Gateway-to-node edge:** Current SSH through `RemoteShell` for node-side
+  applying from the gateway. Future nodes that are agent-capable may use an
+  Orbit Agent lane that runs on the node for gateway-owned typed jobs, with SSH
+  retained for bootstrap, recovery, and fallback.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
   WireGuard, SSH, reachability, and gateway service readiness for a node.
 - **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,
   `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
+
+The future Orbit Agent lane starts with macOS `app-dev` and self-managed
+workload nodes. The gateway remains authoritative; the Orbit Agent polls for
+typed Orbit jobs, executes user-level work locally, may invoke OS privilege
+prompts for protected macOS work, and reports lifecycle events back to gateway
+operation/activity history. V1 has no WebSocket requirement, no arbitrary shell
+transport, no menu job history, and no separate approval UI.
 
 ## Access Policy
 
