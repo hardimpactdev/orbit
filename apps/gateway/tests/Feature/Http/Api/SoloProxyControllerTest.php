@@ -280,6 +280,11 @@ describe('Solo proxy API', function (): void {
              */
             public array $scripts = [];
 
+            /**
+             * @var list<array<string, mixed>>
+             */
+            public array $options = [];
+
             public function __construct(
                 private readonly RemoteShellResult $result,
             ) {}
@@ -288,6 +293,7 @@ describe('Solo proxy API', function (): void {
             {
                 $this->nodes[] = $node;
                 $this->scripts[] = $script;
+                $this->options[] = $options;
 
                 return $this->result;
             }
@@ -308,7 +314,9 @@ describe('Solo proxy API', function (): void {
             ->and($remoteShell->scripts[0])
             ->toContain('curl')
             ->toContain('http://127.0.0.1:24678/projects')
-            ->toContain('Authorization: Bearer secret-token');
+            ->toContain('Authorization: Bearer secret-token')
+            ->and($remoteShell->options[0])
+            ->not->toHaveKey('metadata');
     });
 
     it('proxies projects and maps upstream unavailable responses', function (): void {

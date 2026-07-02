@@ -113,9 +113,6 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
                     'timeout' => 10,
                     'throw' => false,
                     'input' => $input,
-                    'metadata' => [
-                        'operation' => 'solo.upstream',
-                    ],
                 ],
                 static fn (mixed $value): bool => $value !== null,
             ),
