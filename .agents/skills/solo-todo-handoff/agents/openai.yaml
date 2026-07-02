@@ -1,4 +1,4 @@
 interface:
   display_name: "Solo Todo Handoff"
-  short_description: "Turn Solo todos into compact Claude Opus implementation goals."
-  default_prompt: "Use this skill to hand off Solo todo <id> to Claude Opus."
+  short_description: "Turn Solo todos into compact Codex implementation goals."
+  default_prompt: "Use this skill to hand off Solo todo <id> to Codex."

@@ -226,8 +226,8 @@ not run output capture and process deletion in parallel.
 Run a fresh-context post-feature analyzer from that packet when the feature had
 implementation workers, reviewer corrections, retained terminal/PTY evidence,
 quality-gate artifacts, human steering, or guardrail decisions. Use
-`.agents/review-personas/post-feature-analyzer.md` as a Solo-managed Claude
-Opus analyzer at medium effort. The analyzer reviews the orchestrator/Solo
+`.agents/review-personas/post-feature-analyzer.md` as a Solo-managed Codex
+analyzer. The analyzer reviews the orchestrator/Solo
 session messages and worktree artifacts, then reports whether the loop was
 performed properly and whether guardrails were missed, redundant, correctly
 omitted, or aimed at the wrong target. It does not edit code, update the
@@ -529,21 +529,21 @@ only when ownership can stay clear.
 
 | Role | Default Agent | Owns | Does Not Own |
 |------|---------------|------|--------------|
-| Feature orchestrator | Solo-managed Claude Sonnet is the usual default | Done Contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
+| Feature orchestrator | Solo-managed Codex is the usual default | Done Contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
 | Implementation worker | Solo-managed worker; Grok is the usual default | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Final commit, merge-back, release, broad refactors, unrelated dirty files |
-| Documenter / librarian worker | Solo-managed Claude Opus | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
+| Documenter / librarian worker | Solo-managed Codex | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
 | Code / CLI reviewer persona | Solo-managed Antigravity reviewer | Focused code or CLI review from the assigned persona, changed diff, implementation report, and evidence | Implementation, product redefinition, merge approval, cleanup, or final promotion decisions |
-| Post-feature analyzer | Solo-managed Claude Opus analyzer (medium effort) | Read-only review of orchestrator/Solo session messages, `.orbit` artifacts, verification evidence, final diff, and guardrail decisions | Live steering, implementation, harness edits, merge approval, cleanup, or final promotion decisions |
+| Post-feature analyzer | Solo-managed Codex analyzer | Read-only review of orchestrator/Solo session messages, `.orbit` artifacts, verification evidence, final diff, and guardrail decisions | Live steering, implementation, harness edits, merge approval, cleanup, or final promotion decisions |
 | Loop observer | Solo-managed read-only observer; explicit request only, never a default lane | Live read-only observation of an active loop per `.agents/skills/loop-observer`: wrong turns, friction, and timing notes without interrupting the run | Steering, implementation, reviews, merge approval, cleanup, or spawning workers |
 | Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
 
 The active feature-owner thread is the source of work. It can start in Codex
-CLI, the Codex app, Claude, or another capable LLM surface, but the default
-long-running Solo feature orchestrator is Claude Sonnet. Discover the enabled
-`Claude` tool with `list_agent_tools`, then `spawn_agent` with
-`extra_args=["--model", "sonnet"]`. If Claude Sonnet is not available through
-Solo, stop and report the blocker instead of substituting another model.
+CLI, the Codex app, or another capable LLM surface, but the default
+long-running Solo feature orchestrator is Codex. Discover the enabled
+`Codex` tool with `list_agent_tools`, then `spawn_agent`. If Codex is not
+available through Solo, stop and report the blocker instead of substituting
+another model.
 Spawned workers and retained verification terminals run through Solo so
 ownership, process ids, and terminal proof remain inspectable. Workers receive
 the active Done Contract, worktree path, owned files or domains, stop and pivot
@@ -553,11 +553,10 @@ opens at the project root, relaunch through a Solo terminal that first `cd`s
 into the worktree. If those boundaries are hard to state, use one worker
 serially instead of parallel workers.
 
-Post-feature analyzers use the enabled `Claude` tool through Solo. Discover it
-with `list_agent_tools`, then `spawn_agent` with
-`extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is not
-available through Solo, stop and report the blocker instead of substituting
-another model. Code and CLI reviewer personas use the enabled Antigravity tool
+Post-feature analyzers use the enabled `Codex` tool through Solo. Discover it
+with `list_agent_tools`, then `spawn_agent`. If Codex is not available through
+Solo, stop and report the blocker instead of substituting another model. Code
+and CLI reviewer personas use the enabled Antigravity tool
 through Solo. Because Antigravity provider-session archiving is unsupported
 until a reliable session-file contract exists, the feature owner must preserve
 the reviewer report itself as the evidence artifact. This agent selection does
@@ -573,7 +572,7 @@ clear merge order. In parallel-worker mode, workers must also scope formatters
 and fixers to their owned files; broad Mago formatting, broad Rector, or
 aggregate fixers belong to the feature owner after worker diffs are reconciled.
 
-Documentation-heavy work may start with a Claude Opus documenter/librarian worker.
+Documentation-heavy work may start with a Codex documenter/librarian worker.
 Code implementation can run after the feature owner accepts the docs contract as
 stable enough. Docs and code may proceed in parallel only when the product
 contract is settled, ownership is disjoint, and the feature owner owns
@@ -586,9 +585,9 @@ Use this table to pick the smallest workflow that can prove the change.
 | Surface | Skill | Authority Docs | Test Lane | Reviewer Needed | Loop Depth | Hard Stop |
 |---------|-------|----------------|-----------|-----------------|------------|-----------|
 | Docs-only | `updating-documentation`; `auditing-docs-drift` only for an explicit consistency scan | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | `.agents/review-personas/docs-librarian.md` or human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
-| Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Claude Opus documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
+| Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Codex documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
 | Quality-gate failure or slowdown | `quality-gate-triage`, plus `pest-testing`, `e2e-verification-lanes`, or `cli-output-pty-capture` by lane | `apps/docs/content/testing/README.md`, `quality-gates.md`, `in-memory/performance.md`, `e2e/environment.md`, `e2e/performance.md` | Inspect existing evidence under `.orbit/quality-gates/` and `.orbit/evidence/`; do not rerun expensive gates just to classify | Owner/human only after classification points at product behavior | Record recurring flakes, missing baselines, or confusing lane failures | Aggregate provision command, live-node mutation, or product fix before classification |
-| Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, orchestrator/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh Solo Claude Opus analyzer report for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
+| Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, orchestrator/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh Solo Codex analyzer report for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
 | CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; retained topology proof; PTY frame capture and reviewer analysis before human UX review | `.agents/review-personas/cli-command.md` via Solo Antigravity, or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained topology proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; retained topology proof when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
 | Provisioning/live-node | `implementing-features`; `e2e-verification-lanes` only for existing artifact triage or manual command reference | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |

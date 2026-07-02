@@ -1,18 +1,18 @@
 ---
 name: solo-todo-handoff
-description: Use when a user asks to hand off an existing Solo todo to a Claude implementation agent, mentions a todo handoff, asks for a compact /goal prompt from a Solo todo, or wants Claude Opus to implement an Orbit todo through Solo.
+description: Use when a user asks to hand off an existing Solo todo to a Codex implementation agent, mentions a todo handoff, asks for a compact /goal prompt from a Solo todo, or wants Codex to implement an Orbit todo through Solo.
 ---
 
 # Solo Todo Handoff
 
 ## Overview
 
-Turn one existing Solo todo into a compact Claude Opus implementation goal.
-Claude becomes the Orbit feature owner and must use
+Turn one existing Solo todo into a compact Codex implementation goal.
+Codex becomes the Orbit feature owner and must use
 `.agents/skills/implementing-features/SKILL.md` until the todo's success
 criteria are met or a real blocker is proven.
 
-`/goal` is the Claude Code goal-setting slash command: the body after `/goal`
+`/goal` is the Codex goal-setting slash command: the body after `/goal`
 becomes the spawned agent's standing objective, pursued until met or blocked.
 
 This skill does not create or refine the todo. It starts after the user names a
@@ -33,10 +33,10 @@ Solo todo id or URL.
    `agent_instructions` are not part of the body, but if the Solo UI or agent
    surface counts them in the same field, reserve that space and shrink the
    `/goal` body accordingly. Do not send an over-limit goal.
-5. Use `list_agent_tools` and select the enabled `Claude` tool. Spawn it with
-   `spawn_agent`, `extra_args=["--model", "opus", "--effort", "medium"]`, and a
-   name such as `todo-<todo-id>-opus`. If Claude Opus is not available, stop and
-   report the available tools instead of silently using Sonnet.
+5. Use `list_agent_tools` and select the enabled `Codex` tool. Spawn it with
+   `spawn_agent` and a name such as `todo-<todo-id>-codex`. If Codex is not
+   available, stop and report the available tools instead of silently using
+   another model.
 6. Send the first prompt with `send_input`. If Solo returns
    `agent_instructions`, prepend them verbatim before everything else in
    `send_input.input`, then place the `/goal` body verbatim after them —
@@ -66,7 +66,7 @@ Solo todo id or URL.
 - Because this is a send-and-forget handoff, put the avoidable-question rule in
   the initial `/goal`; there is no midpoint correction loop.
 - If success criteria remain ambiguous after those reads, stop before spawning
-  Claude and ask for the missing acceptance boundary.
+  Codex and ask for the missing acceptance boundary.
 
 ## Prompt Skeleton
 
@@ -102,6 +102,6 @@ Rules:
 ## Handoff Boundary
 
 This skill performs a one-time handoff. After `send_input` succeeds, report the
-process identity and prompt size, then stop. Do not monitor Claude, poll for
+process identity and prompt size, then stop. Do not monitor Codex, poll for
 completion, inspect its report, or send follow-up steering from this skill. A
 later inspection or resume is a separate user request.

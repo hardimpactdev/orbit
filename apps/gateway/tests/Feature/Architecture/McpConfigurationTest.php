@@ -169,7 +169,7 @@ it('keeps the project-owned orbit skill in the agents skill catalog', function (
         ->toBe(realpath(repo_path('.agents/skills')));
 });
 
-it('provides a compact Solo todo handoff skill for Claude Opus implementation agents', function (): void {
+it('provides a compact Solo todo handoff skill for Codex implementation agents', function (): void {
     $skillPath = repo_path('.agents/skills/solo-todo-handoff/SKILL.md');
     $skill = is_file($skillPath) ? (file_get_contents($skillPath) ?: '') : '';
 
@@ -225,7 +225,7 @@ it('routes post-feature analysis through the analyzer persona', function (): voi
         ->not->toContain('post-feature-distillation');
 });
 
-it('keeps the Solo Opus spawn recipe canonical in the HARNESS role matrix', function (): void {
+it('keeps the Solo Codex analyzer spawn recipe canonical in the HARNESS role matrix', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
     $cliReviewer = file_get_contents(repo_path('.agents/review-personas/cli-command.md')) ?: '';
@@ -233,7 +233,9 @@ it('keeps the Solo Opus spawn recipe canonical in the HARNESS role matrix', func
 
     expect($harness)
         ->toContain('## Solo Role Matrix')
-        ->toContain('extra_args=["--model", "opus", "--effort", "medium"]');
+        ->toContain('| Post-feature analyzer | Solo-managed Codex analyzer |')
+        ->toContain('Post-feature analyzers use the enabled `Codex` tool through Solo')
+        ->not->toContain('extra_args');
 
     foreach ([$analyzer, $cliReviewer, $docsLibrarian] as $persona) {
         expect($persona)
