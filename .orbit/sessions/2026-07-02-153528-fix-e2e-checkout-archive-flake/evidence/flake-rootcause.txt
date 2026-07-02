@@ -1,0 +1,89 @@
+# Root cause: parallel-Pest flake in "reuses the shared checkout archive after flushing in-process checkout state"
+
+Test: apps/gateway/tests/Feature/E2ESupport/E2ECurrentCheckoutTest.php:1214
+Failure: line 1245 (pre-fix numbering), "Failed asserting that 2 is identical to 1" ($tarBuilds).
+
+## Mechanism (hypothesis 1 from the lane brief — CONFIRMED)
+
+The shared checkout archive cache key is derived from non-hermetic global state that
+escapes Process::fake:
+
+- apps/e2e/app/E2E/Support/E2ECurrentCheckout.php::cachedArchive() builds the on-disk
+  archive path as  <cacheDir>/<treeHash()>.tar.gz  (line ~1809).
+- treeHash() -> archiveManifest() runs
+      shell_exec('git -C <repo> ls-files -z --full-name --cached --others --exclude-standard')
+  (line ~2052). shell_exec is NOT intercepted by Illuminate Process::fake.
+- treeHashForManifest() then hash_file('sha256', ...)s every listed file in the LIVE
+  working tree (line ~2012). Also raw filesystem reads, not fakeable.
+- repo_path() resolves to the shared repo/worktree root (apps/gateway/app/Support/repository.php),
+  so ALL parallel Pest workers and quality-check lanes share this input.
+
+The failing test:
+1. install #1 -> cachedArchive() -> treeHash() = KEY_A -> builds tar (tarBuilds=1),
+   publishes <randomDir>/KEY_A.tar.gz.
+2. flushCache() clears the memoized self::$cachedArchive (and $cachedBasePaths).
+3. install #2 -> cachedArchive() RECOMPUTES treeHash(). If any parallel process
+   created/deleted/modified an unignored file in the working tree since step 1,
+   the hash = KEY_B != KEY_A, is_file(<randomDir>/KEY_B.tar.gz) is false, so
+   buildArchive() runs again -> tarBuilds=2 -> assertion failure.
+
+The random per-test ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR isolates the archive files
+but NOT the key: the key input is the shared working tree itself.
+
+This test is the only one in the file that recomputes the REAL tree hash twice across
+a flushCache(); the sibling test "does not record archive timing for shared archive
+cache hits" (line 443) already pins the hash with useTreeHashResolverForTests().
+
+## Who mutates the tree in real runs
+
+- Within the gateway suite itself, "includes untracked path identity in the checkout
+  tree hash" (same file, line ~680) writes tmp-e2e-tree-hash-*/ fixtures at the repo
+  root; a live probe during a full parallel gateway Pest run recorded the key flipping
+  on exactly those paths (evidence log below). ParaTest distributes per-file, so that
+  same-file test cannot overlap the failing test in a pure gateway run, but the probe
+  proves in-suite repo-root mutation happens while other workers run.
+- In the observed `composer quality-check` failures, gateway_pest (97s) ran
+  concurrently with cli_pest (122s), gateway_rector (93s), and docs lanes in the same
+  tree (see the two archived artifacts), any of which can create/remove unignored
+  files or rewrite tracked file contents mid-window.
+- hash_file() also silently skips files that disappear between listing and hashing
+  (returns false -> path dropped from manifest), so transient files flip the key on
+  both creation and deletion.
+
+Non-causes ruled out:
+- .orbit/sessions/** being git-tracked: the './.orbit' entry in archiveExcludePatterns()
+  filters all .orbit/ paths out of the manifest.
+- Shared-path race on the archive file itself: the cache dir is random per test, and
+  cachedArchive() uses flock + atomic rename; buildArchive()'s temp tarball and
+  manifest use random/tempnam names in sys temp. No genuinely shared writable path.
+- Time/mtime keys: the key is content-hash based; no mtime component.
+
+## Fix (test layer — the proven layer)
+
+Pin the tree hash in the failing test, mirroring the existing pattern at line 451:
+
+    E2ECurrentCheckout::useTreeHashResolverForTests(
+        static fn (): string => 'archive-reuse-after-flush-test',
+    );
+
+This removes the only non-hermetic input while keeping the reuse proof fully intact:
+flushCache() still clears all in-process state, so the second install can only avoid
+a second tar build by finding the previously published on-disk archive in the
+per-test cache dir. expect($tarBuilds)->toBe(1) is unchanged. Tree-hash sensitivity
+to working-tree content remains covered by the dedicated test at line ~680.
+
+The production support code needs no change: a tree-hash change between installs in
+real E2E use correctly forces a rebuild (the checkout changed), and same-key
+concurrency is already serialized by flock + atomic rename.
+
+## Verification
+
+- Pre-fix: focused test + sibling untracked-file mutator: 4/10 failed with the exact
+  reported signature; focused without mutator always passed.
+- Post-fix: same mutator loop 10/10 passed; full test file 31/31; full parallel
+  gateway suite 4038/4038; mago format clean.
+
+Evidence:
+- .orbit/evidence/flake-repro.txt (commands + rates)
+- .orbit/evidence/treehash-watch-during-gateway-pest.log (raw probe)
+- .orbit/evidence/treehash-watch-during-gateway-pest.filtered.log (flip records)

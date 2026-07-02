@@ -1,0 +1,60 @@
+# Reproducer: E2ECurrentCheckoutTest "reuses the shared checkout archive after flushing in-process checkout state"
+
+Failing assertion (pre-fix): apps/gateway/tests/Feature/E2ESupport/E2ECurrentCheckoutTest.php:1245
+  "Failed asserting that 2 is identical to 1." ($tarBuilds expected 1, got 2)
+
+## Mechanism reproducer (deterministic stand-in for parallel workers)
+
+The test's archive cache key is E2ECurrentCheckout::treeHash(), computed from the LIVE
+shared working tree (shell_exec git ls-files + hash_file), which escapes Process::fake.
+Any sibling process creating/deleting an unignored file in the repo between the two
+treeHash() computations (install #1 vs install #2 after flushCache()) flips the key,
+misses the disk archive, and forces a second tar build.
+
+Sibling mutator (simulates what parallel Pest workers / quality-check lanes do):
+
+    cd /Users/nckrtl/orbit/.worktrees/fix-e2e-checkout-archive-flake
+    while [ ! -f /tmp/orbit-flake-mutator-stop ]; do
+        touch flake-mutator-probe.txt; sleep 0.15
+        rm -f flake-mutator-probe.txt; sleep 0.15
+    done &
+
+    for i in $(seq 1 10); do
+        bin/orbit-gateway-pest --compact \
+          --filter="reuses the shared checkout archive after flushing in-process checkout state" \
+          tests/Feature/E2ESupport/E2ECurrentCheckoutTest.php
+    done
+
+## Results
+
+Pre-fix (commit state before test edit):
+  - Focused, no mutator:     PASS (always; matches reported behavior)
+  - Focused + mutator, 10x:  4 FAIL / 6 PASS
+    Every failure was the exact reported signature:
+    line 1245, "Failed asserting that 2 is identical to 1."
+    (logs were captured at /tmp/orbit-flake-run-{1..10}.log during the session)
+
+Post-fix (tree hash pinned via useTreeHashResolverForTests in the test):
+  - Focused + same mutator, 10x: 10 PASS / 0 FAIL
+  - Full test file: 31 passed (328 assertions)
+  - Full parallel gateway suite (bin/orbit-gateway-pest --exclude-group=e2e
+    --exclude-group=slow --parallel --compact): 4038 passed, 22098 assertions
+
+## Real-suite evidence (no synthetic mutator)
+
+A watch probe recomputing the archive manifest + tree hash in a loop DURING one full
+parallel gateway Pest run caught the cache key flipping from real in-suite writes:
+
+    [13:12:21] HASH FLIP b3447f50b3b323ce -> e6ec2a41d96db565
+      + tmp-e2e-tree-hash-bd95e578/alpha.txt
+    [13:12:24] HASH FLIP e6ec2a41d96db565 -> b3447f50b3b323ce
+      - tmp-e2e-tree-hash-bd95e578/alpha.txt
+
+(tmp-e2e-tree-hash-* fixtures are written to the repo root by the tree-hash
+sensitivity test; see .orbit/evidence/treehash-watch-during-gateway-pest.filtered.log)
+
+Original failures fired 2 of 3 `composer quality-check` runs on 2026-07-02; artifacts:
+/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-140855-loop-hardening-followups/quality-gates/quality-check-2026-07-02T120354Z-203b6bf6a31f.json
+/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-140855-loop-hardening-followups/quality-gates/quality-check-2026-07-02T120619Z-72aba2726d5c.json
+Those artifacts show gateway_pest (97s) overlapping cli_pest (122s), rector (93s),
+and docs lanes in the same working tree.
