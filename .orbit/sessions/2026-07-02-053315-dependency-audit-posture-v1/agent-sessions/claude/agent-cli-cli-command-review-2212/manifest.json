@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "missing",
+    "reason": "claude_session_pid_missing",
+    "slug": "agent-cli-cli-command-review-2212",
+    "relative_dir": "claude/agent-cli-cli-command-review-2212",
+    "solo_process_id": 2212,
+    "process_name": "agent-cli-cli-command-review",
+    "raw_files": []
+}

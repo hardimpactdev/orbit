@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-02T04:22:04Z",
+    "ended_at": "2026-07-02T04:22:08Z",
+    "duration_seconds": 4,
+    "exit_code": 1,
+    "git": {
+        "branch": "dependency-audit-posture-v1",
+        "commit": "1001237c94ab5f89d2547f4f66fc9ff0e3f8d49d"
+    },
+    "subgates": []
+}

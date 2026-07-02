@@ -1,0 +1,28 @@
+
+  [31;1m⨯[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Unit\Services\Apps\AppRuntimeContainerManagerTest[22m [90m>[39m it installs the Orbit runtime trust pool on the node and mounts it into app-dev runtime containers                                      
+[39;1m  Expected: [39;22m[31mset -e\n[39m[39;1m
+  [39;22m[31msudo install -d -m 0755 '/etc/orbit/apps'\n[39m[39;1m
+  [39;22m[31mprintf %s 'b3BjYWNoZS5lbmFibGU9MQpvcGNhY2hlLmVuYWJsZV9jbGk9MQpvcGNhY2hlLm1heF9hY2NlbGVyYXRlZF9maWxlcz0yMDAwMApvcGNhY2hlLm1lbW9yeV9jb25zdW1wdGlvbj0yNTYKcmVhbHBhdGhfY2FjaGVfc2l6ZT00MDk2SwpyZWFscGF0aF9jYWNoZV90dGw9NjAwCg==' | base64 -d | sudo tee '/etc/orbit/apps/craft-starterkit-react.ini' >/dev/null\n[39m[39;1m
+  [39;22m[90m... (4 more lines)[39m[39;1m
+
+  To contain: [39;22m[32msudo install -d -m 0755 '/etc/orbit/ca'[39m
+
+  at [32mtests/Unit/Services/Apps/AppRuntimeContainerManagerTest.php[39m:[32m251[39m
+    247▕ 
+    248▕     $script = $shell->calls[3]['script'];
+    249▕ 
+    250▕     expect($script)
+  ➜ 251▕         ->toContain("sudo install -d -m 0755 '/etc/orbit/ca'")
+    252▕         ->toContain("sudo tee '/etc/orbit/ca/root.crt'")
+    253▕         ->toContain(
+    254▕             "--mount 'type=bind,source="
+    255▕             .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+
+  [33m1   [39m[39;1mtests/Unit/Services/Apps/AppRuntimeContainerManagerTest.php[39;22m:[39;1m251[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m (1 assertions)[39m
+  [90mDuration:[39m [39m0.15s[39m
+

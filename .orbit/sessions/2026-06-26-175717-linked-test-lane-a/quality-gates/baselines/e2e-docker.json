@@ -1,0 +1,8 @@
+{
+    "schema_version": 1,
+    "gate": "e2e-docker",
+    "duration_seconds": 217,
+    "warning_threshold_percent": 25,
+    "source_artifact": "e2e-docker-2026-06-24T100106Z-a1f52d63555f.json",
+    "updated_at": "2026-06-24T10:01:06Z"
+}

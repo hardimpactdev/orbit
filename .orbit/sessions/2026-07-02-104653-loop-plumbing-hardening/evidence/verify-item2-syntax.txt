@@ -1,0 +1,4 @@
+bash -n: OK
+No syntax errors detected in bin/orbit-session-archive
+No syntax errors detected in bin/orbit-agent-session-archive
+No syntax errors detected in bin/orbit-codex-pre-tool-use-hook

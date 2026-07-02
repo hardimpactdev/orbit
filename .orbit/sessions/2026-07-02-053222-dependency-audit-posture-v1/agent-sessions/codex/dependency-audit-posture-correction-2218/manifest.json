@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "dependency-audit-posture-correction-2218",
+    "relative_dir": "codex/dependency-audit-posture-correction-2218",
+    "solo_process_id": 2218,
+    "process_name": "dependency-audit-posture-correction",
+    "raw_files": []
+}

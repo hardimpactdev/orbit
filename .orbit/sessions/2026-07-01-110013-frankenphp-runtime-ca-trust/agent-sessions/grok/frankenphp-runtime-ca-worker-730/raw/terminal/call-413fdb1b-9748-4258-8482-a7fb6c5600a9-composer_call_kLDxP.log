@@ -1,0 +1,31 @@
+PHP Warning:  mkdir(): File exists in /Users/nckrtl/.codex/worktrees/f7bc/orbit/apps/gateway/vendor/pestphp/pest-plugin-mutate/src/Cache/FileStore.php on line 23
+
+  [44;1m INFO [49;22m Warning: mkdir(): File exists in /Users/nckrtl/.codex/worktrees/f7bc/orbit/apps/gateway/vendor/pestphp/pest-plugin-mutate/src/Cache/FileStore.php on line 23.
+
+
+  [31;1m⨯[39;22m[90;1m.[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Unit\Services\Apps\AppRuntimeContainerRendererTest[22m [90m>[39m it renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client trust ini                                                
+[39;1m  Failed asserting that an array contains Array &0 [
+    'source' => '/etc/orbit/ca/root.crt',
+    'target' => '/etc/orbit/ca/root.crt',
+    'read_only' => true,
+].[39;22m
+
+  at [32mtests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php[39m:[32m344[39m
+    340▕ 
+    341▕     $container = rendererForTest()->render($app);
+    342▕ 
+    343▕     expect($container->mounts())
+  ➜ 344▕         ->toContain([
+    345▕             'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+    346▕             'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+    347▕             'read_only' => true,
+    348▕         ])
+
+  [33m1   [39m[39;1mtests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php[39;22m:[39;1m344[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m,[39m[39m [39m[32;1m1 passed[39;22m[90m (4 assertions)[39m
+  [90mDuration:[39m [39m0.19s[39m
+

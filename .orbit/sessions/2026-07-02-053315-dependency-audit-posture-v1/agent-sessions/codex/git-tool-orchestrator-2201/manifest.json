@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "git-tool-orchestrator-2201",
+    "relative_dir": "codex/git-tool-orchestrator-2201",
+    "solo_process_id": 2201,
+    "process_name": "git-tool-orchestrator",
+    "raw_files": []
+}

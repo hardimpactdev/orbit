@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-02T07:01:44Z",
+    "ended_at": "2026-07-02T07:02:05Z",
+    "duration_seconds": 21,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/macos-workload-roles",
+        "commit": "216d2b8dcbcb075797e0eab3ef92c89fc371875b"
+    },
+    "subgates": []
+}

@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "claude-code-tool-orchestrator-2190",
+    "relative_dir": "codex/claude-code-tool-orchestrator-2190",
+    "solo_process_id": 2190,
+    "process_name": "claude-code-tool-orchestrator",
+    "raw_files": []
+}

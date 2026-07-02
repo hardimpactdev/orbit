@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-28T13:57:32Z",
+    "ended_at": "2026-06-28T13:57:36Z",
+    "duration_seconds": 4,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/orbit-extension-foundation",
+        "commit": "a5b6cd01f4fb4395942dccbf644dc107df5082a5"
+    },
+    "subgates": []
+}

@@ -1,0 +1,15 @@
+{
+    "slice": "lane-a-node-agent-ide-cf-zone-doctor-cf-cache",
+    "families": [
+        "node",
+        "agent-ide",
+        "cf-zone",
+        "doctor",
+        "cf-cache"
+    ],
+    "commands": 18,
+    "linked_test_files": 42,
+    "missing_linked_test_files": 0,
+    "commands_with_missing": 0,
+    "missing": []
+}

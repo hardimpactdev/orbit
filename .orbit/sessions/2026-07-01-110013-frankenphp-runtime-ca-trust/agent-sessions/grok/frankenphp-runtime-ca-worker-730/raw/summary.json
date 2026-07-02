@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f1cce-67ef-7e62-9100-db23220e8de8",
+    "cwd": "/Users/nckrtl/orbit"
+  },
+  "session_summary": "Fix Orbit FrankenPHP runtime CA certificate trust",
+  "created_at": "2026-07-01T08:31:56.999100Z",
+  "updated_at": "2026-07-01T11:45:39.297385Z",
+  "num_messages": 328,
+  "num_chat_messages": 161,
+  "current_model_id": "grok-composer-2.5-fast",
+  "next_trace_turn": 1,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "1be95e1c45461c5f5c510897d764418571c4e54c",
+  "head_branch": "main",
+  "request_id": "14d8ce2a-8808-4dd7-a032-dfe4f8fc1488",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-01T08:34:42.002219Z",
+  "generated_title": "Fix Orbit FrankenPHP runtime CA certificate trust",
+  "agent_name": "cursor",
+  "sandbox_profile": "off"
+}

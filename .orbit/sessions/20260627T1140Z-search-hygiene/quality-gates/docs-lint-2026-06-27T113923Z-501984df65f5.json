@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T11:39:19Z",
+    "ended_at": "2026-06-27T11:39:23Z",
+    "duration_seconds": 4,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex-search-hygiene",
+        "commit": "f605845008cb6b55a5bb7dba9e2b8c0f902f08b3"
+    },
+    "subgates": []
+}

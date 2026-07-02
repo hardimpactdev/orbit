@@ -1,0 +1,58 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T08:47:11+00:00",
+    "mode": "refreshed",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/loop-plumbing-hardening/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-104653-loop-plumbing-hardening",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-104653-loop-plumbing-hardening/agent-sessions",
+    "copied_entries": [
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": [
+        {
+            "solo_process_id": 732,
+            "process_name": "Claude",
+            "command": "claude --dangerously-skip-permissions",
+            "agent": "claude",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/loop-plumbing-hardening",
+            "status": "ok",
+            "source": "claude_session_jsonl",
+            "metric_confidence": "measured",
+            "artifact_match": "pid_session_map",
+            "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e.jsonl",
+            "models": [
+                "claude-fable-5",
+                "<synthetic>"
+            ],
+            "input_tokens": 55735,
+            "output_tokens": 105073,
+            "cache_read_tokens": 11418400,
+            "cache_write_tokens": 346576,
+            "archive_path": "claude/claude-732"
+        },
+        {
+            "solo_process_id": 746,
+            "process_name": "codex-post-feature-analyzer-loop-plumbing",
+            "command": "codex --yolo",
+            "agent": "codex",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/loop-plumbing-hardening",
+            "status": "ok",
+            "source": "codex_jsonl_token_count",
+            "metric_confidence": "measured",
+            "artifact_match": "start_distance",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T10-40-33-019f21fc-a5bd-7a63-bfc2-d755c4aba344.jsonl",
+            "input_tokens": 1695242,
+            "output_tokens": 17092,
+            "reasoning_tokens": 9859,
+            "cached_input_tokens": 1473408,
+            "total_tokens": 1712334,
+            "context_window": 258400,
+            "archive_path": "codex/codex-post-feature-analyzer-loop-plumbing-746"
+        }
+    ]
+}

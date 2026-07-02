@@ -1,0 +1,18 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "ok",
+    "slug": "claude-732",
+    "relative_dir": "claude/claude-732",
+    "solo_process_id": 732,
+    "process_name": "Claude",
+    "source": "claude_session_jsonl",
+    "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e.jsonl",
+    "raw_files": [
+        "89890.json",
+        "acd3c672-8724-4a1b-bb38-7a10d528548e.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 110
+}

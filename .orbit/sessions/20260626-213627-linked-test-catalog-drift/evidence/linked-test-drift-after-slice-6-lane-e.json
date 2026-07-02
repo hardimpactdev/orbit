@@ -1,0 +1,20 @@
+{
+    "catalog_path": "/Users/nckrtl/orbit/.worktrees/linked-test-catalog-drift/apps/docs/content/generated/command-catalog.json",
+    "total_missing_linked_test_files": 0,
+    "commands_with_missing_linked_test_files": 0,
+    "missing_by_family": [],
+    "missing_by_command": [],
+    "lane_f": {
+        "families": [
+            "schedule",
+            "firewall",
+            "tool",
+            "vpn-client",
+            "cf-ssl",
+            "vpn-web-ui"
+        ],
+        "total_missing_linked_test_files": 0,
+        "commands_with_missing_linked_test_files": 0,
+        "missing_by_family": []
+    }
+}

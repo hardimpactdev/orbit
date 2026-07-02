@@ -1,0 +1,8 @@
+{
+    "generated_at": "2026-06-26T14:10:48+00:00",
+    "scope": "workspace linked_test_files remediation slice",
+    "commands_total": 13,
+    "linked_test_file_refs_total": 34,
+    "missing_paths_total": 0,
+    "missing_by_command": []
+}

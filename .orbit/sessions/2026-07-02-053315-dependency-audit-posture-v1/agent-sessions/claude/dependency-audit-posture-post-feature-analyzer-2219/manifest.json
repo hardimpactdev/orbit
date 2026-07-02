@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "missing",
+    "reason": "claude_session_pid_missing",
+    "slug": "dependency-audit-posture-post-feature-analyzer-2219",
+    "relative_dir": "claude/dependency-audit-posture-post-feature-analyzer-2219",
+    "solo_process_id": 2219,
+    "process_name": "dependency-audit-posture-post-feature-analyzer",
+    "raw_files": []
+}

@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T08:35:51Z",
+    "ended_at": "2026-06-27T08:35:54Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/test-mapping-path-integrity",
+        "commit": "30bd21c77299f38b6bccd870cf096670b0234bed"
+    },
+    "subgates": []
+}

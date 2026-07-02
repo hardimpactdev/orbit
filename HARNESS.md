@@ -52,11 +52,11 @@ personas and automation only after the manual loop is stable.
 
 ## Worktree-Local State
 
-Use root `.orbit/` as the gitignored home for repository-development state.
-Active `.orbit/` is the current worktree-local session state; `.orbit/sessions/`
-is the local archive home for completed sessions, normally in the primary
-checkout. This is checkout state, not product runtime state inside app
-workspaces or nodes.
+Use root `.orbit/` as the home for repository-development state. Active
+`.orbit/` entries are current worktree-local session state and stay ignored;
+`.orbit/sessions/` is the committed archive home for completed sessions,
+normally in the primary checkout. This is checkout state, not product runtime
+state inside app workspaces or nodes.
 
 - `.orbit/loop.md`: current-slice state copied from `LOOP.md.example`.
 - `.orbit/quality-gates/`: local timing, analyzer, and triage reports for
@@ -64,15 +64,19 @@ workspaces or nodes.
   explicitly run.
 - `.orbit/evidence/`: retained local evidence such as command transcripts,
   PTY summaries, screenshots, or pointers to Solo terminals and topology ids.
-- `.orbit/sessions/`: persisted session archives for completed active slices or
-  features. The archive home must survive feature worktree cleanup; by default
-  it is the primary checkout's `.orbit/sessions/` directory. Archives are
-  created before worktree cleanup and before rewriting `.orbit/loop.md` for a
-  new slice; the naming rule lives in Session Archives below.
+- `.orbit/sessions/`: persisted, committed session archives for completed
+  active slices or features. The archive home must survive feature worktree
+  cleanup and sync across machines; by default it is the primary checkout's
+  `.orbit/sessions/` directory. Archives are created before worktree cleanup
+  and before rewriting `.orbit/loop.md` for a new slice; the naming rule lives
+  in Session Archives below.
 
-Do not commit `.orbit/`. Commit only the durable guardrail that absorbs a
-recurring signal: harness docs, skills, review personas, product/testing docs,
-tests, or a curated `harness-signals/` record.
+Do not commit active `.orbit/` state outside `.orbit/sessions/`: `loop.md`,
+`evidence/`, `quality-gates/`, `release-candidates/`, and other worktree-local
+entries remain ignored. Commit session archives under `.orbit/sessions/` and
+only the durable guardrail that absorbs a recurring signal: harness docs,
+skills, review personas, product/testing docs, tests, or a curated
+`harness-signals/` record.
 
 ### Session Archives
 
@@ -163,9 +167,11 @@ start broad only across the current checkout's tracked source surface, then
 narrow to the owning app/package or generated index that answers the question.
 
 Use default `rg` from the repository root for normal discovery. It respects the
-repo ignore rules that keep stale worktrees, `.orbit/` session state, vendor
+repo ignore rules that keep stale worktrees, active `.orbit/` state, vendor
 trees, build outputs, app storage, caches, and retained artifacts out of the
-ordinary agent search path. Prefer scoped searches once the owner is known:
+ordinary agent search path. Tracked `.orbit/sessions/` archives remain trace
+evidence and should be opened only when named by the packet, prompt, or review
+route. Prefer scoped searches once the owner is known:
 
 ```bash
 rg -n "<pattern>" AGENTS.md HARNESS.md apps/docs/content .agents/skills

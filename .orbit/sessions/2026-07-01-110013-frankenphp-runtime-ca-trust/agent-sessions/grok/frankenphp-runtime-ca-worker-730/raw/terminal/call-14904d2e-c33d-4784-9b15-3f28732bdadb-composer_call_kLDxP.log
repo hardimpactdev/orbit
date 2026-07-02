@@ -1,0 +1,8 @@
+
+  [30;43;1m WARN [39;49;22m Option --filter cannot be used more than once
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m3 passed[39;22m[90m (10 assertions)[39m
+  [90mDuration:[39m [39m0.19s[39m
+

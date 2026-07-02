@@ -1,0 +1,185 @@
+{
+    "lane": "D-workspace",
+    "families": [
+        "workspace",
+        "workspace-setup-step",
+        "workspace-teardown-step"
+    ],
+    "baseline_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands": {
+        "workspace:remove": {
+            "family": "workspace",
+            "missing_count": 12,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/RemoveWorkspaceActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Concerns/ResolveWorkspaceFromCwdTest.php",
+                "apps/gateway/tests/Feature/Console/Workspaces/WorkspaceRemoveInteractiveTest.php",
+                "apps/gateway/tests/Feature/Console/Workspaces/WorkspaceRemoveNonInteractiveTest.php",
+                "apps/gateway/tests/Feature/Renderers/Workspaces/WorkspaceRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Renderers/Workspaces/WorkspaceRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Actions/Workspaces/TeardownStepRunnerTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/5_workspace-remove/technical/1_workspace-remove.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/5_workspace-remove"
+        },
+        "workspace:new": {
+            "family": "workspace",
+            "missing_count": 8,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceNewGatewayLocalTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceNewOperatorForwardingTest.php",
+                "apps/gateway/tests/E2E/WorkspaceNewTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewOnGatewayNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/1_workspace-new/technical/1_workspace-new.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/1_workspace-new"
+        },
+        "workspace-teardown-step:remove": {
+            "family": "workspace-teardown-step",
+            "missing_count": 7,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceTeardownStepRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/RemoveTeardownStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/13_workspace-teardown-step-remove/technical/1_workspace-teardown-step-remove.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/13_workspace-teardown-step-remove"
+        },
+        "workspace-setup-step:add": {
+            "family": "workspace-setup-step",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepAddTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/AddSetupStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddNonInteractiveInputTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/8_workspace-setup-step-add/technical/1_workspace-setup-step-add.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/8_workspace-setup-step-add"
+        },
+        "workspace-setup-step:remove": {
+            "family": "workspace-setup-step",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveNonInteractiveInputTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/10_workspace-setup-step-remove/technical/1_workspace-setup-step-remove.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/10_workspace-setup-step-remove"
+        },
+        "workspace-teardown-step:add": {
+            "family": "workspace-teardown-step",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceTeardownStepAddTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/AddTeardownStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddNonInteractiveInputTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/11_workspace-teardown-step-add/technical/1_workspace-teardown-step-add.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/11_workspace-teardown-step-add"
+        },
+        "workspace:setup": {
+            "family": "workspace",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupNonInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnGatewayNodeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnOperatorNodeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/2_workspace-setup/technical/1_workspace-setup.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/2_workspace-setup"
+        },
+        "workspace-setup-step:list": {
+            "family": "workspace-setup-step",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/WorkspaceStepListTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/9_workspace-setup-step-list/technical/1_workspace-setup-step-list.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/9_workspace-setup-step-list"
+        },
+        "workspace-teardown-step:list": {
+            "family": "workspace-teardown-step",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/WorkspaceStepListTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/12_workspace-teardown-step-list/technical/1_workspace-teardown-step-list.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/12_workspace-teardown-step-list"
+        },
+        "workspace:history": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Read/WorkspaceHistoryTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceHistoryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceHistoryJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/6_workspace-history/technical/1_workspace-history.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/6_workspace-history"
+        },
+        "workspace:list": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/3_workspace-list/technical/1_workspace-list.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/3_workspace-list"
+        },
+        "workspace:log": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/WorkspaceLogTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceLogJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/7_workspace-log/technical/1_workspace-log.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/7_workspace-log"
+        },
+        "workspace:show": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowInteractiveTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowNonInteractiveTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/4_workspace-show/technical/1_workspace-show.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/4_workspace-show"
+        }
+    },
+    "missing_paths_total": 69
+}

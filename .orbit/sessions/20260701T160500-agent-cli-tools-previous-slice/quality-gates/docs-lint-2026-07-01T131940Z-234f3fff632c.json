@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-01T13:19:36Z",
+    "ended_at": "2026-07-01T13:19:40Z",
+    "duration_seconds": 4,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/agent-cli-tools",
+        "commit": "96f5fa0f53340eaba95ebfa2cb8ad97bf2d5e669"
+    },
+    "subgates": []
+}

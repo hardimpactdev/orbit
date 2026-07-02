@@ -1,0 +1,28 @@
+I have enough to render the independent judgment. The diff is exactly two staged files (`SKILL.md`, `openai.yaml`), the `openai.yaml` matches sibling convention precisely, and all referenced evidence is consistent.
+
+## Final Analyzer Report
+
+- Loop outcome: complete
+- Loop quality: proper with issues
+- Merge readiness: ready
+- Guardrail verdict: correct-noop
+
+### Findings
+
+- low (evidence-gap): The prior post-feature analyzer verdict (`2187`) exists only as a hand-written reconstruction at `.orbit/evidence/post-feature-analyzer-2187-reconstructed.md`; the raw Solo output was destroyed by running capture and delete in parallel (`.orbit/loop.md:82-86`). For this slice it is non-blocking because the diff is two inspectable files and I independently concur with the reconstructed verdict, but the reconstruction is weaker than a raw transcript. Required action: none beyond the honest disclosure already present.
+- low (process): The capture/delete ordering mistake *recurred despite being explicitly documented* in `HARNESS.md:194-197` ("Do not run output capture and process deletion in parallel") and `implementing-features`. One recurrence is a data point, not yet a pattern. Required action: none now; if it recurs a third time, the loop.md note proposing a mechanical Solo cleanup helper (`.orbit/loop.md:93-94`) becomes a legitimate `missed`-guardrail candidate. Today it is correctly a `defer`/already-covered.
+- low (state): The two files are staged but not committed (`git status: A`), so the branch has no feature commit yet. Mechanical, not a merge blocker — the Merge Boundary Gate reads `.orbit/loop.md`, which has a complete `Final Distillation` with all required labels and a `complete` outcome.
+- none (fit): `SKILL.md` cleanly satisfies every `Done when` row — distinct-from-analyzer comparison table (`SKILL.md:21-32`), measurable wrong-turn/friction metrics and event taxonomy (`SKILL.md:35-102`), intervention thresholds limited to safety/validity (`SKILL.md:84-95`), and non-authority persistence rules (`SKILL.md:129-142`). Claim discipline is concrete: descriptive/directional/supported evidence levels plus "do not count prompt-forced usage as natural discoverability" (`SKILL.md:50-72`), which directly serves the user's "fewer wrong turns in practice" intent by requiring comparative observation before any causal claim.
+
+### Verification Fit
+
+- Reasonable for a skill-only harness diff. `quick_validate.py` is the substantive skill-shape proof; `git diff --check`, `composer docs-lint`, and `composer quality-gate:final-check` are the appropriate no-regression gates. `composer quality-check` and retained topology proof are correctly marked not-applicable — no PHP, CLI, or topology surface changed, matching the Merge Boundary Gate's docs/skill path (`HARNESS.md:269-277`). The `.orbit/loop.md` `Required verification` rows use the status-first labels the gate parses. The one honest caveat (also flagged in the reconstructed report) is that `docs-lint` is a no-regression check rather than skill-specific coverage — acknowledged, not hidden.
+
+### Signal Decision
+
+- `correct-noop` is the right call. The only post-implementation failure was the capture/delete ordering mistake, which is already covered by two active instructions; promoting a new durable signal from a single recurrence of already-documented guidance would be redundant. Forward-testing the observer on a real loop is correctly **deferred** (`.orbit/loop.md:117`, `116-118` packet) rather than claimed — the skill is shipped as a referenceable procedure, not as proven improvement. Not wiring it into `HARNESS.md`/`AGENT_FAST_PATH.md` yet is consistent with the user asking for an explicitly-invoked skill; deferring discovery wiring until it proves useful is appropriate, not a `missed` guardrail.
+
+### Residual Risk
+
+- The skill is unvalidated in practice: it documents how to measure wrong-turn reduction but has not yet observed a live loop, so its measurement design is untested. This is the correct deferral, not a defect — but until the forward-test runs, no `supported` claim about loop improvement may be made, and the skill's own discipline (`SKILL.md:50-72`) enforces that. Secondary residual: the prior analyzer verdict rests on a reconstruction rather than raw output; acceptable for this tiny diff but a habit worth not repeating.
+(B78

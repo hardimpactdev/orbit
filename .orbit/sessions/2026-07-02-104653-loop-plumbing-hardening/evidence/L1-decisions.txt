@@ -1,0 +1,37 @@
+L1 lane decisions — session archiver hardening
+
+1. Root causes diagnosed (with on-machine proof):
+   - UTC basenames: PHP CLI runs with date.timezone=UTC on this machine, so date('Y-m-d-His')
+     emitted UTC while the contract says checkout-local time. Fixed by deriving the default
+     timestamp from the system clock (`date '+%Y-%m-%d-%H%M%S'`) with PHP date() only as fallback.
+     The old name-generation test used PHP date() inside the Laravel test process (also UTC), so it
+     could never catch this; the new test compares against the system clock.
+   - codex_token_count_not_found / grok_signals_not_found: real rollout/signals layouts parse fine
+     (verified against ~/.codex/sessions and ~/.grok/sessions); the misses came from the hard
+     start-distance gate (default 600s) rejecting sessions whose Solo process record start time is
+     stale (re-run sessions hours after process creation). Fix: a session whose cwd matches the
+     process working_dir is exempt from the start-distance hard gate; distance remains the ranking
+     key (cwd-match first, then distance asc, then created_at desc). Non-cwd-matched candidates keep
+     the old gates unchanged.
+   - claude_session_pid_missing: pid-based lookup (~/.claude/sessions/<pid>.json) only works while
+     the agent process is alive; post-loop archiving has no pid. Added third fallback: the encoded
+     project directory ~/.claude/projects/<cwd with [^a-zA-Z0-9] replaced by '-'>/*.jsonl (flat
+     session files, dirs skipped), marker-filtered, newest mtime first. Chain: pid map -> Solo
+     process id marker scan -> encoded-cwd project dir.
+2. Failure statuses now carry a 'checked' list naming the exact paths/keys searched, plus
+   scanned/rejected counters for codex and grok. Claude's unified failure reason is
+   claude_session_not_found (replaces claude_session_pid_missing / claude_project_jsonl_missing);
+   claude_marker_not_found is unchanged. 'checked' also lands in provider manifest.json.
+3. Wrapper idempotency compares the active loop.md byte-for-byte against the newest archive with the
+   same slug part; refresh wipes and rebuilds that dir in place (mode=refreshed in summary JSON,
+   notice on stderr). Explicit --archive-dir refreshes only when its loop.md is byte-identical,
+   otherwise the existing non-empty error stays.
+4. Write-back updates or appends "- Session archive: .orbit/sessions/<basename>" scoped to the
+   "## Evidence Links" section (section appended if missing), then re-copies loop.md into the
+   archive so archive and source match. Final Distillation rows are deliberately not touched.
+5. Informational lines (WARNING, refresh notice) go to stderr; stdout stays pure summary JSON for
+   machine consumers.
+6. Newer Claude Code nested layout (~/.claude/projects/<encoded>/<uuid>/subagents/...) is not part of
+   the flat-file contract; it is still reachable via the recursive Solo-marker scan (verified live).
+   Deliberately not added to the encoded-cwd fallback to avoid archiving partial subagent
+   transcripts as the primary session.

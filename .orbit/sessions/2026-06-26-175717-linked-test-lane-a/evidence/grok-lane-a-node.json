@@ -1,0 +1,212 @@
+{
+    "lane": "A-node",
+    "families": [
+        "node",
+        "agent-ide",
+        "cf-zone",
+        "doctor",
+        "cf-cache"
+    ],
+    "baseline_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands": {
+        "node:new": {
+            "family": "node",
+            "missing_count": 11,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/NodeNewOperatorForwardingTest.php",
+                "apps/gateway/tests/E2E/NodeNewDevelopmentAppTest.php",
+                "apps/gateway/tests/E2E/NodeNewProductionAppTest.php",
+                "apps/gateway/tests/Feature/Commands/NodeNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/1_node-new/technical/1_node-new.md",
+            "repo_directory": "apps/docs/content/domains/1_node/1_node-new"
+        },
+        "node:remove": {
+            "family": "node",
+            "missing_count": 8,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/8_node-remove/technical/1_node-remove.md",
+            "repo_directory": "apps/docs/content/domains/1_node/8_node-remove"
+        },
+        "node:default": {
+            "family": "node",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultHumanRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultNonInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultOnClientTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultOnGatewayHostTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/9_node-default/technical/1_node-default.md",
+            "repo_directory": "apps/docs/content/domains/1_node/9_node-default"
+        },
+        "node:revoke": {
+            "family": "node",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/6_node-revoke/technical/1_node-revoke.md",
+            "repo_directory": "apps/docs/content/domains/1_node/6_node-revoke"
+        },
+        "node:update": {
+            "family": "node",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/7_node-update/technical/1_node-update.md",
+            "repo_directory": "apps/docs/content/domains/1_node/7_node-update"
+        },
+        "agent-ide:message": {
+            "family": "agent-ide",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message/technical/1_agent-ide-message.md",
+            "repo_directory": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message"
+        },
+        "node:agent-ide": {
+            "family": "node",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/10_node-agent-ide/technical/1_node-agent-ide.md",
+            "repo_directory": "apps/docs/content/domains/1_node/10_node-agent-ide"
+        },
+        "node:grant": {
+            "family": "node",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/5_node-grant/technical/1_node-grant.md",
+            "repo_directory": "apps/docs/content/domains/1_node/5_node-grant"
+        },
+        "node:show": {
+            "family": "node",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/4_node-show/technical/1_node-show.md",
+            "repo_directory": "apps/docs/content/domains/1_node/4_node-show"
+        },
+        "cf-cache:flush": {
+            "family": "cf-cache",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/5_cf-cache-flush/technical/1_cf-cache-flush.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/5_cf-cache-flush"
+        },
+        "cf-zone:list": {
+            "family": "cf-zone",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/1_cf-zone-list/technical/1_cf-zone-list.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/1_cf-zone-list"
+        },
+        "node role:add": {
+            "family": "node",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/12_node-role-add/technical/1_node-role-add.md",
+            "repo_directory": "apps/docs/content/domains/1_node/12_node-role-add"
+        },
+        "node role:remove": {
+            "family": "node",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleRemoveCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/14_node-role-remove/technical/1_node-role-remove.md",
+            "repo_directory": "apps/docs/content/domains/1_node/14_node-role-remove"
+        },
+        "node:permissions": {
+            "family": "node",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/15_node-permissions/technical/1_node-permissions.md",
+            "repo_directory": "apps/docs/content/domains/1_node/15_node-permissions"
+        },
+        "doctor": {
+            "family": "doctor",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/11_operation/3_doctor/technical/1_doctor.md",
+            "repo_directory": "apps/docs/content/domains/11_operation/3_doctor"
+        },
+        "node role:list": {
+            "family": "node",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/11_node-role-list/technical/1_node-role-list.md",
+            "repo_directory": "apps/docs/content/domains/1_node/11_node-role-list"
+        }
+    },
+    "missing_paths_total": 70
+}

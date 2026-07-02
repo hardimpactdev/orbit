@@ -1,0 +1,31 @@
+{
+    "slice": "before-linked-test-drift-slice-4-lane-f",
+    "source": ".orbit/evidence/grok-lane-f-schedule-tool-vpn-report.md",
+    "baseline_whole_catalog": ".orbit/evidence/linked-test-drift-after-slice-3.json",
+    "lane_f": {
+        "families": [
+            "schedule",
+            "firewall",
+            "tool",
+            "vpn-client",
+            "cf-ssl",
+            "vpn-web-ui"
+        ],
+        "total_missing_linked_test_files": 75,
+        "commands_with_missing_linked_test_files": 23,
+        "missing_by_family": {
+            "schedule": 27,
+            "firewall": 15,
+            "tool": 12,
+            "vpn-client": 12,
+            "cf-ssl": 5,
+            "vpn-web-ui": 4
+        },
+        "replace_high_confidence_rows": 50,
+        "uncertain_unreviewed_rows": 25
+    },
+    "whole_catalog_before_slice_4": {
+        "total_missing_linked_test_files": 206,
+        "commands_with_missing_linked_test_files": 59
+    }
+}

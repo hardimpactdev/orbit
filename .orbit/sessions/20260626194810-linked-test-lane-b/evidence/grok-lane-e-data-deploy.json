@@ -1,0 +1,256 @@
+{
+    "lane": "E-data-deploy",
+    "families": [
+        "database",
+        "deploy",
+        "cf-dns",
+        "cf-cache-rule"
+    ],
+    "baseline_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands": {
+        "deploy:step-add": {
+            "family": "deploy",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/1_deploy-step-add/technical/1_deploy-step-add.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/1_deploy-step-add"
+        },
+        "deploy:step-remove": {
+            "family": "deploy",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/3_deploy-step-remove/technical/1_deploy-step-remove.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/3_deploy-step-remove"
+        },
+        "deploy:run": {
+            "family": "deploy",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/4_deploy-run/technical/1_deploy-run.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/4_deploy-run"
+        },
+        "deploy:log": {
+            "family": "deploy",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/6_deploy-log/technical/1_deploy-log.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/6_deploy-log"
+        },
+        "cf-cache-rule:remove": {
+            "family": "cf-cache-rule",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/7_cf-cache-rule-remove/technical/1_cf-cache-rule-remove.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/7_cf-cache-rule-remove"
+        },
+        "cf-dns:remove": {
+            "family": "cf-dns",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/4_cf-dns-remove/technical/1_cf-dns-remove.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/4_cf-dns-remove"
+        },
+        "database:add": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/3_database-add/technical/1_database-add.md",
+            "repo_directory": "apps/docs/content/domains/18_database/3_database-add"
+        },
+        "database:attach": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/6_database-attach/technical/1_database-attach.md",
+            "repo_directory": "apps/docs/content/domains/18_database/6_database-attach"
+        },
+        "database:detach": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/7_database-detach/technical/1_database-detach.md",
+            "repo_directory": "apps/docs/content/domains/18_database/7_database-detach"
+        },
+        "database:list": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/1_database-list/technical/1_database-list.md",
+            "repo_directory": "apps/docs/content/domains/18_database/1_database-list"
+        },
+        "database:remove": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/5_database-remove/technical/1_database-remove.md",
+            "repo_directory": "apps/docs/content/domains/18_database/5_database-remove"
+        },
+        "database:show": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseShowJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/2_database-show/technical/1_database-show.md",
+            "repo_directory": "apps/docs/content/domains/18_database/2_database-show"
+        },
+        "database:update": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/4_database-update/technical/1_database-update.md",
+            "repo_directory": "apps/docs/content/domains/18_database/4_database-update"
+        },
+        "deploy:history": {
+            "family": "deploy",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/5_deploy-history/technical/1_deploy-history.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/5_deploy-history"
+        },
+        "deploy:step-list": {
+            "family": "deploy",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/2_deploy-step-list/technical/1_deploy-step-list.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/2_deploy-step-list"
+        },
+        "cf-cache-rule:add": {
+            "family": "cf-cache-rule",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/6_cf-cache-rule-add/technical/1_cf-cache-rule-add.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/6_cf-cache-rule-add"
+        },
+        "cf-dns:add": {
+            "family": "cf-dns",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/3_cf-dns-add/technical/1_cf-dns-add.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/3_cf-dns-add"
+        },
+        "cf-dns:list": {
+            "family": "cf-dns",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/2_cf-dns-list/technical/1_cf-dns-list.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/2_cf-dns-list"
+        },
+        "database:describe": {
+            "family": "database",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseDescribeCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/11_database-describe/technical/1_database-describe.md",
+            "repo_directory": "apps/docs/content/domains/18_database/11_database-describe"
+        },
+        "database:query": {
+            "family": "database",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/8_database-query/technical/1_database-query.md",
+            "repo_directory": "apps/docs/content/domains/18_database/8_database-query"
+        },
+        "database:tables": {
+            "family": "database",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseTablesCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/9_database-tables/technical/1_database-tables.md",
+            "repo_directory": "apps/docs/content/domains/18_database/9_database-tables"
+        },
+        "database:schema": {
+            "family": "database",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/10_database-schema/technical/1_database-schema.md",
+            "repo_directory": "apps/docs/content/domains/18_database/10_database-schema"
+        }
+    },
+    "missing_paths_total": 67
+}

@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-02T08:14:39Z",
+    "ended_at": "2026-07-02T08:14:44Z",
+    "duration_seconds": 5,
+    "exit_code": 0,
+    "git": {
+        "branch": "loop-plumbing-hardening",
+        "commit": "216d2b8dcbcb075797e0eab3ef92c89fc371875b"
+    },
+    "subgates": []
+}

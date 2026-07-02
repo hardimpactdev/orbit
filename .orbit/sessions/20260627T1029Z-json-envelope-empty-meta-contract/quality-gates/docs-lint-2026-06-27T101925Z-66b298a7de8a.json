@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T10:19:22Z",
+    "ended_at": "2026-06-27T10:19:25Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/json-envelope-empty-meta-contract",
+        "commit": "eab3e65aec239c01e097db7c0a15240a49fce842"
+    },
+    "subgates": []
+}

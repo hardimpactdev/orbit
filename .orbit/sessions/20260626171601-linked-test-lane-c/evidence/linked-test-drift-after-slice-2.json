@@ -1,0 +1,1407 @@
+{
+    "slice": "after-linked-test-drift-slice-2",
+    "total_missing_linked_test_files": 276,
+    "commands_with_missing_linked_test_files": 75,
+    "missing_by_family": {
+        "activity": 8,
+        "agent-ide": 5,
+        "app": 46,
+        "cf-cache": 3,
+        "cf-cache-rule": 5,
+        "cf-dns": 7,
+        "cf-ssl": 5,
+        "cf-zone": 2,
+        "database": 28,
+        "deploy": 27,
+        "doctor": 1,
+        "firewall": 15,
+        "node": 59,
+        "php": 10,
+        "schedule": 27,
+        "tool": 12,
+        "vpn-client": 12,
+        "vpn-web-ui": 4
+    },
+    "missing": [
+        {
+            "command": "activity:list",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityListCommandTest.php"
+        },
+        {
+            "command": "activity:list",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php"
+        },
+        {
+            "command": "activity:list",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php"
+        },
+        {
+            "command": "activity:show",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityShowCommandTest.php"
+        },
+        {
+            "command": "activity:show",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityShowHumanRendererTest.php"
+        },
+        {
+            "command": "activity:show",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php"
+        },
+        {
+            "command": "activity:show",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php"
+        },
+        {
+            "command": "activity:show",
+            "family": "activity",
+            "path": "apps/gateway/tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "agent-ide:message",
+            "family": "agent-ide",
+            "path": "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php"
+        },
+        {
+            "command": "agent-ide:message",
+            "family": "agent-ide",
+            "path": "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageHumanRendererTest.php"
+        },
+        {
+            "command": "agent-ide:message",
+            "family": "agent-ide",
+            "path": "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageInteractiveInputModeTest.php"
+        },
+        {
+            "command": "agent-ide:message",
+            "family": "agent-ide",
+            "path": "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageJsonRendererTest.php"
+        },
+        {
+            "command": "agent-ide:message",
+            "family": "agent-ide",
+            "path": "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:agent-ide",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php"
+        },
+        {
+            "command": "app:agent-ide",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php"
+        },
+        {
+            "command": "app:list",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Read/AppListTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppNewGatewayLocalTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppNewOperatorForwardingTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppNewProductionTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppNewRepoTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppNewTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppNewCommandTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppNewHumanRendererTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppNewJsonRendererTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppNewNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppNewOnGatewayNodeContractTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppNewOnOperatorNodeContractTest.php"
+        },
+        {
+            "command": "app:new",
+            "family": "app",
+            "path": "apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php"
+        },
+        {
+            "command": "app:prune",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppPruneTest.php"
+        },
+        {
+            "command": "app:prune",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/AppPruneCommandTest.php"
+        },
+        {
+            "command": "app:prune",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppPruneCommandTest.php"
+        },
+        {
+            "command": "app:register",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppProductionActivationTest.php"
+        },
+        {
+            "command": "app:register",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppRegistrationTest.php"
+        },
+        {
+            "command": "app:register",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Actions/Apps/RegisterAppActionTest.php"
+        },
+        {
+            "command": "app:register",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php"
+        },
+        {
+            "command": "app:register",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/RegisterAppJsonRendererTest.php"
+        },
+        {
+            "command": "app:register",
+            "family": "app",
+            "path": "apps/gateway/tests/Unit/Services/Apps/AppEnactmentServiceTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/AppRemoveTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Actions/Apps/RemoveAppActionTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRemoveCommandTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRemoveInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/RemoveAppCommandTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/RemoveAppHumanRendererTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/RemoveAppJsonRendererTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/RemoveAppNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:remove",
+            "family": "app",
+            "path": "apps/gateway/tests/Unit/Concerns/ResolvesAppFromPathTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRootCommandTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRootHumanRendererTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRootInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRootJsonRendererTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppRootNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:root",
+            "family": "app",
+            "path": "apps/gateway/tests/Unit/Actions/Apps/UpdateAppRootActionTest.php"
+        },
+        {
+            "command": "app:show",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppShowCommandTest.php"
+        },
+        {
+            "command": "app:show",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppShowHumanRendererTest.php"
+        },
+        {
+            "command": "app:show",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppShowInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:show",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppShowJsonRendererTest.php"
+        },
+        {
+            "command": "app:show",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppShowNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "app:worker",
+            "family": "app",
+            "path": "apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php"
+        },
+        {
+            "command": "cf-cache-rule:add",
+            "family": "cf-cache-rule",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddCommandTest.php"
+        },
+        {
+            "command": "cf-cache-rule:add",
+            "family": "cf-cache-rule",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddRendererTest.php"
+        },
+        {
+            "command": "cf-cache-rule:remove",
+            "family": "cf-cache-rule",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php"
+        },
+        {
+            "command": "cf-cache-rule:remove",
+            "family": "cf-cache-rule",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveInputModeTest.php"
+        },
+        {
+            "command": "cf-cache-rule:remove",
+            "family": "cf-cache-rule",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php"
+        },
+        {
+            "command": "cf-cache:flush",
+            "family": "cf-cache",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php"
+        },
+        {
+            "command": "cf-cache:flush",
+            "family": "cf-cache",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php"
+        },
+        {
+            "command": "cf-cache:flush",
+            "family": "cf-cache",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php"
+        },
+        {
+            "command": "cf-dns:add",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php"
+        },
+        {
+            "command": "cf-dns:add",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php"
+        },
+        {
+            "command": "cf-dns:list",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php"
+        },
+        {
+            "command": "cf-dns:list",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php"
+        },
+        {
+            "command": "cf-dns:remove",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php"
+        },
+        {
+            "command": "cf-dns:remove",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveInputModeTest.php"
+        },
+        {
+            "command": "cf-dns:remove",
+            "family": "cf-dns",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php"
+        },
+        {
+            "command": "cf-ssl:disable",
+            "family": "cf-ssl",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php"
+        },
+        {
+            "command": "cf-ssl:disable",
+            "family": "cf-ssl",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableInputModeTest.php"
+        },
+        {
+            "command": "cf-ssl:disable",
+            "family": "cf-ssl",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php"
+        },
+        {
+            "command": "cf-ssl:enable",
+            "family": "cf-ssl",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php"
+        },
+        {
+            "command": "cf-ssl:enable",
+            "family": "cf-ssl",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php"
+        },
+        {
+            "command": "cf-zone:list",
+            "family": "cf-zone",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php"
+        },
+        {
+            "command": "cf-zone:list",
+            "family": "cf-zone",
+            "path": "apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php"
+        },
+        {
+            "command": "database:add",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php"
+        },
+        {
+            "command": "database:add",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseAddJsonRendererTest.php"
+        },
+        {
+            "command": "database:add",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:attach",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php"
+        },
+        {
+            "command": "database:attach",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachJsonRendererTest.php"
+        },
+        {
+            "command": "database:attach",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:describe",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseDescribeCommandTest.php"
+        },
+        {
+            "command": "database:describe",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+        },
+        {
+            "command": "database:detach",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php"
+        },
+        {
+            "command": "database:detach",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachJsonRendererTest.php"
+        },
+        {
+            "command": "database:detach",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:list",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php"
+        },
+        {
+            "command": "database:list",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php"
+        },
+        {
+            "command": "database:list",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:query",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryCommandTest.php"
+        },
+        {
+            "command": "database:query",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php"
+        },
+        {
+            "command": "database:remove",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:remove",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php"
+        },
+        {
+            "command": "database:remove",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveJsonRendererTest.php"
+        },
+        {
+            "command": "database:schema",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+        },
+        {
+            "command": "database:show",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:show",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php"
+        },
+        {
+            "command": "database:show",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseShowJsonRendererTest.php"
+        },
+        {
+            "command": "database:tables",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+        },
+        {
+            "command": "database:tables",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseTablesCommandTest.php"
+        },
+        {
+            "command": "database:update",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        },
+        {
+            "command": "database:update",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php"
+        },
+        {
+            "command": "database:update",
+            "family": "database",
+            "path": "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:history",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php"
+        },
+        {
+            "command": "deploy:history",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:history",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        },
+        {
+            "command": "deploy:log",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployLogCommandTest.php"
+        },
+        {
+            "command": "deploy:log",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployLogHumanRendererTest.php"
+        },
+        {
+            "command": "deploy:log",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployLogJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:log",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        },
+        {
+            "command": "deploy:run",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php"
+        },
+        {
+            "command": "deploy:run",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployRunInteractiveInputTest.php"
+        },
+        {
+            "command": "deploy:run",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployRunJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:run",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployRunNonInteractiveInputTest.php"
+        },
+        {
+            "command": "deploy:run",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        },
+        {
+            "command": "deploy:step-add",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php"
+        },
+        {
+            "command": "deploy:step-add",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddHumanRendererTest.php"
+        },
+        {
+            "command": "deploy:step-add",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddInteractiveInputTest.php"
+        },
+        {
+            "command": "deploy:step-add",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:step-add",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddNonInteractiveInputTest.php"
+        },
+        {
+            "command": "deploy:step-add",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        },
+        {
+            "command": "deploy:step-list",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php"
+        },
+        {
+            "command": "deploy:step-list",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:step-list",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        },
+        {
+            "command": "deploy:step-remove",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php"
+        },
+        {
+            "command": "deploy:step-remove",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveHumanRendererTest.php"
+        },
+        {
+            "command": "deploy:step-remove",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveInteractiveInputTest.php"
+        },
+        {
+            "command": "deploy:step-remove",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveJsonRendererTest.php"
+        },
+        {
+            "command": "deploy:step-remove",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveNonInteractiveInputTest.php"
+        },
+        {
+            "command": "deploy:step-remove",
+            "family": "deploy",
+            "path": "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        },
+        {
+            "command": "doctor",
+            "family": "doctor",
+            "path": "apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php"
+        },
+        {
+            "command": "firewall:allow",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowCommandTest.php"
+        },
+        {
+            "command": "firewall:allow",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowHumanRendererTest.php"
+        },
+        {
+            "command": "firewall:allow",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowJsonRendererTest.php"
+        },
+        {
+            "command": "firewall:allow",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+        },
+        {
+            "command": "firewall:deny",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyCommandTest.php"
+        },
+        {
+            "command": "firewall:deny",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyHumanRendererTest.php"
+        },
+        {
+            "command": "firewall:deny",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyJsonRendererTest.php"
+        },
+        {
+            "command": "firewall:deny",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+        },
+        {
+            "command": "firewall:list",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallListCommandTest.php"
+        },
+        {
+            "command": "firewall:list",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallListJsonRendererTest.php"
+        },
+        {
+            "command": "firewall:list",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+        },
+        {
+            "command": "firewall:remove",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php"
+        },
+        {
+            "command": "firewall:remove",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveHumanRendererTest.php"
+        },
+        {
+            "command": "firewall:remove",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveJsonRendererTest.php"
+        },
+        {
+            "command": "firewall:remove",
+            "family": "firewall",
+            "path": "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+        },
+        {
+            "command": "node role:add",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php"
+        },
+        {
+            "command": "node role:add",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php"
+        },
+        {
+            "command": "node role:list",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php"
+        },
+        {
+            "command": "node role:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php"
+        },
+        {
+            "command": "node role:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleRemoveCommandTest.php"
+        },
+        {
+            "command": "node:agent-ide",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php"
+        },
+        {
+            "command": "node:agent-ide",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeHumanRendererTest.php"
+        },
+        {
+            "command": "node:agent-ide",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:agent-ide",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeJsonRendererTest.php"
+        },
+        {
+            "command": "node:agent-ide",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:default",
+            "family": "node",
+            "path": "apps/cli/tests/Feature/Commands/Node/NodeDefaultHumanRendererTest.php"
+        },
+        {
+            "command": "node:default",
+            "family": "node",
+            "path": "apps/cli/tests/Feature/Commands/Node/NodeDefaultJsonRendererTest.php"
+        },
+        {
+            "command": "node:default",
+            "family": "node",
+            "path": "apps/cli/tests/Feature/Commands/Node/NodeDefaultNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:default",
+            "family": "node",
+            "path": "apps/cli/tests/Feature/Commands/Node/NodeDefaultOnClientTest.php"
+        },
+        {
+            "command": "node:default",
+            "family": "node",
+            "path": "apps/cli/tests/Feature/Commands/Node/NodeDefaultOnGatewayHostTest.php"
+        },
+        {
+            "command": "node:default",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php"
+        },
+        {
+            "command": "node:grant",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php"
+        },
+        {
+            "command": "node:grant",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php"
+        },
+        {
+            "command": "node:grant",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantHumanRendererTest.php"
+        },
+        {
+            "command": "node:grant",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php"
+        },
+        {
+            "command": "node:grant",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnOperatorNodeContractTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/E2E/Ephemeral/NodeNewOperatorForwardingTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/E2E/NodeNewDevelopmentAppTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/E2E/NodeNewProductionAppTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/NodeNewCommandTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeNewHumanRendererTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeNewInputContractTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeNewInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeNewJsonRendererTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeNewNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:new",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeNewOnOperatorNodeContractTest.php"
+        },
+        {
+            "command": "node:permissions",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsCommandTest.php"
+        },
+        {
+            "command": "node:permissions",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveHumanRendererTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveJsonRendererTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:remove",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnOperatorNodeContractTest.php"
+        },
+        {
+            "command": "node:revoke",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php"
+        },
+        {
+            "command": "node:revoke",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeHumanRendererTest.php"
+        },
+        {
+            "command": "node:revoke",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:revoke",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeJsonRendererTest.php"
+        },
+        {
+            "command": "node:revoke",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:revoke",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php"
+        },
+        {
+            "command": "node:show",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeShowCommandTest.php"
+        },
+        {
+            "command": "node:show",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeShowHumanRendererTest.php"
+        },
+        {
+            "command": "node:show",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeShowInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:show",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php"
+        },
+        {
+            "command": "node:show",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeShowNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:update",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php"
+        },
+        {
+            "command": "node:update",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php"
+        },
+        {
+            "command": "node:update",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:update",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php"
+        },
+        {
+            "command": "node:update",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "node:update",
+            "family": "node",
+            "path": "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php"
+        },
+        {
+            "command": "php:list",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpListCommandTest.php"
+        },
+        {
+            "command": "php:list",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpListHumanRendererTest.php"
+        },
+        {
+            "command": "php:list",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpListJsonRendererTest.php"
+        },
+        {
+            "command": "php:list",
+            "family": "php",
+            "path": "apps/gateway/tests/Unit/Services/Php/PhpRuntimeViewTest.php"
+        },
+        {
+            "command": "php:use",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpUseCallerRoleTest.php"
+        },
+        {
+            "command": "php:use",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpUseCommandTest.php"
+        },
+        {
+            "command": "php:use",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpUseInteractiveInputTest.php"
+        },
+        {
+            "command": "php:use",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpUseJsonRendererTest.php"
+        },
+        {
+            "command": "php:use",
+            "family": "php",
+            "path": "apps/gateway/tests/Feature/Commands/Php/PhpUseNonInteractiveInputTest.php"
+        },
+        {
+            "command": "php:use",
+            "family": "php",
+            "path": "apps/gateway/tests/Unit/Services/Php/PhpRuntimeSelectionTest.php"
+        },
+        {
+            "command": "schedule:add",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php"
+        },
+        {
+            "command": "schedule:add",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddHumanRendererTest.php"
+        },
+        {
+            "command": "schedule:add",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddInteractiveInputTest.php"
+        },
+        {
+            "command": "schedule:add",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddJsonRendererTest.php"
+        },
+        {
+            "command": "schedule:add",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddNonInteractiveInputTest.php"
+        },
+        {
+            "command": "schedule:add",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+        },
+        {
+            "command": "schedule:list",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php"
+        },
+        {
+            "command": "schedule:list",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListJsonRendererTest.php"
+        },
+        {
+            "command": "schedule:list",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+        },
+        {
+            "command": "schedule:logs",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php"
+        },
+        {
+            "command": "schedule:logs",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsHumanRendererTest.php"
+        },
+        {
+            "command": "schedule:logs",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsJsonRendererTest.php"
+        },
+        {
+            "command": "schedule:logs",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+        },
+        {
+            "command": "schedule:remove",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveCommandTest.php"
+        },
+        {
+            "command": "schedule:remove",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveHumanRendererTest.php"
+        },
+        {
+            "command": "schedule:remove",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveInteractiveInputTest.php"
+        },
+        {
+            "command": "schedule:remove",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveJsonRendererTest.php"
+        },
+        {
+            "command": "schedule:remove",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveNonInteractiveInputTest.php"
+        },
+        {
+            "command": "schedule:remove",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+        },
+        {
+            "command": "schedule:run",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php"
+        },
+        {
+            "command": "schedule:run",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunHumanRendererTest.php"
+        },
+        {
+            "command": "schedule:run",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunJsonRendererTest.php"
+        },
+        {
+            "command": "schedule:run",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+        },
+        {
+            "command": "schedule:show",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleReadCommandTest.php"
+        },
+        {
+            "command": "schedule:show",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php"
+        },
+        {
+            "command": "schedule:show",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowJsonRendererTest.php"
+        },
+        {
+            "command": "schedule:show",
+            "family": "schedule",
+            "path": "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+        },
+        {
+            "command": "tool:credentials",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php"
+        },
+        {
+            "command": "tool:credentials",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsJsonRendererTest.php"
+        },
+        {
+            "command": "tool:list",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolListCommandTest.php"
+        },
+        {
+            "command": "tool:list",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolListJsonRendererTest.php"
+        },
+        {
+            "command": "tool:reconfigure",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php"
+        },
+        {
+            "command": "tool:reconfigure",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureJsonRendererTest.php"
+        },
+        {
+            "command": "tool:remove",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveCommandTest.php"
+        },
+        {
+            "command": "tool:remove",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveJsonRendererTest.php"
+        },
+        {
+            "command": "tool:show",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolShowCommandTest.php"
+        },
+        {
+            "command": "tool:show",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php"
+        },
+        {
+            "command": "tool:update",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateCommandTest.php"
+        },
+        {
+            "command": "tool:update",
+            "family": "tool",
+            "path": "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateJsonRendererTest.php"
+        },
+        {
+            "command": "vpn-client:disable",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php"
+        },
+        {
+            "command": "vpn-client:disable",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php"
+        },
+        {
+            "command": "vpn-client:enable",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php"
+        },
+        {
+            "command": "vpn-client:enable",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php"
+        },
+        {
+            "command": "vpn-client:list",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListCommandTest.php"
+        },
+        {
+            "command": "vpn-client:list",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php"
+        },
+        {
+            "command": "vpn-client:new",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php"
+        },
+        {
+            "command": "vpn-client:new",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php"
+        },
+        {
+            "command": "vpn-client:remove",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php"
+        },
+        {
+            "command": "vpn-client:remove",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php"
+        },
+        {
+            "command": "vpn-client:remove",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "vpn-client:remove",
+            "family": "vpn-client",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php"
+        },
+        {
+            "command": "vpn-web-ui:change-password",
+            "family": "vpn-web-ui",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php"
+        },
+        {
+            "command": "vpn-web-ui:change-password",
+            "family": "vpn-web-ui",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php"
+        },
+        {
+            "command": "vpn-web-ui:change-password",
+            "family": "vpn-web-ui",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php"
+        },
+        {
+            "command": "vpn-web-ui:change-password",
+            "family": "vpn-web-ui",
+            "path": "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php"
+        }
+    ]
+}

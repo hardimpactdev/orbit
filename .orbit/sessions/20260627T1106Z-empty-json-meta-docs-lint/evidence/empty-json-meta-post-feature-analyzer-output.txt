@@ -1,0 +1,72 @@
+## Verdict
+
+Loop outcome: **complete + loop improvement**
+Loop quality: **proper with issues**
+Guardrail verdict: **mixed** (accepted rule is well-targeted; one candidate signal left undocumented → defer)
+
+## Evidence Reviewed
+
+- Codex session: thread `019f02ee-7170-7e01-978d-ede27abaf755` (not re-read; reconstructed from packet)
+- Worktree: `/Users/nckrtl/orbit/.worktrees/codex-empty-json-meta-docs-lint`, branch `codex/empty-json-meta-docs-lint`
+- Diff: 56 files, +193/-62. Code: `JsonMetadataShapeRule.php`, `JsonMetadataExampleDecoder.php`, `JsonMetadataStructureInspector.php`, `librarian.php` registration, +129 lines of Pest (5 n
+ew fixtures). Docs: 54 markdown files `"meta": {}` → `"meta": []`.
+- `.orbit` packet: `loop.md` (full distillation present), `evidence/` (worker + reviewer prompts/outputs)
+- Worker/reviewer artifacts: `empty-json-meta-docs-lint-worker-output.txt` (reconstructed; process 2167 deleted), `empty-json-meta-docs-librarian-review-output.txt` (process 2168 — "No ren
+dered output captured")
+- Verification: quality-check `...105132Z-7625cf895c86.json` exit 0, all 34 subgates 0; docs-lint exit 0; focused Pest 6/46 per prompt
+- Human corrections: owner found/fixed the worker's stream-JSON gap (first rule decoded full-block only, skipped line-delimited frames); decoder now falls back to per-line decode
+
+## Findings
+
+- Severity: **low**
+  Type: contract-gap
+  Evidence: `JsonMetadataExampleDecoder::decodeLineDelimitedExamples` — per-line decode only
+  Issue: A *pretty-printed* (multi-line) single JSON object whose full-block decode fails would also fail every per-line decode and be silently skipped (false negative). Not present in cur
+rent docs; all real stream frames are single-line. Matches the worker's self-reported residual risk.
+  Recommendation: None now. Acceptable; the inspector is narrow and current corpus is clean. Note it if pretty-printed envelope examples are ever added.
+
+- Severity: **low**
+  Type: evidence-gap
+  Evidence: `worker-output.txt` still lists the stream-frame miss as an open "Worker-reported risk"; `loop.md` Progress/Candidate-Signals never record the owner's decoder fix
+  Issue: The most important human correction in this slice (the line-delimited decode fix) is invisible in the durable packet. A reader of `loop.md` alone would not know the rule originall
+y under-covered stream JSON.
+  Recommendation: Add one Progress/Candidate-Signal line recording the worker gap + owner fix.
+
+- Severity: **low**
+  Type: other (process)
+  Evidence: `empty-json-meta-docs-librarian-review-output.txt` — process 2168 spawned read-only, produced nothing after bounded waits, deleted
+  Issue: Reviewer spawn cost with zero signal. `loop.md` correctly pre-stated "fresh reviewer only if scope grows" — so the spawn was arguably unnecessary for a mechanical `{}`→`[]` swap.
+  Recommendation: None. Honor the pre-stated gate; skip the reviewer for pure mechanical/lint-enforced alignment. Already covered by bounded-reviewer hygiene.
+
+## Guardrail Decisions
+
+- Candidate: `command_docs.json_metadata_shape` Librarian rule + fixtures
+  Classification: **accepted (correct)** — well-targeted; flags only a property literally named `meta` that is an empty `stdClass`, allows `[]` and non-empty objects, recurses arrays/objec
+ts, decodes line-delimited frames. Verifiable via focused Pest filter (6/46) and live `composer docs-lint` (exit 0).
+  Existing coverage: docs-lint previously had no empty-metadata shape check; the prior P6 correction was a one-time edit with no recurrence guard. Not redundant with `JsonRendererExampleRu
+le`/`JsonWarningShapeRule`.
+  Recommended target: as-is (`JsonMetadataShapeRule.php` + `librarian.php` + test).
+  Verification: reachable — confirmed.
+
+- Candidate: harness-signal for "first-pass docs-lint rule missed line-delimited stream JSON frames"
+  Classification: **defer**
+  Existing coverage: none specific; closest is general "verify rule covers all documented example shapes."
+  Recommended target: none yet — single occurrence, fixed in-code, narrow to JSON-frame rules.
+  Verification: n/a until recurrence.
+
+- Candidate: Grok audit `2164`/`2167`/`2168` hygiene (partial output, deleted, capture/delete race)
+  Classification: **redundant** — already covered by existing bounded-reviewer/agent-hygiene lessons (`feedback_gemini_shell_tool_stall`, bounded-reviewer notes). No new guardrail.
+
+## Loop Improvements
+
+- Record the worker-gap → owner-fix correction in `loop.md` (owner: feature owner; trigger: any in-loop human correction of worker code).
+- Capture/delete race: worker `2167` output had to be reconstructed because the process was deleted before redirect completed. Recommend redirect-then-delete ordering for Solo worker captu
+re (owner: orchestrator; trigger: any worker requiring output retention). This is the second slice where deletion raced capture — borderline promotable if it recurs once more.
+
+## Packet Gaps
+
+- The decoder fix (line-delimited fallback) and its rationale are absent from `loop.md`; only the stale pre-fix risk survives in `worker-output.txt`.
+- Reviewer process 2168 produced no analyzable output — docs-review lane is effectively unverified by an independent reviewer (mitigated: change is deterministic and lint-enforced, so not
+a blocking gap).
+- No Codex transcript path provided; decisions verified only via reconstructed artifacts. Sufficient here given the deterministic surface, but worth noting the analyzer could not cross-che
+ck claimed turns.

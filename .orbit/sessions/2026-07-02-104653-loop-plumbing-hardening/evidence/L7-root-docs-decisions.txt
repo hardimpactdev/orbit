@@ -1,0 +1,95 @@
+L7-root-docs lane evidence — 2026-07-02
+
+Scope: HARNESS.md, AGENTS.md, AGENT_FAST_PATH.md, HARNESS_SIGNALS.md, harness-signals/**
+
+HARNESS.md
+- Collapsed four archive-naming restatements (Worktree-Local State bullet, Session
+  Archives, Feature Slices, Feature Cleanup) into ONE normative statement in
+  Session Archives: "Archive directories are named YYYY-MM-DD-HHMMSS-<feature-slug>
+  in the checkout's local time ... bin/orbit-session-archive generates and enforces
+  the archive name; do not hand-build archive directories." Other three sites now
+  point at Session Archives / the tool.
+- Session Archives paragraph rewritten to the landed L1 archiver behavior:
+  Evidence Links write-back (byte-identical loop.md), idempotent refresh
+  (mode=refreshed), non-zero failure modes, stderr WARNING on missing provider
+  context, per-provider manifest 'checked' lists, --help pointer.
+- Merge Boundary Gate section rewritten for landed L2 gate: exit 64 for
+  unclassifiable explicit invocations, --lint dry-run (default ./.orbit/loop.md,
+  all findings, exit 0/2, complete+blocked-row flag), FINALIZATION: PASS/BLOCKED
+  verdict lines, strict outcome enum + placeholder rejection, empty-diff and
+  dirty-tree merge blocks, cleanup-requires-session-archive block
+  (<slug> or YYYY-MM-DD-HHMMSS-<slug> with loop.md + agent-sessions/manifest.json),
+  Fresh analyzer row (deferred - <reason> = WARNING), reconstructed-signals
+  WARNING, extended docs-class (*.md anywhere incl. root, non-PHP under
+  .agents/** docs/** harness-signals/** and LOOP.md.example), compact
+  single-slice appendix passes --lint.
+- Deleted stale later-slice claims: "Eval wiring remains a later slice"
+  (Session Archives) and "Archive helper tooling and eval wiring ... are later
+  slices" (Post-Feature Signal Audit). Both exist now (bin/orbit-session-archive,
+  orbit-evals skills).
+- Unified analyzer timing: fresh post-feature analyzer runs BEFORE merge as part
+  of final distillation (Fresh analyzer row); signal-audit adjudication completes
+  before cleanup. Rewrote the "Post-feature signal audit happens after merge"
+  Feature Cleanup bullet accordingly.
+- Rewrote "does not need an outer loop-improver watcher" to: no standing watcher
+  by default; explicitly requested read-only loop-observer lane may run during a
+  loop (.agents/skills/loop-observer/SKILL.md — verified to exist).
+- Added Loop observer row to Solo Role Matrix (read-only live observer, explicit
+  request only, owns nothing mutative).
+- Verified exactly ONE Opus spawn recipe exists in the Solo Role Matrix section
+  (rg spawn_agent|extra_args -> single paragraph); kept it as canonical.
+
+AGENTS.md (CLAUDE.md is a symlink to it)
+- Reading order aligned to the HARNESS.md discovery path: AGENTS.md ->
+  AGENT_FAST_PATH.md -> HARNESS.md, stated explicitly.
+- Added apps/e2e/ and packages/sdk/ to Repository Shape (verified present via ls;
+  descriptions from their composer.json).
+- Condensed the full feature-request/scratchpad pre-dispatch/thin-todo bullet and
+  the full parallelization-gate bullet to one-sentence versions pointing at
+  HARNESS.md.
+
+AGENT_FAST_PATH.md
+- Added step: make bin/orbit-feature-finalization-check --lint .orbit/loop.md a
+  first-checkpoint habit.
+- Added step: archive names are tool-generated via bin/orbit-session-archive; do
+  not hand-write timestamps.
+
+HARNESS_SIGNALS.md
+- Fixed the "Agent implementation mistake" guardrail target LOOP.md ->
+  LOOP.md.example / .orbit/loop.md.
+
+harness-signals/
+- 2026-06-25-e2e-sync-gateway-stale-container.md: composer e2e:incus ->
+  composer test:e2e:incus (script name verified in root composer.json).
+- 2026-06-23-signal-ledger-needs-curation.md, 2026-06-23-guardrail-target-
+  terminology.md, 2026-06-23-ephemeral-signals-lose-recurrence-context.md:
+  bare LOOP.md targets/prose/rg args -> LOOP.md.example.
+- 2026-06-24-raw-contract-dropped-during-slicing.md: Guardrail change
+  "pending loop-hardening-session-guardrails commit" -> landed, naming HARNESS.md
+  Done Contract raw-examples requirement, implementing-features raw acceptance
+  examples + explicit deferrals, cli-command raw-contract comparison (all
+  verified via rg).
+- 2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md: same pending claim
+  -> landed, naming HARNESS.md Root Routing CLI row, cli-output-pty-capture,
+  implementing-features PTY-before-user steps, cli-command PTY artifact checks
+  (verified via rg).
+- 2026-06-23-loop-not-wired-to-implementation-skill.md: retired
+  post-feature-distillation.md persona references -> post-feature-analyzer.md
+  (guardrail target, verification rg, reappearance check); stale "pending
+  pre-merge-finalization-hook commit" in Guardrail change -> landed as
+  bin/orbit-feature-finalization-check + PreToolUse hooks. Historical
+  Source worktree/commit lines kept as provenance.
+- index.json IS generated: builder bin/orbit-harness-signal-index found.
+  Regenerated with --write; --check passes ("Harness signal index is up to date").
+
+Verification run
+- bin/orbit-harness-signal-index --write && --check: pass.
+- git diff --check: clean.
+- Re-ran the embedded verification rg commands of every edited record: sink rg
+  returns no matches (expected), raw-contract and post-feature-analyzer rg
+  commands return hits in all named targets.
+- No composer quality-check / broad formatters run (lane rule); docs-class diff.
+
+Red evidence: not applicable — docs-only lane, no runtime behavior change; the
+gate/archiver behavior described here is test-covered by L1/L2 lanes
+(SessionArchiveTest.php, FeatureFinalizationGateTest.php, AgentSessionArchiveTest.php).

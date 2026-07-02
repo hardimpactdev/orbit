@@ -1,0 +1,781 @@
+{"elapsed": 0.236363, "delta": 0.0, "bytes": 6, "text": "\r\n\u001b[2K"}
+{"elapsed": 0.236519, "delta": 0.000156, "bytes": 42, "text": "  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.249552, "delta": 0.013032, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.24961, "delta": 5.8e-05, "bytes": 42, "text": "  ○  apps/gateway    Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.263806, "delta": 0.014196, "bytes": 35, "text": "\u001b[2K  ○  apps/cli        Queued\r\n"}
+{"elapsed": 0.263861, "delta": 5.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.277146, "delta": 0.013284, "bytes": 35, "text": "\u001b[2K  ○  apps/docs       Queued\r\n"}
+{"elapsed": 0.277186, "delta": 4.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.290226, "delta": 0.01304, "bytes": 35, "text": "\u001b[2K  ○  apps/e2e        Queued\r\n"}
+{"elapsed": 0.290271, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.302786, "delta": 0.012515, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.302825, "delta": 3.9e-05, "bytes": 42, "text": "  ○  apps/reverb     Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.31556, "delta": 0.012735, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.315591, "delta": 3e-05, "bytes": 42, "text": "  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.327785, "delta": 0.012194, "bytes": 35, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n"}
+{"elapsed": 0.327815, "delta": 3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.327828, "delta": 1.3e-05, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.327847, "delta": 1.9e-05, "bytes": 25, "text": "  └  Working...\r\n\u001b[?25l"}
+{"elapsed": 0.328279, "delta": 0.000432, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 0.328323, "delta": 4.4e-05, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.328338, "delta": 1.6e-05, "bytes": 31, "text": "  ┌  Running quality checks\r\n"}
+{"elapsed": 0.328353, "delta": 1.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.340817, "delta": 0.012464, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.340854, "delta": 3.7e-05, "bytes": 31, "text": "  ○  apps/gateway    Queued\r\n"}
+{"elapsed": 0.340943, "delta": 8.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.35504, "delta": 0.014098, "bytes": 35, "text": "\u001b[2K  ○  apps/cli        Queued\r\n"}
+{"elapsed": 0.3551, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.368528, "delta": 0.013428, "bytes": 35, "text": "\u001b[2K  ○  apps/docs       Queued\r\n"}
+{"elapsed": 0.368587, "delta": 6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.381471, "delta": 0.012883, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.381517, "delta": 4.6e-05, "bytes": 42, "text": "  ○  apps/e2e        Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.39479, "delta": 0.013273, "bytes": 35, "text": "\u001b[2K  ○  apps/reverb     Queued\r\n"}
+{"elapsed": 0.394828, "delta": 3.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.407934, "delta": 0.013106, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 0.407975, "delta": 4.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.42138, "delta": 0.013406, "bytes": 35, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n"}
+{"elapsed": 0.421428, "delta": 4.8e-05, "bytes": 15, "text": "\u001b[2K  │\r\n\u001b[2K"}
+{"elapsed": 0.421458, "delta": 3e-05, "bytes": 19, "text": "  └  Working...\r\n"}
+{"elapsed": 0.727358, "delta": 0.3059, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 0.72742, "delta": 6.3e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.752461, "delta": 0.025041, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 0.752528, "delta": 6.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.769329, "delta": 0.0168, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 0.769395, "delta": 6.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.794965, "delta": 0.025571, "bytes": 36, "text": "\u001b[2K  ◉  apps/docs       Running\r\n"}
+{"elapsed": 0.795058, "delta": 9.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.808879, "delta": 0.013821, "bytes": 35, "text": "\u001b[2K  ○  apps/e2e        Queued\r\n"}
+{"elapsed": 0.808932, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.825443, "delta": 0.016512, "bytes": 36, "text": "\u001b[2K  ◉  apps/reverb     Running\r\n"}
+{"elapsed": 0.825517, "delta": 7.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.843302, "delta": 0.017785, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 0.843359, "delta": 5.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 0.856778, "delta": 0.013419, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 0.856835, "delta": 5.7e-05, "bytes": 42, "text": "  ○  packages/sdk    Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 0.856858, "delta": 2.2e-05, "bytes": 23, "text": "\u001b[2K  └  Working...\r\n"}
+{"elapsed": 1.169373, "delta": 0.312515, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 1.169645, "delta": 0.000273, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 1.221422, "delta": 0.051776, "bytes": 47, "text": "\u001b[2K  ○  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 1.27286, "delta": 0.051439, "bytes": 47, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 1.341297, "delta": 0.068437, "bytes": 36, "text": "\u001b[2K  ○  apps/docs       Running\r\n"}
+{"elapsed": 1.341406, "delta": 0.000109, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 1.387318, "delta": 0.045912, "bytes": 46, "text": "\u001b[2K  ○  apps/e2e        Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 1.480393, "delta": 0.093074, "bytes": 47, "text": "\u001b[2K  ○  apps/reverb     Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 1.552658, "delta": 0.072265, "bytes": 36, "text": "\u001b[2K  ○  packages/core   Running\r\n"}
+{"elapsed": 1.552768, "delta": 0.00011, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 1.866754, "delta": 0.313986, "bytes": 69, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 2.179854, "delta": 0.313101, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 2.261032, "delta": 0.081178, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 2.261157, "delta": 0.000125, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 2.323111, "delta": 0.061954, "bytes": 47, "text": "\u001b[2K  ◉  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 2.40131, "delta": 0.078199, "bytes": 47, "text": "\u001b[2K  ◉  apps/docs       Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 2.454895, "delta": 0.053585, "bytes": 46, "text": "\u001b[2K  ○  apps/e2e        Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 2.537261, "delta": 0.082367, "bytes": 47, "text": "\u001b[2K  ◉  apps/reverb     Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 2.853809, "delta": 0.316547, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 2.854941, "delta": 0.001133, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 3.005167, "delta": 0.150226, "bytes": 70, "text": "\u001b[2K  ◉  packages/sdk    Running\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 3.322703, "delta": 0.317536, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 3.323179, "delta": 0.000476, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 3.323761, "delta": 0.000582, "bytes": 42, "text": "  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 3.441055, "delta": 0.117294, "bytes": 40, "text": "\u001b[2K  ○  apps/gateway    Running\r\n\u001b[2K"}
+{"elapsed": 3.441133, "delta": 7.8e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 3.491489, "delta": 0.050356, "bytes": 40, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 3.491592, "delta": 0.000103, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 3.589138, "delta": 0.097546, "bytes": 36, "text": "\u001b[2K  ○  apps/docs       Running\r\n"}
+{"elapsed": 3.589223, "delta": 8.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 3.667462, "delta": 0.078239, "bytes": 47, "text": "\u001b[2K  ○  apps/e2e        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 3.816009, "delta": 0.148547, "bytes": 47, "text": "\u001b[2K  ○  apps/reverb     Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 3.919809, "delta": 0.103801, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 3.982736, "delta": 0.062926, "bytes": 36, "text": "\u001b[2K  ○  packages/sdk    Running\r\n"}
+{"elapsed": 3.983224, "delta": 0.000488, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 4.324365, "delta": 0.341142, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 4.667257, "delta": 0.342891, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 4.667329, "delta": 7.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 4.773269, "delta": 0.10594, "bytes": 40, "text": "\u001b[2K  ◉  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 4.773569, "delta": 0.0003, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 4.849654, "delta": 0.076086, "bytes": 40, "text": "\u001b[2K  ◉  apps/docs       Running\r\n\u001b[2K"}
+{"elapsed": 4.849819, "delta": 0.000165, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 4.900015, "delta": 0.050197, "bytes": 47, "text": "\u001b[2K  ◉  apps/e2e        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 4.941887, "delta": 0.041871, "bytes": 36, "text": "\u001b[2K  ◉  apps/reverb     Running\r\n"}
+{"elapsed": 4.941972, "delta": 8.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 4.98504, "delta": 0.043068, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 4.985168, "delta": 0.000128, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 5.026328, "delta": 0.04116, "bytes": 35, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n"}
+{"elapsed": 5.026405, "delta": 7.7e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 5.337386, "delta": 0.310981, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 5.337467, "delta": 8.1e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 5.390319, "delta": 0.052852, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 5.39039, "delta": 7.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 5.43699, "delta": 0.046599, "bytes": 40, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 5.437111, "delta": 0.000121, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 5.570068, "delta": 0.132957, "bytes": 40, "text": "\u001b[2K  ○  apps/docs       Running\r\n\u001b[2K"}
+{"elapsed": 5.570209, "delta": 0.000142, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 5.633577, "delta": 0.063368, "bytes": 47, "text": "\u001b[2K  ○  apps/e2e        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 5.661528, "delta": 0.027952, "bytes": 36, "text": "\u001b[2K  ○  apps/reverb     Running\r\n"}
+{"elapsed": 5.661605, "delta": 7.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 5.700499, "delta": 0.038894, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 5.70057, "delta": 7.1e-05, "bytes": 42, "text": "  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 5.735967, "delta": 0.035397, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 5.736144, "delta": 0.000176, "bytes": 65, "text": "  ○  packages/sdk    Queued\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 6.044227, "delta": 0.308084, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 6.075805, "delta": 0.031578, "bytes": 47, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 6.111267, "delta": 0.035462, "bytes": 35, "text": "\u001b[2K  ○  apps/cli        Queued\r\n"}
+{"elapsed": 6.111353, "delta": 8.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.136039, "delta": 0.024686, "bytes": 36, "text": "\u001b[2K  ◉  apps/docs       Running\r\n"}
+{"elapsed": 6.136105, "delta": 6.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.170684, "delta": 0.03458, "bytes": 47, "text": "\u001b[2K  ◉  apps/e2e        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 6.19863, "delta": 0.027946, "bytes": 36, "text": "\u001b[2K  ◉  apps/reverb     Running\r\n"}
+{"elapsed": 6.198705, "delta": 7.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.218708, "delta": 0.020003, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 6.218772, "delta": 6.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.241686, "delta": 0.022914, "bytes": 35, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n"}
+{"elapsed": 6.241749, "delta": 6.3e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 6.546503, "delta": 0.304754, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 6.546606, "delta": 0.000103, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 6.570282, "delta": 0.023676, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 6.570348, "delta": 6.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.632957, "delta": 0.062609, "bytes": 47, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 6.703563, "delta": 0.070606, "bytes": 47, "text": "\u001b[2K  ○  apps/docs       Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 6.747959, "delta": 0.044396, "bytes": 36, "text": "\u001b[2K  ○  apps/e2e        Running\r\n"}
+{"elapsed": 6.748028, "delta": 6.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.768731, "delta": 0.020702, "bytes": 36, "text": "\u001b[2K  ○  apps/reverb     Running\r\n"}
+{"elapsed": 6.768795, "delta": 6.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.794299, "delta": 0.025505, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 6.794367, "delta": 6.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 6.816326, "delta": 0.021958, "bytes": 35, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n"}
+{"elapsed": 6.816382, "delta": 5.7e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 7.122361, "delta": 0.305979, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 7.122429, "delta": 6.8e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 7.145524, "delta": 0.023095, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 7.145583, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.172284, "delta": 0.026701, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 7.172348, "delta": 6.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.206464, "delta": 0.034116, "bytes": 36, "text": "\u001b[2K  ◉  apps/docs       Running\r\n"}
+{"elapsed": 7.206535, "delta": 7.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.231166, "delta": 0.024631, "bytes": 36, "text": "\u001b[2K  ◉  apps/e2e        Running\r\n"}
+{"elapsed": 7.231222, "delta": 5.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.252253, "delta": 0.02103, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 7.252315, "delta": 6.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.275059, "delta": 0.022744, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 7.275113, "delta": 5.4e-05, "bytes": 42, "text": "  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 7.298005, "delta": 0.022892, "bytes": 35, "text": "\u001b[2K  ○  packages/sdk    Queued\r\n"}
+{"elapsed": 7.298068, "delta": 6.3e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 7.609959, "delta": 0.311891, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 7.610035, "delta": 7.6e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 7.636382, "delta": 0.026347, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 7.636445, "delta": 6.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.66192, "delta": 0.025475, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 7.661989, "delta": 6.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.697558, "delta": 0.035569, "bytes": 36, "text": "\u001b[2K  ○  apps/docs       Running\r\n"}
+{"elapsed": 7.697616, "delta": 5.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.725945, "delta": 0.028328, "bytes": 36, "text": "\u001b[2K  ○  apps/e2e        Running\r\n"}
+{"elapsed": 7.726008, "delta": 6.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.749565, "delta": 0.023557, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 7.749627, "delta": 6.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.776404, "delta": 0.026777, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 7.776467, "delta": 6.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 7.801025, "delta": 0.024558, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 7.801079, "delta": 5.4e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 8.111744, "delta": 0.310665, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.188119, "delta": 0.076375, "bytes": 47, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.25172, "delta": 0.0636, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 8.251826, "delta": 0.000106, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 8.343565, "delta": 0.091739, "bytes": 47, "text": "\u001b[2K  ◉  apps/docs       Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.411042, "delta": 0.067477, "bytes": 46, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.470516, "delta": 0.059474, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 8.470613, "delta": 9.8e-05, "bytes": 42, "text": "  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.537463, "delta": 0.066849, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.585697, "delta": 0.048234, "bytes": 69, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 8.889969, "delta": 0.304273, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 8.89008, "delta": 0.00011, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.939334, "delta": 0.049254, "bytes": 47, "text": "\u001b[2K  ○  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 8.982695, "delta": 0.043361, "bytes": 47, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.056077, "delta": 0.073382, "bytes": 36, "text": "\u001b[2K  ○  apps/docs       Running\r\n"}
+{"elapsed": 9.068413, "delta": 0.012336, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 9.088975, "delta": 0.020562, "bytes": 46, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.146988, "delta": 0.058013, "bytes": 46, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.211383, "delta": 0.064395, "bytes": 39, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K"}
+{"elapsed": 9.211465, "delta": 8.2e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 9.255443, "delta": 0.043978, "bytes": 69, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 9.56085, "delta": 0.305407, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 9.56097, "delta": 0.00012, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.636744, "delta": 0.075774, "bytes": 47, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.717497, "delta": 0.080753, "bytes": 40, "text": "\u001b[2K  ◉  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 9.717612, "delta": 0.000115, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 9.780542, "delta": 0.06293, "bytes": 47, "text": "\u001b[2K  ◉  apps/docs       Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.850785, "delta": 0.070243, "bytes": 46, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.921088, "delta": 0.070303, "bytes": 46, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 9.963951, "delta": 0.042863, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 9.964017, "delta": 6.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 10.02737, "delta": 0.063353, "bytes": 46, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 10.027488, "delta": 0.000118, "bytes": 23, "text": "\u001b[2K  └  Working...\r\n"}
+{"elapsed": 10.331594, "delta": 0.304106, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 10.390239, "delta": 0.058646, "bytes": 47, "text": "\u001b[2K  ○  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 10.447227, "delta": 0.056988, "bytes": 40, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 10.447349, "delta": 0.000122, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 10.508833, "delta": 0.061484, "bytes": 47, "text": "\u001b[2K  ○  apps/docs       Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 10.542405, "delta": 0.033572, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 10.54248, "delta": 7.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 10.623989, "delta": 0.081508, "bytes": 46, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 10.676913, "delta": 0.052924, "bytes": 39, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K"}
+{"elapsed": 10.677037, "delta": 0.000124, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 10.725979, "delta": 0.048942, "bytes": 46, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 10.726046, "delta": 6.7e-05, "bytes": 23, "text": "\u001b[2K  └  Working...\r\n"}
+{"elapsed": 11.033552, "delta": 0.307506, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 11.033671, "delta": 0.000119, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.074138, "delta": 0.040467, "bytes": 47, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.117403, "delta": 0.043264, "bytes": 47, "text": "\u001b[2K  ◉  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.168304, "delta": 0.050901, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 11.16838, "delta": 7.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 11.209719, "delta": 0.041339, "bytes": 46, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.24567, "delta": 0.035951, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 11.245899, "delta": 0.000229, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 11.292253, "delta": 0.046354, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.347354, "delta": 0.055101, "bytes": 69, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 11.656036, "delta": 0.308682, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.713661, "delta": 0.057625, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 11.713772, "delta": 0.000111, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 11.7701, "delta": 0.056328, "bytes": 47, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.841348, "delta": 0.071248, "bytes": 46, "text": "\u001b[2K  ●  apps/docs       Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.901354, "delta": 0.060006, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 11.90142, "delta": 6.6e-05, "bytes": 42, "text": "  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.944803, "delta": 0.043383, "bytes": 4, "text": "\u001b[2K"}
+{"elapsed": 11.944927, "delta": 0.000124, "bytes": 42, "text": "  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 11.986343, "delta": 0.041415, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 12.049486, "delta": 0.063143, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 12.049559, "delta": 7.3e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 12.355082, "delta": 0.305523, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 12.407887, "delta": 0.052805, "bytes": 47, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 12.464835, "delta": 0.056948, "bytes": 47, "text": "\u001b[2K  ◉  apps/cli        Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 12.516457, "delta": 0.051622, "bytes": 39, "text": "\u001b[2K  ●  apps/docs       Passed\r\n\u001b[2K"}
+{"elapsed": 12.516592, "delta": 0.000134, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 12.558626, "delta": 0.042035, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 12.55874, "delta": 0.000114, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 12.600726, "delta": 0.041986, "bytes": 46, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 12.651131, "delta": 0.050404, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 12.695478, "delta": 0.044347, "bytes": 69, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 12.999538, "delta": 0.30406, "bytes": 51, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.042815, "delta": 0.043277, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 13.04293, "delta": 0.000115, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 13.087912, "delta": 0.044982, "bytes": 40, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 13.087992, "delta": 7.9e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 13.124841, "delta": 0.036849, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 13.124899, "delta": 5.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 13.151819, "delta": 0.02692, "bytes": 46, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.183106, "delta": 0.031287, "bytes": 46, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.226311, "delta": 0.043205, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.292779, "delta": 0.066468, "bytes": 46, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.292891, "delta": 0.000113, "bytes": 23, "text": "\u001b[2K  └  Working...\r\n"}
+{"elapsed": 13.605117, "delta": 0.312226, "bytes": 40, "text": "\u001b[17A\u001b[2K  ┌  Running quality checks\r\n"}
+{"elapsed": 13.60526, "delta": 0.000142, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 13.672085, "delta": 0.066825, "bytes": 47, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.723424, "delta": 0.051339, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 13.732332, "delta": 0.008908, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 13.777842, "delta": 0.04551, "bytes": 46, "text": "\u001b[2K  ●  apps/docs       Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.819187, "delta": 0.041345, "bytes": 46, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.86677, "delta": 0.047584, "bytes": 46, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.925571, "delta": 0.058801, "bytes": 46, "text": "\u001b[2K  ○  packages/core   Queued\r\n\u001b[2K  │\r\n"}
+{"elapsed": 13.986345, "delta": 0.060774, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 13.986403, "delta": 5.8e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 14.29455, "delta": 0.308147, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 14.294606, "delta": 5.6e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 14.321279, "delta": 0.026673, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 14.321333, "delta": 5.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.345975, "delta": 0.024642, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 14.346044, "delta": 6.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.379794, "delta": 0.033749, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 14.379852, "delta": 5.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.404078, "delta": 0.024226, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 14.404136, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.425791, "delta": 0.021655, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 14.425846, "delta": 5.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.450889, "delta": 0.025043, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 14.450942, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.477932, "delta": 0.026989, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 14.477978, "delta": 4.7e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 14.789954, "delta": 0.311976, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 14.790005, "delta": 5.1e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 14.813939, "delta": 0.023934, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 14.813997, "delta": 5.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.838558, "delta": 0.024561, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 14.838607, "delta": 4.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.870803, "delta": 0.032196, "bytes": 39, "text": "\u001b[2K  ●  apps/docs       Passed\r\n\u001b[2K"}
+{"elapsed": 14.870862, "delta": 5.9e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 14.893187, "delta": 0.022325, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 14.893249, "delta": 6.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.912534, "delta": 0.019285, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 14.912584, "delta": 5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.934382, "delta": 0.021798, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 14.934425, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 14.958381, "delta": 0.023956, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 14.958432, "delta": 5.2e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 15.260222, "delta": 0.301789, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 15.260275, "delta": 5.3e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 15.285362, "delta": 0.025087, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 15.285418, "delta": 5.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.310798, "delta": 0.02538, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 15.310856, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.341753, "delta": 0.030897, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 15.341821, "delta": 6.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.36385, "delta": 0.02203, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 15.363903, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.384569, "delta": 0.020666, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 15.384625, "delta": 5.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.407229, "delta": 0.022604, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 15.407289, "delta": 6.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.430521, "delta": 0.023231, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 15.430581, "delta": 6e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 15.742101, "delta": 0.31152, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 15.742161, "delta": 6e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 15.766991, "delta": 0.02483, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 15.767056, "delta": 6.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.791715, "delta": 0.024659, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 15.791778, "delta": 6.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.821792, "delta": 0.030015, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 15.821845, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.843801, "delta": 0.021956, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 15.843853, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.862895, "delta": 0.019042, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 15.862955, "delta": 6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.884282, "delta": 0.021327, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 15.884328, "delta": 4.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 15.907383, "delta": 0.023054, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 15.907431, "delta": 4.9e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 16.213255, "delta": 0.305824, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 16.213305, "delta": 5e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 16.238953, "delta": 0.025647, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 16.238999, "delta": 4.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.262359, "delta": 0.02336, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 16.26242, "delta": 6.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.291081, "delta": 0.028661, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 16.29114, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.312565, "delta": 0.021424, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 16.312609, "delta": 4.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.332394, "delta": 0.019785, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 16.332451, "delta": 5.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.355036, "delta": 0.022586, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 16.355096, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.379051, "delta": 0.023955, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 16.379099, "delta": 4.8e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 16.690852, "delta": 0.311753, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 16.690905, "delta": 5.3e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 16.717865, "delta": 0.02696, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 16.717931, "delta": 6.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.741672, "delta": 0.023742, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 16.741733, "delta": 6.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.772361, "delta": 0.030628, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 16.772418, "delta": 5.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.794803, "delta": 0.022385, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 16.794875, "delta": 7.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.81519, "delta": 0.020315, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 16.815238, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.83731, "delta": 0.022072, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 16.837354, "delta": 4.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 16.862224, "delta": 0.02487, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 16.862281, "delta": 5.7e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 17.167425, "delta": 0.305144, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 17.167473, "delta": 4.8e-05, "bytes": 39, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K"}
+{"elapsed": 17.167491, "delta": 1.8e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 17.193583, "delta": 0.026092, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 17.193644, "delta": 6.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.220093, "delta": 0.026449, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 17.220147, "delta": 5.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.250581, "delta": 0.030433, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 17.250629, "delta": 4.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.272566, "delta": 0.021937, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 17.272612, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.291755, "delta": 0.019143, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 17.291814, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.312972, "delta": 0.021158, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 17.313031, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.337333, "delta": 0.024302, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 17.337398, "delta": 6.5e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 17.642372, "delta": 0.304974, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 17.64244, "delta": 6.8e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 17.66943, "delta": 0.02699, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 17.669482, "delta": 5.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.695049, "delta": 0.025568, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 17.695097, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.73088, "delta": 0.035783, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 17.730933, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.756791, "delta": 0.025858, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 17.756951, "delta": 0.00016, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.778527, "delta": 0.021576, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 17.778582, "delta": 5.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.80042, "delta": 0.021838, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 17.800481, "delta": 6.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 17.823431, "delta": 0.02295, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 17.823476, "delta": 4.5e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 18.13167, "delta": 0.308194, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 18.131727, "delta": 5.7e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 18.158078, "delta": 0.026351, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 18.158147, "delta": 7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.184361, "delta": 0.026214, "bytes": 40, "text": "\u001b[2K  ○  apps/cli        Running\r\n\u001b[2K"}
+{"elapsed": 18.18443, "delta": 6.8e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 18.213989, "delta": 0.029559, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 18.214036, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.236952, "delta": 0.022915, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 18.236999, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.25675, "delta": 0.01975, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 18.25679, "delta": 4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.278509, "delta": 0.02172, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 18.27855, "delta": 4.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.30365, "delta": 0.0251, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 18.30369, "delta": 4e-05, "bytes": 15, "text": "\u001b[2K  │\r\n\u001b[2K"}
+{"elapsed": 18.303703, "delta": 1.3e-05, "bytes": 19, "text": "  └  Working...\r\n"}
+{"elapsed": 18.608721, "delta": 0.305019, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 18.608781, "delta": 5.9e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 18.633232, "delta": 0.024451, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 18.633292, "delta": 6.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.658008, "delta": 0.024715, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 18.658065, "delta": 5.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.686446, "delta": 0.028381, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 18.686498, "delta": 5.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.708912, "delta": 0.022414, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 18.708971, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.72975, "delta": 0.020779, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 18.729795, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.75353, "delta": 0.023734, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 18.753585, "delta": 5.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 18.776988, "delta": 0.023402, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 18.777043, "delta": 5.5e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 19.080882, "delta": 0.303839, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 19.080935, "delta": 5.3e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 19.10538, "delta": 0.024445, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 19.105428, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.129547, "delta": 0.024118, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 19.129606, "delta": 6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.158901, "delta": 0.029294, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 19.158969, "delta": 6.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.181854, "delta": 0.022885, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 19.18191, "delta": 5.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.201886, "delta": 0.019976, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 19.201933, "delta": 4.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.222859, "delta": 0.020926, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 19.222896, "delta": 3.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.247198, "delta": 0.024302, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 19.247252, "delta": 5.4e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 19.552553, "delta": 0.305301, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 19.552608, "delta": 5.4e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 19.576521, "delta": 0.023913, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 19.576583, "delta": 6.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.59907, "delta": 0.022487, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 19.599119, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.62783, "delta": 0.028711, "bytes": 39, "text": "\u001b[2K  ●  apps/docs       Passed\r\n\u001b[2K"}
+{"elapsed": 19.627901, "delta": 7.1e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 19.649759, "delta": 0.021858, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 19.649823, "delta": 6.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.668176, "delta": 0.018353, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 19.66823, "delta": 5.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.688401, "delta": 0.020171, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 19.688451, "delta": 5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 19.711076, "delta": 0.022625, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 19.71112, "delta": 4.4e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 20.016576, "delta": 0.305456, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 20.016635, "delta": 5.9e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 20.040755, "delta": 0.02412, "bytes": 36, "text": "\u001b[2K  ○  apps/gateway    Running\r\n"}
+{"elapsed": 20.040805, "delta": 5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.065227, "delta": 0.024422, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 20.06527, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.100441, "delta": 0.035171, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 20.100514, "delta": 7.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.123541, "delta": 0.023027, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 20.123591, "delta": 5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.143137, "delta": 0.019546, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 20.143191, "delta": 5.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.165528, "delta": 0.022337, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 20.16558, "delta": 5.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.189634, "delta": 0.024054, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 20.189687, "delta": 5.3e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 20.499007, "delta": 0.30932, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 20.499076, "delta": 6.9e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 20.525361, "delta": 0.026285, "bytes": 36, "text": "\u001b[2K  ◉  apps/gateway    Running\r\n"}
+{"elapsed": 20.525414, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.55084, "delta": 0.025426, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 20.550888, "delta": 4.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.580385, "delta": 0.029497, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 20.580444, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.601272, "delta": 0.020828, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 20.601331, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.620134, "delta": 0.018804, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 20.620177, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.641685, "delta": 0.021509, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 20.641751, "delta": 6.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 20.66519, "delta": 0.023438, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 20.66524, "delta": 5e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 20.974107, "delta": 0.308868, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 20.974162, "delta": 5.4e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 20.997287, "delta": 0.023125, "bytes": 39, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n\u001b[2K"}
+{"elapsed": 20.997348, "delta": 6.1e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 21.021532, "delta": 0.024183, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 21.021582, "delta": 5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.047796, "delta": 0.026214, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 21.047839, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.067303, "delta": 0.019464, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 21.06734, "delta": 3.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.08494, "delta": 0.0176, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 21.084973, "delta": 3.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.105782, "delta": 0.02081, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 21.105818, "delta": 3.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.130408, "delta": 0.02459, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 21.130444, "delta": 3.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.130456, "delta": 1.2e-05, "bytes": 23, "text": "\u001b[2K  └  Working...\r\n"}
+{"elapsed": 21.436502, "delta": 0.306045, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 21.436553, "delta": 5.2e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 21.460039, "delta": 0.023486, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 21.460093, "delta": 5.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.483581, "delta": 0.023487, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 21.483623, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.513502, "delta": 0.029879, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 21.513555, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.531738, "delta": 0.018184, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 21.531775, "delta": 3.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.549105, "delta": 0.01733, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 21.549157, "delta": 5.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.569573, "delta": 0.020416, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 21.569618, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.590455, "delta": 0.020837, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 21.590492, "delta": 3.7e-05, "bytes": 15, "text": "\u001b[2K  │\r\n\u001b[2K"}
+{"elapsed": 21.590504, "delta": 1.2e-05, "bytes": 19, "text": "  └  Working...\r\n"}
+{"elapsed": 21.900698, "delta": 0.310194, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 21.900757, "delta": 5.9e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 21.925219, "delta": 0.024461, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 21.925268, "delta": 4.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.947565, "delta": 0.022297, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 21.94761, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.977369, "delta": 0.029759, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 21.977413, "delta": 4.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 21.998951, "delta": 0.021539, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 21.998994, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.019021, "delta": 0.020027, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 22.019064, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.040087, "delta": 0.021022, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 22.040127, "delta": 4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.063508, "delta": 0.023381, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 22.063551, "delta": 4.2e-05, "bytes": 15, "text": "\u001b[2K  │\r\n\u001b[2K"}
+{"elapsed": 22.063564, "delta": 1.4e-05, "bytes": 19, "text": "  └  Working...\r\n"}
+{"elapsed": 22.373353, "delta": 0.309789, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 22.373404, "delta": 5.1e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 22.39738, "delta": 0.023976, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 22.397418, "delta": 3.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.419121, "delta": 0.021703, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 22.419161, "delta": 4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.445449, "delta": 0.026288, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 22.445492, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.465598, "delta": 0.020106, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 22.465654, "delta": 5.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.483166, "delta": 0.017512, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 22.483202, "delta": 3.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.502196, "delta": 0.018994, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 22.502256, "delta": 6.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.522788, "delta": 0.020532, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 22.52283, "delta": 4.1e-05, "bytes": 15, "text": "\u001b[2K  │\r\n\u001b[2K"}
+{"elapsed": 22.522844, "delta": 1.5e-05, "bytes": 19, "text": "  └  Working...\r\n"}
+{"elapsed": 22.828702, "delta": 0.305858, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 22.82876, "delta": 5.7e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 22.850348, "delta": 0.021588, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 22.850403, "delta": 5.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.87098, "delta": 0.020577, "bytes": 36, "text": "\u001b[2K  ○  apps/cli        Running\r\n"}
+{"elapsed": 22.871024, "delta": 4.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.903911, "delta": 0.032887, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 22.903956, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.923892, "delta": 0.019935, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 22.923931, "delta": 3.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.943326, "delta": 0.019396, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 22.943363, "delta": 3.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.96287, "delta": 0.019508, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 22.962905, "delta": 3.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 22.983591, "delta": 0.020686, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 22.983625, "delta": 3.4e-05, "bytes": 15, "text": "\u001b[2K  │\r\n\u001b[2K"}
+{"elapsed": 22.983636, "delta": 1.1e-05, "bytes": 19, "text": "  └  Working...\r\n"}
+{"elapsed": 23.288767, "delta": 0.305131, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 23.288948, "delta": 0.000181, "bytes": 35, "text": "\u001b[2K  ┌  Running quality checks\r\n"}
+{"elapsed": 23.289006, "delta": 5.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.317025, "delta": 0.028018, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 23.317078, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.338936, "delta": 0.021858, "bytes": 36, "text": "\u001b[2K  ◉  apps/cli        Running\r\n"}
+{"elapsed": 23.338974, "delta": 3.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.365724, "delta": 0.02675, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 23.365766, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.38457, "delta": 0.018804, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 23.384604, "delta": 3.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.403706, "delta": 0.019102, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 23.403748, "delta": 4.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.426123, "delta": 0.022375, "bytes": 35, "text": "\u001b[2K  ○  packages/core   Queued\r\n"}
+{"elapsed": 23.426161, "delta": 3.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.448506, "delta": 0.022345, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 23.448542, "delta": 3.6e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.448555, "delta": 1.3e-05, "bytes": 23, "text": "\u001b[2K  └  Working...\r\n"}
+{"elapsed": 23.756644, "delta": 0.30809, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 23.756692, "delta": 4.8e-05, "bytes": 46, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K  │\r\n"}
+{"elapsed": 23.777762, "delta": 0.02107, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 23.777807, "delta": 4.5e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.798602, "delta": 0.020795, "bytes": 35, "text": "\u001b[2K  ●  apps/cli        Passed\r\n"}
+{"elapsed": 23.798661, "delta": 5.8e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.825247, "delta": 0.026586, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 23.825316, "delta": 6.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.844604, "delta": 0.019287, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 23.844651, "delta": 4.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.8653, "delta": 0.020649, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 23.865342, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.88648, "delta": 0.021139, "bytes": 36, "text": "\u001b[2K  ○  packages/core   Running\r\n"}
+{"elapsed": 23.886522, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 23.909096, "delta": 0.022574, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 23.909151, "delta": 5.5e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 24.220625, "delta": 0.311474, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 24.220671, "delta": 4.6e-05, "bytes": 39, "text": "\u001b[2K  ┌  Running quality checks\r\n\u001b[2K"}
+{"elapsed": 24.220688, "delta": 1.7e-05, "bytes": 7, "text": "  │\r\n"}
+{"elapsed": 24.24255, "delta": 0.021863, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 24.242593, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.26405, "delta": 0.021457, "bytes": 35, "text": "\u001b[2K  ●  apps/cli        Passed\r\n"}
+{"elapsed": 24.264099, "delta": 4.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.290515, "delta": 0.026416, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 24.290557, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.30891, "delta": 0.018352, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 24.308963, "delta": 5.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.326683, "delta": 0.01772, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 24.326727, "delta": 4.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.345518, "delta": 0.018791, "bytes": 36, "text": "\u001b[2K  ◉  packages/core   Running\r\n"}
+{"elapsed": 24.34557, "delta": 5.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.365841, "delta": 0.02027, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 24.365883, "delta": 4.2e-05, "bytes": 34, "text": "\u001b[2K  │\r\n\u001b[2K  └  Working...\r\n"}
+{"elapsed": 24.674086, "delta": 0.308202, "bytes": 5, "text": "\u001b[17A"}
+{"elapsed": 24.674131, "delta": 4.5e-05, "bytes": 35, "text": "\u001b[2K  ┌  Running quality checks\r\n"}
+{"elapsed": 24.674145, "delta": 1.4e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.696301, "delta": 0.022156, "bytes": 35, "text": "\u001b[2K  ●  apps/gateway    Passed\r\n"}
+{"elapsed": 24.696343, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.720742, "delta": 0.024399, "bytes": 35, "text": "\u001b[2K  ●  apps/cli        Passed\r\n"}
+{"elapsed": 24.720804, "delta": 6.1e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.752101, "delta": 0.031297, "bytes": 35, "text": "\u001b[2K  ●  apps/docs       Passed\r\n"}
+{"elapsed": 24.752148, "delta": 4.7e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.772028, "delta": 0.019881, "bytes": 35, "text": "\u001b[2K  ●  apps/e2e        Passed\r\n"}
+{"elapsed": 24.77207, "delta": 4.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.790248, "delta": 0.018178, "bytes": 35, "text": "\u001b[2K  ●  apps/reverb     Passed\r\n"}
+{"elapsed": 24.790307, "delta": 5.9e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.811537, "delta": 0.02123, "bytes": 35, "text": "\u001b[2K  ●  packages/core   Passed\r\n"}
+{"elapsed": 24.81158, "delta": 4.3e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.832139, "delta": 0.020559, "bytes": 35, "text": "\u001b[2K  ●  packages/sdk    Passed\r\n"}
+{"elapsed": 24.83217, "delta": 3.2e-05, "bytes": 11, "text": "\u001b[2K  │\r\n"}
+{"elapsed": 24.980893, "delta": 0.148723, "bytes": 34, "text": "\u001b[2K  └  Quality checks passed\r\n"}
+{"elapsed": 24.980946, "delta": 5.3e-05, "bytes": 8, "text": "\u001b[?25h\r\n"}
+{"elapsed": 24.982781, "delta": 0.001835, "bytes": 43, "text": "─── gateway_pest (exit=0) ───\r\n"}
+{"elapsed": 24.98398, "delta": 0.001199, "bytes": 101, "text": "{\"tool\":\"pest\",\"result\":\"passed\",\"tests\":3828,\"passed\":3828,\"assertions\":20317,\"duration_ms\":13342}\r\n"}
+{"elapsed": 24.984095, "delta": 0.000115, "bytes": 2, "text": "\r\n"}
+{"elapsed": 24.987806, "delta": 0.003711, "bytes": 40, "text": "─── docs_lint (exit=0) ───\r\n"}
+{"elapsed": 24.989051, "delta": 0.001246, "bytes": 75, "text": "{\"tool\":\"librarian\",\"result\":\"passed\",\"issues\":0,\"errors\":0,\"warnings\":0}\r\n"}
+{"elapsed": 24.989167, "delta": 0.000115, "bytes": 2, "text": "\r\n"}
+{"elapsed": 24.992819, "delta": 0.003652, "bytes": 43, "text": "─── docs_testing (exit=0) ───\r\n"}
+{"elapsed": 24.994059, "delta": 0.00124, "bytes": 75, "text": "{\"tool\":\"librarian\",\"result\":\"passed\",\"issues\":0,\"errors\":0,\"warnings\":0}\r\n"}
+{"elapsed": 24.994159, "delta": 0.0001, "bytes": 2, "text": "\r\n"}
+{"elapsed": 24.997497, "delta": 0.003338, "bytes": 46, "text": "─── docs_references (exit=0) ───\r\n"}
+{"elapsed": 24.99949, "delta": 0.001993, "bytes": 75, "text": "{\"tool\":\"librarian\",\"result\":\"passed\",\"issues\":0,\"errors\":0,\"warnings\":0}\r\n"}
+{"elapsed": 24.999626, "delta": 0.000136, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.003267, "delta": 0.003641, "bytes": 51, "text": "─── gateway_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.004547, "delta": 0.00128, "bytes": 84, "text": " INFO Filtered out 2560 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.004678, "delta": 0.000131, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.009771, "delta": 0.005093, "bytes": 47, "text": "─── cli_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.01117, "delta": 0.001399, "bytes": 84, "text": " INFO Filtered out 1032 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.011267, "delta": 9.7e-05, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.015287, "delta": 0.00402, "bytes": 48, "text": "─── docs_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.01661, "delta": 0.001323, "bytes": 82, "text": " INFO Filtered out 92 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.016749, "delta": 0.000139, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.020347, "delta": 0.003598, "bytes": 50, "text": "─── reverb_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.021642, "delta": 0.001295, "bytes": 135, "text": " INFO Overriding workspace directory with ../reverb.\r\n INFO Filtered out 3 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.021742, "delta": 0.0001, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.025244, "delta": 0.003501, "bytes": 48, "text": "─── core_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.02651, "delta": 0.001266, "bytes": 82, "text": " INFO Filtered out 17 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.026613, "delta": 0.000103, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.029956, "delta": 0.003344, "bytes": 47, "text": "─── sdk_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.031152, "delta": 0.001196, "bytes": 83, "text": " INFO Filtered out 171 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.03125, "delta": 9.8e-05, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.034747, "delta": 0.003496, "bytes": 47, "text": "─── e2e_mago_analyze (exit=0) ───\r\n"}
+{"elapsed": 25.036061, "delta": 0.001314, "bytes": 83, "text": " INFO Filtered out 538 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.036159, "delta": 9.8e-05, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.039624, "delta": 0.003465, "bytes": 48, "text": "─── gateway_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.041019, "delta": 0.001395, "bytes": 455, "text": "tests/Feature/E2ESupport/QualityGateArtifactsTest.php:1013:48: warning[literal-named-argument]: Literal argument `' '` should be passed as a named argument for clarity.\r\n = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.\r\n = Help: Consider using a named argument instead: `function_name(param: ' ')`.\r\nwarning: found 1 issues: 1 warning(s)\r\n INFO Filtered out 6282 issues based on the baseline file.\r\n"}
+{"elapsed": 25.041132, "delta": 0.000113, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.044585, "delta": 0.003453, "bytes": 44, "text": "─── cli_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.045941, "delta": 0.001356, "bytes": 84, "text": " INFO Filtered out 2820 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.046057, "delta": 0.000116, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.049896, "delta": 0.003839, "bytes": 45, "text": "─── docs_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.051236, "delta": 0.00134, "bytes": 83, "text": " INFO Filtered out 682 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.05141, "delta": 0.000175, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.055481, "delta": 0.004071, "bytes": 47, "text": "─── reverb_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.056856, "delta": 0.001375, "bytes": 136, "text": " INFO Overriding workspace directory with ../reverb.\r\n INFO Filtered out 27 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.056984, "delta": 0.000129, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.061045, "delta": 0.004061, "bytes": 45, "text": "─── core_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.062425, "delta": 0.00138, "bytes": 82, "text": " INFO Filtered out 99 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.062587, "delta": 0.000162, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.066149, "delta": 0.003563, "bytes": 44, "text": "─── sdk_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.067474, "delta": 0.001325, "bytes": 83, "text": " INFO Filtered out 146 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.067601, "delta": 0.000127, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.071794, "delta": 0.004193, "bytes": 44, "text": "─── e2e_mago_lint (exit=0) ───\r\n"}
+{"elapsed": 25.073286, "delta": 0.001492, "bytes": 84, "text": " INFO Filtered out 2260 issues based on the baseline file.\r\n INFO No issues found.\r\n"}
+{"elapsed": 25.073443, "delta": 0.000157, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.077225, "delta": 0.003782, "bytes": 45, "text": "─── gateway_rector (exit=0) ───\r\n"}
+{"elapsed": 25.078523, "delta": 0.001298, "bytes": 328, "text": " 0/1 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%\u001b[1G\u001b[2K 1/1 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%\r\n\r\n [OK] Rector is done!                                                                                                   \r\n\r\n"}
+{"elapsed": 25.078636, "delta": 0.000113, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.082284, "delta": 0.003648, "bytes": 41, "text": "─── cli_rector (exit=0) ───\r\n"}
+{"elapsed": 25.083589, "delta": 0.001305, "bytes": 128, "text": "\r\n\r\n [OK] Rector is done!                                                                                                   \r\n\r\n"}
+{"elapsed": 25.083705, "delta": 0.000116, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.087232, "delta": 0.003528, "bytes": 42, "text": "─── docs_rector (exit=0) ───\r\n"}
+{"elapsed": 25.088463, "delta": 0.001231, "bytes": 128, "text": "\r\n\r\n [OK] Rector is done!                                                                                                   \r\n\r\n"}
+{"elapsed": 25.088575, "delta": 0.000112, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.091948, "delta": 0.003372, "bytes": 42, "text": "─── core_rector (exit=0) ───\r\n"}
+{"elapsed": 25.093182, "delta": 0.001235, "bytes": 128, "text": "\r\n\r\n [OK] Rector is done!                                                                                                   \r\n\r\n"}
+{"elapsed": 25.093284, "delta": 0.000102, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.096811, "delta": 0.003527, "bytes": 41, "text": "─── sdk_rector (exit=0) ───\r\n"}
+{"elapsed": 25.098131, "delta": 0.00132, "bytes": 128, "text": "\r\n\r\n [OK] Rector is done!                                                                                                   \r\n\r\n"}
+{"elapsed": 25.098237, "delta": 0.000107, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.101625, "delta": 0.003388, "bytes": 41, "text": "─── e2e_rector (exit=0) ───\r\n"}
+{"elapsed": 25.102996, "delta": 0.001371, "bytes": 328, "text": " 0/2 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%\u001b[1G\u001b[2K 2/2 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%\r\n\r\n [OK] Rector is done!                                                                                                   \r\n\r\n"}
+{"elapsed": 25.103113, "delta": 0.000117, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.106585, "delta": 0.003472, "bytes": 50, "text": "─── gateway_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.1078, "delta": 0.001215, "bytes": 40, "text": " INFO All files are already formatted.\r\n"}
+{"elapsed": 25.107902, "delta": 0.000102, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.112163, "delta": 0.004261, "bytes": 46, "text": "─── cli_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.113485, "delta": 0.001322, "bytes": 40, "text": " INFO All files are already formatted.\r\n"}
+{"elapsed": 25.113611, "delta": 0.000126, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.117529, "delta": 0.003918, "bytes": 47, "text": "─── docs_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.118789, "delta": 0.00126, "bytes": 40, "text": " INFO All files are already formatted.\r\n"}
+{"elapsed": 25.118907, "delta": 0.000117, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.122353, "delta": 0.003446, "bytes": 49, "text": "─── reverb_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.123685, "delta": 0.001333, "bytes": 94, "text": " INFO Overriding workspace directory with ../reverb.\r\n INFO All files are already formatted.\r\n"}
+{"elapsed": 25.123794, "delta": 0.000109, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.127247, "delta": 0.003452, "bytes": 47, "text": "─── core_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.128498, "delta": 0.001251, "bytes": 40, "text": " INFO All files are already formatted.\r\n"}
+{"elapsed": 25.128605, "delta": 0.000107, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.131975, "delta": 0.00337, "bytes": 46, "text": "─── sdk_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.13328, "delta": 0.001305, "bytes": 40, "text": " INFO All files are already formatted.\r\n"}
+{"elapsed": 25.133388, "delta": 0.000108, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.136721, "delta": 0.003333, "bytes": 46, "text": "─── e2e_mago_format (exit=0) ───\r\n"}
+{"elapsed": 25.137984, "delta": 0.001263, "bytes": 40, "text": " INFO All files are already formatted.\r\n"}
+{"elapsed": 25.138084, "delta": 0.0001, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.141693, "delta": 0.003609, "bytes": 39, "text": "─── cli_pest (exit=0) ───\r\n"}
+{"elapsed": 25.143198, "delta": 0.001505, "bytes": 1024, "text": "\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39"}
+{"elapsed": 25.143229, "delta": 3.1e-05, "bytes": 1024, "text": ";22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39"}
+{"elapsed": 25.143257, "delta": 2.8e-05, "bytes": 1024, "text": ";22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m."}
+{"elapsed": 25.143283, "delta": 2.6e-05, "bytes": 1024, "text": "\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m."}
+{"elapsed": 25.143299, "delta": 1.5e-05, "bytes": 1024, "text": "\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90"}
+{"elapsed": 25.143311, "delta": 1.3e-05, "bytes": 1024, "text": ";1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90"}
+{"elapsed": 25.143328, "delta": 1.6e-05, "bytes": 1024, "text": ";1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90"}
+{"elapsed": 25.143342, "delta": 1.5e-05, "bytes": 1024, "text": ";1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m"}
+{"elapsed": 25.143356, "delta": 1.3e-05, "bytes": 1024, "text": "\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m"}
+{"elapsed": 25.143369, "delta": 1.4e-05, "bytes": 1024, "text": "\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39"}
+{"elapsed": 25.143382, "delta": 1.3e-05, "bytes": 1024, "text": ";22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39"}
+{"elapsed": 25.143394, "delta": 1.2e-05, "bytes": 1024, "text": ";22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m."}
+{"elapsed": 25.143408, "delta": 1.3e-05, "bytes": 1024, "text": "\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m."}
+{"elapsed": 25.143423, "delta": 1.6e-05, "bytes": 640, "text": "\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n\r\n  \u001b[90mTests:\u001b[39m    \u001b[32;1m1705 passed\u001b[39;22m\u001b[90m (7048 assertions)\u001b[39m\r\n  \u001b[90mDuration:\u001b[39m \u001b[39m16.32s\u001b[39m\r\n\r\n;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m"}
+{"elapsed": 25.143566, "delta": 0.000142, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.147271, "delta": 0.003705, "bytes": 40, "text": "─── docs_pest (exit=0) ───\r\n"}
+{"elapsed": 25.14845, "delta": 0.001179, "bytes": 94, "text": "{\"tool\":\"pest\",\"result\":\"passed\",\"tests\":85,\"passed\":85,\"assertions\":594,\"duration_ms\":3313}\r\n"}
+{"elapsed": 25.148554, "delta": 0.000104, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.152078, "delta": 0.003524, "bytes": 40, "text": "─── core_pest (exit=0) ───\r\n"}
+{"elapsed": 25.15341, "delta": 0.001332, "bytes": 1024, "text": "\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39"}
+{"elapsed": 25.153435, "delta": 2.5e-05, "bytes": 172, "text": ";22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n\r\n  \u001b[90mTests:\u001b[39m    \u001b[32;1m67 passed\u001b[39;22m\u001b[90m (152 assertions)\u001b[39m\r\n  \u001b[90mDuration:\u001b[39m \u001b[39m0.83s\u001b[39m\r\n\r\n"}
+{"elapsed": 25.153538, "delta": 0.000103, "bytes": 2, "text": "\r\n"}
+{"elapsed": 25.157049, "delta": 0.003511, "bytes": 39, "text": "─── sdk_pest (exit=0) ───\r\n"}
+{"elapsed": 25.158382, "delta": 0.001334, "bytes": 1024, "text": "\r\n  \u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39"}
+{"elapsed": 25.158402, "delta": 2e-05, "bytes": 1024, "text": ";22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\u001b[90;1m.\u001b[39;22m\r\n\r\n  \u001b[90mTests:\u001b[39m    \u001b[32;1m124 passed\u001b[39;22m\u001b[90m (31"}
+{"elapsed": 25.158418, "delta": 1.5e-05, "bytes": 61, "text": "8 assertions)\u001b[39m\r\n  \u001b[90mDuration:\u001b[39m \u001b[39m0.12s\u001b[39m\r\n\r\n"}
+{"elapsed": 25.158536, "delta": 0.000119, "bytes": 2, "text": "\r\n"}

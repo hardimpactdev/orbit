@@ -1,0 +1,51 @@
+LANE L6 evidence — small bin fixes
+Date: 2026-07-02
+Worktree: /Users/nckrtl/orbit/.worktrees/loop-plumbing-hardening (branch loop-plumbing-hardening)
+
+1) bin/orbit-prepare-worktree — CONFIRMED AND FIXED
+   Before: composer-install loop was hardcoded to
+     packages/core packages/sdk apps/gateway apps/docs apps/cli apps/e2e
+   apps/reverb/composer.json exists (verified by ls) and was skipped, so a
+   prepared worktree left apps/reverb without vendor/, breaking its Mago
+   subgates in quality-check.
+   After: loop globs "${worktree_path}"/packages/*/composer.json then
+   "${worktree_path}"/apps/*/composer.json (packages first so app installs can
+   resolve path repositories), with an [ -f ] guard preserved. No intentional
+   exclusions existed in the old list — it simply predated apps/reverb.
+   Verified: bash -n passes on both scripts.
+
+2) bin/quality-check.sh exit 143 at default job cap — MECHANISM FOUND, NO CODE CHANGE
+   Scheduler facts from the script:
+   - quality_check_default_max_background_jobs() returns detected_cpus/2
+     hard-capped at 8 (and 2 on <=4-core machines).
+   - There are 35 subgate labels; run_bg blocks in wait_for_bg_slot() until
+     jobs -pr count (ticker excluded) drops below MAX_BACKGROUND_JOBS.
+   - gateway_pest and cli_pest are long-running (minutes) and each holds one
+     slot for its entire duration; the phase barrier at
+     wait_for_bg_labels APP_BEFORE_PACKAGE_CHECK_LABELS additionally delays
+     the 9 package subgates until every app static check has finished.
+   - trap 'exit 143' TERM (line 56) converts an externally delivered SIGTERM
+     into the observed exit 143. Nothing inside the script sends TERM to
+     itself in the normal path.
+   Mechanism: with a low cap (default 8 or less), the long Pest lanes plus the
+   phase barrier serialize the ~33 short static checks behind slot waits, so
+   total wall time balloons well past the invoking harness watchdog (e.g. the
+   agent Bash tool 10-minute ceiling or a Solo worker timeout). The watchdog
+   SIGTERMs the process group and the TERM trap surfaces exit 143. Setting
+   ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=40 (> 35 labels) removes throttling
+   entirely, the run finishes inside the watchdog window, and the "failure"
+   disappears. There is no wait-logic deadlock: running_bg_jobs uses jobs -pr,
+   correctly excludes the progress ticker, and slots free as jobs exit.
+   Why no fix applied: the death is caused by an external timeout policy, not
+   by an internal scheduler bug, and the correct cap value is
+   environment/policy-dependent (raising the ceiling from 8 to any specific
+   number is a guess about the caller's watchdog and machine). Per lane
+   instructions, changed nothing.
+   Recommended follow-up (for the orchestrator/user to decide):
+   a) Raise or remove the /2-with-ceiling-8 default on high-core machines
+      (e.g. ceiling 16, or detected_cpus), since most subgates are short
+      lint/format checks and gateway_pest --parallel already self-limits.
+   b) Alternatively, exempt the long Pest lanes (gateway_pest, cli_pest) from
+      the slot count so short static checks are never starved behind them.
+   c) At minimum, document ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS as the
+      knob for loop harnesses that run quality-check under a hard timeout.

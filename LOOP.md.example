@@ -2,7 +2,8 @@
 
 This is the committed current-slice template. For non-trivial active work, copy
 it to `.orbit/loop.md`, keep that local copy focused on the active slice, and
-do not commit `.orbit/`.
+do not commit active `.orbit` state. Completed session archives under
+`.orbit/sessions/` are committed so other machines can inspect them.
 
 When a feature has multiple slices, archive the completed active `.orbit/`
 session into the persistent project archive home before rewriting
@@ -88,9 +89,9 @@ evidence, quality gate artifacts, or human steering.
 This section is the canonical local final packet. Scratchpads, reviewer output,
 and final reports should point back here instead of becoming parallel final
 packets. After the slice or feature loop is complete, archive the active
-`.orbit/` session into the persistent project archive home before worktree
-cleanup or before rewriting `.orbit/loop.md` for a new slice. The default
-archive home is the primary checkout's
+`.orbit/` session into the persistent, committed project archive home before
+worktree cleanup or before rewriting `.orbit/loop.md` for a new slice. The
+default archive home is the primary checkout's
 `.orbit/sessions/<timestamp-feature-slug>/`, named as
 `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
 compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory

@@ -1,0 +1,8 @@
+command: composer quality-check
+exit_code: 0
+duration: 25.235s
+max_delta_between_chunks: 0.343s
+timed_out: false
+idle_timed_out: false
+chunks: .orbit/evidence/quality-check-active-state-committed-pty/chunks.jsonl
+transcript: .orbit/evidence/quality-check-active-state-committed-pty/transcript.txt

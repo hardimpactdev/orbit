@@ -1,0 +1,19 @@
+{
+    "slice": "lane-a-before",
+    "families": [
+        "node",
+        "agent-ide",
+        "cf-zone",
+        "doctor",
+        "cf-cache"
+    ],
+    "total_missing_linked_test_files": 70,
+    "missing_by_family": {
+        "node": 59,
+        "agent-ide": 5,
+        "cf-zone": 2,
+        "doctor": 1,
+        "cf-cache": 3
+    },
+    "source": "generated catalog before Lane A remediation"
+}

@@ -6,7 +6,9 @@
 .env.backup.*
 .env.production
 /LOOP.md
-/.orbit/
+/.orbit/*
+!/.orbit/sessions/
+!/.orbit/sessions/**
 .phpactor.json
 .phpunit.result.cache
 /.codex/*

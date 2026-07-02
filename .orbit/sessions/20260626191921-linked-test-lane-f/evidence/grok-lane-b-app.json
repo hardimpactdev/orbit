@@ -1,0 +1,180 @@
+{
+    "lane": "B-app",
+    "families": [
+        "app",
+        "activity",
+        "php"
+    ],
+    "baseline_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands": {
+        "app:new": {
+            "family": "app",
+            "missing_count": 12,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppNewGatewayLocalTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewOperatorForwardingTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewProductionTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewRepoTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewOnGatewayNodeContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewOnOperatorNodeContractTest.php",
+                "apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/1_app-new/technical/1_app-new.md",
+            "repo_directory": "apps/docs/content/domains/5_app/1_app-new"
+        },
+        "app:remove": {
+            "family": "app",
+            "missing_count": 9,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Apps/RemoveAppActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Unit/Concerns/ResolvesAppFromPathTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/6_app-remove/technical/1_app-remove.md",
+            "repo_directory": "apps/docs/content/domains/5_app/6_app-remove"
+        },
+        "app:root": {
+            "family": "app",
+            "missing_count": 7,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Unit/Actions/Apps/UpdateAppRootActionTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/5_app-root/technical/1_app-root.md",
+            "repo_directory": "apps/docs/content/domains/5_app/5_app-root"
+        },
+        "app:register": {
+            "family": "app",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppProductionActivationTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppRegistrationTest.php",
+                "apps/gateway/tests/Feature/Actions/Apps/RegisterAppActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RegisterAppJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Apps/AppEnactmentServiceTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/2_app-register/technical/1_app-register.md",
+            "repo_directory": "apps/docs/content/domains/5_app/2_app-register"
+        },
+        "php:use": {
+            "family": "php",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseCallerRoleTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeSelectionTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/14_php/2_php-use/technical/1_php-use.md",
+            "repo_directory": "apps/docs/content/domains/14_php/2_php-use"
+        },
+        "activity:show": {
+            "family": "activity",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/17_activity/2_activity-show/technical/1_activity-show.md",
+            "repo_directory": "apps/docs/content/domains/17_activity/2_activity-show"
+        },
+        "app:show": {
+            "family": "app",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/4_app-show/technical/1_app-show.md",
+            "repo_directory": "apps/docs/content/domains/5_app/4_app-show"
+        },
+        "php:list": {
+            "family": "php",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Php/PhpListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeViewTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/14_php/1_php-list/technical/1_php-list.md",
+            "repo_directory": "apps/docs/content/domains/14_php/1_php-list"
+        },
+        "activity:list": {
+            "family": "activity",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/17_activity/1_activity-list/technical/1_activity-list.md",
+            "repo_directory": "apps/docs/content/domains/17_activity/1_activity-list"
+        },
+        "app:prune": {
+            "family": "app",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppPruneTest.php",
+                "apps/gateway/tests/Feature/Commands/AppPruneCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppPruneCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/7_app-prune/technical/1_app-prune.md",
+            "repo_directory": "apps/docs/content/domains/5_app/7_app-prune"
+        },
+        "app:agent-ide": {
+            "family": "app",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/9_app-agent-ide/technical/1_app-agent-ide.md",
+            "repo_directory": "apps/docs/content/domains/5_app/9_app-agent-ide"
+        },
+        "app:list": {
+            "family": "app",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Read/AppListTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/3_app-list/technical/1_app-list.md",
+            "repo_directory": "apps/docs/content/domains/5_app/3_app-list"
+        },
+        "app:worker": {
+            "family": "app",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/11_app-worker/technical/1_app-worker.md",
+            "repo_directory": "apps/docs/content/domains/5_app/11_app-worker"
+        }
+    },
+    "missing_paths_total": 64
+}

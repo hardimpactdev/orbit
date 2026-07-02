@@ -1,0 +1,50 @@
+Solo worker output was captured in the orchestrator session but the raw Solo
+process was deleted before the redirect command completed. Reconstructed from
+the immediately preceding `solo processes output 2167 --project-id 6 --lines
+600 --json` result.
+
+Process:
+- Project: 6 (`orbit-empty-json-meta-docs-lint`)
+- Process: 2167 (`empty-json-meta-docs-lint-worker`)
+- Command: `grok --always-approve --cwd /Users/nckrtl/orbit/.worktrees/codex-empty-json-meta-docs-lint --no-alt-screen --prompt-file /Users/nckrtl/orbit/.worktrees/codex-empty-json-meta-docs-lint/.orbit/evidence/empty-json-meta-docs-lint-worker-prompt.md`
+- Status before deletion: exited
+- Cleanup: process deleted; project 6 process list empty after deletion.
+
+Worker report:
+
+Changed files:
+- `apps/docs/app/Librarian/Rules/JsonMetadataShapeRule.php`
+- `apps/docs/app/Librarian/JsonMetadataStructureInspector.php`
+- `apps/docs/config/librarian.php`
+- `apps/docs/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php`
+- `apps/docs/content/**/*.md` empty metadata examples
+- `.orbit/loop.md`
+
+Rule behavior:
+- Scans markdown under the docs root.
+- Uses `JsonExampleParser`, then object-mode JSON decoding to distinguish `{}` from `[]`.
+- Flags any property named `meta` that is an empty JSON object.
+- Allows empty arrays and non-empty metadata objects.
+- Skips invalid JSON blocks.
+
+Worker-reported verification:
+- Focused Pest metadata tests passed.
+- `composer docs-lint` passed.
+- Mago format/lint/analyze on touched PHP passed.
+- `git diff --check` passed.
+- `composer quality-check` passed.
+
+Worker-reported risk:
+- Fenced blocks containing multiple JSON objects on separate lines are not
+  parsed as one valid JSON example. The worker mechanically updated current
+  examples, but future recurrence in invalid multi-object stream examples would
+  depend on review rather than this rule.
+
+Feature-owner correction after worker output:
+- The worker-reported stream-frame risk was fixed before final verification.
+- `JsonMetadataExampleDecoder` now tries full-block object-mode decoding first,
+  then falls back to decoding each non-empty line. This catches newline-delimited
+  stream JSON frame examples while still allowing ordinary invalid JSON blocks
+  to be handled by existing validity rules.
+- `OrbitCommandDocsRulesTest.php` includes a focused stream-frame fixture that
+  fails on `error.meta: {}` inside a multi-line stream JSON fenced block.

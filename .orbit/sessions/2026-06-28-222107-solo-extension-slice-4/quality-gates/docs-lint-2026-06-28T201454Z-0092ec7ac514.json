@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-28T20:14:51Z",
+    "ended_at": "2026-06-28T20:14:54Z",
+    "duration_seconds": 3,
+    "exit_code": 1,
+    "git": {
+        "branch": "codex/solo-extension-slice-1",
+        "commit": "5367c2e2c1d205a8541559b5d607e4cc02f2da2e"
+    },
+    "subgates": []
+}

@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-26T12:27:41Z",
+    "ended_at": "2026-06-26T12:27:44Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/persist-orbit-session-archives",
+        "commit": "c099d96a8390878ab9990c81d30076861c268681"
+    },
+    "subgates": []
+}

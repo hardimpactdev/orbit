@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "macos-workload-roles-orchestrator-734",
+    "relative_dir": "codex/macos-workload-roles-orchestrator-734",
+    "solo_process_id": 734,
+    "process_name": "macos-workload-roles-orchestrator",
+    "source": "codex_jsonl_token_count",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T08-53-26-019f219a-93f9-7421-9dd2-14e54055307b.jsonl",
+    "raw_files": [
+        "rollout-2026-07-02T08-53-26-019f219a-93f9-7421-9dd2-14e54055307b.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 174
+}

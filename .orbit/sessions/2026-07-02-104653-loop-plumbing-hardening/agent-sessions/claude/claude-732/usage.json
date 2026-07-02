@@ -1,0 +1,15 @@
+{
+    "status": "ok",
+    "source": "claude_session_jsonl",
+    "metric_confidence": "measured",
+    "artifact_match": "pid_session_map",
+    "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e.jsonl",
+    "models": [
+        "claude-fable-5",
+        "<synthetic>"
+    ],
+    "input_tokens": 55735,
+    "output_tokens": 105073,
+    "cache_read_tokens": 11418400,
+    "cache_write_tokens": 346576
+}

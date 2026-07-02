@@ -1,0 +1,681 @@
+─── gateway_pest (exit=0) ───
+{"tool":"pest","result":"passed","tests":3883,"passed":3883,"assertions":20811,"duration_ms":33220}
+
+─── docs_lint (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── docs_testing (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── docs_references (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── gateway_mago_analyze (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+app/Services/Tools/ToolReconfigurer.php:73:29: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolReconfigurer.php:82:35: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Http/Controllers/Api/SoloProxyController.php:212:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Tools/ClaudeCodeTool.php:85:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Tools/ClaudeCodeTool.php:105:28: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Solo/SoloMutationOperation.php:46:13: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Solo/SoloMutationOperation.php:69:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Workspaces/WorkspacesProbe.php:435:49: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Workspaces/WorkspacesProbe.php:436:50: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Workspaces/WorkspacesProbe.php:436:57: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Workspaces/WorkspacesProbe.php:442:78: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Workspaces/WorkspacesProbe.php:446:28: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolUpdater.php:79:29: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolUpdater.php:88:35: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolUpdater.php:193:40: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolUpdater.php:202:36: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolInstallConfigValidator.php:29:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolInstallConfigValidator.php:40:35: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolRemover.php:53:29: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolRemover.php:66:35: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Proxy/ProxyRouteRenderer.php:824:65: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Proxy/ProxyRouteRenderer.php:828:63: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Proxy/ProxyRouteRenderer.php:847:45: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Proxy/ProxyRouteRenderer.php:851:78: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Proxy/ProxyRouteRenderer.php:861:55: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1060:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolsProbe.php:1186:46: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1194:43: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1208:46: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1215:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolsProbe.php:1226:46: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1253:46: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1365:50: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1385:50: [0m[1m[38;5;14mhelp[redundant-nullsafe-operator][0m[1m: Redundant nullsafe operator (`?->`) used on an expression that is never `null`.[0m
+ [0m[36m=[0m The nullsafe operator (`?->`) short-circuits the access if the object is `null`. Since this expression is guaranteed not to be `null`, this check is unnecessary.
+ [0m[36m=[0m Help: Consider using the direct property access operator (`->`) for clarity.
+app/Services/Tools/ToolsProbe.php:1408:13: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolInstaller.php:58:18: [0m[1m[38;5;11mwarning[redundant-docblock-type][0m[1m: Redundant docblock type for variable `$config`.[0m
+ [0m[36m=[0m The type defined in this docblock is identical to the inferred type of the variable.
+ [0m[36m=[0m Help: You can remove this redundant `@var` docblock tag.
+app/Services/Tools/ToolInstaller.php:303:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolInstaller.php:324:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `nonnull` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `nonnull` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Tools/ToolInstaller.php:340:13: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/Solo/SoloReadOperation.php:62:33: [0m[1m[38;5;14mhelp[redundant-cast][0m[1m: Redundant cast to `(string)`: the expression already has this type.[0m
+ [0m[36m=[0m Casting a value to a type it already possesses has no effect.
+ [0m[36m=[0m Help: Remove the redundant `(string)` cast.
+[0m[1m[38;5;11mwarning[0m[1m: found 40 issues: 14 warning(s), 26 help message(s)[0m
+ [0m[36m=[0m 26 issues contain auto-fix suggestions
+[32m INFO[0m Your baseline file contains 62 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+[32m INFO[0m Filtered out 2498 issues based on the baseline file.
+
+─── cli_mago_analyze (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+app/Commands/Solo/SoloReadOnlyHumanRenderer.php:39:35: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Solo/SoloReadOnlyHumanRenderer.php:40:59: [0m[1m[38;5;14mhelp[redundant-cast][0m[1m: Redundant cast to `(string)`: the expression already has this type.[0m
+ [0m[36m=[0m Casting a value to a type it already possesses has no effect.
+ [0m[36m=[0m Help: Remove the redundant `(string)` cast.
+app/Commands/Solo/SoloReadOnlyHumanRenderer.php:50:27: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Solo/SoloReadOnlyCommand.php:18:15: [0m[1m[38;5;14mhelp[write-only-property][0m[1m: Property `$signature` is written to but never read.[0m
+ [0m[36m=[0m This property is assigned values but its value is never read within the class.
+ [0m[36m=[0m Help: Consider removing the property if its value is not needed, or read the value somewhere if it should be used.
+app/Commands/Solo/SoloReadOnlyCommand.php:21:15: [0m[1m[38;5;14mhelp[write-only-property][0m[1m: Property `$description` is written to but never read.[0m
+ [0m[36m=[0m This property is assigned values but its value is never read within the class.
+ [0m[36m=[0m Help: Consider removing the property if its value is not needed, or read the value somewhere if it should be used.
+app/Commands/Solo/SoloMutatingCommand.php:18:15: [0m[1m[38;5;14mhelp[write-only-property][0m[1m: Property `$signature` is written to but never read.[0m
+ [0m[36m=[0m This property is assigned values but its value is never read within the class.
+ [0m[36m=[0m Help: Consider removing the property if its value is not needed, or read the value somewhere if it should be used.
+app/Commands/Solo/SoloMutatingCommand.php:21:15: [0m[1m[38;5;14mhelp[write-only-property][0m[1m: Property `$description` is written to but never read.[0m
+ [0m[36m=[0m This property is assigned values but its value is never read within the class.
+ [0m[36m=[0m Help: Consider removing the property if its value is not needed, or read the value somewhere if it should be used.
+app/Commands/Solo/SoloExtensionPlaceholderCommand.php:17:15: [0m[1m[38;5;14mhelp[write-only-property][0m[1m: Property `$signature` is written to but never read.[0m
+ [0m[36m=[0m This property is assigned values but its value is never read within the class.
+ [0m[36m=[0m Help: Consider removing the property if its value is not needed, or read the value somewhere if it should be used.
+app/Commands/Solo/SoloExtensionPlaceholderCommand.php:20:15: [0m[1m[38;5;14mhelp[write-only-property][0m[1m: Property `$description` is written to but never read.[0m
+ [0m[36m=[0m This property is assigned values but its value is never read within the class.
+ [0m[36m=[0m Help: Consider removing the property if its value is not needed, or read the value somewhere if it should be used.
+app/Services/GatewayApiClient.php:301:22: [0m[1m[38;5;11mwarning[possibly-null-operand][0m[1m: Left operand in `>` comparison might be `null` (type `null|positive-int`).[0m
+ [0m[36m=[0m If this operand is `null` at runtime, PHP's specific comparison rules for `null` with `>` will apply.
+ [0m[36m=[0m Help: Ensure this operand is non-null or that comparison with `null` is intended and handled safely.
+app/Services/GatewayApiClient.php:372:47: [0m[1m[38;5;14mhelp[reference-to-undefined-variable][0m[1m: Reference created from a previously undefined variable `$status`.[0m
+ [0m[36m=[0m When a reference is taken from an undefined variable, PHP creates it with a `null` value.
+ [0m[36m=[0m This is often used for output parameters but can hide typos if you intended to use an existing variable.
+ [0m[36m=[0m Help: If this is intentional, consider initializing `$status` to `null` first for code clarity. Otherwise, check for typos.
+app/Commands/Extension/ExtensionListCommand.php:80:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionListCommand.php:88:33: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionListCommand.php:95:13: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionListCommand.php:113:13: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionListCommand.php:130:13: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionListCommand.php:152:36: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Tool/ToolInstallCommand.php:112:28: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Solo/SoloResponseDataNormalizer.php:15:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Solo/SoloResponseDataNormalizer.php:35:28: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationEventStreamClient.php:152:22: [0m[1m[38;5;11mwarning[possibly-null-operand][0m[1m: Left operand in `>` comparison might be `null` (type `null|positive-int`).[0m
+ [0m[36m=[0m If this operand is `null` at runtime, PHP's specific comparison rules for `null` with `>` will apply.
+ [0m[36m=[0m Help: Ensure this operand is non-null or that comparison with `null` is intended and handled safely.
+app/Commands/Extension/ExtensionEnableCommand.php:178:9: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionEnableCommand.php:187:33: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Extension/ExtensionEnableCommand.php:223:36: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+app/Services/OrbitConfigStore.php:364:30: [0m[1m[38;5;11mwarning[mixed-assignment][0m[1m: Assigning `mixed` type to a variable may lead to unexpected behavior.[0m
+ [0m[36m=[0m Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ [0m[36m=[0m Help: Consider using a more specific type to avoid potential issues.
+[0m[1m[38;5;11mwarning[0m[1m: found 25 issues: 17 warning(s), 8 help message(s)[0m
+ [0m[36m=[0m 1 issues contain auto-fix suggestions
+[32m INFO[0m Your baseline file contains 2 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+[32m INFO[0m Filtered out 1030 issues based on the baseline file.
+
+─── docs_mago_analyze (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+app/Librarian/CommandCatalogGatewayPermissionIndex.php:117:61: [0m[1m[38;5;14mhelp[redundant-cast][0m[1m: Redundant cast to `(string)`: the expression already has this type.[0m
+ [0m[36m=[0m Casting a value to a type it already possesses has no effect.
+ [0m[36m=[0m Help: Remove the redundant `(string)` cast.
+app/Librarian/CommandCatalogGatewayPermissionIndex.php:118:65: [0m[1m[38;5;14mhelp[redundant-cast][0m[1m: Redundant cast to `(string)`: the expression already has this type.[0m
+ [0m[36m=[0m Casting a value to a type it already possesses has no effect.
+ [0m[36m=[0m Help: Remove the redundant `(string)` cast.
+[0m[1m[38;5;14mhelp[0m[1m: found 2 issues: 2 help message(s)[0m
+ [0m[36m=[0m 2 issues contain auto-fix suggestions
+[32m INFO[0m Your baseline file contains 2 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+[32m INFO[0m Filtered out 90 issues based on the baseline file.
+
+─── reverb_mago_analyze (exit=0) ───
+[32m INFO[0m Overriding workspace directory with ../reverb.
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m Filtered out 3 issues based on the baseline file.
+[32m INFO[0m No issues found.
+
+─── core_mago_analyze (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+src/Progress/ForkedFrameTicker.php:160:47: [0m[1m[38;5;14mhelp[reference-to-undefined-variable][0m[1m: Reference created from a previously undefined variable `$status`.[0m
+ [0m[36m=[0m When a reference is taken from an undefined variable, PHP creates it with a `null` value.
+ [0m[36m=[0m This is often used for output parameters but can hide typos if you intended to use an existing variable.
+ [0m[36m=[0m Help: If this is intentional, consider initializing `$status` to `null` first for code clarity. Otherwise, check for typos.
+[0m[1m[38;5;14mhelp[0m[1m: found 1 issues: 1 help message(s)[0m
+[32m INFO[0m Filtered out 17 issues based on the baseline file.
+
+─── sdk_mago_analyze (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+src/GatewayStreamTransport.php:308:22: [0m[1m[38;5;11mwarning[possibly-null-operand][0m[1m: Left operand in `>` comparison might be `null` (type `null|positive-int`).[0m
+ [0m[36m=[0m If this operand is `null` at runtime, PHP's specific comparison rules for `null` with `>` will apply.
+ [0m[36m=[0m Help: Ensure this operand is non-null or that comparison with `null` is intended and handled safely.
+[0m[1m[38;5;11mwarning[0m[1m: found 1 issues: 1 warning(s)[0m
+[32m INFO[0m Filtered out 171 issues based on the baseline file.
+
+─── e2e_mago_analyze (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m Filtered out 538 issues based on the baseline file.
+[32m INFO[0m No issues found.
+
+─── gateway_mago_lint (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+app/Providers/AppServiceProvider.php:95:5: [0m[1m[38;5;11mwarning[halstead][0m[1m: Method has a high halstead effort[0m
+ [0m[36m=[0m Halstead effort is 8004.85 (threshold 5000). Effort estimates the mental effort required to develop/maintain the code.
+ [0m[36m=[0m Help: Consider breaking this into smaller, more focused functions.
+tests/Feature/E2ESupport/QualityGateArtifactsTest.php:1124:48: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `' '` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: ' ')`.
+tests/Feature/E2ESupport/QualityGateArtifactsTest.php:1508:9: [0m[1m[38;5;11mwarning[no-shorthand-ternary][0m[1m: Use of the shorthand ternary operator.[0m
+ [0m[36m=[0m Help: Use null coalesce operator (`??`) or ternary operator with explicit strict comparison.
+app/Http/Controllers/Api/S3CredentialsController.php:59:36: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php:20:13: [0m[1m[38;5;11mwarning[file-name][0m[1m: Class `RequireGatewayExtensionOpenController` should be in a file named `RequireGatewayExtensionOpenController.php`, found `RequireGatewayExtensionTest.php`.[0m
+ [0m[36m=[0m Help: Rename the file to `RequireGatewayExtensionOpenController.php` or rename the class to match the file name.
+tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php:28:10: [0m[1m[38;5;14mhelp[function-name][0m[1m: Function name `requireExtensionCallerNode` should be in snake case.[0m
+ [0m[36m=[0m The function name `requireExtensionCallerNode` does not follow snake naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `require_extension_caller_node` to adhere to the naming convention.
+tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php:45:10: [0m[1m[38;5;14mhelp[function-name][0m[1m: Function name `requireExtensionGet` should be in snake case.[0m
+ [0m[36m=[0m The function name `requireExtensionGet` does not follow snake naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `require_extension_get` to adhere to the naming convention.
+tests/Feature/Http/Api/ActivityListControllerTest.php:33:10: [0m[1m[38;5;14mhelp[function-name][0m[1m: Function name `createRemoteShellActivityEntry` should be in snake case.[0m
+ [0m[36m=[0m The function name `createRemoteShellActivityEntry` does not follow snake naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `create_remote_shell_activity_entry` to adhere to the naming convention.
+tests/Feature/Http/Api/ActivityListControllerTest.php:208:64: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'read'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'read')`.
+tests/Feature/Http/Api/ActivityListControllerTest.php:234:64: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'read'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'read')`.
+tests/Feature/Http/Api/ActivityListControllerTest.php:261:64: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'read'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'read')`.
+tests/Feature/Http/Api/ActivityListControllerTest.php:292:65: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'write'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'write')`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:70:23: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `0777` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 0777)`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:70:23: [0m[1m[38;5;11mwarning[explicit-octal][0m[1m: Use explicit octal numeral notation.[0m
+ [0m[36m=[0m Using `0o` makes the octal intent explicit and avoids confusion with other formats.
+ [0m[36m=[0m Help: Replace the leading `0` with `0o` to make the octal intent explicit.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:74:46: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `1` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 1)`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:586:13: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'Quality checks passed'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'Quality checks passed')`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:1001:46: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `true` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: true)`.
+tests/Unit/Services/Tools/ToolsProbeTest.php:607:9: [0m[1m[38;5;11mwarning[use-specific-expectations][0m[1m: Use `toBeEmpty()` instead of comparing with empty values for clarity.[0m
+ [0m[36m=[0m Help: Replace with `toBeEmpty()`.
+tests/Unit/Services/Proxy/ProxyRouteProbeTest.php:1532:47: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'proxy.route_mismatch'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'proxy.route_mismatch')`.
+app/Services/Tools/ToolsProbe.php:752:83: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `true` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: true)`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:17:10: [0m[1m[38;5;14mhelp[function-name][0m[1m: Function name `createExtensionApiCallerNode` should be in snake case.[0m
+ [0m[36m=[0m The function name `createExtensionApiCallerNode` does not follow snake naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `create_extension_api_caller_node` to adhere to the naming convention.
+tests/Feature/Http/Api/ExtensionControllerTest.php:41:10: [0m[1m[38;5;14mhelp[function-name][0m[1m: Function name `grantExtensionApiAccess` should be in snake case.[0m
+ [0m[36m=[0m The function name `grantExtensionApiAccess` does not follow snake naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `grant_extension_api_access` to adhere to the naming convention.
+tests/Feature/Http/Api/ExtensionControllerTest.php:51:10: [0m[1m[38;5;14mhelp[function-name][0m[1m: Function name `extensionApiRequest` should be in snake case.[0m
+ [0m[36m=[0m The function name `extensionApiRequest` does not follow snake naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `extension_api_request` to adhere to the naming convention.
+tests/Feature/Http/Api/ExtensionControllerTest.php:70:39: [0m[1m[38;5;11mwarning[halstead][0m[1m: Closure has a high halstead volume[0m
+ [0m[36m=[0m Halstead volume is 1152.31 (threshold 1000). Volume estimates the code's overall size/complexity.
+ [0m[36m=[0m Help: Consider breaking this into smaller, more focused functions.
+tests/Feature/Http/Api/ExtensionControllerTest.php:74:48: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:93:36: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:104:36: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:114:36: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:120:46: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/cloudflare/enable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/cloudflare/enable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:121:47: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/cloudflare/enable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/cloudflare/enable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:148:46: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/codex/disable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/codex/disable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:149:47: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/codex/disable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/codex/disable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:166:37: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/solo/enable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/solo/enable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:176:37: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/solo/disable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/solo/disable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:187:37: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/solo/enable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/solo/enable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:188:37: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/solo/disable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/solo/disable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:208:36: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:223:15: [0m[1m[38;5;10mnote[prefer-dedicated-status-assertion][0m[1m: Use the dedicated `assertServiceUnavailable()` assertion instead of `assertStatus(503)`.[0m
+ [0m[36m=[0m `assertServiceUnavailable()` is the dedicated assertion for the `503` status code.
+ [0m[36m=[0m Help: Replace `assertStatus(503)` with `assertServiceUnavailable()`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:222:37: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/solo/enable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/solo/enable')`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:234:15: [0m[1m[38;5;10mnote[prefer-dedicated-status-assertion][0m[1m: Use the dedicated `assertServiceUnavailable()` assertion instead of `assertStatus(503)`.[0m
+ [0m[36m=[0m `assertServiceUnavailable()` is the dedicated assertion for the `503` status code.
+ [0m[36m=[0m Help: Replace `assertStatus(503)` with `assertServiceUnavailable()`.
+tests/Feature/Http/Api/ExtensionControllerTest.php:233:37: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'/api/extensions/solo/disable'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: '/api/extensions/solo/disable')`.
+database/migrations/2026_06_28_000000_create_gateway_extensions_table.php:12:46: [0m[1m[38;5;14mhelp[prefer-static-closure][0m[1m: This closure does not use `$this` and should be declared static.[0m
+ [0m[36m=[0m Static closures are more memory-efficient and make it clear that `$this` is not used.
+ [0m[36m=[0m Help: Add the `static` keyword before `function` to make this closure static.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:401:43: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'gateway'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'gateway')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:452:43: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'gateway'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'gateway')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:458:41: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'app-dev'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'app-dev')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:491:43: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'gateway'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'gateway')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:497:41: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'app-dev'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'app-dev')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:531:43: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'gateway'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'gateway')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:536:41: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'app-dev'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'app-dev')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:565:43: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'gateway'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'gateway')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:570:41: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'app-dev'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'app-dev')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:594:9: [0m[1m[38;5;11mwarning[use-specific-expectations][0m[1m: Use `toBeEmpty()` instead of comparing with empty values for clarity.[0m
+ [0m[36m=[0m Help: Replace with `toBeEmpty()`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:603:43: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'gateway'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'gateway')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:605:41: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'app-dev'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'app-dev')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:629:9: [0m[1m[38;5;11mwarning[use-specific-expectations][0m[1m: Use `toBeEmpty()` instead of comparing with empty values for clarity.[0m
+ [0m[36m=[0m Help: Replace with `toBeEmpty()`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:635:41: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'app-dev'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'app-dev')`.
+tests/Feature/Http/Api/ToolInstallControllerTest.php:657:9: [0m[1m[38;5;11mwarning[use-specific-expectations][0m[1m: Use `toBeEmpty()` instead of comparing with empty values for clarity.[0m
+ [0m[36m=[0m Help: Replace with `toBeEmpty()`.
+app/Http/Controllers/Api/ActivityListController.php:62:5: [0m[1m[38;5;11mwarning[halstead][0m[1m: Method has a high halstead effort[0m
+ [0m[36m=[0m Halstead effort is 5514.59 (threshold 5000). Effort estimates the mental effort required to develop/maintain the code.
+ [0m[36m=[0m Help: Consider breaking this into smaller, more focused functions.
+tests/Feature/Architecture/McpConfigurationTest.php:326:18: [0m[1m[38;5;11mwarning[no-shorthand-ternary][0m[1m: Use of the shorthand ternary operator.[0m
+ [0m[36m=[0m Help: Use null coalesce operator (`??`) or ternary operator with explicit strict comparison.
+app/Services/Activity/ActivityHistory.php:155:25: [0m[1m[38;5;14mhelp[prefer-static-closure][0m[1m: This closure does not use `$this` and should be declared static.[0m
+ [0m[36m=[0m Static closures are more memory-efficient and make it clear that `$this` is not used.
+ [0m[36m=[0m Help: Add the `static` keyword before `function` to make this closure static.
+app/Services/Activity/ActivityHistory.php:169:30: [0m[1m[38;5;14mhelp[prefer-static-closure][0m[1m: This closure does not use `$this` and should be declared static.[0m
+ [0m[36m=[0m Static closures are more memory-efficient and make it clear that `$this` is not used.
+ [0m[36m=[0m Help: Add the `static` keyword before `function` to make this closure static.
+app/Services/Activity/ActivityHistory.php:188:30: [0m[1m[38;5;14mhelp[prefer-static-closure][0m[1m: This closure does not use `$this` and should be declared static.[0m
+ [0m[36m=[0m Static closures are more memory-efficient and make it clear that `$this` is not used.
+ [0m[36m=[0m Help: Add the `static` keyword before `function` to make this closure static.
+[0m[1m[38;5;11mwarning[0m[1m: found 62 issues: 49 warning(s), 3 note(s), 10 help message(s)[0m
+ [0m[36m=[0m 11 issues contain auto-fix suggestions
+[33m WARN[0m Your baseline file contains 12 entries for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+[32m INFO[0m Filtered out 6270 issues based on the baseline file.
+
+─── cli_mago_lint (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+tests/Feature/Commands/Codex/CodexAppCommandTest.php:9:23: [0m[1m[38;5;11mwarning[halstead][0m[1m: Closure has a high halstead volume[0m
+ [0m[36m=[0m Halstead volume is 1202.86 (threshold 1000). Volume estimates the code's overall size/complexity.
+ [0m[36m=[0m Help: Consider breaking this into smaller, more focused functions.
+app/Services/Updates/UpdateAllHumanProgressRenderer.php:543:63: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/Services/Updates/UpdateAllHumanProgressRenderer.php:1120:37: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/Services/Updates/UpdateAllHumanProgressRenderer.php:1121:36: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+tests/Feature/Commands/Tool/ToolWriteCommandTest.php:403:13: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `"Invalid install user ''."` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: "Invalid install user ''.")`.
+tests/Feature/Commands/Tool/ToolWriteCommandTest.php:411:50: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'tool:install'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'tool:install')`.
+tests/Feature/Commands/Tool/ToolWriteCommandTest.php:451:50: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'tool:install'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'tool:install')`.
+tests/Feature/Commands/Tool/ToolWriteCommandTest.php:492:34: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `422` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 422)`.
+tests/Feature/Commands/Tool/ToolWriteCommandTest.php:494:50: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'tool:install'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'tool:install')`.
+tests/Feature/Commands/Activity/ActivityListCommandTest.php:238:50: [0m[1m[38;5;11mwarning[literal-named-argument][0m[1m: Literal argument `'activity:list'` should be passed as a named argument for clarity.[0m
+ [0m[36m=[0m Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ [0m[36m=[0m Help: Consider using a named argument instead: `function_name(param: 'activity:list')`.
+[0m[1m[38;5;11mwarning[0m[1m: found 10 issues: 7 warning(s), 3 note(s)[0m
+[33m WARN[0m Your baseline file contains 50 entries for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+[32m INFO[0m Filtered out 2763 issues based on the baseline file.
+
+─── docs_mago_lint (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[33m WARN[0m Your baseline file contains 3 entries for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+[32m INFO[0m Filtered out 679 issues based on the baseline file.
+[32m INFO[0m No issues found.
+
+─── reverb_mago_lint (exit=0) ───
+[32m INFO[0m Overriding workspace directory with ../reverb.
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m Filtered out 27 issues based on the baseline file.
+[32m INFO[0m No issues found.
+
+─── core_mago_lint (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+src/Extensions/OrbitExtensionRegistry.php:11:25: [0m[1m[38;5;14mhelp[constant-name][0m[1m: Constant name `SoloCommands` should be in constant case.[0m
+ [0m[36m=[0m The constant name `SoloCommands` does not follow constant naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `SOLO_COMMANDS` to adhere to the naming convention.
+src/Extensions/OrbitExtensionRegistry.php:97:25: [0m[1m[38;5;14mhelp[constant-name][0m[1m: Constant name `SoloPermissions` should be in constant case.[0m
+ [0m[36m=[0m The constant name `SoloPermissions` does not follow constant naming convention.
+ [0m[36m=[0m Help: Consider renaming it to `SOLO_PERMISSIONS` to adhere to the naming convention.
+[0m[1m[38;5;14mhelp[0m[1m: found 2 issues: 2 help message(s)[0m
+[32m INFO[0m Filtered out 99 issues based on the baseline file.
+
+─── sdk_mago_lint (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m Filtered out 146 issues based on the baseline file.
+[32m INFO[0m No issues found.
+
+─── e2e_mago_lint (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+app/E2E/Support/E2ECurrentCheckout.php:1668:28: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/DockerTopologyBuilder.php:279:26: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:28:43: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:29:52: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:30:60: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:37:42: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:38:50: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:39:58: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:40:56: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:41:51: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:42:52: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:43:60: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:44:66: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:45:49: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:46:54: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2EPreparedTopology.php:148:28: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2EPreparedTopology.php:264:32: [0m[1m[38;5;10mnote[no-duplicate-match-arm][0m[1m: This `match` arm has the same result as an earlier arm.[0m
+ [0m[36m=[0m Help: Merge these arms by combining their conditions into a single arm.
+[0m[1m[38;5;10mnote[0m[1m: found 17 issues: 17 note(s)[0m
+[32m INFO[0m Filtered out 2260 issues based on the baseline file.
+
+─── gateway_rector (exit=0) ───
+{"tool":"rector","result":"passed","totals":{"changed_files":0,"errors":0},"changed_files":["app/Services/Doctor/DoctorReportRunner.php"]}
+
+─── cli_rector (exit=0) ───
+ 0/4 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%[1G[2K 4/4 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── docs_rector (exit=0) ───
+{"tool":"rector","result":"passed","totals":{"changed_files":0,"errors":0}}
+
+─── core_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── sdk_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── e2e_rector (exit=0) ───
+ 0/2 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%[1G[2K 2/2 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── gateway_mago_format (exit=1) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m Found 5 file(s) need formatting. Run the command without '--check' to format them.
+
+─── cli_mago_format (exit=1) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m Found 3 file(s) need formatting. Run the command without '--check' to format them.
+
+─── docs_mago_format (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m All files are already formatted.
+
+─── reverb_mago_format (exit=0) ───
+[32m INFO[0m Overriding workspace directory with ../reverb.
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m All files are already formatted.
+
+─── core_mago_format (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m All files are already formatted.
+
+─── sdk_mago_format (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m All files are already formatted.
+
+─── e2e_mago_format (exit=0) ───
+[33m WARN[0m mago.toml is pinned to `1.40.1` but the installed mago binary is `1.41.0`.
+[33m WARN[0m Run `mago self-update --to-project-version` to sync.
+[33m WARN[0m Pass `--no-version-check` or set `MAGO_NO_VERSION_CHECK=1` to silence this warning.
+[32m INFO[0m All files are already formatted.
+
+─── cli_pest (exit=0) ───
+[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m1802 passed[39;22m[90m (7472 assertions)[39m
+  [90mDuration:[39m [39m48.05s[39m
+
+
+─── docs_pest (exit=0) ───
+{"tool":"pest","result":"passed","tests":126,"passed":126,"assertions":990,"duration_ms":17146}
+
+─── core_pest (exit=0) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m85 passed[39;22m[90m (466 assertions)[39m
+  [90mDuration:[39m [39m0.86s[39m
+
+
+─── sdk_pest (exit=0) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m124 passed[39;22m[90m (318 assertions)[39m
+  [90mDuration:[39m [39m0.17s[39m
+
+
+Quality gate FAILED (gateway_pest=0 docs_lint=0 docs_testing=0 docs_references=0 gateway_mago_analyze=0 cli_mago_analyze=0 docs_mago_analyze=0 reverb_mago_analyze=0 core_mago_analyze=0 sdk_mago_analyze=0 e2e_mago_analyze=0 gateway_mago_lint=0 cli_mago_lint=0 docs_mago_lint=0 reverb_mago_lint=0 core_mago_lint=0 sdk_mago_lint=0 e2e_mago_lint=0 gateway_rector=0 cli_rector=0 docs_rector=0 core_rector=0 sdk_rector=0 e2e_rector=0 gateway_mago_format=1 cli_mago_format=1 docs_mago_format=0 reverb_mago_format=0 core_mago_format=0 sdk_mago_format=0 e2e_mago_format=0 cli_pest=0 docs_pest=0 core_pest=0 sdk_pest=0)
+Script bin/quality-check.sh handling the quality-check event returned with error code 1

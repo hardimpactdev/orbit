@@ -1,0 +1,5 @@
+CLASS AgentSessionArchiveTest -> failed tests=8 passed=7 failed=1
+CLASS E2ESupport\SessionArchiveTest -> passed tests=8 passed=8 failed=0
+CLASS FeatureFinalizationGateTest -> passed tests=33 passed=33 failed=0
+CLASS QualityGateArtifactsTest -> failed tests=36 passed=35 failed=1
+CLASS McpConfigurationTest -> passed tests=18 passed=18 failed=0

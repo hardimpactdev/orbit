@@ -1,0 +1,345 @@
+Permission deny rule "MultiEdit" matches no known tool — check for typos.
+Permission deny rule "You" matches no known tool — check for typos.
+Permission deny rule "are" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "Orbit" matches no known tool — check for typos.
+Permission deny rule "post-feature" matches no known tool — check for typos.
+Permission deny rule "analyzer." matches no known tool — check for typos.
+Permission deny rule "Read-only" matches no known tool — check for typos.
+Permission deny rule "review" matches no known tool — check for typos.
+Permission deny rule "only:" matches no known tool — check for typos.
+Permission deny rule "do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "edit" matches no known tool — check for typos.
+Permission deny rule "files" matches no known tool — check for typos.
+Permission deny rule "do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "approve" matches no known tool — check for typos.
+Permission deny rule "merge" matches no known tool — check for typos.
+Permission deny rule "do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "run" matches no known tool — check for typos.
+Permission deny rule "cleanup" matches no known tool — check for typos.
+Permission deny rule "do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "run" matches no known tool — check for typos.
+Permission deny rule "tests" matches no known tool — check for typos.
+Permission deny rule "do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "create" matches no known tool — check for typos.
+Permission deny rule "scratchpads" matches no known tool — check for typos.
+Permission deny rule "or" matches no known tool — check for typos.
+Permission deny rule "harness-signal" matches no known tool — check for typos.
+Permission deny rule "records" matches no known tool — check for typos.
+Permission deny rule "and" matches no known tool — check for typos.
+Permission deny rule "do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "use" matches no known tool — check for typos.
+Permission deny rule "shell" matches no known tool — check for typos.
+Permission deny rule "commands." matches no known tool — check for typos.
+Permission deny rule "Use" matches no known tool — check for typos.
+Permission deny rule "file" matches no known tool — check for typos.
+Permission deny rule "reads" matches no known tool — check for typos.
+Permission deny rule "only" matches no known tool — check for typos.
+Permission deny rule "if" matches no known tool — check for typos.
+Permission deny rule "needed.
+
+Use" matches no known tool — check for typos.
+Permission deny rule "this" matches no known tool — check for typos.
+Permission deny rule "persona" matches no known tool — check for typos.
+Permission deny rule "and" matches no known tool — check for typos.
+Permission deny rule "report" matches no known tool — check for typos.
+Permission deny rule "format:
+/Users/nckrtl/orbit/.agents/review-personas/post-feature-analyzer.md
+
+Feature" matches no known tool — check for typos.
+Permission deny rule "objective:
+P2" matches no known tool — check for typos.
+Permission deny rule "Add" matches no known tool — check for typos.
+Permission deny rule "A" matches no known tool — check for typos.
+Permission deny rule "One-Screen" matches no known tool — check for typos.
+Permission deny rule "Harness" matches no known tool — check for typos.
+Permission deny rule "Fast" matches no known tool — check for typos.
+Permission deny rule "Path" matches no known tool — check for typos.
+Permission deny rule "from" matches no known tool — check for typos.
+Permission deny rule "roadmap" matches no known tool — check for typos.
+Permission deny rule "solo://proj/2/scratchpad/llm-usefulness-impro--389." matches no known tool — check for typos.
+Permission deny rule "The" matches no known tool — check for typos.
+Permission deny rule "evaluated" matches no known tool — check for typos.
+Permission deny rule "conclusion" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "to" matches no known tool — check for typos.
+Permission deny rule "implement" matches no known tool — check for typos.
+Permission deny rule "only" matches no known tool — check for typos.
+Permission deny rule "a" matches no known tool — check for typos.
+Permission deny rule "minimal" matches no known tool — check for typos.
+Permission deny rule "root-linked" matches no known tool — check for typos.
+Permission deny rule "as" matches no known tool — check for typos.
+Permission deny rule "a" matches no known tool — check for typos.
+Permission deny rule "navigation" matches no known tool — check for typos.
+Permission deny rule "aid" matches no known tool — check for typos.
+Permission deny rule "for" matches no known tool — check for typos.
+Permission deny rule "LLM" matches no known tool — check for typos.
+Permission deny rule "agents." matches no known tool — check for typos.
+Permission deny rule "Do" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "promote" matches no known tool — check for typos.
+Permission deny rule "commands" matches no known tool — check for typos.
+Permission deny rule "CI" matches no known tool — check for typos.
+Permission deny rule "gates" matches no known tool — check for typos.
+Permission deny rule "tool" matches no known tool — check for typos.
+Permission deny rule "surfaces" matches no known tool — check for typos.
+Permission deny rule "or" matches no known tool — check for typos.
+Permission deny rule "broad" matches no known tool — check for typos.
+Permission deny rule "restructuring.
+
+Worktree" matches no known tool — check for typos.
+Permission deny rule "and" matches no known tool — check for typos.
+Permission deny rule "branch:
+/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path
+codex/agent-fast-path
+
+Evidence" matches no known tool — check for typos.
+Permission deny rule "pointers" matches no known tool — check for typos.
+Permission deny rule "to" matches no known tool — check for typos.
+Permission deny rule "read:
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/AGENTS.md
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/HARNESS.md
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/harness-signals/README.md
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/LOOP.md.example
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/.orbit/loop.md
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/.orbit/evidence/solo-process-2175-summary.md
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/.orbit/evidence/post-feature-analyzer-2176-summary.md
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/.orbit/quality-gates/docs-lint-2026-06-27T112150Z-fd3c42f5dc9a.json
+-" matches no known tool — check for typos.
+Permission deny rule "/Users/nckrtl/orbit/.worktrees/codex-agent-fast-path/.orbit/quality-gates/quality-check-2026-06-27T112236Z-d1e1def4953e.json
+-" matches no known tool — check for typos.
+Permission deny rule "/tmp/orbit-p2-fast-path-eval-20260627/eval-run-review.md
+-" matches no known tool — check for typos.
+Permission deny rule "durable" matches no known tool — check for typos.
+Permission deny rule "files:
+-" matches no known tool — check for typos.
+Permission deny rule "new" matches no known tool — check for typos.
+Permission deny rule "root" matches no known tool — check for typos.
+Permission deny rule "doc;" matches no known tool — check for typos.
+Permission deny rule "navigation" matches no known tool — check for typos.
+Permission deny rule "aid" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "product" matches no known tool — check for typos.
+Permission deny rule "authority
+-" matches no known tool — check for typos.
+Permission deny rule "AGENTS.md" matches no known tool — check for typos.
+Permission deny rule "adds" matches no known tool — check for typos.
+Permission deny rule "a" matches no known tool — check for typos.
+Permission deny rule "root" matches no known tool — check for typos.
+Permission deny rule "link" matches no known tool — check for typos.
+Permission deny rule "to" matches no known tool — check for typos.
+Permission deny rule "near" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "LLM-first" matches no known tool — check for typos.
+Permission deny rule "harness" matches no known tool — check for typos.
+Permission deny rule "pointer
+-" matches no known tool — check for typos.
+Permission deny rule "HARNESS.md" matches no known tool — check for typos.
+Permission deny rule "inserts" matches no known tool — check for typos.
+Permission deny rule "as" matches no known tool — check for typos.
+Permission deny rule "item" matches no known tool — check for typos.
+Permission deny rule "2" matches no known tool — check for typos.
+Permission deny rule "in" matches no known tool — check for typos.
+Permission deny rule "Discovery" matches no known tool — check for typos.
+Permission deny rule "Path" matches no known tool — check for typos.
+Permission deny rule "and" matches no known tool — check for typos.
+Permission deny rule "renumbers" matches no known tool — check for typos.
+Permission deny rule "later" matches no known tool — check for typos.
+Permission deny rule "items
+
+Verification" matches no known tool — check for typos.
+Permission deny rule "already" matches no known tool — check for typos.
+Permission deny rule "run" matches no known tool — check for typos.
+Permission deny rule "by" matches no known tool — check for typos.
+Permission deny rule "feature" matches no known tool — check for typos.
+Permission deny rule "owner:
+-" matches no known tool — check for typos.
+Permission deny rule "git" matches no known tool — check for typos.
+Permission deny rule "diff" matches no known tool — check for typos.
+Permission deny rule "--check:" matches no known tool — check for typos.
+Permission deny rule "passed
+-" matches no known tool — check for typos.
+Permission deny rule "composer" matches no known tool — check for typos.
+Permission deny rule "docs-lint:" matches no known tool — check for typos.
+Permission deny rule "passed" matches no known tool — check for typos.
+Permission deny rule "artifact" matches no known tool — check for typos.
+Permission deny rule "named" matches no known tool — check for typos.
+Permission deny rule "above
+-" matches no known tool — check for typos.
+Permission deny rule "composer" matches no known tool — check for typos.
+Permission deny rule "quality-check:" matches no known tool — check for typos.
+Permission deny rule "passed" matches no known tool — check for typos.
+Permission deny rule "artifact" matches no known tool — check for typos.
+Permission deny rule "named" matches no known tool — check for typos.
+Permission deny rule "above
+-" matches no known tool — check for typos.
+Permission deny rule "Retained" matches no known tool — check for typos.
+Permission deny rule "topology" matches no known tool — check for typos.
+Permission deny rule "proof:" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "applicable" matches no known tool — check for typos.
+Permission deny rule "because" matches no known tool — check for typos.
+Permission deny rule "root" matches no known tool — check for typos.
+Permission deny rule "Markdown" matches no known tool — check for typos.
+Permission deny rule "only;" matches no known tool — check for typos.
+Permission deny rule "no" matches no known tool — check for typos.
+Permission deny rule "CLI/runtime/topology" matches no known tool — check for typos.
+Permission deny rule "behavior" matches no known tool — check for typos.
+Permission deny rule "changed
+
+Human/orchestrator" matches no known tool — check for typos.
+Permission deny rule "corrections:
+-" matches no known tool — check for typos.
+Permission deny rule "User" matches no known tool — check for typos.
+Permission deny rule "requested" matches no known tool — check for typos.
+Permission deny rule "regular" matches no known tool — check for typos.
+Permission deny rule "Solo" matches no known tool — check for typos.
+Permission deny rule "cleanup" matches no known tool — check for typos.
+Permission deny rule "when" matches no known tool — check for typos.
+Permission deny rule "agents" matches no known tool — check for typos.
+Permission deny rule "are" matches no known tool — check for typos.
+Permission deny rule "no" matches no known tool — check for typos.
+Permission deny rule "longer" matches no known tool — check for typos.
+Permission deny rule "needed.
+-" matches no known tool — check for typos.
+Permission deny rule "Worker" matches no known tool — check for typos.
+Permission deny rule "process" matches no known tool — check for typos.
+Permission deny rule "2175" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "deleted" matches no known tool — check for typos.
+Permission deny rule "after" matches no known tool — check for typos.
+Permission deny rule "final" matches no known tool — check for typos.
+Permission deny rule "rendered" matches no known tool — check for typos.
+Permission deny rule "report" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "observed" matches no known tool — check for typos.
+Permission deny rule "but" matches no known tool — check for typos.
+Permission deny rule "transcript" matches no known tool — check for typos.
+Permission deny rule "capture" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "lost" matches no known tool — check for typos.
+Permission deny rule "because" matches no known tool — check for typos.
+Permission deny rule "capture/delete" matches no known tool — check for typos.
+Permission deny rule "were" matches no known tool — check for typos.
+Permission deny rule "mistakenly" matches no known tool — check for typos.
+Permission deny rule "issued" matches no known tool — check for typos.
+Permission deny rule "in" matches no known tool — check for typos.
+Permission deny rule "parallel.
+-" matches no known tool — check for typos.
+Permission deny rule "Analyzer" matches no known tool — check for typos.
+Permission deny rule "process" matches no known tool — check for typos.
+Permission deny rule "2176" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "also" matches no known tool — check for typos.
+Permission deny rule "deleted" matches no known tool — check for typos.
+Permission deny rule "after" matches no known tool — check for typos.
+Permission deny rule "stalling;" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "partial" matches no known tool — check for typos.
+Permission deny rule "transcript" matches no known tool — check for typos.
+Permission deny rule "capture" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "again" matches no known tool — check for typos.
+Permission deny rule "lost" matches no known tool — check for typos.
+Permission deny rule "because" matches no known tool — check for typos.
+Permission deny rule "capture/delete" matches no known tool — check for typos.
+Permission deny rule "were" matches no known tool — check for typos.
+Permission deny rule "mistakenly" matches no known tool — check for typos.
+Permission deny rule "issued" matches no known tool — check for typos.
+Permission deny rule "in" matches no known tool — check for typos.
+Permission deny rule "parallel." matches no known tool — check for typos.
+Permission deny rule "A" matches no known tool — check for typos.
+Permission deny rule "summary" matches no known tool — check for typos.
+Permission deny rule "evidence" matches no known tool — check for typos.
+Permission deny rule "note" matches no known tool — check for typos.
+Permission deny rule "was" matches no known tool — check for typos.
+Permission deny rule "added.
+-" matches no known tool — check for typos.
+Permission deny rule "The" matches no known tool — check for typos.
+Permission deny rule "durable" matches no known tool — check for typos.
+Permission deny rule "fast" matches no known tool — check for typos.
+Permission deny rule "path" matches no known tool — check for typos.
+Permission deny rule "now" matches no known tool — check for typos.
+Permission deny rule "says:" matches no known tool — check for typos.
+Permission deny rule "capture" matches no known tool — check for typos.
+Permission deny rule "needed" matches no known tool — check for typos.
+Permission deny rule "output" matches no known tool — check for typos.
+Permission deny rule "before" matches no known tool — check for typos.
+Permission deny rule "stopping" matches no known tool — check for typos.
+Permission deny rule "or" matches no known tool — check for typos.
+Permission deny rule "deleting" matches no known tool — check for typos.
+Permission deny rule "disposable" matches no known tool — check for typos.
+Permission deny rule "Solo" matches no known tool — check for typos.
+Permission deny rule "agents.
+
+Your" matches no known tool — check for typos.
+Permission deny rule "task:
+Assess" matches no known tool — check for typos.
+Permission deny rule "whether" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "loop" matches no known tool — check for typos.
+Permission deny rule "is" matches no known tool — check for typos.
+Permission deny rule "proper" matches no known tool — check for typos.
+Permission deny rule "whether" matches no known tool — check for typos.
+Permission deny rule "durable" matches no known tool — check for typos.
+Permission deny rule "changes" matches no known tool — check for typos.
+Permission deny rule "are" matches no known tool — check for typos.
+Permission deny rule "within" matches no known tool — check for typos.
+Permission deny rule "evidence-backed" matches no known tool — check for typos.
+Permission deny rule "scope" matches no known tool — check for typos.
+Permission deny rule "whether" matches no known tool — check for typos.
+Permission deny rule "verification" matches no known tool — check for typos.
+Permission deny rule "is" matches no known tool — check for typos.
+Permission deny rule "sufficient" matches no known tool — check for typos.
+Permission deny rule "and" matches no known tool — check for typos.
+Permission deny rule "whether" matches no known tool — check for typos.
+Permission deny rule "guardrail" matches no known tool — check for typos.
+Permission deny rule "decisions" matches no known tool — check for typos.
+Permission deny rule "are" matches no known tool — check for typos.
+Permission deny rule "correct." matches no known tool — check for typos.
+Permission deny rule "Be" matches no known tool — check for typos.
+Permission deny rule "critical." matches no known tool — check for typos.
+Permission deny rule "If" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "lost" matches no known tool — check for typos.
+Permission deny rule "transcript" matches no known tool — check for typos.
+Permission deny rule "captures" matches no known tool — check for typos.
+Permission deny rule "make" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "loop" matches no known tool — check for typos.
+Permission deny rule "blocked" matches no known tool — check for typos.
+Permission deny rule "say" matches no known tool — check for typos.
+Permission deny rule "so." matches no known tool — check for typos.
+Permission deny rule "If" matches no known tool — check for typos.
+Permission deny rule "not" matches no known tool — check for typos.
+Permission deny rule "explain" matches no known tool — check for typos.
+Permission deny rule "why" matches no known tool — check for typos.
+Permission deny rule "the" matches no known tool — check for typos.
+Permission deny rule "summary" matches no known tool — check for typos.
+Permission deny rule "+" matches no known tool — check for typos.
+Permission deny rule "command" matches no known tool — check for typos.
+Permission deny rule "artifacts" matches no known tool — check for typos.
+Permission deny rule "are" matches no known tool — check for typos.
+Permission deny rule "enough." matches no known tool — check for typos.
+Permission deny rule "Include" matches no known tool — check for typos.
+Permission deny rule "any" matches no known tool — check for typos.
+Permission deny rule "required" matches no known tool — check for typos.
+Permission deny rule "correction" matches no known tool — check for typos.
+Permission deny rule "before" matches no known tool — check for typos.
+Permission deny rule "commit/merge." matches no known tool — check for typos.
+Error: Input must be provided either through stdin or as a prompt argument when using --print
+(B78

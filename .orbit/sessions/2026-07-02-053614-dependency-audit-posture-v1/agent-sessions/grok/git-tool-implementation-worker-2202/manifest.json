@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "missing",
+    "reason": "grok_signals_not_found",
+    "slug": "git-tool-implementation-worker-2202",
+    "relative_dir": "grok/git-tool-implementation-worker-2202",
+    "solo_process_id": 2202,
+    "process_name": "git-tool-implementation-worker",
+    "raw_files": []
+}

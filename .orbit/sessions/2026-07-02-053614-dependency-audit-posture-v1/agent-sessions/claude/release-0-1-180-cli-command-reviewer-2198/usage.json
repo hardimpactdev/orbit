@@ -1,0 +1,14 @@
+{
+    "status": "ok",
+    "source": "claude_session_jsonl_solo_marker",
+    "metric_confidence": "measured",
+    "artifact_match": "solo_process_marker",
+    "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/12dc0973-8ba6-4697-b4b0-f77e25139c9a.jsonl",
+    "models": [
+        "claude-opus-4-8"
+    ],
+    "input_tokens": 21378,
+    "output_tokens": 10177,
+    "cache_read_tokens": 888393,
+    "cache_write_tokens": 95873
+}

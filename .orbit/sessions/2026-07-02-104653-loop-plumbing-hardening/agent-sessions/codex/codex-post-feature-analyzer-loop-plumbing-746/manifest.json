@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "codex-post-feature-analyzer-loop-plumbing-746",
+    "relative_dir": "codex/codex-post-feature-analyzer-loop-plumbing-746",
+    "solo_process_id": 746,
+    "process_name": "codex-post-feature-analyzer-loop-plumbing",
+    "source": "codex_jsonl_token_count",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T10-40-33-019f21fc-a5bd-7a63-bfc2-d755c4aba344.jsonl",
+    "raw_files": [
+        "rollout-2026-07-02T10-40-33-019f21fc-a5bd-7a63-bfc2-d755c4aba344.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 20
+}

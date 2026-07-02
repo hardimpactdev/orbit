@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "agent-cli-tools-orchestrator-2206",
+    "relative_dir": "codex/agent-cli-tools-orchestrator-2206",
+    "solo_process_id": 2206,
+    "process_name": "agent-cli-tools-orchestrator",
+    "raw_files": []
+}

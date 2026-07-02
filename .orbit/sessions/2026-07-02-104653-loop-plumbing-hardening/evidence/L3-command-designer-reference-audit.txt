@@ -1,0 +1,54 @@
+L3 lane evidence — command-designer reference regeneration (2026-07-02)
+
+PHANTOM IDENTIFIERS (0 rg hits in apps/cli + packages/core):
+  respondWithSuccess, respondWithData, WithSpinner, App\Data\CommandResponses,
+  HasStepOutput, WithJsonOutput, ResolvesApp, CommandInputResolver,
+  HasPlatformHandlers, outputJsonSuccess, failWithMessage, runAllWithSpinners,
+  AppInstanceResolver, WorkspaceLifecyclePhase, MacDnsAddHandler, PlatformHandler,
+  TldResolveCommand, TrustCommand, GatewayConnectCommand, DeployCommand (class),
+  RestartCommand, StartCommand, StopCommand, LinkCommand
+Verified via: for id in ...; do rg -l "$id" apps/cli packages/core; done  -> 0 files each
+
+REAL REPLACEMENTS (verified rg hits / file reads):
+  apps/cli/app/Commands/GatewayCommand.php            — base with gateway(), gatewayGet/Post/Put/Patch/Delete, renderGatewayFailure
+  apps/cli/app/Commands/LocalOnlyCommand.php          — local-config base
+  apps/cli/app/Commands/BootstrapGatewayCommand.php   — pre-gateway base
+  apps/cli/app/Commands/OrbitCommand.php              — deprecated alias of GatewayCommand
+  apps/cli/app/Commands/Concerns/EmitsCanonicalEnvelopes.php — wantsJson, wantsStreamingJson, wantsMachineJson, allowsInteractiveInput, renderSuccess, renderFailure, outputJsonLine
+  apps/cli/app/Commands/Concerns/WithStepTree.php     — runStepTree($title,$steps,$doneFooter,$failFooter): StepTreeResult; runStepOperation(...)
+  apps/cli/app/Commands/Concerns/StreamsGatewayProgress.php — streamProgress, followOperationProgress, captureProgressTerminalFrame, renderProgressTerminalFrame
+  apps/cli/app/Commands/Concerns/RendersShowDetails.php — renderShowDetails($title,$properties)
+  apps/cli/app/Commands/Concerns/ResolvesHostContext.php — stringArgument, stringOption, filledQuery, targetNodeOptionOrDefault, hostCwd, appFromOrbitMarker
+  apps/cli/app/Commands/Concerns/ResolvesDefaultNode.php — nodeArgumentOrDefault
+  apps/cli/app/Commands/Concerns/PromptsForGatewayRegistryEntities.php — promptForVisibleApp/Node/Workspace/Schedule via Laravel\Prompts\datatable
+  packages/core/src/Progress/StepTree.php             — run()/runOperation(), forked ticker, throw = failure, string result = message
+  packages/core/src/Progress/StepTreeResult.php       — isCompleted()
+  packages/core/src/Progress/SpinnerTreeRenderer.php  — SPINNER_FRAMES ○/◉ cyan, DIM/ACCENT/GREEN/RED/ORANGE/RESET, renderFrame/updateLine/updateFooter/footerLine, hide/showCursor
+  packages/core/src/Progress/LifecycleSummaryRenderer.php — success/failure/skipped/idle/spinnerLine/resultLine
+  packages/core/src/Progress/StreamedStepTree.php     — SSE-driven tree
+  packages/core/src/Progress/ProgressEventType.php    — Tree='tree', Step='step', Complete='complete', Error='error'
+  packages/core/src/Http/JsonEnvelope.php             — success(data,meta) / failure(code,message,meta)
+  apps/cli/app/Commands/Workspace/AbstractWorkspaceStepAddCommand.php — abstract phase(): string; phaseLabel(): string
+  apps/cli/app/Commands/Node/NodeRemoveCommand.php    — runStepOperation exemplar (destructive, drift notes)
+  apps/cli/app/Commands/App/AppRemoveCommand.php      — confirm()/--force destructive consent exemplar
+  apps/cli/app/Commands/Node/NodeNewCommand.php       — streamProgress SSE exemplar
+  apps/cli/app/Commands/App/AppListCommand.php        — Laravel\Prompts\table exemplar
+  apps/cli/app/Commands/Database/DatabaseShowCommand.php — RendersShowDetails exemplar
+  apps/cli/app/Services/Doctor/DoctorPanelRenderer.php — custom renderer on SpinnerTreeRenderer::spinnerFrames()
+  apps/cli/app/Services/Platform/LocalPlatformDetector.php — platform detection service (no handler-class registry exists)
+  apps/cli/app/Commands/Internal/WorkspaceAdapterUpdateCommand.php — real `protected $hidden = true` usage
+
+CONVENTION CLAIMS VERIFIED:
+  - rg 'exec\(|shell_exec|proc_open|passthru|system\(' apps/cli/app/Commands -> 0 hits
+    (process execution lives in Services: GatewayApiClient, LocalPlatformDetector, LocalDatabaseQueryAction, ...)
+  - no spatie/laravel-data in apps/cli or packages/core composer.json (rg 'laravel-data' -> 0)
+  - curl_multi used in apps/cli/app/Services/GatewayApiClient.php and GatewayOperationEventStreamClient.php (services, not commands)
+  - apps/docs/content/ux/commands/{progress,lists,details,inputs}/ all exist
+
+DECISIONS:
+  - Dropped phantom "Response DTOs" section; replaced with real JsonEnvelope + renderSuccess/renderFailure flow.
+  - Dropped phantom "Platform Handlers" (HasPlatformHandlers) section; replaced with LocalPlatformDetector service guidance.
+  - Dropped HasStepOutput "banned trait" language (identifier never existed in code or git history);
+    replaced with a rule banning hand-rolled step/echo progress in favor of the shared StepTree engine.
+  - Replaced phantom reference-implementation table with commands that exist today.
+  - command-documentation.md and semantic-check.md contained no phantom identifiers; left unchanged.

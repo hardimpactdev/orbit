@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T10:46:42Z",
+    "ended_at": "2026-06-27T10:46:45Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/empty-json-meta-docs-lint",
+        "commit": "6c253ed5edfa74d2be4327b66caee97edf6f2c27"
+    },
+    "subgates": []
+}

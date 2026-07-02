@@ -1,0 +1,229 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T05:33:26+00:00",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-053315-dependency-audit-posture-v1/agent-sessions",
+    "providers": {
+        "codex": {
+            "missing": 7
+        },
+        "grok": {
+            "missing": 3
+        },
+        "claude": {
+            "ok": 2,
+            "missing": 6
+        }
+    },
+    "sessions": [
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "claude-code-tool-orchestrator-2190",
+            "relative_dir": "codex/claude-code-tool-orchestrator-2190",
+            "solo_process_id": 2190,
+            "process_name": "claude-code-tool-orchestrator",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "grok",
+            "status": "missing",
+            "reason": "grok_signals_not_found",
+            "slug": "claude-code-tool-install-worker-2191",
+            "relative_dir": "grok/claude-code-tool-install-worker-2191",
+            "solo_process_id": 2191,
+            "process_name": "claude-code-tool-install-worker",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "release-0-1-180-live-candidate-orchestrator-2197",
+            "relative_dir": "codex/release-0-1-180-live-candidate-orchestrator-2197",
+            "solo_process_id": 2197,
+            "process_name": "release-0-1-180-live-candidate-orchestrator",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "ok",
+            "slug": "release-0-1-180-cli-command-reviewer-2198",
+            "relative_dir": "claude/release-0-1-180-cli-command-reviewer-2198",
+            "solo_process_id": 2198,
+            "process_name": "release-0-1-180-cli-command-reviewer",
+            "source": "claude_session_jsonl_solo_marker",
+            "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/12dc0973-8ba6-4697-b4b0-f77e25139c9a.jsonl",
+            "raw_files": [
+                "12dc0973-8ba6-4697-b4b0-f77e25139c9a.jsonl"
+            ],
+            "usage_path": "usage.json",
+            "messages_path": "messages.jsonl",
+            "message_count": 27
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "missing",
+            "reason": "claude_session_pid_missing",
+            "slug": "release-0-1-180-post-feature-analyzer-2199",
+            "relative_dir": "claude/release-0-1-180-post-feature-analyzer-2199",
+            "solo_process_id": 2199,
+            "process_name": "release-0-1-180-post-feature-analyzer",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "git-tool-orchestrator-2201",
+            "relative_dir": "codex/git-tool-orchestrator-2201",
+            "solo_process_id": 2201,
+            "process_name": "git-tool-orchestrator",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "grok",
+            "status": "missing",
+            "reason": "grok_signals_not_found",
+            "slug": "git-tool-implementation-worker-2202",
+            "relative_dir": "grok/git-tool-implementation-worker-2202",
+            "solo_process_id": 2202,
+            "process_name": "git-tool-implementation-worker",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "ok",
+            "slug": "git-tool-cli-docs-reviewer-2203",
+            "relative_dir": "claude/git-tool-cli-docs-reviewer-2203",
+            "solo_process_id": 2203,
+            "process_name": "git-tool-cli-docs-reviewer",
+            "source": "claude_session_jsonl_solo_marker",
+            "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/c3ca616f-3ac2-4ff5-a7d4-201ba2fb5c07.jsonl",
+            "raw_files": [
+                "c3ca616f-3ac2-4ff5-a7d4-201ba2fb5c07.jsonl"
+            ],
+            "usage_path": "usage.json",
+            "messages_path": "messages.jsonl",
+            "message_count": 13
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "missing",
+            "reason": "claude_session_pid_missing",
+            "slug": "git-tool-post-feature-analyzer-2205",
+            "relative_dir": "claude/git-tool-post-feature-analyzer-2205",
+            "solo_process_id": 2205,
+            "process_name": "git-tool-post-feature-analyzer",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "agent-cli-tools-orchestrator-2206",
+            "relative_dir": "codex/agent-cli-tools-orchestrator-2206",
+            "solo_process_id": 2206,
+            "process_name": "agent-cli-tools-orchestrator",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "missing",
+            "reason": "claude_session_pid_missing",
+            "slug": "agent-cli-docs-librarian-review-2209",
+            "relative_dir": "claude/agent-cli-docs-librarian-review-2209",
+            "solo_process_id": 2209,
+            "process_name": "agent-cli-docs-librarian-review",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "missing",
+            "reason": "claude_session_pid_missing",
+            "slug": "agent-cli-cli-command-review-2212",
+            "relative_dir": "claude/agent-cli-cli-command-review-2212",
+            "solo_process_id": 2212,
+            "process_name": "agent-cli-cli-command-review",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "missing",
+            "reason": "claude_session_pid_missing",
+            "slug": "agent-cli-post-feature-analyzer-2213",
+            "relative_dir": "claude/agent-cli-post-feature-analyzer-2213",
+            "solo_process_id": 2213,
+            "process_name": "agent-cli-post-feature-analyzer",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "agent-cli-macos-rc-orchestrator-2214",
+            "relative_dir": "codex/agent-cli-macos-rc-orchestrator-2214",
+            "solo_process_id": 2214,
+            "process_name": "agent-cli-macos-rc-orchestrator",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "dependency-audit-posture-orchestrator-2216",
+            "relative_dir": "codex/dependency-audit-posture-orchestrator-2216",
+            "solo_process_id": 2216,
+            "process_name": "dependency-audit-posture-orchestrator",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "grok",
+            "status": "missing",
+            "reason": "grok_signals_not_found",
+            "slug": "dependency-audit-posture-implementation-2217",
+            "relative_dir": "grok/dependency-audit-posture-implementation-2217",
+            "solo_process_id": 2217,
+            "process_name": "dependency-audit-posture-implementation",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "missing",
+            "reason": "codex_token_count_not_found",
+            "slug": "dependency-audit-posture-correction-2218",
+            "relative_dir": "codex/dependency-audit-posture-correction-2218",
+            "solo_process_id": 2218,
+            "process_name": "dependency-audit-posture-correction",
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "claude",
+            "status": "missing",
+            "reason": "claude_session_pid_missing",
+            "slug": "dependency-audit-posture-post-feature-analyzer-2219",
+            "relative_dir": "claude/dependency-audit-posture-post-feature-analyzer-2219",
+            "solo_process_id": 2219,
+            "process_name": "dependency-audit-posture-post-feature-analyzer",
+            "raw_files": []
+        }
+    ]
+}

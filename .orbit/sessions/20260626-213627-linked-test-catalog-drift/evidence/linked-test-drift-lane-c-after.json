@@ -1,0 +1,105 @@
+{
+    "slice": "lane-c-gateway-process-proxy-update",
+    "families": [
+        "gateway",
+        "process",
+        "proxy",
+        "update"
+    ],
+    "commands": 18,
+    "linked_test_files": 50,
+    "missing_linked_test_files": 0,
+    "commands_with_missing": 0,
+    "commands_detail": {
+        "gateway:add": {
+            "family": "gateway",
+            "linked_test_files": 1,
+            "missing_linked_test_files": []
+        },
+        "gateway:list": {
+            "family": "gateway",
+            "linked_test_files": 1,
+            "missing_linked_test_files": []
+        },
+        "gateway:status": {
+            "family": "gateway",
+            "linked_test_files": 3,
+            "missing_linked_test_files": []
+        },
+        "gateway:trust": {
+            "family": "gateway",
+            "linked_test_files": 1,
+            "missing_linked_test_files": []
+        },
+        "gateway:use": {
+            "family": "gateway",
+            "linked_test_files": 1,
+            "missing_linked_test_files": []
+        },
+        "process:add": {
+            "family": "process",
+            "linked_test_files": 3,
+            "missing_linked_test_files": []
+        },
+        "process:list": {
+            "family": "process",
+            "linked_test_files": 2,
+            "missing_linked_test_files": []
+        },
+        "process:logs": {
+            "family": "process",
+            "linked_test_files": 3,
+            "missing_linked_test_files": []
+        },
+        "process:remove": {
+            "family": "process",
+            "linked_test_files": 2,
+            "missing_linked_test_files": []
+        },
+        "process:restart": {
+            "family": "process",
+            "linked_test_files": 2,
+            "missing_linked_test_files": []
+        },
+        "process:start": {
+            "family": "process",
+            "linked_test_files": 2,
+            "missing_linked_test_files": []
+        },
+        "process:stop": {
+            "family": "process",
+            "linked_test_files": 2,
+            "missing_linked_test_files": []
+        },
+        "process:update": {
+            "family": "process",
+            "linked_test_files": 2,
+            "missing_linked_test_files": []
+        },
+        "proxy:add": {
+            "family": "proxy",
+            "linked_test_files": 4,
+            "missing_linked_test_files": []
+        },
+        "proxy:list": {
+            "family": "proxy",
+            "linked_test_files": 3,
+            "missing_linked_test_files": []
+        },
+        "proxy:remove": {
+            "family": "proxy",
+            "linked_test_files": 3,
+            "missing_linked_test_files": []
+        },
+        "update": {
+            "family": "update",
+            "linked_test_files": 5,
+            "missing_linked_test_files": []
+        },
+        "update:all": {
+            "family": "update",
+            "linked_test_files": 10,
+            "missing_linked_test_files": []
+        }
+    }
+}

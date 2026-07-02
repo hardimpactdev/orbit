@@ -1,0 +1,33 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T07:36:04+00:00",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-macos-workload-roles/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-073602-macos-workload-roles-before-orbstack-lifecycle",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-073602-macos-workload-roles-before-orbstack-lifecycle/agent-sessions",
+    "copied_entries": [
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": [
+        {
+            "solo_process_id": 734,
+            "process_name": "macos-workload-roles-orchestrator",
+            "command": "codex --yolo",
+            "agent": "codex",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-macos-workload-roles",
+            "status": "ok",
+            "source": "codex_jsonl_token_count",
+            "metric_confidence": "measured",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T08-53-26-019f219a-93f9-7421-9dd2-14e54055307b.jsonl",
+            "input_tokens": 33426699,
+            "output_tokens": 110090,
+            "reasoning_tokens": 34503,
+            "cached_input_tokens": 32344832,
+            "total_tokens": 33536789,
+            "context_window": 258400,
+            "archive_path": "codex/macos-workload-roles-orchestrator-734"
+        }
+    ]
+}

@@ -1,0 +1,282 @@
+{
+    "lane": "F-schedule-tool-vpn",
+    "families": [
+        "schedule",
+        "firewall",
+        "tool",
+        "vpn-client",
+        "cf-ssl",
+        "vpn-web-ui"
+    ],
+    "baseline_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands": {
+        "schedule:add": {
+            "family": "schedule",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/1_schedule-add/technical/1_schedule-add.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/1_schedule-add"
+        },
+        "schedule:remove": {
+            "family": "schedule",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/4_schedule-remove/technical/1_schedule-remove.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/4_schedule-remove"
+        },
+        "firewall:allow": {
+            "family": "firewall",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/2_firewall-allow/technical/1_firewall-allow.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/2_firewall-allow"
+        },
+        "firewall:deny": {
+            "family": "firewall",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/3_firewall-deny/technical/1_firewall-deny.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/3_firewall-deny"
+        },
+        "firewall:remove": {
+            "family": "firewall",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/4_firewall-remove/technical/1_firewall-remove.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/4_firewall-remove"
+        },
+        "schedule:logs": {
+            "family": "schedule",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/6_schedule-logs/technical/1_schedule-logs.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/6_schedule-logs"
+        },
+        "schedule:run": {
+            "family": "schedule",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/5_schedule-run/technical/1_schedule-run.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/5_schedule-run"
+        },
+        "schedule:show": {
+            "family": "schedule",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleReadCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/3_schedule-show/technical/1_schedule-show.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/3_schedule-show"
+        },
+        "vpn-client:remove": {
+            "family": "vpn-client",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/5_vpn-client-remove/technical/1_vpn-client-remove.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/5_vpn-client-remove"
+        },
+        "vpn-web-ui:change-password": {
+            "family": "vpn-web-ui",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/6_vpn-web-ui-change-password/technical/1_vpn-web-ui-change-password.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/6_vpn-web-ui-change-password"
+        },
+        "cf-ssl:disable": {
+            "family": "cf-ssl",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/9_cf-ssl-disable/technical/1_cf-ssl-disable.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/9_cf-ssl-disable"
+        },
+        "firewall:list": {
+            "family": "firewall",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/1_firewall-list/technical/1_firewall-list.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/1_firewall-list"
+        },
+        "schedule:list": {
+            "family": "schedule",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/2_schedule-list/technical/1_schedule-list.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/2_schedule-list"
+        },
+        "cf-ssl:enable": {
+            "family": "cf-ssl",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/8_cf-ssl-enable/technical/1_cf-ssl-enable.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/8_cf-ssl-enable"
+        },
+        "tool:credentials": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/10_tool-credentials/technical/1_tool-credentials.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/10_tool-credentials"
+        },
+        "tool:list": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/1_tool-list/technical/1_tool-list.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/1_tool-list"
+        },
+        "tool:reconfigure": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/12_tool-reconfigure/technical/1_tool-reconfigure.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/12_tool-reconfigure"
+        },
+        "tool:remove": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/4_tool-remove/technical/1_tool-remove.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/4_tool-remove"
+        },
+        "tool:show": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/2_tool-show/technical/1_tool-show.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/2_tool-show"
+        },
+        "tool:update": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/9_tool-update/technical/1_tool-update.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/9_tool-update"
+        },
+        "vpn-client:disable": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/4_vpn-client-disable/technical/1_vpn-client-disable.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/4_vpn-client-disable"
+        },
+        "vpn-client:enable": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/3_vpn-client-enable/technical/1_vpn-client-enable.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/3_vpn-client-enable"
+        },
+        "vpn-client:list": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/1_vpn-client-list/technical/1_vpn-client-list.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/1_vpn-client-list"
+        },
+        "vpn-client:new": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/2_vpn-client-new/technical/1_vpn-client-new.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/2_vpn-client-new"
+        }
+    },
+    "missing_paths_total": 75
+}

@@ -1,0 +1,897 @@
+
+[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Queued
+[2K  │
+[2K  ○  apps/cli        Queued
+[2K  │
+[2K  ○  apps/docs       Queued
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[?25l[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Queued
+[2K  │
+[2K  ○  apps/docs       Queued
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Queued
+[2K  │
+[2K  ○  apps/docs       Queued
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ○  apps/docs       Queued
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ◉  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ○  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ◉  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ○  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Queued
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ◉  apps/docs       Running
+[2K  │
+[2K  ◉  apps/e2e        Running
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ○  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Running
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ◉  apps/docs       Running
+[2K  │
+[2K  ◉  apps/e2e        Running
+[2K  │
+[2K  ○  apps/reverb     Queued
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ○  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Running
+[2K  │
+[2K  ○  apps/reverb     Running
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ◉  apps/docs       Running
+[2K  │
+[2K  ◉  apps/e2e        Running
+[2K  │
+[2K  ◉  apps/reverb     Running
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ○  apps/docs       Running
+[2K  │
+[2K  ○  apps/e2e        Running
+[2K  │
+[2K  ○  apps/reverb     Running
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ◉  apps/docs       Running
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ◉  apps/reverb     Running
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Queued
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ○  packages/sdk    Queued
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ◉  packages/sdk    Running
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ○  apps/gateway    Running
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ◉  apps/gateway    Running
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ◉  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ○  apps/cli        Running
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ○  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ●  apps/cli        Passed
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ◉  packages/core   Running
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Working...
+[17A[2K  ┌  Running quality checks
+[2K  │
+[2K  ●  apps/gateway    Passed
+[2K  │
+[2K  ●  apps/cli        Passed
+[2K  │
+[2K  ●  apps/docs       Passed
+[2K  │
+[2K  ●  apps/e2e        Passed
+[2K  │
+[2K  ●  apps/reverb     Passed
+[2K  │
+[2K  ●  packages/core   Passed
+[2K  │
+[2K  ●  packages/sdk    Passed
+[2K  │
+[2K  └  Quality checks passed
+[?25h
+─── gateway_pest (exit=0) ───
+{"tool":"pest","result":"passed","tests":3829,"passed":3829,"assertions":20340,"duration_ms":18260}
+
+─── docs_lint (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── docs_testing (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── docs_references (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── gateway_mago_analyze (exit=0) ───
+ INFO Filtered out 2560 issues based on the baseline file.
+ INFO No issues found.
+
+─── cli_mago_analyze (exit=0) ───
+ INFO Filtered out 1032 issues based on the baseline file.
+ INFO No issues found.
+
+─── docs_mago_analyze (exit=0) ───
+ INFO Filtered out 92 issues based on the baseline file.
+ INFO No issues found.
+
+─── reverb_mago_analyze (exit=0) ───
+ INFO Overriding workspace directory with ../reverb.
+ INFO Filtered out 3 issues based on the baseline file.
+ INFO No issues found.
+
+─── core_mago_analyze (exit=0) ───
+ INFO Filtered out 17 issues based on the baseline file.
+ INFO No issues found.
+
+─── sdk_mago_analyze (exit=0) ───
+ INFO Filtered out 171 issues based on the baseline file.
+ INFO No issues found.
+
+─── e2e_mago_analyze (exit=0) ───
+ INFO Filtered out 538 issues based on the baseline file.
+ INFO No issues found.
+
+─── gateway_mago_lint (exit=0) ───
+tests/Feature/E2ESupport/QualityGateArtifactsTest.php:1044:48: warning[literal-named-argument]: Literal argument `' '` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: ' ')`.
+tests/Feature/E2ESupport/QualityGateArtifactsTest.php:1428:9: warning[no-shorthand-ternary]: Use of the shorthand ternary operator.
+ = Help: Use null coalesce operator (`??`) or ternary operator with explicit strict comparison.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:70:23: warning[literal-named-argument]: Literal argument `0777` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 0777)`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:70:23: warning[explicit-octal]: Use explicit octal numeral notation.
+ = Using `0o` makes the octal intent explicit and avoids confusion with other formats.
+ = Help: Replace the leading `0` with `0o` to make the octal intent explicit.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:74:46: warning[literal-named-argument]: Literal argument `1` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 1)`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:586:13: warning[literal-named-argument]: Literal argument `'Quality checks passed'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'Quality checks passed')`.
+tests/Feature/E2ESupport/VerificationScriptsTest.php:1001:46: warning[literal-named-argument]: Literal argument `true` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: true)`.
+warning: found 7 issues: 7 warning(s)
+ = 1 issues contain auto-fix suggestions
+ INFO Filtered out 6282 issues based on the baseline file.
+
+─── cli_mago_lint (exit=0) ───
+ INFO Filtered out 2820 issues based on the baseline file.
+ INFO No issues found.
+
+─── docs_mago_lint (exit=0) ───
+ INFO Filtered out 682 issues based on the baseline file.
+ INFO No issues found.
+
+─── reverb_mago_lint (exit=0) ───
+ INFO Overriding workspace directory with ../reverb.
+ INFO Filtered out 27 issues based on the baseline file.
+ INFO No issues found.
+
+─── core_mago_lint (exit=0) ───
+ INFO Filtered out 99 issues based on the baseline file.
+ INFO No issues found.
+
+─── sdk_mago_lint (exit=0) ───
+ INFO Filtered out 146 issues based on the baseline file.
+ INFO No issues found.
+
+─── e2e_mago_lint (exit=0) ───
+ INFO Filtered out 2260 issues based on the baseline file.
+ INFO No issues found.
+
+─── gateway_rector (exit=0) ───
+ 0/1 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%[1G[2K 1/1 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── cli_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── docs_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── core_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── sdk_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── e2e_rector (exit=0) ───
+ 0/2 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%[1G[2K 2/2 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+ [OK] Rector is done!                                                                                                   
+
+
+─── gateway_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── cli_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── docs_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── reverb_mago_format (exit=0) ───
+ INFO Overriding workspace directory with ../reverb.
+ INFO All files are already formatted.
+
+─── core_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── sdk_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── e2e_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── cli_pest (exit=0) ───
+[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m1705 passed[39;22m[90m (7048 assertions)[39m
+  [90mDuration:[39m [39m21.95s[39m
+
+;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+─── docs_pest (exit=0) ───
+{"tool":"pest","result":"passed","tests":85,"passed":85,"assertions":594,"duration_ms":5667}
+
+─── core_pest (exit=0) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m67 passed[39;22m[90m (152 assertions)[39m
+  [90mDuration:[39m [39m0.76s[39m
+
+
+─── sdk_pest (exit=0) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m124 passed[39;22m[90m (318 assertions)[39m
+  [90mDuration:[39m [39m0.14s[39m
+
+

@@ -1,0 +1,27 @@
+
+  [31;1m⨯[39;22m[90;1m.[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Unit\Services\Workspaces\WorkspaceRuntimeContainerRendererTest[22m [90m>[39m it renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP client trust ini                              
+[39;1m  Failed asserting that an array contains Array &0 [
+    'source' => '/etc/orbit/ca/root.crt',
+    'target' => '/etc/orbit/ca/root.crt',
+    'read_only' => true,
+].[39;22m
+
+  at [32mtests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php[39m:[32m405[39m
+    401▕ 
+    402▕     $container = workspaceRendererForTest()->render($workspace);
+    403▕ 
+    404▕     expect($container->mounts())
+  ➜ 405▕         ->toContain([
+    406▕             'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+    407▕             'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+    408▕             'read_only' => true,
+    409▕         ])
+
+  [33m1   [39m[39;1mtests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php[39;22m:[39;1m405[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m,[39m[39m [39m[32;1m1 passed[39;22m[90m (4 assertions)[39m
+  [90mDuration:[39m [39m0.19s[39m
+

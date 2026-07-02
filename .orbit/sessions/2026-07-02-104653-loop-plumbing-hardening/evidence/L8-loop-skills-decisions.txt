@@ -1,0 +1,61 @@
+LANE L8-loop-skills — evidence and decisions
+Worktree: /Users/nckrtl/orbit/.worktrees/loop-plumbing-hardening (branch loop-plumbing-hardening)
+Date: 2026-07-02
+
+Red-test evidence: not applicable — docs-only lane (three skill markdown files, no runtime surface).
+
+Verification performed:
+- ls bin/ confirmed every command referenced by the edited skills exists:
+  orbit-session-archive, orbit-feature-finalization-check, orbit-gateway-pest,
+  orbit-cli-pest, orbit-docs-pest, orbit-gateway-vendor-bin, orbit-prepare-worktree.
+- Root composer.json inspected: mago:format:check fans out per-app
+  (bin/orbit-gateway-vendor-bin mago format --check, cd apps/cli && vendor/bin/mago ...),
+  confirming the replacement commands in implementing-features step 22 and the
+  worker-prompt runner list. Root has no vendor/bin and no root artisan.
+- bin/orbit-feature-finalization-check usage read directly: --lint [path] defaults
+  to ./.orbit/loop.md; boundary form is `bin/orbit-feature-finalization-check git merge <branch>`;
+  unclassifiable explicit invocations exit 64. Smoke-tested --lint against the
+  active .orbit/loop.md: prints BLOCKED lines for pending placeholders as documented.
+- bin/orbit-session-archive read: writes '- Session archive: ...' under
+  '## Evidence Links' in the active loop.md; LOOP.md.example contains that section.
+- HARNESS.md Session Archives / Solo Role Matrix / Feature Cleanup / Merge Boundary
+  Gate sections confirmed present as the pointer targets.
+- git diff --check on the three owned files: clean.
+- Workflow renumbering verified with rg: implementing-features workflow now runs
+  1..29 with no gaps or duplicates.
+
+Decisions:
+1. implementing-features: inserted new workflow step 5 (finalization-check --lint at
+   first checkpoint and after final distillation) and renumbered 5..28 -> 6..29;
+   folded the full-gate invocation (`... git merge <branch>`) into merge step 27.
+2. Replaced both duplicated Claude Opus spawn recipes (analyzer section, reviewer
+   step 19) with pointers to the HARNESS.md Solo Role Matrix.
+3. Replaced all three archive-naming/timestamp restatements (orchestrator bullet,
+   step 25, step 29) with bin/orbit-session-archive + HARNESS.md Session Archives
+   pointers; step 29 now names the gate's cleanup block on missing archives.
+4. Canonical agent_instructions rule stated once in Orchestrator Role ("prepended
+   before everything else"); removed the two per-section restatements; template
+   placeholders retained.
+5. Worker prompt gained read-budget, first-outcome (~dozen commands), and exact
+   app-local runner commands; noted harness-injected AGENTS.md needs no re-read.
+6. Analyzer timing: step 25 states the analyzer runs before merge and its verdict
+   fills the packet '- Fresh analyzer:' row ('deferred - <reason>' on infra failure);
+   Implementation Rules bullet now says the worktree stays intact after merge until
+   the post-feature signal audit completes.
+7. handling-feature-requests: PRODUCT_DECISIONS.md (latest dated decision) is now
+   step 1 of the decision order; 'Feature roadmap scratchpad: <solo://... or none,
+   single-slice>' added to Handoff Shape and Implementation Handoff; long .orbit
+   archive paragraph replaced with a two-line tool+HARNESS pointer (this also removed
+   the stale 'archive helper scripts ... are later slices' claim); 'ephemeral E2E
+   plan' replaced with retained-topology verification wording.
+8. solo-todo-handoff: reconciled to the canonical prepend-first rule (workflow step 6,
+   Prompt Rules); /goal defined as the Claude Code goal-setting slash command;
+   Prompt Skeleton 'Solo context' line no longer pastes agent_instructions into
+   the body; step 4 budget note clarified that prepended agent_instructions are
+   not part of the 4000-char body unless the surface counts them.
+
+Already-covered classifications: none of the assigned findings were already fixed;
+all required edits.
+
+Not done (out of lane scope): HARNESS.md 'Merge Boundary Gate' staleness noted by the
+gate lane belongs to the root-docs lane, not these skills.

@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T08:52:08Z",
+    "ended_at": "2026-06-27T08:52:10Z",
+    "duration_seconds": 2,
+    "exit_code": 1,
+    "git": {
+        "branch": "codex/test-mapping-format-roots",
+        "commit": "14981b0fcdb23d845e37406310ade0202fa46496"
+    },
+    "subgates": []
+}

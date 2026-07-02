@@ -1,0 +1,91 @@
+LANE L4 — cluster staleness sweep
+Branch: loop-plumbing-hardening
+Date: 2026-07-02
+
+Fix-by-fix verification and outcome:
+
+1. session-mining.md — FIXED.
+   Verified archive layout against bin/orbit-session-archive and
+   bin/orbit-agent-session-archive plus a real archive
+   (.orbit/sessions/2026-07-01-110013-frankenphp-runtime-ca-trust/):
+   .orbit/sessions/<timestamp>-<slug>/{loop.md,evidence/,quality-gates/,
+   agent-sessions/manifest.json, agent-sessions/<provider>/<session-slug>/
+   {manifest.json,usage.json,messages.jsonl,raw/}}.
+   Added "Session Archives (Preferred Source)" section with that tree,
+   demoted raw homedir stores to a "Raw Provider Stores (Fallback)" section,
+   noted ~/.grok/sessions and ~/.claude/projects alongside ~/.codex/sessions,
+   added optional archive_slug field to the provenance shape.
+
+2. eval-artifact-schema.md — FIXED.
+   eval-case `source` field annotated to accept archive-slug values; added
+   Artifact Rules bullet defining archive-slug as the
+   .orbit/sessions/<timestamp>-<slug> directory name, optionally suffixed
+   with the provider/session path inside agent-sessions/.
+
+3. construct-eval SKILL — FIXED.
+   Frontmatter description now includes "session archives under
+   .orbit/sessions"; Reference Map line for session-mining.md now names
+   .orbit/sessions/** archives before raw provider sessions.
+
+4. librarian SKILL — FIXED.
+   Verified bin/orbit-docs-artisan exists (execs php apps/docs/artisan) and
+   apps/docs/config/librarian.php line 65 points 'path' at
+   base_path('content'). Core Commands now use bin/orbit-docs-artisan;
+   Documentation Spine now shows apps/docs/content/ with a note that other
+   Laravel projects default to docs/.
+
+5. cli-output-pty-capture SKILL — FIXED.
+   Merged the two near-verbatim "Bordered Output Checks" sections into one
+   (kept the stricter "The reviewer must inspect" phrasing); fixed workflow
+   step 2 and the Script section to the real path
+   .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py
+   (verified via find; script lives only there); Quick Start example now
+   uses read-only `orbit node:list` (verified
+   apps/cli/app/Commands/Node/NodeListCommand.php exists) instead of
+   `orbit update:all`.
+
+6. quality-gate-triage SKILL — FIXED.
+   Added `composer docs-lint` to the Timing Evidence Model artifact list
+   (verified composer.json docs-lint script wraps
+   bin/quality-gate-run --gate=docs-lint, which writes
+   .orbit/quality-gates/ artifacts); fixed "categories below" to
+   "the Classification Categories section above" (that section precedes
+   Timing Regression Routing); reworded Parallel Lane Triage so parallel
+   lanes explicitly mean parallel triage of existing artifacts and evidence,
+   with an explicit "never run composer test:e2e* commands themselves;
+   E2E runs only when the user explicitly invokes the Composer command
+   from a shell" sentence.
+
+7. release SKILL — FIXED.
+   Verified .github/workflows/orbit-release.yml line 209 publishes
+   `publish_split sdk hardimpactdev/orbit-sdk-laravel` and
+   bin/orbit-prepare-release-package maps 'sdk' => 'packages/sdk'.
+   Added `hardimpactdev/orbit-sdk-laravel` from `packages/sdk` to the
+   split-repo list in the Release Contract.
+
+8. updating-documentation SKILL — FIXED.
+   Removed `docs/superpowers/**` from the product-authority reading list;
+   added an explicit note that it is session context (plans, specs,
+   scratch notes), not product authority, and must not be cited to justify
+   a contract.
+
+9. auditing-docs-drift SKILL — FIXED (both parts).
+   Step 9 retitled "Route approved fixes through an implementation
+   worktree": approved fixes now go through implementing-features in a
+   bin/orbit-prepare-worktree worktree, with docs-lint/quality-check run in
+   that worktree; the audit session stays read-only.
+   Authority Updates queue: verified all four queued items landed in
+   apps/docs/content/architecture.md (self-grants-and-self-serving heading
+   line 358, DNS responsibilities heading line 218, doctor flag+mode table
+   lines 458-463, role driver concept line 200). Replaced the stale item
+   list with a general "verify before queueing" guideline noting the prior
+   entries all landed.
+
+Not changed:
+- .agents/skills/orbit-evals/SKILL.md — owned by this lane but no stale
+  session/archive reference found (only a privacy boundary line); no fix
+  assigned, no edit made.
+
+Red-test evidence: not applicable — all changes are skill/reference
+markdown with no runtime surface or test lane covering them; docs-lint
+only lints apps/docs/content/.

@@ -1,0 +1,31 @@
+{
+    "generated_at": "2026-06-26T14:10:48+00:00",
+    "commands_total": 138,
+    "linked_test_file_refs_total": 526,
+    "commands_with_missing": 92,
+    "missing_paths_total": 342,
+    "missing_by_family": {
+        "activity": 8,
+        "agent-ide": 5,
+        "app": 46,
+        "cf-cache": 3,
+        "cf-cache-rule": 5,
+        "cf-dns": 7,
+        "cf-ssl": 5,
+        "cf-zone": 2,
+        "database": 28,
+        "deploy": 27,
+        "doctor": 1,
+        "firewall": 15,
+        "gateway": 13,
+        "node": 59,
+        "php": 10,
+        "process": 39,
+        "proxy": 10,
+        "schedule": 27,
+        "tool": 12,
+        "update": 4,
+        "vpn-client": 12,
+        "vpn-web-ui": 4
+    }
+}

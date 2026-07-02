@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-26T15:24:30Z",
+    "ended_at": "2026-06-26T15:24:32Z",
+    "duration_seconds": 2,
+    "exit_code": 0,
+    "git": {
+        "branch": "linked-test-catalog-drift",
+        "commit": "f90c817d3cbe08584e7859de087272d5995694f2"
+    },
+    "subgates": []
+}

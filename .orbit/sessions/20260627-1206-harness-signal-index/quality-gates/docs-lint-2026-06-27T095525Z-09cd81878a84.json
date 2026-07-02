@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T09:55:22Z",
+    "ended_at": "2026-06-27T09:55:25Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/harness-signal-index",
+        "commit": "f9faa2a8f28bff626d232ee32d4761c2ded76bc5"
+    },
+    "subgates": []
+}

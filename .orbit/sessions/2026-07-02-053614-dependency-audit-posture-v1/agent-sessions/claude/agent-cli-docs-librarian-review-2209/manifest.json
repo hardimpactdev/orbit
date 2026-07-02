@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "missing",
+    "reason": "claude_session_pid_missing",
+    "slug": "agent-cli-docs-librarian-review-2209",
+    "relative_dir": "claude/agent-cli-docs-librarian-review-2209",
+    "solo_process_id": 2209,
+    "process_name": "agent-cli-docs-librarian-review",
+    "raw_files": []
+}

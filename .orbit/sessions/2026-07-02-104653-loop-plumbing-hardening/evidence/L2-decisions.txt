@@ -1,0 +1,67 @@
+L2 lane decisions — finalization gate + loop packet template hardening
+======================================================================
+
+Owned files changed:
+- bin/orbit-codex-pre-tool-use-hook (rewritten gate logic)
+- bin/orbit-feature-finalization-check (usage text, --lint passthrough, ORBIT_FINALIZATION_EXPLICIT=1)
+- LOOP.md.example (Appendix: Compact Single-Slice Variant)
+- apps/gateway/tests/Feature/E2ESupport/FeatureFinalizationGateTest.php (12 -> 33 tests)
+
+TDD evidence:
+- RED: .orbit/evidence/L2-red-finalization-gate.txt (19 failed / 33 before implementation)
+- GREEN: .orbit/evidence/L2-green-finalization-gate.txt (33 passed)
+
+Design decisions:
+1. Check ordering for merges: git-state checks (empty diff, dirty worktree) run
+   BEFORE packet inspection, because an empty diff makes the packet moot and a
+   dirty tree means the packet evidence does not describe the committed state.
+   Packet order: placeholders -> loop outcome enum -> required verification
+   (rows, blocked, placeholder tokens, artifacts, topology) -> fresh analyzer
+   (merge only) -> signal outcomes -> reconstruction warning.
+2. Loop outcome enum keeps the existing "loop outcome is blocked or ambiguous:"
+   message prefix (preserves prior contract/tests) and appends the exact enum:
+   complete | blocked | complete + loop improvement. `blocked` is enum-valid
+   for --lint but never mergeable. Backticks/whitespace/case are normalized.
+3. Placeholder tokens (pending, tbd, todo, not yet, unexpanded <...>) block on:
+   loop outcome (via enum), both Required verification rows (token checked
+   after the sub-label colon), and signal-outcome rows; the exact offending
+   line/value is echoed. `pending` verification rows keep blocking via the
+   pre-existing blocked-status path (still echoes the row).
+4. Fresh analyzer row is required for merge actions only (cleanup follows a
+   merge, so the row already exists by then); `deferred - <reason>` is accepted
+   with a non-blocking WARNING in both merge evaluation and --lint. --lint
+   treats a missing analyzer row as BLOCKED so the dry-run predicts merge.
+5. Cleanup archive check: worktree-remove and branch-delete require a primary
+   checkout `.orbit/sessions/` entry named `<slug>` or
+   `YYYY-MM-DD-HHMMSS-<slug>` (slug = orbit-session-archive slugify of the
+   branch) containing loop.md and agent-sessions/manifest.json. Runs after the
+   packet check so remediation ordering matches the real workflow.
+6. Docs-class diff extension: markdown anywhere (root *.md included) plus
+   non-PHP files under .agents/**, docs/**, harness-signals/**, and
+   LOOP.md.example are satisfied by docs-lint evidence. PHP files are never
+   docs-class even under those paths, so PHP/product rules are unchanged.
+7. Explicit mode: the wrapper exports ORBIT_FINALIZATION_EXPLICIT=1; the hook
+   exits 64 with a stderr message for unclassifiable/empty commands or a
+   non-Orbit checkout, while bare hook invocations (PreToolUse) stay silent
+   exit 0 for unrelated commands (contract preserved, covered by test).
+8. Verdict output: FINALIZATION: PASS <action> on stdout, FINALIZATION:
+   BLOCKED <first failing reason> as the first stderr line before the existing
+   guidance block; WARNING lines go to stderr in evaluation mode and stdout in
+   --lint mode. --lint prints ALL blocked findings (dry-run), evaluation stops
+   at the first failing check.
+9. --lint validates packet shape only (no git, no artifacts, no diff): Final
+   Distillation presence, placeholders, outcome enum, both verification row
+   labels, placeholder rows, complete-outcome-vs-blocked-row contradiction,
+   analyzer row, signal outcomes; plus reconstruction WARNING.
+10. LOOP.md.example: full template untouched (timestamp prose contract in
+    AgentSessionArchiveTest still passes); added a delimited appendix defining
+    the compact single-slice variant with `- Single-slice: yes - <why>` and
+    `- Parallelization: serial - <reason>`, pointing at
+    bin/orbit-session-archive for archive naming and at the --lint dry-run.
+
+Known follow-up (NOT owned by this lane):
+- bin/orbit-codex-pre-tool-use-hook-test (standalone manual dev script, not
+  wired into composer/tests/CI) now fails: its fixtures merge branches with no
+  commits (empty-diff block), use a `Fresh reviewer` label instead of
+  `Fresh analyzer`, and its branch-delete pass case has no session archive.
+  Needs fixture updates by the lane that owns it or the orchestrator.

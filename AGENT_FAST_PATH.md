@@ -43,10 +43,12 @@ navigation aid, not product authority.
 - When ignored files are needed, name the owned path and exclusions explicitly,
   for example `rg --hidden --glob '!/.worktrees/**' --glob '!vendor/**'
   <pattern> <owned-path>`.
-- Treat `.worktrees/`, `.orbit/`, `vendor/`, `node_modules/`, build outputs,
-  app storage, caches, and retained artifacts as search exclusions by default.
-  Open generated artifacts only when the route calls for them, such as the
-  command catalog, monorepo unit map, or harness signal index.
+- Treat `.worktrees/`, active `.orbit/` state outside `.orbit/sessions/`,
+  `vendor/`, `node_modules/`, build outputs, app storage, caches, and retained
+  artifacts as search exclusions by default. Open generated artifacts or
+  committed session archives only when the route calls for them, such as the
+  command catalog, monorepo unit map, harness signal index, or named session
+  archive.
 
 ## Verification Route
 

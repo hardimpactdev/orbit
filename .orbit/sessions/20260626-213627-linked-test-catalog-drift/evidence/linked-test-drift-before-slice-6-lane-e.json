@@ -1,0 +1,137 @@
+{
+    "catalog_path": "/Users/nckrtl/orbit/.worktrees/linked-test-catalog-drift/apps/docs/content/generated/command-catalog.json",
+    "total_missing_linked_test_files": 67,
+    "commands_with_missing_linked_test_files": 22,
+    "missing_by_family": {
+        "cf-cache-rule": 5,
+        "cf-dns": 7,
+        "database": 28,
+        "deploy": 27
+    },
+    "missing_by_command": {
+        "cf-cache-rule:add": [
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddRendererTest.php"
+        ],
+        "cf-cache-rule:remove": [
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveInputModeTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php"
+        ],
+        "cf-dns:add": [
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php"
+        ],
+        "cf-dns:list": [
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php"
+        ],
+        "cf-dns:remove": [
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveInputModeTest.php",
+            "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php"
+        ],
+        "database:add": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseAddJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        ],
+        "database:attach": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        ],
+        "database:describe": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseDescribeCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+        ],
+        "database:detach": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        ],
+        "database:list": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+        ],
+        "database:query": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php"
+        ],
+        "database:remove": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveJsonRendererTest.php"
+        ],
+        "database:schema": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+        ],
+        "database:show": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseShowJsonRendererTest.php"
+        ],
+        "database:tables": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseTablesCommandTest.php"
+        ],
+        "database:update": [
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateJsonRendererTest.php"
+        ],
+        "deploy:history": [
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryJsonRendererTest.php",
+            "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        ],
+        "deploy:log": [
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployLogCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployLogHumanRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployLogJsonRendererTest.php",
+            "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        ],
+        "deploy:run": [
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployRunInteractiveInputTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployRunJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployRunNonInteractiveInputTest.php",
+            "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        ],
+        "deploy:step-add": [
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddHumanRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddInteractiveInputTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddNonInteractiveInputTest.php",
+            "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        ],
+        "deploy:step-list": [
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListJsonRendererTest.php",
+            "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        ],
+        "deploy:step-remove": [
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveHumanRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveInteractiveInputTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveJsonRendererTest.php",
+            "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveNonInteractiveInputTest.php",
+            "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+        ]
+    },
+    "lane_f": {
+        "families": [
+            "schedule",
+            "firewall",
+            "tool",
+            "vpn-client",
+            "cf-ssl",
+            "vpn-web-ui"
+        ],
+        "total_missing_linked_test_files": 0,
+        "commands_with_missing_linked_test_files": 0,
+        "missing_by_family": []
+    }
+}

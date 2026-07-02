@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "missing",
+    "reason": "grok_signals_not_found",
+    "slug": "claude-code-tool-install-worker-2191",
+    "relative_dir": "grok/claude-code-tool-install-worker-2191",
+    "solo_process_id": 2191,
+    "process_name": "claude-code-tool-install-worker",
+    "raw_files": []
+}

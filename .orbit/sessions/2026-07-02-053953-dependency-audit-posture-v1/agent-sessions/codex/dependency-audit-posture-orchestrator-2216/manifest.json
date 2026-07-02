@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "dependency-audit-posture-orchestrator-2216",
+    "relative_dir": "codex/dependency-audit-posture-orchestrator-2216",
+    "solo_process_id": 2216,
+    "process_name": "dependency-audit-posture-orchestrator",
+    "raw_files": []
+}

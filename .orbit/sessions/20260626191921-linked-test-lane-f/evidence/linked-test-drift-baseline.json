@@ -1,0 +1,1287 @@
+{
+    "base_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands_total": 138,
+    "linked_test_file_refs_total": 570,
+    "commands_with_missing": 105,
+    "missing_paths_total": 411,
+    "families": {
+        "node": 59,
+        "app": 46,
+        "process": 39,
+        "workspace": 36,
+        "database": 28,
+        "deploy": 27,
+        "schedule": 27,
+        "workspace-teardown-step": 17,
+        "workspace-setup-step": 16,
+        "firewall": 15,
+        "gateway": 13,
+        "tool": 12,
+        "vpn-client": 12,
+        "php": 10,
+        "proxy": 10,
+        "activity": 8,
+        "cf-dns": 7,
+        "agent-ide": 5,
+        "cf-cache-rule": 5,
+        "cf-ssl": 5,
+        "update": 4,
+        "vpn-web-ui": 4,
+        "cf-cache": 3,
+        "cf-zone": 2,
+        "doctor": 1
+    },
+    "commands": {
+        "app:new": {
+            "family": "app",
+            "missing_count": 12,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppNewGatewayLocalTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewOperatorForwardingTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewProductionTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewRepoTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppNewTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewOnGatewayNodeContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppNewOnOperatorNodeContractTest.php",
+                "apps/gateway/tests/Unit/Actions/Apps/CreateAppActionTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/1_app-new/technical/1_app-new.md",
+            "repo_directory": "apps/docs/content/domains/5_app/1_app-new"
+        },
+        "workspace:remove": {
+            "family": "workspace",
+            "missing_count": 12,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/RemoveWorkspaceActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceRemoveNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Concerns/ResolveWorkspaceFromCwdTest.php",
+                "apps/gateway/tests/Feature/Console/Workspaces/WorkspaceRemoveInteractiveTest.php",
+                "apps/gateway/tests/Feature/Console/Workspaces/WorkspaceRemoveNonInteractiveTest.php",
+                "apps/gateway/tests/Feature/Renderers/Workspaces/WorkspaceRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Renderers/Workspaces/WorkspaceRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Actions/Workspaces/TeardownStepRunnerTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/5_workspace-remove/technical/1_workspace-remove.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/5_workspace-remove"
+        },
+        "node:new": {
+            "family": "node",
+            "missing_count": 11,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/NodeNewGatewayBootstrapTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/NodeNewOperatorForwardingTest.php",
+                "apps/gateway/tests/E2E/NodeNewDevelopmentAppTest.php",
+                "apps/gateway/tests/E2E/NodeNewProductionAppTest.php",
+                "apps/gateway/tests/Feature/Commands/NodeNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeNewOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/1_node-new/technical/1_node-new.md",
+            "repo_directory": "apps/docs/content/domains/1_node/1_node-new"
+        },
+        "app:remove": {
+            "family": "app",
+            "missing_count": 9,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Apps/RemoveAppActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RemoveAppNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Unit/Concerns/ResolvesAppFromPathTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/6_app-remove/technical/1_app-remove.md",
+            "repo_directory": "apps/docs/content/domains/5_app/6_app-remove"
+        },
+        "node:remove": {
+            "family": "node",
+            "missing_count": 8,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveDevelopmentDnsWarningTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRemoveOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/8_node-remove/technical/1_node-remove.md",
+            "repo_directory": "apps/docs/content/domains/1_node/8_node-remove"
+        },
+        "workspace:new": {
+            "family": "workspace",
+            "missing_count": 8,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceNewGatewayLocalTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceNewOperatorForwardingTest.php",
+                "apps/gateway/tests/E2E/WorkspaceNewTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceNewOnGatewayNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/1_workspace-new/technical/1_workspace-new.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/1_workspace-new"
+        },
+        "app:root": {
+            "family": "app",
+            "missing_count": 7,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/Apps/AppRootEnactmentTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRootNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Unit/Actions/Apps/UpdateAppRootActionTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/5_app-root/technical/1_app-root.md",
+            "repo_directory": "apps/docs/content/domains/5_app/5_app-root"
+        },
+        "workspace-teardown-step:remove": {
+            "family": "workspace-teardown-step",
+            "missing_count": 7,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceTeardownStepRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/RemoveTeardownStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepRemoveNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/13_workspace-teardown-step-remove/technical/1_workspace-teardown-step-remove.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/13_workspace-teardown-step-remove"
+        },
+        "app:register": {
+            "family": "app",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppProductionActivationTest.php",
+                "apps/gateway/tests/E2E/Ephemeral/AppRegistrationTest.php",
+                "apps/gateway/tests/Feature/Actions/Apps/RegisterAppActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppRegisterCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/RegisterAppJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Apps/AppEnactmentServiceTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/2_app-register/technical/1_app-register.md",
+            "repo_directory": "apps/docs/content/domains/5_app/2_app-register"
+        },
+        "deploy:step-add": {
+            "family": "deploy",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepAddNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/1_deploy-step-add/technical/1_deploy-step-add.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/1_deploy-step-add"
+        },
+        "deploy:step-remove": {
+            "family": "deploy",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepRemoveNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/3_deploy-step-remove/technical/1_deploy-step-remove.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/3_deploy-step-remove"
+        },
+        "gateway:add": {
+            "family": "gateway",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/1_gateway-add/technical/1_gateway-add.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/1_gateway-add"
+        },
+        "node:default": {
+            "family": "node",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultHumanRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultJsonRendererTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultNonInteractiveInputModeTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultOnClientTest.php",
+                "apps/cli/tests/Feature/Commands/Node/NodeDefaultOnGatewayHostTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeDefaultCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/9_node-default/technical/1_node-default.md",
+            "repo_directory": "apps/docs/content/domains/1_node/9_node-default"
+        },
+        "node:revoke": {
+            "family": "node",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRevokeOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/6_node-revoke/technical/1_node-revoke.md",
+            "repo_directory": "apps/docs/content/domains/1_node/6_node-revoke"
+        },
+        "node:update": {
+            "family": "node",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/7_node-update/technical/1_node-update.md",
+            "repo_directory": "apps/docs/content/domains/1_node/7_node-update"
+        },
+        "php:use": {
+            "family": "php",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseCallerRoleTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpUseNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeSelectionTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/14_php/2_php-use/technical/1_php-use.md",
+            "repo_directory": "apps/docs/content/domains/14_php/2_php-use"
+        },
+        "process:list": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/4_process-list/technical/1_process-list.md",
+            "repo_directory": "apps/docs/content/domains/7_process/4_process-list"
+        },
+        "process:remove": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/3_process-remove/technical/1_process-remove.md",
+            "repo_directory": "apps/docs/content/domains/7_process/3_process-remove"
+        },
+        "process:restart": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/7_process-restart/technical/1_process-restart.md",
+            "repo_directory": "apps/docs/content/domains/7_process/7_process-restart"
+        },
+        "process:start": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/5_process-start/technical/1_process-start.md",
+            "repo_directory": "apps/docs/content/domains/7_process/5_process-start"
+        },
+        "process:stop": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/6_process-stop/technical/1_process-stop.md",
+            "repo_directory": "apps/docs/content/domains/7_process/6_process-stop"
+        },
+        "schedule:add": {
+            "family": "schedule",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleAddNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/1_schedule-add/technical/1_schedule-add.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/1_schedule-add"
+        },
+        "schedule:remove": {
+            "family": "schedule",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRemoveNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/4_schedule-remove/technical/1_schedule-remove.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/4_schedule-remove"
+        },
+        "workspace-setup-step:add": {
+            "family": "workspace-setup-step",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepAddTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/AddSetupStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepAddNonInteractiveInputTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/8_workspace-setup-step-add/technical/1_workspace-setup-step-add.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/8_workspace-setup-step-add"
+        },
+        "workspace-setup-step:remove": {
+            "family": "workspace-setup-step",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepRemoveTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/RemoveSetupStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepRemoveNonInteractiveInputTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/10_workspace-setup-step-remove/technical/1_workspace-setup-step-remove.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/10_workspace-setup-step-remove"
+        },
+        "workspace-teardown-step:add": {
+            "family": "workspace-teardown-step",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/WorkspaceTeardownStepAddTest.php",
+                "apps/gateway/tests/Feature/Actions/Workspaces/AddTeardownStepActionTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepAddNonInteractiveInputTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/11_workspace-teardown-step-add/technical/1_workspace-teardown-step-add.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/11_workspace-teardown-step-add"
+        },
+        "activity:show": {
+            "family": "activity",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityShowNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/17_activity/2_activity-show/technical/1_activity-show.md",
+            "repo_directory": "apps/docs/content/domains/17_activity/2_activity-show"
+        },
+        "agent-ide:message": {
+            "family": "agent-ide",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/AgentIde/AgentIdeMessageNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message/technical/1_agent-ide-message.md",
+            "repo_directory": "apps/docs/content/domains/15_agent-ide/1_agent-ide-message"
+        },
+        "app:show": {
+            "family": "app",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppShowNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/4_app-show/technical/1_app-show.md",
+            "repo_directory": "apps/docs/content/domains/5_app/4_app-show"
+        },
+        "deploy:run": {
+            "family": "deploy",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployRunNonInteractiveInputTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/4_deploy-run/technical/1_deploy-run.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/4_deploy-run"
+        },
+        "node:agent-ide": {
+            "family": "node",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeAgentIdeNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/10_node-agent-ide/technical/1_node-agent-ide.md",
+            "repo_directory": "apps/docs/content/domains/1_node/10_node-agent-ide"
+        },
+        "node:grant": {
+            "family": "node",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/NodeAccessCommandsTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeGrantOnOperatorNodeContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/5_node-grant/technical/1_node-grant.md",
+            "repo_directory": "apps/docs/content/domains/1_node/5_node-grant"
+        },
+        "node:show": {
+            "family": "node",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeShowNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/4_node-show/technical/1_node-show.md",
+            "repo_directory": "apps/docs/content/domains/1_node/4_node-show"
+        },
+        "process:logs": {
+            "family": "process",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/8_process-logs/technical/1_process-logs.md",
+            "repo_directory": "apps/docs/content/domains/7_process/8_process-logs"
+        },
+        "deploy:log": {
+            "family": "deploy",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployLogJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/6_deploy-log/technical/1_deploy-log.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/6_deploy-log"
+        },
+        "firewall:allow": {
+            "family": "firewall",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallAllowJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/2_firewall-allow/technical/1_firewall-allow.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/2_firewall-allow"
+        },
+        "firewall:deny": {
+            "family": "firewall",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallDenyJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/3_firewall-deny/technical/1_firewall-deny.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/3_firewall-deny"
+        },
+        "firewall:remove": {
+            "family": "firewall",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/4_firewall-remove/technical/1_firewall-remove.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/4_firewall-remove"
+        },
+        "gateway:trust": {
+            "family": "gateway",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/2_gateway-trust/technical/1_gateway-trust.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/2_gateway-trust"
+        },
+        "php:list": {
+            "family": "php",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Php/PhpListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Php/PhpListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Php/PhpRuntimeViewTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/14_php/1_php-list/technical/1_php-list.md",
+            "repo_directory": "apps/docs/content/domains/14_php/1_php-list"
+        },
+        "proxy:add": {
+            "family": "proxy",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyAddJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/8_proxy/2_proxy-add/technical/1_proxy-add.md",
+            "repo_directory": "apps/docs/content/domains/8_proxy/2_proxy-add"
+        },
+        "proxy:remove": {
+            "family": "proxy",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/8_proxy/3_proxy-remove/technical/1_proxy-remove.md",
+            "repo_directory": "apps/docs/content/domains/8_proxy/3_proxy-remove"
+        },
+        "schedule:logs": {
+            "family": "schedule",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleLogsJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/6_schedule-logs/technical/1_schedule-logs.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/6_schedule-logs"
+        },
+        "schedule:run": {
+            "family": "schedule",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleRunJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/5_schedule-run/technical/1_schedule-run.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/5_schedule-run"
+        },
+        "schedule:show": {
+            "family": "schedule",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleReadCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleShowJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/3_schedule-show/technical/1_schedule-show.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/3_schedule-show"
+        },
+        "update:all": {
+            "family": "update",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Operations/UpdateAllFleetVersionsTest.php",
+                "apps/gateway/tests/Feature/Commands/Operations/UpdateAllJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/UpdateAllCommandTest.php",
+                "apps/gateway/tests/Unit/Http/Gateway/UpdateAllGatewayStreamClientTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/11_operation/2_update-all/technical/1_update-all.md",
+            "repo_directory": "apps/docs/content/domains/11_operation/2_update-all"
+        },
+        "vpn-client:remove": {
+            "family": "vpn-client",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientRemoveRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/5_vpn-client-remove/technical/1_vpn-client-remove.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/5_vpn-client-remove"
+        },
+        "vpn-web-ui:change-password": {
+            "family": "vpn-web-ui",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordNonInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnWebUiChangePasswordRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/6_vpn-web-ui-change-password/technical/1_vpn-web-ui-change-password.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/6_vpn-web-ui-change-password"
+        },
+        "workspace:setup": {
+            "family": "workspace",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupNonInteractiveInputTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnGatewayNodeTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupOnOperatorNodeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/2_workspace-setup/technical/1_workspace-setup.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/2_workspace-setup"
+        },
+        "workspace-setup-step:list": {
+            "family": "workspace-setup-step",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/WorkspaceStepListTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupStepListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/9_workspace-setup-step-list/technical/1_workspace-setup-step-list.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/9_workspace-setup-step-list"
+        },
+        "workspace-teardown-step:list": {
+            "family": "workspace-teardown-step",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/WorkspaceStepListTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceTeardownStepListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/12_workspace-teardown-step-list/technical/1_workspace-teardown-step-list.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/12_workspace-teardown-step-list"
+        },
+        "activity:list": {
+            "family": "activity",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Activity/ActivityListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/17_activity/1_activity-list/technical/1_activity-list.md",
+            "repo_directory": "apps/docs/content/domains/17_activity/1_activity-list"
+        },
+        "app:prune": {
+            "family": "app",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Ephemeral/AppPruneTest.php",
+                "apps/gateway/tests/Feature/Commands/AppPruneCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppPruneCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/7_app-prune/technical/1_app-prune.md",
+            "repo_directory": "apps/docs/content/domains/5_app/7_app-prune"
+        },
+        "cf-cache:flush": {
+            "family": "cf-cache",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheFlushRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/5_cf-cache-flush/technical/1_cf-cache-flush.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/5_cf-cache-flush"
+        },
+        "cf-cache-rule:remove": {
+            "family": "cf-cache-rule",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleRemoveRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/7_cf-cache-rule-remove/technical/1_cf-cache-rule-remove.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/7_cf-cache-rule-remove"
+        },
+        "cf-dns:remove": {
+            "family": "cf-dns",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsRemoveRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/4_cf-dns-remove/technical/1_cf-dns-remove.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/4_cf-dns-remove"
+        },
+        "cf-ssl:disable": {
+            "family": "cf-ssl",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslDisableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/9_cf-ssl-disable/technical/1_cf-ssl-disable.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/9_cf-ssl-disable"
+        },
+        "database:add": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/3_database-add/technical/1_database-add.md",
+            "repo_directory": "apps/docs/content/domains/18_database/3_database-add"
+        },
+        "database:attach": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseAttachJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/6_database-attach/technical/1_database-attach.md",
+            "repo_directory": "apps/docs/content/domains/18_database/6_database-attach"
+        },
+        "database:detach": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseDetachJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/7_database-detach/technical/1_database-detach.md",
+            "repo_directory": "apps/docs/content/domains/18_database/7_database-detach"
+        },
+        "database:list": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseListJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/1_database-list/technical/1_database-list.md",
+            "repo_directory": "apps/docs/content/domains/18_database/1_database-list"
+        },
+        "database:remove": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRemoveJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/5_database-remove/technical/1_database-remove.md",
+            "repo_directory": "apps/docs/content/domains/18_database/5_database-remove"
+        },
+        "database:show": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseShowJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/2_database-show/technical/1_database-show.md",
+            "repo_directory": "apps/docs/content/domains/18_database/2_database-show"
+        },
+        "database:update": {
+            "family": "database",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseRegistryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseUpdateJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/4_database-update/technical/1_database-update.md",
+            "repo_directory": "apps/docs/content/domains/18_database/4_database-update"
+        },
+        "deploy:history": {
+            "family": "deploy",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployHistoryJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/5_deploy-history/technical/1_deploy-history.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/5_deploy-history"
+        },
+        "deploy:step-list": {
+            "family": "deploy",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Deploy/DeployStepListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Deploy/DeployCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/10_deploy/2_deploy-step-list/technical/1_deploy-step-list.md",
+            "repo_directory": "apps/docs/content/domains/10_deploy/2_deploy-step-list"
+        },
+        "firewall:list": {
+            "family": "firewall",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Firewall/FirewallListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Firewall/FirewallCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/4_firewall/1_firewall-list/technical/1_firewall-list.md",
+            "repo_directory": "apps/docs/content/domains/4_firewall/1_firewall-list"
+        },
+        "process:add": {
+            "family": "process",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessAddInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessAddNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/1_process-add/technical/1_process-add.md",
+            "repo_directory": "apps/docs/content/domains/7_process/1_process-add"
+        },
+        "schedule:list": {
+            "family": "schedule",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/ScheduleListJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Schedules/ScheduleCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/9_schedule/2_schedule-list/technical/1_schedule-list.md",
+            "repo_directory": "apps/docs/content/domains/9_schedule/2_schedule-list"
+        },
+        "workspace:history": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Read/WorkspaceHistoryTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceHistoryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceHistoryJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/6_workspace-history/technical/1_workspace-history.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/6_workspace-history"
+        },
+        "workspace:list": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/3_workspace-list/technical/1_workspace-list.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/3_workspace-list"
+        },
+        "workspace:log": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/WorkspaceLogTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceLogCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceLogJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/7_workspace-log/technical/1_workspace-log.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/7_workspace-log"
+        },
+        "workspace:show": {
+            "family": "workspace",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowInteractiveTest.php",
+                "apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceShowNonInteractiveTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/6_workspace/4_workspace-show/technical/1_workspace-show.md",
+            "repo_directory": "apps/docs/content/domains/6_workspace/4_workspace-show"
+        },
+        "app:agent-ide": {
+            "family": "app",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Actions/Apps/ConfigureAppAgentIdeTest.php",
+                "apps/gateway/tests/Feature/Commands/Apps/AppAgentIdeCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/9_app-agent-ide/technical/1_app-agent-ide.md",
+            "repo_directory": "apps/docs/content/domains/5_app/9_app-agent-ide"
+        },
+        "cf-cache-rule:add": {
+            "family": "cf-cache-rule",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfCacheRuleAddRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/6_cf-cache-rule-add/technical/1_cf-cache-rule-add.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/6_cf-cache-rule-add"
+        },
+        "cf-dns:add": {
+            "family": "cf-dns",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsAddRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/3_cf-dns-add/technical/1_cf-dns-add.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/3_cf-dns-add"
+        },
+        "cf-dns:list": {
+            "family": "cf-dns",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfDnsListRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/2_cf-dns-list/technical/1_cf-dns-list.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/2_cf-dns-list"
+        },
+        "cf-ssl:enable": {
+            "family": "cf-ssl",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfSslEnableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/8_cf-ssl-enable/technical/1_cf-ssl-enable.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/8_cf-ssl-enable"
+        },
+        "cf-zone:list": {
+            "family": "cf-zone",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Cloudflare/CfZoneListRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/12_cf/1_cf-zone-list/technical/1_cf-zone-list.md",
+            "repo_directory": "apps/docs/content/domains/12_cf/1_cf-zone-list"
+        },
+        "database:describe": {
+            "family": "database",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseDescribeCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/11_database-describe/technical/1_database-describe.md",
+            "repo_directory": "apps/docs/content/domains/18_database/11_database-describe"
+        },
+        "database:query": {
+            "family": "database",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseQueryJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/8_database-query/technical/1_database-query.md",
+            "repo_directory": "apps/docs/content/domains/18_database/8_database-query"
+        },
+        "database:tables": {
+            "family": "database",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseTablesCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/9_database-tables/technical/1_database-tables.md",
+            "repo_directory": "apps/docs/content/domains/18_database/9_database-tables"
+        },
+        "node role:add": {
+            "family": "node",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/12_node-role-add/technical/1_node-role-add.md",
+            "repo_directory": "apps/docs/content/domains/1_node/12_node-role-add"
+        },
+        "node role:remove": {
+            "family": "node",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleRemoveCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/14_node-role-remove/technical/1_node-role-remove.md",
+            "repo_directory": "apps/docs/content/domains/1_node/14_node-role-remove"
+        },
+        "node:permissions": {
+            "family": "node",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Nodes/NodePermissionsJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/15_node-permissions/technical/1_node-permissions.md",
+            "repo_directory": "apps/docs/content/domains/1_node/15_node-permissions"
+        },
+        "proxy:list": {
+            "family": "proxy",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/8_proxy/1_proxy-list/technical/1_proxy-list.md",
+            "repo_directory": "apps/docs/content/domains/8_proxy/1_proxy-list"
+        },
+        "tool:credentials": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolCredentialsJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/10_tool-credentials/technical/1_tool-credentials.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/10_tool-credentials"
+        },
+        "tool:list": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/1_tool-list/technical/1_tool-list.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/1_tool-list"
+        },
+        "tool:reconfigure": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolReconfigureJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/12_tool-reconfigure/technical/1_tool-reconfigure.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/12_tool-reconfigure"
+        },
+        "tool:remove": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolRemoveJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/4_tool-remove/technical/1_tool-remove.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/4_tool-remove"
+        },
+        "tool:show": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolShowCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolShowJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/2_tool-show/technical/1_tool-show.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/2_tool-show"
+        },
+        "tool:update": {
+            "family": "tool",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Tools/ToolUpdateJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/3_tool/9_tool-update/technical/1_tool-update.md",
+            "repo_directory": "apps/docs/content/domains/3_tool/9_tool-update"
+        },
+        "vpn-client:disable": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientDisableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/4_vpn-client-disable/technical/1_vpn-client-disable.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/4_vpn-client-disable"
+        },
+        "vpn-client:enable": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientEnableRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/3_vpn-client-enable/technical/1_vpn-client-enable.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/3_vpn-client-enable"
+        },
+        "vpn-client:list": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientListRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/1_vpn-client-list/technical/1_vpn-client-list.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/1_vpn-client-list"
+        },
+        "vpn-client:new": {
+            "family": "vpn-client",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Vpn/VpnClientNewRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/13_vpn/2_vpn-client-new/technical/1_vpn-client-new.md",
+            "repo_directory": "apps/docs/content/domains/13_vpn/2_vpn-client-new"
+        },
+        "app:list": {
+            "family": "app",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/E2E/Read/AppListTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/3_app-list/technical/1_app-list.md",
+            "repo_directory": "apps/docs/content/domains/5_app/3_app-list"
+        },
+        "app:worker": {
+            "family": "app",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Apps/AppWorkerCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/5_app/11_app-worker/technical/1_app-worker.md",
+            "repo_directory": "apps/docs/content/domains/5_app/11_app-worker"
+        },
+        "database:schema": {
+            "family": "database",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Database/DatabaseSchemaCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/18_database/10_database-schema/technical/1_database-schema.md",
+            "repo_directory": "apps/docs/content/domains/18_database/10_database-schema"
+        },
+        "doctor": {
+            "family": "doctor",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/11_operation/3_doctor/technical/1_doctor.md",
+            "repo_directory": "apps/docs/content/domains/11_operation/3_doctor"
+        },
+        "gateway:list": {
+            "family": "gateway",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayListCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/3_gateway-list/technical/1_gateway-list.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/3_gateway-list"
+        },
+        "gateway:status": {
+            "family": "gateway",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayStatusCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/5_gateway-status/technical/1_gateway-status.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/5_gateway-status"
+        },
+        "gateway:use": {
+            "family": "gateway",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayUseCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/4_gateway-use/technical/1_gateway-use.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/4_gateway-use"
+        },
+        "node role:list": {
+            "family": "node",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Nodes/NodeRoleListCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/1_node/11_node-role-list/technical/1_node-role-list.md",
+            "repo_directory": "apps/docs/content/domains/1_node/11_node-role-list"
+        },
+        "process:update": {
+            "family": "process",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessUpdateHumanRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/2_process-update/technical/1_process-update.md",
+            "repo_directory": "apps/docs/content/domains/7_process/2_process-update"
+        }
+    }
+}

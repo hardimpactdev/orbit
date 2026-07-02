@@ -1,0 +1,17 @@
+Quality gate final check
+Artifact directory: /Users/nckrtl/orbit/.orbit/quality-gates
+
+Analyzer report:
+Quality gate analyzer
+Artifact directory: /Users/nckrtl/orbit/.orbit/quality-gates
+
+recent run: gate=docs-lint duration=3.0s exit=0 mode=check branch=main commit=e05e0d04edd1eab6070cbec7c05bedd3f9534956 ended_at=2026-06-27T11:04:01Z
+baseline: no local baseline for gate [docs-lint]
+recent run: gate=quality-check duration=29.0s exit=0 mode=check branch=main commit=e05e0d04edd1eab6070cbec7c05bedd3f9534956 ended_at=2026-06-27T11:05:42Z
+baseline: no local baseline for gate [quality-check]
+
+Analyzer did not rerun quality-check or E2E lanes.
+
+Final-check warnings: none detected.
+
+Final check did not rerun quality-check or E2E lanes.

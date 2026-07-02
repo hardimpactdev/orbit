@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "agent-cli-macos-rc-orchestrator-2214",
+    "relative_dir": "codex/agent-cli-macos-rc-orchestrator-2214",
+    "solo_process_id": 2214,
+    "process_name": "agent-cli-macos-rc-orchestrator",
+    "raw_files": []
+}

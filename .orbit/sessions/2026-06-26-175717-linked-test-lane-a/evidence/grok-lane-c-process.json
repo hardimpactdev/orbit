@@ -1,0 +1,215 @@
+{
+    "lane": "C-process",
+    "families": [
+        "process",
+        "gateway",
+        "proxy",
+        "update"
+    ],
+    "baseline_commit": "f90c817d3cbe08584e7859de087272d5995694f2",
+    "commands": {
+        "gateway:add": {
+            "family": "gateway",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddCallerRoleContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayAddNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/1_gateway-add/technical/1_gateway-add.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/1_gateway-add"
+        },
+        "process:list": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessListNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/4_process-list/technical/1_process-list.md",
+            "repo_directory": "apps/docs/content/domains/7_process/4_process-list"
+        },
+        "process:remove": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRemoveNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/3_process-remove/technical/1_process-remove.md",
+            "repo_directory": "apps/docs/content/domains/7_process/3_process-remove"
+        },
+        "process:restart": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessRestartNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/7_process-restart/technical/1_process-restart.md",
+            "repo_directory": "apps/docs/content/domains/7_process/7_process-restart"
+        },
+        "process:start": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStartNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/5_process-start/technical/1_process-start.md",
+            "repo_directory": "apps/docs/content/domains/7_process/5_process-start"
+        },
+        "process:stop": {
+            "family": "process",
+            "missing_count": 6,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessStopNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/6_process-stop/technical/1_process-stop.md",
+            "repo_directory": "apps/docs/content/domains/7_process/6_process-stop"
+        },
+        "process:logs": {
+            "family": "process",
+            "missing_count": 5,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsInputContractTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessLogsNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/8_process-logs/technical/1_process-logs.md",
+            "repo_directory": "apps/docs/content/domains/7_process/8_process-logs"
+        },
+        "gateway:trust": {
+            "family": "gateway",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayTrustLocalConfigReadFailureTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/2_gateway-trust/technical/1_gateway-trust.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/2_gateway-trust"
+        },
+        "proxy:add": {
+            "family": "proxy",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyAddCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyAddHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyAddJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/8_proxy/2_proxy-add/technical/1_proxy-add.md",
+            "repo_directory": "apps/docs/content/domains/8_proxy/2_proxy-add"
+        },
+        "proxy:remove": {
+            "family": "proxy",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveHumanRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyRemoveJsonRendererTest.php",
+                "apps/gateway/tests/Unit/Services/Proxy/ProxyCommandContractTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/8_proxy/3_proxy-remove/technical/1_proxy-remove.md",
+            "repo_directory": "apps/docs/content/domains/8_proxy/3_proxy-remove"
+        },
+        "update:all": {
+            "family": "update",
+            "missing_count": 4,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Operations/UpdateAllFleetVersionsTest.php",
+                "apps/gateway/tests/Feature/Commands/Operations/UpdateAllJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/UpdateAllCommandTest.php",
+                "apps/gateway/tests/Unit/Http/Gateway/UpdateAllGatewayStreamClientTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/11_operation/2_update-all/technical/1_update-all.md",
+            "repo_directory": "apps/docs/content/domains/11_operation/2_update-all"
+        },
+        "process:add": {
+            "family": "process",
+            "missing_count": 3,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessAddInteractiveInputModeTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessAddJsonRendererTest.php",
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessAddNonInteractiveInputModeTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/1_process-add/technical/1_process-add.md",
+            "repo_directory": "apps/docs/content/domains/7_process/1_process-add"
+        },
+        "proxy:list": {
+            "family": "proxy",
+            "missing_count": 2,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyListCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Proxy/ProxyListJsonRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/8_proxy/1_proxy-list/technical/1_proxy-list.md",
+            "repo_directory": "apps/docs/content/domains/8_proxy/1_proxy-list"
+        },
+        "gateway:list": {
+            "family": "gateway",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayListCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/3_gateway-list/technical/1_gateway-list.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/3_gateway-list"
+        },
+        "gateway:status": {
+            "family": "gateway",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayStatusCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/5_gateway-status/technical/1_gateway-status.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/5_gateway-status"
+        },
+        "gateway:use": {
+            "family": "gateway",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Gateway/GatewayUseCommandTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/2_gateway/4_gateway-use/technical/1_gateway-use.md",
+            "repo_directory": "apps/docs/content/domains/2_gateway/4_gateway-use"
+        },
+        "process:update": {
+            "family": "process",
+            "missing_count": 1,
+            "missing_paths": [
+                "apps/gateway/tests/Feature/Commands/Processes/ProcessUpdateHumanRendererTest.php"
+            ],
+            "repo_technical": "apps/docs/content/domains/7_process/2_process-update/technical/1_process-update.md",
+            "repo_directory": "apps/docs/content/domains/7_process/2_process-update"
+        }
+    },
+    "missing_paths_total": 66
+}

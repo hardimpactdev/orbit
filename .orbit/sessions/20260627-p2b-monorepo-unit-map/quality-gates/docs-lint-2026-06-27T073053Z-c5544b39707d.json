@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-27T07:30:50Z",
+    "ended_at": "2026-06-27T07:30:53Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/monorepo-unit-map",
+        "commit": "de2b9338ced09e5ec61e7550378102de1b81e854"
+    },
+    "subgates": []
+}

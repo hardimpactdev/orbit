@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-06-26T20:01:20Z",
+    "ended_at": "2026-06-26T20:01:23Z",
+    "duration_seconds": 3,
+    "exit_code": 0,
+    "git": {
+        "branch": "deploy-log-p4-mapping",
+        "commit": "d30358e07f8cae32a4cc75e851aa4ef1bee86eb7"
+    },
+    "subgates": []
+}

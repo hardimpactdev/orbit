@@ -1,0 +1,21 @@
+=== L1 green run (after implementation) ===
+{"tool":"pest","result":"passed","tests":16,"passed":16,"assertions":290,"duration_ms":2101}
+
+=== Real-store verification (this machine, stale started_at 2026-07-01T02:00:00Z, default max-start-distance) ===
+command: env -u SOLO_PROCESS_ID -u SOLO_PROJECT_ID php bin/orbit-agent-session-archive --processes-json=<synthetic 901/902/903> --cwd=/Users/nckrtl/orbit
+codex | ok | codex_jsonl_token_count | cwd | /Users/nckrtl/.codex/sessions/2026/07/01/rollout-2026-07-01T07-46-49-019f1c37-39f5-7af3-9f38-b204de723878.jsonl
+claude | missing |  |  | 
+   checked: ['/Users/nckrtl/.claude/sessions/<pid>.json (Solo process pid unavailable)', '/Users/nckrtl/.claude/projects (Solo process ID: 902 marker scan)', '/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit--worktrees-loop-plumbing-hardening/*.jsonl']
+grok | ok | grok_signals_json | cwd | /Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit/019f1c2b-8e8f-74a3-8983-c4cb943c9837/signals.json
+claude with primary-checkout cwd: ok via claude_session_jsonl_solo_marker (see transcript); worktree-cwd miss names exact checked paths.
+
+=== End-to-end smoke of bin/orbit-session-archive (this machine, PHP CLI tz=UTC, system local +0200) ===
+run1: mode created | basename 2026-07-02-092429-smoke-check | system local at run: 2026-07-02-092429 (PHP date() would have said 2026-07-02-072500)
+run1 stderr: WARNING: no Solo process context available — no --processes-json/--solo-process-id/--solo-project-id/--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, and no Solo process ids found in /private/tmp/claude-501/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e/scratchpad/smoke/worktree/.orbit/loop.md; agent-sessions will contain an empty manifest.
+run2: mode refreshed | same basename, single dir in archive root
+run2 stderr: Refreshing existing session archive with identical loop.md instead of minting a duplicate: /private/tmp/claude-501/-Users-nckrtl-orbit/acd3c672-8724-4a1b-bb38-7a10d528548e/scratchpad/smoke/sessions/2026-07-02-092429-smoke-check
+write-back in active loop.md:
+
+## Evidence Links
+
+- Session archive: .orbit/sessions/2026-07-02-092429-smoke-check

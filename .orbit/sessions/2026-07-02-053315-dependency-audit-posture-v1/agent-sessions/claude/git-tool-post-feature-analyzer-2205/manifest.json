@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "missing",
+    "reason": "claude_session_pid_missing",
+    "slug": "git-tool-post-feature-analyzer-2205",
+    "relative_dir": "claude/git-tool-post-feature-analyzer-2205",
+    "solo_process_id": 2205,
+    "process_name": "git-tool-post-feature-analyzer",
+    "raw_files": []
+}

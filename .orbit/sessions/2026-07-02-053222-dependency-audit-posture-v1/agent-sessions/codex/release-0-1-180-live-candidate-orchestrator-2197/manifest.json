@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "reason": "codex_token_count_not_found",
+    "slug": "release-0-1-180-live-candidate-orchestrator-2197",
+    "relative_dir": "codex/release-0-1-180-live-candidate-orchestrator-2197",
+    "solo_process_id": 2197,
+    "process_name": "release-0-1-180-live-candidate-orchestrator",
+    "raw_files": []
+}

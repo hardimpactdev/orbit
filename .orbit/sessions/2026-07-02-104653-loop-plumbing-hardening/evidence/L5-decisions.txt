@@ -1,0 +1,44 @@
+LANE L5 — review personas + architecture test
+
+CHECKOUT_PROOF: /Users/nckrtl/orbit/.worktrees/loop-plumbing-hardening | loop-plumbing-hardening | clean at lane start
+
+Decisions:
+1. REQUIRED PROOF block added at top of cli-command.md, docs-librarian.md, and
+   post-feature-analyzer.md: run
+   `cd <assigned worktree> && pwd && git branch --show-current && git status --short --branch`
+   and print a `CHECKOUT_PROOF: <pwd> | <branch> | <status summary>` line before
+   any other output. Each block also defines the persona's single final
+   `VERDICT:` line.
+2. Verdict vocabularies: reviewers (cli-command, docs-librarian) use
+   VERDICT: <pass|findings|blocked>. Analyzer uses loop-proper
+   VERDICT: <yes|flawed|blocked-by-missing-evidence> plus per-guardrail
+   classifications <correct-noop|missed|redundant|wrong-target|defer>. The
+   analyzer's old "Loop outcome / Loop quality / Guardrail verdict" triple and
+   `blocked: insufficient evidence` phrasing were folded into that vocabulary.
+3. Duplicated Opus spawn recipes (list_agent_tools + spawn_agent +
+   extra_args=["--model", "opus", "--effort", "medium"]) in cli-command.md and
+   post-feature-analyzer.md replaced with the one-line pointer
+   "Spawn per the Solo Role Matrix in HARNESS.md". docs-librarian.md had no
+   recipe; it gained the same one-line Default Agent pointer since it is also
+   Solo-spawned. HARNESS.md (other lane) keeps the canonical recipe; the test
+   pins it there.
+4. post-feature-distillation.md deleted. It was already only a retirement
+   pointer; every statement in it (analyzer is read-only, reviews session
+   messages/.orbit artifacts/diffs/guardrail decisions) already exists in
+   post-feature-analyzer.md, so nothing was folded.
+5. McpConfigurationTest.php restructured: prose-pinning assertions
+   (solo-todo-handoff sentence fragments, HARNESS/HARNESS_SIGNALS/analyzer
+   wording pins, retired-distillation content pins) replaced with structural
+   checks: file existence/non-existence, path references, tool names, prompt
+   skeleton shape (/goal prefix, <=4000 chars), vocabulary tokens, canonical
+   recipe located only in HARNESS.md, and REQUIRED PROOF/CHECKOUT_PROOF/VERDICT
+   markers in each Solo-spawned persona.
+
+Test evidence:
+- Red: .orbit/evidence/L5-red-mcpconfiguration.txt (3 failed / 18)
+- Green: .orbit/evidence/L5-green-mcpconfiguration.txt (18 passed, 176 assertions)
+
+Out-of-ownership references to post-feature-distillation.md (not edited,
+historical signal records):
+- harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md (lines 7, 8, 10, 150)
+- harness-signals/index.json (line 174)
