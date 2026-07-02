@@ -1,10 +1,32 @@
 # Orbit Session Mining
 
-Use prior Codex sessions as read-only traces for discovering eval cases. Do not treat them as authority.
+Use prior agent sessions as read-only traces for discovering eval cases. Do not treat them as authority.
 
-## Sources
+## Session Archives (Preferred Source)
 
-Local sessions:
+Prefer repo-local session archives over raw provider homedir stores. `bin/orbit-session-archive` writes one archive per feature loop under `.orbit/sessions/<timestamp>-<slug>/` in the primary checkout:
+
+```text
+.orbit/sessions/<timestamp>-<slug>/
+  loop.md              # archived loop state from the source .orbit
+  evidence/            # archived lane evidence, when present
+  quality-gates/       # archived gate artifacts, when present
+  agent-sessions/
+    manifest.json      # per-archive session index
+    <provider>/<session-slug>/
+      manifest.json    # provider/session provenance
+      usage.json       # token and cost usage
+      messages.jsonl   # normalized message stream
+      raw/             # copied raw provider files
+```
+
+Archives are already scoped to one feature slug, carry provenance manifests, and pair transcripts with the archived `loop.md` and evidence, so mine them first with scoped `rg` over `messages.jsonl` and the archived loop/evidence files.
+
+## Raw Provider Stores (Fallback)
+
+Fall back to raw homedir session stores only when no archive covers the sessions you need (for example, sessions that predate archiving or loops that were never archived).
+
+Local sessions (Codex; Grok and Claude stores live at `~/.grok/sessions` and `~/.claude/projects`):
 
 ```bash
 find /Users/nckrtl/.codex/sessions -type f
@@ -39,6 +61,7 @@ Before moving any observation out of the source session or scratchpad, remove:
 
 ```yaml
 machine: local | nick
+archive_slug: # .orbit/sessions archive directory name, when mined from an archive
 session_ref:
 timestamp:
 search_terms:

@@ -24,8 +24,8 @@ Read only the reference files needed for the task:
 | Semantically audit command docs against the blueprint, mission, architecture, family contracts, and sibling command decisions | [`references/semantic-check.md`](references/semantic-check.md) |
 | Design input modes, prompt behavior, `--json`, JSON envelopes, failure metadata, destructive `--force` behavior | [`references/invocation-model.md`](references/invocation-model.md) |
 | Pick which renderer or prompt primitive a command should use (lists, inputs, progress) | [`apps/docs/content/ux/commands/`](../../../apps/docs/content/ux/commands/README.md) |
-| Implement terminal output mechanics — ANSI codes, `WithStepTree`/`WithSpinner` traits, animation patterns, gateway-streamed SSE | [`references/terminal-output.md`](references/terminal-output.md) |
-| Implement commands, DTOs, platform handlers, command bases, app resolution, code-level conventions | [`references/implementation-patterns.md`](references/implementation-patterns.md) |
+| Implement terminal output mechanics — ANSI codes, `WithStepTree`/`StreamsGatewayProgress` traits, animation patterns, gateway-streamed SSE | [`references/terminal-output.md`](references/terminal-output.md) |
+| Implement commands, JSON envelopes, command bases, app/node resolution, code-level conventions | [`references/implementation-patterns.md`](references/implementation-patterns.md) |
 
 ## Non-Negotiables
 
@@ -65,8 +65,10 @@ Read only the reference files needed for the task:
   second and performs no slow external work.
 - Human-rendered commands that may take longer than one second must render an
   in-progress tree after input resolution and before side effects begin.
-- `HasStepOutput` is banned for new or touched commands; use the tree-style
-  renderer with status dots.
+- Hand-rolled step/echo progress output is banned for new or touched commands;
+  use the shared tree-style renderer with status dots (`WithStepTree` over the
+  `Orbit\Core\Progress\StepTree` engine, or `StreamsGatewayProgress` for
+  gateway-executed work).
 - Mapped tests must assert observable command contracts, not private
   implementation details.
 

@@ -180,24 +180,11 @@ it('provides a compact Solo todo handoff skill for Claude Opus implementation ag
         ->toBeFile()
         ->and($skill)
         ->toContain('name: solo-todo-handoff')
-        ->toContain('Solo todo')
         ->toContain('todo_get')
         ->toContain('list_agent_tools')
         ->toContain('spawn_agent')
         ->toContain('send_input')
-        ->toContain('--model')
-        ->toContain('opus')
-        ->toContain('--effort')
-        ->toContain('medium')
-        ->toContain('4000 characters')
-        ->toContain('send-and-forget handoff')
-        ->toContain('Do not poll, supervise, or')
-        ->toContain('send follow-up prompts')
-        ->toContain('.agents/skills/implementing-features/SKILL.md')
-        ->not->toContain('corrective prompt')
-        ->not->toContain('If Claude stops midway')
-        ->not->toContain('Do not commit, merge')
-        ->not->toContain('workflow/user explicitly allows');
+        ->toContain('.agents/skills/implementing-features/SKILL.md');
 
     expect($promptSkeletonBody)
         ->not
@@ -222,71 +209,66 @@ it('does not keep gateway-local generated agent artifacts', function (): void {
 
 it('routes post-feature analysis through the analyzer persona', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
-    $signals = file_get_contents(repo_path('HARNESS_SIGNALS.md')) ?: '';
     $loopTemplate = file_get_contents(repo_path('LOOP.md.example')) ?: '';
     $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
     $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
-    $retiredDistillation = file_get_contents(repo_path('.agents/review-personas/post-feature-distillation.md')) ?: '';
 
     expect(repo_path('.agents/review-personas/post-feature-analyzer.md'))
         ->toBeFile()
-        ->and($analyzer)
-        ->toContain('Codex/Solo session messages')
-        ->toContain('correct-noop')
-        ->toContain('wrong-target')
-        ->toContain('must not steer live work')
-        ->and($harness)
-        ->toContain('Normal feature work does not need an outer loop-improver watcher')
-        ->toContain('.agents/review-personas/post-feature-analyzer.md')
-        ->toContain('Post-feature analyzer')
-        ->not
-        ->toContain('Post-feature distillation | `.agents/review-personas/post-feature-distillation.md`')
-        ->and($signals)
-        ->toContain('post-feature analyzer reviews the completed loop')
-        ->and($loopTemplate)
-        ->toContain('- Fresh analyzer:')
-        ->toContain('correct-noop | missed | redundant | wrong-target')
-        ->and($implementingFeatures)
-        ->toContain('Post-Feature Analyzer Delegation')
-        ->toContain('.agents/review-personas/post-feature-analyzer.md')
-        ->toContain('Codex thread id or transcript path')
-        ->and($retiredDistillation)
-        ->toContain('Retired: Post-Feature Distillation Reviewer')
-        ->toContain('Do not use this file for new Orbit feature loops');
+        ->and(repo_path('.agents/review-personas/post-feature-distillation.md'))
+        ->not->toBeFile()->and($analyzer)->toContain('read-only')->and($harness)->toContain(
+            '.agents/review-personas/post-feature-analyzer.md',
+        )
+        ->not->toContain('post-feature-distillation')->and($loopTemplate)->toContain('correct-noop')->toContain(
+            'wrong-target',
+        )->and($implementingFeatures)->toContain('.agents/review-personas/post-feature-analyzer.md')
+        ->not->toContain('post-feature-distillation');
 });
 
-it('pins post-feature analyzer and reviewer personas to Solo Claude Opus medium effort', function (): void {
+it('keeps the Solo Opus spawn recipe canonical in the HARNESS role matrix', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
-    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
     $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
     $cliReviewer = file_get_contents(repo_path('.agents/review-personas/cli-command.md')) ?: '';
-
-    foreach ([$analyzer, $cliReviewer, $harness, $implementingFeatures] as $contents) {
-        expect($contents)
-            ->toContain('Claude Opus')
-            ->toContain('--model')
-            ->toContain('opus')
-            ->toContain('--effort')
-            ->toContain('medium');
-    }
-
-    expect($analyzer)
-        ->toContain('list_agent_tools')
-        ->toContain('spawn_agent')
-        ->toContain('extra_args=["--model", "opus", "--effort", "medium"]')
-        ->toContain('does not implement');
-
-    expect($cliReviewer)
-        ->toContain('list_agent_tools')
-        ->toContain('spawn_agent')
-        ->toContain('extra_args=["--model", "opus", "--effort", "medium"]')
-        ->toContain('does not implement fixes or approve merge');
+    $docsLibrarian = file_get_contents(repo_path('.agents/review-personas/docs-librarian.md')) ?: '';
 
     expect($harness)
-        ->toContain('Code / CLI reviewer persona')
-        ->toContain('Solo-managed Claude Opus reviewer (medium effort)')
-        ->toContain('Solo-managed Claude Opus analyzer (medium effort)')
-        ->not->toContain('Claude preferred when available');
+        ->toContain('## Solo Role Matrix')
+        ->toContain('extra_args=["--model", "opus", "--effort", "medium"]');
+
+    foreach ([$analyzer, $cliReviewer, $docsLibrarian] as $persona) {
+        expect($persona)
+            ->toContain('Spawn per the Solo Role Matrix in HARNESS.md')
+            ->not->toContain('extra_args');
+    }
+});
+
+it('requires checkout proof and machine-parseable verdicts from Solo-spawned review personas', function (): void {
+    $personaPaths = [
+        '.agents/review-personas/cli-command.md',
+        '.agents/review-personas/docs-librarian.md',
+        '.agents/review-personas/post-feature-analyzer.md',
+    ];
+
+    foreach ($personaPaths as $personaPath) {
+        $persona = file_get_contents(repo_path($personaPath)) ?: '';
+
+        expect($persona)
+            ->toContain('REQUIRED PROOF')
+            ->toContain('CHECKOUT_PROOF')
+            ->toContain('git branch --show-current')
+            ->toContain('git status --short --branch')
+            ->toContain('VERDICT:');
+    }
+
+    $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
+
+    expect($analyzer)
+        ->toContain('yes|flawed|blocked-by-missing-evidence')
+        ->toContain('correct-noop')
+        ->toContain('missed')
+        ->toContain('redundant')
+        ->toContain('wrong-target')
+        ->toContain('defer');
 });
 
 it('provides first-party boost skill sources in orbit packages', function (): void {

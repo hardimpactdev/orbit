@@ -7,6 +7,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 if [ "$#" -eq 0 ]; then
     cat >&2 <<'EOF'
 Usage:
+  Packet dry-run (validates loop.md shape only, no git action needed):
+    bin/orbit-feature-finalization-check --lint [path-to-loop.md]
+      Defaults to ./.orbit/loop.md. Prints PASS/WARNING/BLOCKED lines.
+      Exits 0 on pass, 2 on block.
+
   Required before merge-back:
     bin/orbit-feature-finalization-check git merge <feature-branch>
 
@@ -14,10 +19,19 @@ Usage:
     bin/orbit-feature-finalization-check git worktree remove <worktree-path>
     bin/orbit-feature-finalization-check git branch -d <feature-branch>
 
+Explicit invocations print FINALIZATION: PASS or FINALIZATION: BLOCKED and
+exit 64 when the arguments cannot be classified as a merge/cleanup boundary,
+instead of silently passing.
+
 This applies the same final-distillation gate as the Codex PreToolUse hook
 without relying on hook interception.
 EOF
     exit 64
 fi
 
-exec "$ROOT/bin/orbit-codex-pre-tool-use-hook" "$@"
+if [ "$1" = "--lint" ]; then
+    shift
+    exec "$ROOT/bin/orbit-codex-pre-tool-use-hook" --lint "$@"
+fi
+
+ORBIT_FINALIZATION_EXPLICIT=1 exec "$ROOT/bin/orbit-codex-pre-tool-use-hook" "$@"

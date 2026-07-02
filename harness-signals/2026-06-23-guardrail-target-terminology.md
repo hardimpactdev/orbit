@@ -7,7 +7,7 @@ Last reviewed: 2026-06-23
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: b269f590
 Signal type: review-comment
-Guardrail target: LOOP.md, HARNESS_SIGNALS.md
+Guardrail target: LOOP.md.example, HARNESS_SIGNALS.md
 Guardrail change: 3eecf1c4
 Related signals: none
 Superseded by: none
@@ -31,12 +31,12 @@ agents and humans reviewing the harness.
 
 ## Guardrail Change
 
-`LOOP.md`, `HARNESS_SIGNALS.md`, and the `HARNESS.md` discovery path now use
-"guardrail target" instead of "sink".
+`LOOP.md.example`, `HARNESS_SIGNALS.md`, and the `HARNESS.md` discovery path now
+use "guardrail target" instead of "sink".
 
 ## Verification
 
-`rg -n "sink|Sink|source-to-sink|signal-to-target" HARNESS.md LOOP.md HARNESS_SIGNALS.md`
+`rg -n "sink|Sink|source-to-sink|signal-to-target" HARNESS.md LOOP.md.example HARNESS_SIGNALS.md`
 returned no matches, and `composer docs-lint` exited 0.
 
 ## Reappearance Check

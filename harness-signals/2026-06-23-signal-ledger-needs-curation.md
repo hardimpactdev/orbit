@@ -7,7 +7,7 @@ Last reviewed: 2026-06-25
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: e0e96b50
 Signal type: review-comment
-Guardrail target: harness-signals/README.md, harness-signals/_template.md, LOOP.md, .agents/skills/implementing-features/SKILL.md
+Guardrail target: harness-signals/README.md, harness-signals/_template.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md
 Guardrail change: current signal curation slice
 Related signals: harness-signals/2026-06-23-ephemeral-signals-lose-recurrence-context.md
 Superseded by: none
@@ -33,7 +33,7 @@ retire, or delete records when they drift or stop helping future work.
 
 `harness-signals/README.md` now defines curation triggers and outcomes:
 Keep, Update, Consolidate, Mark recurring, Mark stale, Retire, and Delete.
-The template now includes review and supersession fields. `LOOP.md` and
+The template now includes review and supersession fields. `LOOP.md.example` and
 `implementing-features` point agents to curate records when searches return
 stale, noisy, or recurring signals.
 

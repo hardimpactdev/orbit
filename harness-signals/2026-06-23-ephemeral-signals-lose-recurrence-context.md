@@ -7,7 +7,7 @@ Last reviewed: 2026-06-23
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: 38ff38aa
 Signal type: review-comment
-Guardrail target: harness-signals/, LOOP.md, HARNESS_SIGNALS.md, .agents/skills/implementing-features/SKILL.md
+Guardrail target: harness-signals/, LOOP.md.example, HARNESS_SIGNALS.md, .agents/skills/implementing-features/SKILL.md
 Guardrail change: current harness signal ledger slice
 Related signals: harness-signals/2026-06-23-guardrail-target-terminology.md, harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
 Superseded by: none
@@ -35,7 +35,7 @@ retirement.
 ## Guardrail Change
 
 `harness-signals/` now stores curated signal records with status, recurrence,
-guardrail-target, verification, and reappearance guidance. `LOOP.md`,
+guardrail-target, verification, and reappearance guidance. `LOOP.md.example`,
 `HARNESS_SIGNALS.md`, `HARNESS.md`, and `implementing-features` point agents to
 search and update the ledger before treating a signal as new.
 

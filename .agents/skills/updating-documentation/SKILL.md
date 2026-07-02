@@ -21,7 +21,10 @@ implementation handoff needs aligned before code changes.
    - `apps/docs/content/tech-stack.md`
    - `apps/docs/content/concepts.md`
    - relevant `apps/docs/content/domains/**`
-   - relevant `docs/superpowers/**`
+
+   `docs/superpowers/**` is session context (plans, specs, scratch notes), not
+   product authority. Read it only for background on how a change came about,
+   and never cite it to justify a contract.
 3. Keep this pass focused on documentation; PHP and JavaScript implementation belongs to a separate implementation pass.
 4. Keep changes scoped to the request.
 5. Record open questions and unresolved decisions explicitly.

@@ -1,6 +1,6 @@
 ---
 name: construct-eval
-description: Use when designing Orbit eval suites, eval cases, golden sets, scorer rubrics, regression or capability evals, or turning Orbit docs, failures, live-node signals, prior Codex sessions, or agent workflow traces into structured eval artifacts.
+description: Use when designing Orbit eval suites, eval cases, golden sets, scorer rubrics, regression or capability evals, or turning Orbit docs, failures, live-node signals, session archives under .orbit/sessions, prior Codex sessions, or agent workflow traces into structured eval artifacts.
 ---
 
 # Construct Eval
@@ -16,7 +16,7 @@ Load only what the task needs:
 - `../_orbit-eval-references/orbit-eval-principles.md` for suite types, quality rules, statistics, and release-gate boundaries.
 - `../_orbit-eval-references/eval-artifact-schema.md` for `eval-suite` and `eval-case` fields.
 - `../_orbit-eval-references/scorer-selection.md` for code, model, human, or hybrid grader choices.
-- `../_orbit-eval-references/session-mining.md` when prior local or `ssh nick` Codex sessions are useful trace data.
+- `../_orbit-eval-references/session-mining.md` when `.orbit/sessions/**` archives or prior local or `ssh nick` provider sessions are useful trace data.
 
 ## Workflow
 

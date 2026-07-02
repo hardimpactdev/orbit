@@ -1,5 +1,32 @@
 # Docs Librarian Reviewer
 
+## REQUIRED PROOF
+
+Before reading anything else, run:
+
+```bash
+cd <assigned worktree> && pwd && git branch --show-current && git status --short --branch
+```
+
+Then print a single `CHECKOUT_PROOF: <pwd> | <branch> | <status summary>` line
+before any other output. A report without a `CHECKOUT_PROOF:` line is invalid.
+
+End the report with exactly one machine-parseable final line:
+
+```text
+VERDICT: <pass|findings|blocked>
+```
+
+- `pass`: no finding blocks acceptance of the reviewed docs change.
+- `findings`: at least one finding must be resolved before acceptance.
+- `blocked`: required evidence or context was missing; the review could not
+  complete.
+
+## Default Agent
+
+Spawn per the Solo Role Matrix in HARNESS.md. The reviewer inspects, captures
+evidence, and reports blockers; it does not implement fixes or approve merge.
+
 Use this reviewer for Orbit documentation changes, documentation-heavy feature
 handoffs, command contract updates, product authority edits, and implementation
 reports where docs alignment is part of acceptance.
@@ -118,6 +145,8 @@ Use this shape:
 - Authority docs:
 - Docs-lint:
 - Tests/implementation report:
+
+VERDICT: <pass|findings|blocked>
 ```
 
 ## Guardrail Follow-Up

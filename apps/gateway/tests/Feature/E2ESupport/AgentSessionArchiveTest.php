@@ -333,6 +333,178 @@ it('documents session archive directory names as local date time and feature slu
     }
 });
 
+it('recovers provider sessions when start times are stale and claude pid mapping is unavailable', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'stale-start');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $marker = 'session-archive-fixture-marker';
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+
+        $cwd = (string) realpath($cwd);
+
+        write_codex_fixture(home: $home, cwd: $cwd, marker: $marker);
+        write_grok_fixture(home: $home, cwd: $cwd, marker: $marker);
+        write_claude_project_dir_fixture(home: $home, cwd: $cwd, marker: $marker);
+
+        $processesPath = "{$temp}/processes.json";
+        file_put_contents($processesPath, json_encode([
+            [
+                'id' => 201,
+                'name' => 'codex-late',
+                'kind' => 'agent',
+                'command' => 'codex --model gpt-5',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T02:00:00Z',
+            ],
+            [
+                'id' => 202,
+                'name' => 'claude-late',
+                'kind' => 'agent',
+                'command' => 'claude --model opus',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T02:00:00Z',
+            ],
+            [
+                'id' => 203,
+                'name' => 'grok-late',
+                'kind' => 'agent',
+                'command' => 'grok',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T02:00:00Z',
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--processes-json={$processesPath}",
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--marker={$marker}",
+            ],
+            repo_path(),
+            [
+                'SOLO_PROCESS_ID' => false,
+                'SOLO_PROJECT_ID' => false,
+            ],
+        );
+
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($results)
+            ->toHaveCount(3)
+            ->and(provider_status(results: $results, provider: 'codex'))
+            ->toBe('ok')
+            ->and(provider_status(results: $results, provider: 'grok'))
+            ->toBe('ok')
+            ->and(provider_status(results: $results, provider: 'claude'))
+            ->toBe('ok');
+
+        $claudeResult = provider_result(results: $results, provider: 'claude');
+        $encodedProjectDir = "{$home}/.claude/projects/".preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
+
+        expect($claudeResult)
+            ->toMatchArray([
+                'artifact' => "{$encodedProjectDir}/claude-session-2.jsonl",
+                'input_tokens' => 7,
+                'output_tokens' => 3,
+                'cache_read_tokens' => 2,
+                'cache_write_tokens' => 1,
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('names the exact searched provider paths when session capture fails', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'missing-paths');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+
+        $cwd = (string) realpath($cwd);
+
+        $processesPath = "{$temp}/processes.json";
+        file_put_contents($processesPath, json_encode([
+            [
+                'id' => 301,
+                'name' => 'codex-missing',
+                'kind' => 'agent',
+                'command' => 'codex',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T08:00:00Z',
+            ],
+            [
+                'id' => 302,
+                'name' => 'claude-missing',
+                'kind' => 'agent',
+                'command' => 'claude',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T08:00:00Z',
+            ],
+            [
+                'id' => 303,
+                'name' => 'grok-missing',
+                'kind' => 'agent',
+                'command' => 'grok',
+                'working_dir' => $cwd,
+                'started_at' => '2026-07-01T08:00:00Z',
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--processes-json={$processesPath}",
+                "--home={$home}",
+                "--cwd={$cwd}",
+            ],
+            repo_path(),
+            [
+                'SOLO_PROCESS_ID' => false,
+                'SOLO_PROJECT_ID' => false,
+            ],
+        );
+
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $results = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $codexResult = provider_result(results: $results, provider: 'codex');
+        $claudeResult = provider_result(results: $results, provider: 'claude');
+        $grokResult = provider_result(results: $results, provider: 'grok');
+        $encodedProjectDir = "{$home}/.claude/projects/".preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
+
+        expect($codexResult)
+            ->toMatchArray(['status' => 'missing', 'reason' => 'codex_token_count_not_found'])
+            ->and(implode("\n", $codexResult['checked']))
+            ->toContain("{$home}/.codex/sessions")
+            ->toContain('token_count')
+            ->and($claudeResult)
+            ->toMatchArray(['status' => 'missing', 'reason' => 'claude_session_not_found'])
+            ->and(implode("\n", $claudeResult['checked']))
+            ->toContain($encodedProjectDir)
+            ->toContain("{$home}/.claude/sessions")
+            ->and($grokResult)
+            ->toMatchArray(['status' => 'missing', 'reason' => 'grok_signals_not_found'])
+            ->and(implode("\n", $grokResult['checked']))
+            ->toContain("{$home}/.grok/sessions/".rawurlencode($cwd));
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
 function make_agent_session_archive_temp_dir(string $suffix): string
 {
     $temp = sys_get_temp_dir().'/orbit-agent-session-archive-'.$suffix.'-'.bin2hex(random_bytes(6));
@@ -490,6 +662,30 @@ function write_claude_fixture(string $home, string $marker): void
     ]);
 }
 
+function write_claude_project_dir_fixture(string $home, string $cwd, string $marker): void
+{
+    $encodedProjectDir = "{$home}/.claude/projects/".preg_replace('/[^a-zA-Z0-9]/', '-', $cwd);
+    mkdir("{$encodedProjectDir}/decoy.jsonl", recursive: true);
+    write_jsonl("{$encodedProjectDir}/claude-session-2.jsonl", [
+        ['type' => 'user', 'cwd' => $cwd, 'message' => ['role' => 'user', 'content' => 'Claude user '.$marker]],
+        [
+            'type' => 'assistant',
+            'cwd' => $cwd,
+            'message' => [
+                'role' => 'assistant',
+                'content' => [['type' => 'text', 'text' => 'Claude assistant response']],
+                'model' => 'claude-opus',
+                'usage' => [
+                    'input_tokens' => 7,
+                    'output_tokens' => 3,
+                    'cache_read_input_tokens' => 2,
+                    'cache_creation_input_tokens' => 1,
+                ],
+            ],
+        ],
+    ]);
+}
+
 function write_grok_fixture(string $home, string $cwd, string $marker): void
 {
     $grokDir = "{$home}/.grok/sessions/".rawurlencode($cwd).'/grok-session-1';
@@ -546,6 +742,22 @@ function provider_status(array $results, string $provider): ?string
     }
 
     return null;
+}
+
+/**
+ * @param list<array<string, mixed>> $results
+ *
+ * @return array<string, mixed>
+ */
+function provider_result(array $results, string $provider): array
+{
+    foreach ($results as $result) {
+        if (($result['agent'] ?? null) === $provider) {
+            return $result;
+        }
+    }
+
+    return [];
 }
 
 /**

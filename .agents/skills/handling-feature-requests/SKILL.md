@@ -47,9 +47,11 @@ through the `implementing-features` skill.
 
 Use this decision order when evidence conflicts:
 
-1. Current docs are product authority.
-2. Current tests describe expected implementation behavior only when they match the docs.
-3. Current code explains what exists, not necessarily what should exist.
+1. `PRODUCT_DECISIONS.md` states current intent: the latest dated decision on
+   a topic wins and marks which docs side is stale.
+2. Current docs are product authority.
+3. Current tests describe expected implementation behavior only when they match the docs.
+4. Current code explains what exists, not necessarily what should exist.
 
 If a new decision is needed, make it explicit in the handoff:
 
@@ -69,6 +71,8 @@ Solo todo:
 ```markdown
 ## Feature Request
 <one-paragraph outcome>
+
+Feature roadmap scratchpad: <solo://... or none, single-slice>
 
 ## Product Contract
 - Authority docs:
@@ -108,20 +112,13 @@ Solo todo:
   scratchpad plus the named slice instead of duplicating the full loop contract.
 - Include enough context for a later implementation agent to start the slice
   without reconstructing intent from the conversation.
-- Active `.orbit/` is worktree-local session state. Completed active state
-  should be archived into the persistent project archive home before worktree
-  cleanup and before rewriting `.orbit/loop.md` for a new slice. The default
-  archive home is the primary checkout's
-  `.orbit/sessions/<timestamp-feature-slug>/`, named as
+- Active `.orbit/` is worktree-local session state. Archive completed active
+  state with `bin/orbit-session-archive` before worktree cleanup and before
+  rewriting `.orbit/loop.md` for a new slice; `HARNESS.md` Session Archives is
+  the authority for archive policy and naming. Archive directories use
   `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
   compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
-  names. Archives preserve every active `.orbit/` entry except
-  `.orbit/sessions/`, including `loop.md`, `.orbit/evidence/`,
-  `.orbit/quality-gates/`, and future metadata or manifests when tooling
-  exists. `harness-signals/` remains curated distilled learning, not raw
-  session storage. Post-feature analysis and future eval construction may
-  inspect session archives as trace evidence; archive helper scripts and eval
-  wiring are later slices.
+  names.
 
 ## Implementation Handoff
 
@@ -130,6 +127,8 @@ Use `.agents/skills/implementing-features/SKILL.md` when executing this slice.
 
 Task:
 <paste the implementation handoff>
+
+Feature roadmap scratchpad: <solo://... or none, single-slice>
 
 Required context:
 - `AGENTS.md`
@@ -144,7 +143,7 @@ Return changed files, tests, verification, blockers, and risks.
 ## Stop Conditions
 
 - Stop and ask for direction if current docs contradict the requested behavior.
-- Stop and ask for direction if the request requires destructive live-node work without an ephemeral E2E plan.
+- Stop and ask for direction if the request requires destructive live-node work without a retained-topology verification plan.
 - Stop and narrow scope if the request mixes unrelated product surfaces.
 - Stop before editing repository files; switch to `implementing-features` for
   actual changes.

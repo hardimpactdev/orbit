@@ -14,7 +14,7 @@
                 ".agents/skills/implementing-features/SKILL.md",
                 ".agents/review-personas/cli-command.md"
             ],
-            "guardrail_change": "pending loop-hardening-session-guardrails commit",
+            "guardrail_change": "landed \u2014 HARNESS.md Root Routing CLI row (PTY frame capture and reviewer analysis before human UX review); .agents/skills/cli-output-pty-capture/SKILL.md; .agents/skills/implementing-features/SKILL.md PTY-before-user steps; .agents/review-personas/cli-command.md PTY artifact checks",
             "related_signals": [
                 "harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md"
             ],
@@ -81,7 +81,7 @@
             "signal_type": "review-comment",
             "guardrail_target": [
                 "harness-signals/",
-                "LOOP.md",
+                "LOOP.md.example",
                 "HARNESS_SIGNALS.md",
                 ".agents/skills/implementing-features/SKILL.md"
             ],
@@ -105,7 +105,7 @@
             "status": "guarded",
             "signal_type": "review-comment",
             "guardrail_target": [
-                "LOOP.md",
+                "LOOP.md.example",
                 "HARNESS_SIGNALS.md"
             ],
             "guardrail_change": "3eecf1c4",
@@ -171,12 +171,12 @@
                 "HARNESS.md",
                 "LOOP.md.example",
                 "HARNESS_SIGNALS.md",
-                ".agents/review-personas/post-feature-distillation.md",
+                ".agents/review-personas/post-feature-analyzer.md",
                 ".codex/hooks.json",
                 ".claude/settings.json",
                 "bin/orbit-codex-pre-tool-use-hook"
             ],
-            "guardrail_change": "38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; loop-hardening-session-guardrails; pending pre-merge-finalization-hook commit",
+            "guardrail_change": "38ff38aa; post-feature-session-review; post-feature analyzer persona slice; loop-hardening-session-guardrails; pre-merge finalization hook landed as bin/orbit-feature-finalization-check plus Codex/Claude PreToolUse hooks",
             "related_signals": [],
             "superseded_by": null,
             "tags": [
@@ -285,7 +285,7 @@
             "guardrail_target": [
                 "harness-signals/README.md",
                 "harness-signals/_template.md",
-                "LOOP.md",
+                "LOOP.md.example",
                 ".agents/skills/implementing-features/SKILL.md"
             ],
             "guardrail_change": "current signal curation slice",
@@ -555,7 +555,7 @@
                 ".agents/skills/implementing-features/SKILL.md",
                 ".agents/review-personas/cli-command.md"
             ],
-            "guardrail_change": "pending loop-hardening-session-guardrails commit",
+            "guardrail_change": "landed \u2014 HARNESS.md Done Contract raw-examples requirement; .agents/skills/implementing-features/SKILL.md raw acceptance examples and explicit deferrals; .agents/review-personas/cli-command.md raw-contract comparison",
             "related_signals": [
                 "harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md",
                 "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
@@ -643,7 +643,7 @@
                 "substrate"
             ],
             "signal_summary": "During retained-Incus re-verification of a gateway change, `composer e2e:incus -- --sync --id=<id>` was used to push fresh worktree code into a source-mounted topology. After the sync, every gateway call returned `gateway_unavailable...",
-            "reappearance_check": "If a gateway call 500s immediately after `composer e2e:incus --sync`, restart the gateway lease containers on the gateway VM first, then re-test. Only after a restart still 500s should the change itself be suspected. Stronger fix..."
+            "reappearance_check": "If a gateway call 500s immediately after `composer e2e:incus -- --sync`, restart the gateway lease containers on the gateway VM first, then re-test. Only after a restart still 500s should the change itself be suspected. Stronger fix..."
         },
         {
             "path": "harness-signals/2026-06-25-preserve-feature-worktrees-for-post-analysis.md",

@@ -66,12 +66,9 @@ workspaces or nodes.
   PTY summaries, screenshots, or pointers to Solo terminals and topology ids.
 - `.orbit/sessions/`: persisted session archives for completed active slices or
   features. The archive home must survive feature worktree cleanup; by default
-  it is the primary checkout's `.orbit/sessions/` directory. Each archive lives
-  at `.orbit/sessions/<timestamp-feature-slug>/` and is created before worktree
-  cleanup and before rewriting `.orbit/loop.md` for a new slice. Use
-  `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time, for example
-  `2026-07-01-100305-session-archive`. Do not use compact timestamps, `T`
-  separators, `Z`, or UTC offsets in archive directory names.
+  it is the primary checkout's `.orbit/sessions/` directory. Archives are
+  created before worktree cleanup and before rewriting `.orbit/loop.md` for a
+  new slice; the naming rule lives in Session Archives below.
 
 Do not commit `.orbit/`. Commit only the durable guardrail that absorbs a
 recurring signal: harness docs, skills, review personas, product/testing docs,
@@ -83,12 +80,16 @@ When an active slice or feature loop is complete and its final distillation is
 filled, archive the completed active `.orbit/` state before worktree cleanup
 and before rewriting `.orbit/loop.md` for the next slice. Copy every active
 `.orbit/` entry except `.orbit/sessions/` into the persistent project archive
-home, normally the primary checkout's
-`.orbit/sessions/<timestamp-feature-slug>/`, where
-`<timestamp-feature-slug>` uses `YYYY-MM-DD-HHMMSS-<feature-slug>` in the
-checkout's local time. Do not use compact timestamps, `T` separators, `Z`, or
-UTC offsets in archive directory names. Do not leave the soon-to-be-removed
-feature worktree's `.orbit/sessions/` as the only archive copy.
+home, normally the primary checkout's `.orbit/sessions/`. Do not leave the
+soon-to-be-removed feature worktree's `.orbit/sessions/` as the only archive
+copy.
+
+Archive directories are named `YYYY-MM-DD-HHMMSS-<feature-slug>` in the
+checkout's local time, for example `2026-07-01-100305-session-archive`.
+Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive
+directory names.
+`bin/orbit-session-archive` generates and enforces the archive name; do not
+hand-build archive directories.
 
 A session archive should preserve at minimum:
 
@@ -98,23 +99,28 @@ A session archive should preserve at minimum:
 - `agent-sessions/` with the provider session files that backed the loop
 
 Use `bin/orbit-session-archive` to create the session archive. It copies every
-active `.orbit/` entry except `.orbit/sessions/`, then runs
-`bin/orbit-agent-session-archive` into
-`.orbit/sessions/2026-07-01-100305-session-archive/agent-sessions/`. The
-provider helper keeps the existing token-usage summary behavior, safely writes
-an empty manifest when no explicit Solo/process/project context is available,
-and writes provider-grouped archives when session files are found. Codex,
-Claude, and Grok archives include `manifest.json`, `usage.json`,
-`messages.jsonl`, and `raw/` copies of the session files used to derive them.
-Antigravity is represented explicitly as `unsupported` until a reliable local
-session-file contract is known.
+active `.orbit/` entry except `.orbit/sessions/`, runs
+`bin/orbit-agent-session-archive` into the archive's `agent-sessions/`
+directory, and then writes the archive pointer back into the active
+`.orbit/loop.md` under `## Evidence Links` so the archived and active `loop.md`
+stay byte-identical. Reruns are idempotent: when the newest archive for the
+same slug already matches the active `loop.md`, the tool refreshes that archive
+in place (`mode=refreshed`) instead of minting a duplicate. It exits non-zero
+on missing source state, invalid archive names, mismatched existing archives,
+or copy failures, and prints a stderr WARNING naming the missing provider
+context when it can only write an empty agent-sessions manifest. Provider
+archives are grouped per LLM and include `manifest.json`, `usage.json`,
+`messages.jsonl`, and `raw/` copies of the session files used to derive them;
+missing or unsupported providers appear as explicit manifest entries with a
+`checked` list of the paths searched. See the tool's `--help` for slug,
+timestamp, and destination options.
 
 Archive creation must exclude the existing `.orbit/sessions/` tree so archives
 do not recurse into prior session copies.
 
 `harness-signals/` remains curated distilled learning and guardrail history, not
-raw session storage. Post-feature analysis and future eval construction may
-inspect session archives as trace evidence. Eval wiring remains a later slice.
+raw session storage. Post-feature analysis and eval construction may inspect
+session archives as trace evidence.
 
 ## Agent Discovery Path
 
@@ -252,37 +258,81 @@ instructions should point here instead of restating this policy.
 Claude Code `PreToolUse` hooks call the same gate when those hook surfaces
 intercept a boundary command, but hook status is diagnostic only. Use the helper
 directly before real merge or cleanup boundaries; run it with no arguments for
-current command usage.
+current command usage. Explicit invocations that cannot be classified as a
+merge/cleanup boundary exit 64 with a message instead of silently passing.
+
+Validate the packet early with the dry-run:
+`bin/orbit-feature-finalization-check --lint [path-to-loop.md]` (default
+`./.orbit/loop.md`) checks only the Final Distillation packet shape — no git
+action, artifacts, or diff needed — prints every PASS/WARNING/BLOCKED finding,
+and exits 0 or 2. Use it as a first checkpoint while filling `.orbit/loop.md`,
+not only at the boundary. It also flags a `complete` outcome combined with a
+blocked verification row.
+
+On every classified merge/cleanup boundary the gate prints
+`FINALIZATION: PASS <action>` on stdout, or `FINALIZATION: BLOCKED <first
+failing check>` as the first stderr line with the offending line echoed.
+Unrelated commands stay silent and exit 0.
 
 Cleanup commands are valid only after the post-feature signal audit is complete
 or the user explicitly approves cleanup. Until then, leave the completed
 feature worktree and branch intact.
 
 The gate is intentionally narrow: it only inspects git merge and
-feature-cleanup boundaries, then blocks when a targeted feature worktree has no
-completed `.orbit/loop.md` `Final Distillation` section, when the loop outcome
-is not exactly `complete` or `complete + loop improvement`, when required
-verification rows are missing, or when required verification is still recorded
-as blocked, pending, skipped, missing, deferred, unresolved, or not run. It
-derives the required proof from the branch diff and reads existing
+feature-cleanup boundaries. It blocks when:
+
+- the targeted feature worktree has no completed `.orbit/loop.md`
+  `Final Distillation` section;
+- the loop outcome is not exactly `complete`, `blocked`, or
+  `complete + loop improvement` (trimmed; surrounding backticks allowed); only
+  `complete` and `complete + loop improvement` can pass a merge/cleanup
+  boundary, `blocked` cannot;
+- the loop outcome, either `Required verification` row, or a signal-outcome
+  row contains placeholder text such as `pending`, `tbd`, `todo`, `not yet`,
+  or an unexpanded `<angle-bracket-template>`;
+- required verification rows are missing, or still recorded as blocked,
+  pending, skipped, missing, deferred, unresolved, or not run;
+- on merge, the feature branch tip equals the merge base — there are no
+  commits to merge;
+- on merge, the feature worktree (found via `git worktree list`) has
+  uncommitted tracked changes;
+- on cleanup, `git worktree remove` or `git branch -d`/`-D` runs without a
+  primary-checkout `.orbit/sessions/` archive for the branch named `<slug>` or
+  `YYYY-MM-DD-HHMMSS-<slug>` that contains `loop.md` and
+  `agent-sessions/manifest.json`; create it with `bin/orbit-session-archive`.
+
+It derives the required proof from the branch diff and reads existing
 `.orbit/quality-gates/` artifacts instead of rerunning gates.
 
 The mechanical contract is label-based. Keep the exact Markdown bullet-label
 lines from `LOOP.md.example`: `- Loop outcome:`, `- Required verification:`,
-`- Accepted durable updates:`, `- Rejected or already-covered signals:`,
-`- Deferred follow-ups:`, and `- No-new-signal rationale:`. At least one of the
+`- Fresh analyzer:`, `- Accepted durable updates:`,
+`- Rejected or already-covered signals:`, `- Deferred follow-ups:`, and
+`- No-new-signal rationale:`. At least one of the
 signal-outcome labels must contain a meaningful outcome before merge or cleanup.
 Custom headings, bare label lines without `- ` and `:`, or equivalent prose can
-support the explanation, but they do not satisfy the gate by themselves.
+support the explanation, but they do not satisfy the gate by themselves. The
+`Appendix: Compact Single-Slice Variant` in `LOOP.md.example` keeps every
+mechanical label and passes the same `--lint` check.
+
+Merge packets must include a `- Fresh analyzer:` row; `deferred - <reason>` is
+accepted as a non-blocking WARNING so analyzer infrastructure failures are
+recorded honestly. The gate also warns without blocking when
+`Candidate Signals While Working` is empty or `none` while accepted durable
+updates are non-none — that shape suggests signals were reconstructed post-hoc
+instead of collected during the loop.
 
 Required verification rows use the status-first shape and must include retained
 topology proof and `composer quality-check`:
 `- Retained topology proof: passed | blocked | not applicable - <evidence or reason>`.
 If the feature required a lane and it is blocked, the feature outcome is
 `blocked`; do not write `complete` with a deferred verification follow-up.
-Docs-only diffs can satisfy the gate with a successful `composer docs-lint` or
-broader `composer quality-check` artifact. Other diffs require successful
-`composer quality-check` artifact evidence. Topology-relevant PHP diffs
+Docs-class diffs — `*.md` anywhere including root level, plus non-PHP files
+under `.agents/**`, `docs/**`, `harness-signals/**`, and `LOOP.md.example` —
+can satisfy the gate with a successful `composer docs-lint` or broader
+`composer quality-check` artifact. Any other diff requires successful
+`composer quality-check` artifact evidence. Topology-relevant PHP diffs —
+non-test PHP outside `apps/docs/` —
 additionally require retained topology proof to be `passed`; docs-app tooling
 PHP under `apps/docs/` is excluded unless the slice also changes topology
 behavior. A passed retained topology row names the topology id/kind, checkout
@@ -313,10 +363,14 @@ default finalization path.
 
 ## Post-Feature Signal Audit
 
-Normal feature work does not need an outer loop-improver watcher. Kick off the
-feature implementer through the implementation workflow, let it complete the
-feature loop, preserve the worktree and `.orbit/` artifacts, then run the
-post-feature analyzer against the implementation session and artifacts.
+Normal feature work runs without a standing watcher by default. An explicitly
+requested read-only loop-observer lane may run during a loop; see
+`.agents/skills/loop-observer/SKILL.md`. Kick off the feature implementer
+through the implementation workflow, let it complete the feature loop, and
+preserve the worktree and `.orbit/` artifacts. The fresh post-feature analyzer
+runs before merge as part of final distillation — the merge packet's
+`- Fresh analyzer:` row records the result — and signal-audit adjudication
+completes before cleanup.
 
 The analyzer is read-only. It inspects the feature orchestrator's Codex/Solo
 session messages, active `.orbit/loop.md`, `.orbit/evidence/`,
@@ -324,8 +378,8 @@ session messages, active `.orbit/loop.md`, `.orbit/evidence/`,
 Solo scratchpads, worker and reviewer reports, retained terminal or PTY
 evidence, verification output, human corrections, and the final diff or commit.
 It reports whether the loop was proper, flawed, or blocked by missing evidence.
-Archive helper tooling and eval wiring that mine session archives are later
-slices; the analyzer may use archives as trace evidence when they exist.
+The analyzer may use `.orbit/sessions/` archives as trace evidence when they
+exist.
 
 The analyzer checks guardrail decisions instead of supervising live work:
 
@@ -380,11 +434,8 @@ separate feature with its own final gate.
 
 Within a feature worktree, `.orbit/loop.md` is the current-slice contract, not
 the feature history. Before rewriting it for the next slice, archive the
-completed active `.orbit/` state into the persistent project archive home,
-normally the primary checkout's `.orbit/sessions/<timestamp-feature-slug>/`,
-named as `YYYY-MM-DD-HHMMSS-<feature-slug>` in local time, and exclude
-`.orbit/sessions/` from the copy. Do not use compact timestamps, `T`
-separators, `Z`, or UTC offsets in archive directory names. Keep prior slice
+completed active `.orbit/` state with `bin/orbit-session-archive` (see Session
+Archives for the archive home and naming rule). Keep prior slice
 outcomes in the feature scratchpad, session archives, and the actual code
 history in Git. The top of `.orbit/loop.md` should name the feature scratchpad,
 summarize completed slices in one line each, and identify the current slice so a
@@ -402,20 +453,20 @@ make the gate clear.
 Merge and cleanup are separate boundaries.
 
 - Merge happens after the feature branch is committed, verified, final
-  distillation is filled, and the merge boundary gate passes. Leave the
-  completed feature worktree and branch intact after merge by default.
-- Post-feature signal audit happens after merge while the worktree is still
-  available. Review `.orbit/loop.md`, `.orbit/evidence/`,
+  distillation is filled — including the fresh post-feature analyzer, which
+  runs before merge as part of final distillation — and the merge boundary
+  gate passes. Leave the completed feature worktree and branch intact after
+  merge by default.
+- Signal-audit adjudication completes before cleanup, while the worktree is
+  still available. Review `.orbit/loop.md`, `.orbit/evidence/`,
   `.orbit/quality-gates/`, Solo scratchpads, reviewer output, and retained
   terminal or PTY artifacts. Confirm accepted, rejected, already-covered, and
   deferred signals were processed and that no harness signal was lost.
 - Worktree cleanup happens only after that audit is complete or the user
   explicitly approves cleanup. Archive the completed active `.orbit/` session
-  into the persistent project archive home before cleanup, normally the primary
-  checkout's `.orbit/sessions/<timestamp-feature-slug>/`, named as
-  `YYYY-MM-DD-HHMMSS-<feature-slug>` in local time. Do not use compact
-  timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.
-  Exclude `.orbit/sessions/` from the archive copy. Follow the Merge Boundary
+  with `bin/orbit-session-archive` before cleanup (see Session Archives for the
+  archive home and naming rule; the merge boundary gate requires the archive
+  before `git worktree remove` or `git branch -d`). Follow the Merge Boundary
   Gate above before running cleanup.
 - Feature completion cleanup happens only after the user confirms the live
   topology works as expected, or explicitly says the feature can be considered
@@ -473,6 +524,7 @@ only when ownership can stay clear.
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
 | Code / CLI reviewer persona | Solo-managed Claude Opus reviewer (medium effort) | Focused code or CLI review from the assigned persona, changed diff, implementation report, and evidence | Implementation, product redefinition, merge approval, cleanup, or final promotion decisions |
 | Post-feature analyzer | Solo-managed Claude Opus analyzer (medium effort) | Read-only review of Codex/Solo session messages, `.orbit` artifacts, verification evidence, final diff, and guardrail decisions | Live steering, implementation, harness edits, merge approval, cleanup, or final promotion decisions |
+| Loop observer | Solo-managed read-only observer; explicit request only, never a default lane | Live read-only observation of an active loop per `.agents/skills/loop-observer`: wrong turns, friction, and timing notes without interrupting the run | Steering, implementation, reviews, merge approval, cleanup, or spawning workers |
 | Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
 
 The active feature-owner thread is the source of work. It can run in Codex CLI,

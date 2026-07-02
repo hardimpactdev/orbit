@@ -126,14 +126,18 @@ under the documented key. Command-specific state belongs beside the entity in
 another object, not as ad hoc fields on the entity. The app family defines its
 canonical `success.data.app` DTO in `docs/domains/5_app/README.md#app-json-entity`.
 
-All commands that return data must support `--json`. `OrbitCommand` already
-includes `wantsJson()`, `outputJsonSuccess()`, and `respondWithSuccess()`.
-Commands do not need `WithJsonOutput` unless they are decoupled from
-`OrbitCommand`.
+All commands that return data must support `--json`. Every command base
+(`GatewayCommand`, `LocalOnlyCommand`, `BootstrapGatewayCommand`) includes
+`App\Commands\Concerns\EmitsCanonicalEnvelopes`, which provides `wantsJson()`,
+`wantsStreamingJson()`, `wantsMachineJson()`, `allowsInteractiveInput()`,
+`renderSuccess()`, and `renderFailure()`. The envelope shapes themselves come
+from `Orbit\Core\Http\JsonEnvelope`.
 
-Use `respondWithSuccess($dto->toArray(), fn () => ...)` for the common case. Use
-`respondWithData()` when the command has a `renderHuman()` override and both
-local and forwarded execution paths share the same rendering logic.
+Use `renderSuccess($data, $meta)` for the common case; it emits the success
+envelope in JSON mode, unwraps an inbound gateway `success` envelope so the CLI
+never emits `success.success`, and falls back to plain `key: value` lines in
+human mode. Commands with richer human output branch on `wantsJson()` and keep
+both renderers backed by the same response array.
 
 ## Input Resolution
 
@@ -153,19 +157,26 @@ Use optional positional arguments in docs as `[name]`. In Laravel signatures,
 use optional arguments or options and resolve them through the selected input
 mode.
 
-Use `CommandInputResolver` for the simple argument-or-prompt-or-fail pattern:
-reads from an argument or option, falls back to a prompt callable in interactive
-input mode, and throws in non-interactive input mode when absent. Complex
-resolution involving database queries, multi-step prompts, or conditional
-branching stays inline in the command.
+For the simple argument-or-prompt-or-fail pattern, read the value with the
+`ResolvesHostContext` helpers (`stringArgument()`, `stringOption()`), fall back
+to a Laravel Prompts primitive when `allowsInteractiveInput()` is true, and
+otherwise return a `validation_failed` error. For entity selection, use the
+shared `PromptsForGatewayRegistryEntities` prompts (`promptForVisibleApp()`,
+`promptForVisibleNode()`, `promptForVisibleWorkspace()`,
+`promptForVisibleSchedule()`), which render a `datatable` in interactive input
+mode. Complex resolution involving gateway queries, multi-step prompts, or
+conditional branching stays inline in the command.
 
 ```php
-$name = app(CommandInputResolver::class)->requiredString(
-    $this,
-    'name',
-    isArgument: true,
-    prompt: fn () => \Laravel\Prompts\text('App name'),
-);
+$name = $this->stringArgument('name');
+
+if ($name === null && $this->allowsInteractiveInput()) {
+    $name = trim(\Laravel\Prompts\text(label: 'App name', required: true));
+}
+
+if ($name === null) {
+    return $this->renderFailure('validation_failed', 'App name is required.', ['field' => 'name']);
+}
 ```
 
 ## Terminal Prompt Mapping
@@ -264,28 +275,32 @@ destructive consent before side effects begin.
   behavior, missing-consent failure, cancellation failure, and tests for both
   prompt consent and `--force` consent.
 
+The real exemplar is `App\Commands\App\AppRemoveCommand`:
+
 ```php
-protected $signature = 'node:remove {name?} {--force}';
+use function Laravel\Prompts\confirm;
 
-public function handle(): int
+protected $signature = 'app:remove
+    {app? : App selector}
+    {--force : Confirm destructive operation without prompting}
+    {--json : Output JSON}';
+
+private function confirmRemoval(string $selector): bool|int
 {
-    $name = $this->resolveNodeName();
-
-    if (! $this->isInteractiveInput() && ! $this->option('force')) {
-        return $this->failWithMessage('Use --force to remove this node.');
+    if ($this->wantsJson() || ! $this->input->isInteractive()) {
+        return $this->renderFailure('validation_failed', 'Use --force to remove this app.', ['field' => 'force']);
     }
 
-    if (
-        $this->isInteractiveInput()
-        && ! $this->option('force')
-        && ! \Laravel\Prompts\confirm("Remove node {$name}? This cannot be undone.", default: false)
-    ) {
-        return $this->failWithMessage('Operation cancelled.');
-    }
-
-    // proceed
+    return confirm(
+        label: "Remove app '{$selector}' and all owned artifacts? This cannot be undone.",
+        default: false,
+    );
 }
 ```
+
+Without `--force`, non-interactive input mode (including `--json`) fails with
+`validation_failed` before side effects; interactive input mode prompts and
+treats a declined confirmation as cancellation.
 
 ## Partial Enactment
 

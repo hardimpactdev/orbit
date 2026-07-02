@@ -21,12 +21,17 @@ navigation aid, not product authority.
    `bin/orbit-prepare-worktree`; do not edit the primary checkout directly.
 3. Copy `LOOP.md.example` to `.orbit/loop.md` for non-trivial work and keep it
    current.
-4. Read the authority docs first, then align docs, tests, and code in that
+4. Make `bin/orbit-feature-finalization-check --lint .orbit/loop.md` a
+   first-checkpoint habit: lint the packet shape early and after edits, not
+   only at the merge boundary.
+5. Read the authority docs first, then align docs, tests, and code in that
    order when behavior changes.
-5. Run the narrowest useful verification while developing.
-6. Before merge or cleanup, run the finalization helper with the actual git
+6. Run the narrowest useful verification while developing.
+7. Before merge or cleanup, run the finalization helper with the actual git
    command and archive `.orbit/` to the primary checkout.
-7. For disposable Solo agents, capture needed output, verify the artifact, then
+8. Archive names are tool-generated: run `bin/orbit-session-archive` instead of
+   hand-writing archive timestamps or directories.
+9. For disposable Solo agents, capture needed output, verify the artifact, then
    stop or delete the process in a separate command.
 
 ## Search Route

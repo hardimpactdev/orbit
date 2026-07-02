@@ -3,8 +3,9 @@
 Orbit is a command-first PHP/Laravel monorepo for local development,
 provisioning, hosting workflows, and node orchestration.
 
-For the first five-minute route through repo work, read
-[`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md) before opening deeper harness docs.
+After this file, read [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md) for the first
+five-minute route, then [`HARNESS.md`](HARNESS.md). That is the same order as
+the `HARNESS.md` agent discovery path, which continues the route from there.
 
 Orbit is an LLM-first monorepo. Repo development harness guidance lives at the
 root; see [`HARNESS.md`](HARNESS.md) for scope, agent discovery path, and how
@@ -34,10 +35,13 @@ normal agent search surface. See [`AGENT_FAST_PATH.md`](AGENT_FAST_PATH.md).
 - `apps/docs/` is the Laravel 13 documentation and Librarian application. It
   owns the product documentation under `apps/docs/content/` and docs-linting.
 - `apps/cli/` is the Laravel Zero local CLI and executor application.
+- `apps/e2e/` is the external Orbit end-to-end harness application; its
+  `composer test:e2e*` lanes are manual-only.
 - `apps/reverb/` is the dedicated Laravel Reverb runtime application packaged
   into the `hardimpact/orbit-reverb` image for websocket role nodes.
 - `packages/core/` is the shared Orbit package for contracts, helpers, and
   cross-application primitives.
+- `packages/sdk/` is the Laravel SDK for consuming the Orbit gateway API.
 - Each app/package owns its own `composer.json`, test config, Mago config,
   and Rector config. Root Composer commands only orchestrate
   those app/package-local commands.
@@ -70,28 +74,18 @@ product authority and are not linted as product docs.
 
 ## Development and debugging Rules
 
-- Feature-request handling is intake only: use it to clarify intent. When a
-  request is too large for one implementation slice, capture a lightweight Solo
-  scratchpad roadmap with rough slice order and update it at slice boundaries.
-  This is a pre-dispatch gate: before preparing the implementation worktree or
-  spawning workers, create or identify the feature roadmap scratchpad and carry
-  its `solo://` URL into the handoff. If execution moves to another Solo
-  project or machine, the execution-project scratchpad must mirror the source
-  roadmap's feature request, slice order, current-slice acceptance criteria,
-  deferred slices, and open decisions instead of only linking back.
-  `.orbit/loop.md` is active-slice state and is not a substitute for the
-  roadmap. Create Solo todos only when a slice needs asynchronous assignment,
-  queueing, or explicit tracking outside the active orchestrator thread. Do not
-  update repository files while handling the request.
+- Feature-request handling is intake only: clarify intent and do not update
+  repository files while handling the request. Multi-slice requests need a
+  Solo scratchpad roadmap before worker dispatch, cross-project handoffs must
+  mirror the roadmap substance, and Solo todos stay thin; see `HARNESS.md`
+  Feature Slices for the pre-dispatch gate and those rules.
 - Actual implementation happens through `.agents/skills/implementing-features`
   in an isolated worktree. That includes documentation updates, product-decision
   ledger entries, tests, and code changes. Read that skill before starting
   implementation work.
 - Before executing a goal, feature, or quality-gate tuning pass, apply the
-  `HARNESS.md` parallelization gate. Being part of one goal is not a dependency:
-  independent slices and lanes should run through separate Solo workers by
-  default, and a serial plan must name the concrete dependency, shared state,
-  provider-capacity limit, or merge-order reason.
+  `HARNESS.md` parallelization gate: parallel dispatch of independent slices is
+  the default, and a serial plan must name its concrete reason.
 - Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
   implementation worktrees. This is Orbit's worktree setup path and takes
   priority over generic worktree skills or ad hoc `git worktree add`. Agents

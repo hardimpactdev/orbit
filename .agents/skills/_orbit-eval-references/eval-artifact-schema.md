@@ -35,7 +35,7 @@ tags:
 id:
 domain:
 suite_id:
-source:
+source: # doc path, issue ref, live-node signal, or archive-slug (a .orbit/sessions/<timestamp>-<slug> archive name)
 intent:
 input:
 user_simulation:
@@ -185,4 +185,5 @@ comparative_validity:
 - Separate trial-level verdicts from run-level aggregate scores.
 - Separate grader failures from agent failures.
 - For comparative fresh-agent evals, record the condition, pair id, prompt delta, visible artifacts, tracked metrics, and contamination status per trial.
+- `source` fields accept an archive-slug value: the `.orbit/sessions/<timestamp>-<slug>` archive directory name, optionally suffixed with the provider/session path inside `agent-sessions/`.
 - Keep private session details in scratchpads unless the user approves repo fixtures.
