@@ -623,6 +623,14 @@ impl LocalJobExecutor {
         "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     }
 
+    fn script_with_launchd_safe_path(script: &str) -> String {
+        format!(
+            "export PATH=\"{}:${{PATH:-}}\"\n{}",
+            Self::launchd_safe_path(),
+            script
+        )
+    }
+
     fn converge_app_dev(&self, payload: &AppDevConvergencePayload) -> Result<(), GatewayError> {
         for tool in &payload.tools {
             self.converge_tool(*tool)?;
@@ -644,6 +652,7 @@ impl LocalJobExecutor {
     }
 
     fn run_script(&self, label: &str, script: &str) -> Result<(), GatewayError> {
+        let script = Self::script_with_launchd_safe_path(script);
         let output = Command::new("/bin/bash")
             .arg("-lc")
             .arg(script)
@@ -1293,6 +1302,14 @@ bearer_token = "dev-token-placeholder"
         assert_eq!(
             LocalJobExecutor::launchd_safe_path(),
             "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        );
+    }
+
+    #[test]
+    fn launchd_safe_path_export_keeps_login_shells_from_hiding_homebrew() {
+        assert_eq!(
+            LocalJobExecutor::script_with_launchd_safe_path("docker --version"),
+            "export PATH=\"/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}\"\ndocker --version"
         );
     }
 
