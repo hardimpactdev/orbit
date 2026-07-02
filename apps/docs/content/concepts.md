@@ -233,6 +233,10 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App analytics binding**
 - **Reverb app credentials**
 - **App agent IDE adapter**
+- **App dependency audit posture**
+- **Dependency audit manager**
+- **Dependency audit status**
+- **Dependency audit severity bands**
 - **App registration**
 - **App adoption**
 - **App adoption flag**

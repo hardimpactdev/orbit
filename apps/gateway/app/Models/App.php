@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
 
 /**
  * @property string $name
+ * @property int $id
  * @property int $node_id
  * @property string $environment
  * @property string|null $domain
@@ -48,6 +49,7 @@ use Illuminate\Support\Str;
  * @property-read Collection<int, Schedule> $schedules
  * @property-read AppAnalyticsBinding|null $analyticsBinding
  * @property-read AppWebSocketBinding|null $webSocketBinding
+ * @property-read Collection<int, AppDependencyAuditSummary> $dependencyAuditSummaries
  * @property-read Collection<int, Workspace> $workspaces
  */
 class App extends Model
@@ -230,6 +232,14 @@ class App extends Model
     public function analyticsBinding(): HasOne
     {
         return $this->hasOne(AppAnalyticsBinding::class);
+    }
+
+    /**
+     * @return HasMany<AppDependencyAuditSummary, $this>
+     */
+    public function dependencyAuditSummaries(): HasMany
+    {
+        return $this->hasMany(AppDependencyAuditSummary::class);
     }
 
     /**

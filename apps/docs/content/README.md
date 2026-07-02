@@ -30,3 +30,5 @@
 21. [Analytics](domains/21_analytics/analytics.md)
 22. [Extension](domains/22_extension/extension.md)
 23. [Codex](domains/23_codex/codex.md)
+24. [Solo](domains/24_solo/solo.md)
+25. [Skill](domains/25_skill/skill.md)

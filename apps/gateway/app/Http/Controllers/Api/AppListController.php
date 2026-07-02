@@ -153,7 +153,7 @@ final readonly class AppListController implements Loggable
         ?string $environment,
     ): Collection {
         return App::query()
-            ->with(['node', 'workspaces'])
+            ->with(['node', 'workspaces', 'dependencyAuditSummaries'])
             ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
             ->when($node
             !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where(

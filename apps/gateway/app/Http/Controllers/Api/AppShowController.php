@@ -11,6 +11,7 @@ use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Services\Apps\AppAgentIdeDefaults;
 use App\Services\Apps\AppResponsePayload;
+use App\Services\Apps\DependencyAudit\AppDependencyAuditAggregatePayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
@@ -78,6 +79,8 @@ final class AppShowController implements Loggable
      */
     private function detailsPayload(App $app): array
     {
+        $app->loadMissing('dependencyAuditSummaries');
+
         return [
             'domain' => $this->domain($app),
             'document_root' => $app->documentRootPath(),
@@ -86,6 +89,7 @@ final class AppShowController implements Loggable
                 'host' => $app->node?->host,
             ],
             'agent_ide' => $this->agentIdePayload($app),
+            'dependency_audits' => app(AppDependencyAuditAggregatePayload::class)->managerDetailsFor($app),
             'workspaces' => [],
             'processes' => [],
             'routes' => [

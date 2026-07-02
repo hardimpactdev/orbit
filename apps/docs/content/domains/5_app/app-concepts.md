@@ -141,6 +141,28 @@ metadata derived from the default node role.
 - **App agent IDE adapter:** Optional gateway-owned override of the owning
   node's default agent IDE adapter for app and workspace workflows. Set,
   cleared, and shown through `app:agent-ide`.
+- **App dependency audit posture:** Gateway-owned compact summary of a read-only
+  package-manager audit for an app's source path. The v1 storage and presentation
+  slice stores per-manager status, severity counts, bounded advisory detail, and
+  audit timestamps — not full Composer, npm, or Bun package inventories. The
+  remote runner that refreshes these summaries from app nodes is a follow-up
+  slice.
+- **Dependency audit manager:** Supported package-manager audit lane for one app
+  path. V1 managers are `composer`, `npm`, and `bun`. Each manager is detected
+  independently from lockfiles and available binaries on the owning app node.
+- **Dependency audit status:** Per-manager or aggregate posture state. `clean`
+  means an audit succeeded with zero findings, and `findings` means the audit
+  returned one or more advisories. `not_applicable` means no supported lockfile
+  exists for that manager. `unsupported` means manager audit JSON or binary
+  support is missing, including Bun when no binary is on PATH. `failed` means
+  the audit could not complete because of missing binary, malformed JSON,
+  timeout, or non-finding exit codes. `unknown` means no stored audit summary
+  exists yet.
+- **Dependency audit severity bands:** Headline counts exposed on app list/show
+  JSON. `danger` aggregates manager-native `critical` and `high` severities.
+  `warning` aggregates `moderate`, `medium`, `low`, and `unknown`/unclassified
+  severities. Exit code `1` from `composer audit --format=json` or
+  `npm audit --json` means findings were returned, not command failure.
 
 ## Lifecycle
 
