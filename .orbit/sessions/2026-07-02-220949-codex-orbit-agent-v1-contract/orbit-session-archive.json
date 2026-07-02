@@ -1,0 +1,35 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T20:09:50+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-v1-contract/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-220949-codex-orbit-agent-v1-contract",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-02-220949-codex-orbit-agent-v1-contract/agent-sessions",
+    "copied_entries": [
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": [
+        {
+            "solo_process_id": 2231,
+            "process_name": "orbit-agent-v1-contract-orchestrator",
+            "command": "codex --dangerously-bypass-approvals-and-sandbox --cd /Users/nckrtl/orbit/.worktrees/codex-orbit-agent-v1-contract",
+            "agent": "codex",
+            "process_metadata_source": "solo_cli",
+            "artifact_cwd": "/Users/nckrtl/orbit/.worktrees/codex-orbit-agent-v1-contract",
+            "status": "ok",
+            "source": "codex_jsonl_token_count",
+            "metric_confidence": "measured",
+            "artifact_match": "cwd",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T21-39-49-019f2458-3ae2-7d52-9bc7-0dcc6dffb9d1.jsonl",
+            "input_tokens": 35052514,
+            "output_tokens": 68416,
+            "reasoning_tokens": 21010,
+            "cached_input_tokens": 34353024,
+            "total_tokens": 35120930,
+            "context_window": 258400,
+            "archive_path": "codex/orbit-agent-v1-contract-orchestrator-2231"
+        }
+    ]
+}

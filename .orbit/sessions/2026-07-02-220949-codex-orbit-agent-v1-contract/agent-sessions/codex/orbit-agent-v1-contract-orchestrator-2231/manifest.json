@@ -1,0 +1,17 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "orbit-agent-v1-contract-orchestrator-2231",
+    "relative_dir": "codex/orbit-agent-v1-contract-orchestrator-2231",
+    "solo_process_id": 2231,
+    "process_name": "orbit-agent-v1-contract-orchestrator",
+    "source": "codex_jsonl_token_count",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T21-39-49-019f2458-3ae2-7d52-9bc7-0dcc6dffb9d1.jsonl",
+    "raw_files": [
+        "rollout-2026-07-02T21-39-49-019f2458-3ae2-7d52-9bc7-0dcc6dffb9d1.jsonl"
+    ],
+    "usage_path": "usage.json",
+    "messages_path": "messages.jsonl",
+    "message_count": 203
+}
