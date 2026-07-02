@@ -24,8 +24,10 @@ trace evidence; this ledger remains curated distilled learning and guardrail
 history, not raw session storage. Before a candidate becomes a record or
 guardrail, the fresh post-feature analyzer should classify the completed loop
 and the feature orchestrator should adjudicate it against `HARNESS_SIGNALS.md`.
-Post-feature analysis and future eval construction may inspect session archives
-as trace evidence, but archive helper tooling and eval wiring are later slices.
+Post-feature analysis and eval construction may inspect session archives as
+trace evidence: the archive helper tooling exists (`bin/orbit-session-archive`,
+`bin/orbit-agent-session-archive`) and session archives are a preferred eval
+trace source (see `.agents/skills/_orbit-eval-references/session-mining.md`).
 A reviewed `no durable guardrail needed` result is healthy; do not add a record
 just to prove the review happened.
 
@@ -163,8 +165,8 @@ Do not replace `harness-signals/` with raw session archives under
 record here. Completed active `.orbit/` state belongs in
 the persistent project archive home before worktree cleanup or before rewriting
 `.orbit/loop.md` for a new slice. The default archive home is the primary
-checkout's `.orbit/sessions/<timestamp-feature-slug>/`, named as
-`YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
-compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
-names. Archive creation copies every active `.orbit/` entry except
-`.orbit/sessions/` to avoid recursive copies.
+checkout's `.orbit/sessions/<timestamp-feature-slug>/`.
+`bin/orbit-session-archive` generates and enforces the archive directory name;
+run it instead of hand-writing timestamps, and see HARNESS.md Worktree-Local
+State for the naming contract. Archive creation copies every active `.orbit/`
+entry except `.orbit/sessions/` to avoid recursive copies.

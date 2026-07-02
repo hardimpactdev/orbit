@@ -62,7 +62,10 @@ if (array_key_exists('help', $options)) {
         <source-orbit-dir>/loop.md for Solo process ids and passes them as a
         comma-separated --solo-process-id list. Without discovered process ids,
         agent session archiving safely writes an empty manifest and a WARNING is
-        printed naming the missing context.
+        printed naming the missing context. Discovered process ids that cannot
+        be resolved do not abort the archive: each one is reported with a
+        WARNING and recorded in the agent-sessions manifest with status
+        solo_process_not_found, and the archive completes normally.
         EOF);
 
     exit(0);
@@ -537,30 +540,45 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
         }
     }
 
-    [$exitCode, $output] = runCommand($command);
+    [$exitCode, $stdout, $stderr] = runCommand($command);
+
+    if ($stderr !== '') {
+        fwrite(STDERR, rtrim($stderr, "\n") . PHP_EOL);
+    }
 
     if ($exitCode !== 0) {
-        fwrite(STDERR, $output . PHP_EOL);
+        fwrite(STDERR, $stdout . PHP_EOL);
         exit($exitCode);
     }
 
-    $payload = json_decode($output, true);
+    $payload = json_decode($stdout, true);
 
     return is_array($payload) ? $payload : [];
 }
 
 /**
+ * Keeps the child's stderr separate from its stdout so warnings on successful
+ * runs pass through to the operator without corrupting the JSON payload.
+ *
  * @param list<string> $command
  *
- * @return array{0: int, 1: string}
+ * @return array{0: int, 1: string, 2: string}
  */
 function runCommand(array $command): array
 {
+    $stderrPath = tempnam(sys_get_temp_dir(), 'orbit-session-archive-stderr-');
+    $redirect = $stderrPath === false ? '2>&1' : '2>' . escapeshellarg($stderrPath);
     $output = [];
     $exitCode = 0;
-    exec(implode(' ', array_map('escapeshellarg', $command)) . ' 2>&1', $output, $exitCode);
+    exec(implode(' ', array_map('escapeshellarg', $command)) . ' ' . $redirect, $output, $exitCode);
+    $stderr = '';
 
-    return [$exitCode, implode("\n", $output)];
+    if ($stderrPath !== false) {
+        $stderr = (string) file_get_contents($stderrPath);
+        unlink($stderrPath);
+    }
+
+    return [$exitCode, implode("\n", $output), $stderr];
 }
 
 function slugify(string $value): string

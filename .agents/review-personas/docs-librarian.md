@@ -24,8 +24,12 @@ VERDICT: <pass|findings|blocked>
 
 ## Default Agent
 
-Spawn per the Solo Role Matrix in HARNESS.md. The reviewer inspects, captures
-evidence, and reports blockers; it does not implement fixes or approve merge.
+Spawn per the Solo Role Matrix in HARNESS.md. Run documentation/librarian
+workers and substantial docs-focused reviews as Codex through Solo: discover
+the enabled `Codex` tool with `list_agent_tools`, then `spawn_agent`. If Codex
+is not available through Solo, stop and report the blocker instead of
+substituting another model. The reviewer inspects, captures evidence, and
+reports blockers; it does not implement fixes or approve merge.
 
 Use this reviewer for Orbit documentation changes, documentation-heavy feature
 handoffs, command contract updates, product authority edits, and implementation
@@ -35,13 +39,6 @@ This is a focused reviewer persona. It is not the full docs drift audit. Use
 `.agents/skills/auditing-docs-drift/SKILL.md` only when the user explicitly asks
 for a broad docs consistency scan, contradiction audit, stale terminology sweep,
 or anchor audit.
-
-## Default Agent
-
-Run documentation/librarian workers and substantial docs-focused reviews as
-Codex through Solo. Discover the enabled `Codex` tool with `list_agent_tools`,
-then `spawn_agent`. If Codex is not available through Solo, stop and report the
-blocker instead of substituting another model.
 
 ## Required Context
 

@@ -42,6 +42,11 @@ if (array_key_exists('help', $options)) {
           --only-ok                     Emit only successful provider extractions.
 
         Without an explicit Solo/process/project/fixture context, this command prints [] and exits 0.
+
+        Target process ids that resolve neither via the Solo CLI nor the local SQLite DB do not abort
+        the run: each one is reported with a WARNING and recorded as a solo_process_not_found session
+        entry in the results and the agent-sessions manifest. With --only-ok, unresolved entries are
+        excluded like every other non-ok status.
         EOF);
 
     exit(0);
@@ -58,6 +63,7 @@ $soloCli = (string) ($options['solo-cli'] ?? defaultSoloCliPath());
 $onlyOk = array_key_exists('only-ok', $options);
 $targetProcessIds = targetSoloProcessIds($options);
 $processMetadataSource = 'fixture';
+$unresolvedProcessResults = [];
 
 if (isset($options['processes-json'])) {
     $processesPath = (string) $options['processes-json'];
@@ -85,13 +91,24 @@ if (isset($options['processes-json'])) {
 
             if ($rootProcess === null) {
                 $rootProcess = loadProcessFromSoloDb($soloDb, $targetProcessId);
-                $rootProcessMetadataSource = 'solo_sqlite';
-                $processMetadataSource = $processMetadataSource === 'solo_cli' ? 'solo_sqlite' : $processMetadataSource;
+
+                if ($rootProcess !== null) {
+                    $rootProcessMetadataSource = 'solo_sqlite';
+                    $processMetadataSource = $processMetadataSource === 'solo_cli'
+                        ? 'solo_sqlite'
+                        : $processMetadataSource;
+                }
             }
 
             if ($rootProcess === null) {
-                fwrite(STDERR, "Could not load Solo process: {$targetProcessId}\n");
-                exit(2);
+                fwrite(
+                    STDERR,
+                    "WARNING: could not resolve Solo process {$targetProcessId} via Solo CLI ({$soloCli}) or "
+                    . "local Solo DB ({$soloDb}); recording it as solo_process_not_found and continuing.\n",
+                );
+                $unresolvedProcessResults[] = unresolvedProcessResult($targetProcessId, $soloCli, $soloDb, $cwd);
+
+                continue;
             }
 
             $projectId = normalizeOptionalInt($rootProcess['project_id'] ?? null);
@@ -209,6 +226,12 @@ foreach ($processes as $process) {
 
     if (!$onlyOk || ($result['status'] ?? null) === 'ok') {
         $results[] = $result;
+    }
+}
+
+if (!$onlyOk) {
+    foreach ($unresolvedProcessResults as $unresolvedResult) {
+        $results[] = $unresolvedResult;
     }
 }
 
@@ -1663,6 +1686,32 @@ function timestampFromRow(array $row): ?string
     }
 
     return null;
+}
+
+/**
+ * A target Solo process id that resolves neither via the Solo CLI nor the
+ * local SQLite DB still gets a per-session entry so post-analysis can see the
+ * gap instead of the whole archive run aborting.
+ *
+ * @return array<string, mixed>
+ */
+function unresolvedProcessResult(int $targetProcessId, string $soloCli, string $soloDb, string $cwd): array
+{
+    return [
+        'solo_process_id' => $targetProcessId,
+        'process_name' => null,
+        'command' => null,
+        'agent' => 'unknown',
+        'process_metadata_source' => 'unresolved',
+        'artifact_cwd' => $cwd,
+        'status' => 'solo_process_not_found',
+        'reason' => 'solo_process_not_found',
+        'checked' => [
+            "solo_cli: {$soloCli}",
+            "solo_db: {$soloDb}",
+        ],
+        'metric_confidence' => 'unavailable',
+    ];
 }
 
 /**
