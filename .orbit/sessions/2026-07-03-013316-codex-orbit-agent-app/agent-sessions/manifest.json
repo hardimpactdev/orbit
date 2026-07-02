@@ -1,0 +1,29 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-02T23:33:17+00:00",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-03-013316-codex-orbit-agent-app/agent-sessions",
+    "providers": {
+        "codex": {
+            "ok": 1
+        }
+    },
+    "sessions": [
+        {
+            "schema_version": 1,
+            "provider": "codex",
+            "status": "ok",
+            "slug": "orbit-agent-app-orchestrator-2243",
+            "relative_dir": "codex/orbit-agent-app-orchestrator-2243",
+            "solo_process_id": 2243,
+            "process_name": "orbit-agent-app-orchestrator",
+            "source": "codex_jsonl_token_count",
+            "artifact": "/Users/nckrtl/.codex/sessions/2026/07/02/rollout-2026-07-02T23-30-30-019f24bd-908e-79c0-ab20-7d2e2421a7de.jsonl",
+            "raw_files": [
+                "rollout-2026-07-02T23-30-30-019f24bd-908e-79c0-ab20-7d2e2421a7de.jsonl"
+            ],
+            "usage_path": "usage.json",
+            "messages_path": "messages.jsonl",
+            "message_count": 177
+        }
+    ]
+}

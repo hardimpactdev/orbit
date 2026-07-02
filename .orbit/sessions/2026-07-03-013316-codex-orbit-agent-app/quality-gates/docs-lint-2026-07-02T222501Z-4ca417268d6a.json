@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-02T22:24:57Z",
+    "ended_at": "2026-07-02T22:25:01Z",
+    "duration_seconds": 4,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/orbit-agent-app",
+        "commit": "ed0a0f1ac34b0606eb719570ca6e4e33ba08b09d"
+    },
+    "subgates": []
+}
