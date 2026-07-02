@@ -68,6 +68,8 @@ use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\OperationEventStreamController;
+use App\Http\Controllers\Api\OrbitAgentJobClaimController;
+use App\Http\Controllers\Api\OrbitAgentJobEventController;
 use App\Http\Controllers\Api\PhpRuntimeController;
 use App\Http\Controllers\Api\PhpUseController;
 use App\Http\Controllers\Api\ProcessDestroyController;
@@ -137,6 +139,11 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class])->group(function (): void {
         Route::get('/operations/{operationRun}/events', OperationEventStreamController::class)
             ->name('api.operations.events');
+    });
+
+    Route::middleware(WireGuardIdentity::class)->group(function (): void {
+        Route::post('/orbit-agent/jobs/claim', OrbitAgentJobClaimController::class);
+        Route::post('/orbit-agent/jobs/{job}/events', OrbitAgentJobEventController::class);
     });
 
     Route::middleware([

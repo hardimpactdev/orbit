@@ -289,11 +289,11 @@ Current Orbit has two implemented network edges.
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
 | Gateway → node | SSH | Running scripts, uploading config, streaming logs, controlling services |
 
-The future Orbit Agent lane does not add a node-side control plane. An
-agent-capable node polls the gateway for typed Orbit jobs over the existing
-gateway API trust path, reports lifecycle events back to the gateway, and
-keeps SSH as bootstrap, recovery, and fallback. V1 has no WebSocket
-requirement.
+The gateway owns the first Orbit Agent protocol skeleton, but the node-local
+runtime remains future work. The lane does not add a node-side control plane:
+an agent-capable node polls the gateway for typed Orbit jobs over the existing
+gateway API trust path, reports lifecycle events back to the gateway, and keeps
+SSH as bootstrap, recovery, and fallback. V1 has no WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -307,7 +307,8 @@ such a node, the gateway opens the SSH connection and runs the work there. On a
 future agent-capable node, the node-local Orbit Agent may instead poll for and
 execute a typed gateway job. In both cases nodes never accept inbound Orbit RPC.
 They do send a small amount of outbound traffic back to the gateway — process
-crash notifications, scheduler run history, and future Orbit Agent job events.
+crash notifications, scheduler run history, and Orbit Agent job lifecycle
+events.
 
 The SSH primitive the gateway uses to act on other nodes is called
 `RemoteShell`. `RemoteShell` is transport; workload lane selection is defined
@@ -315,16 +316,18 @@ by [Runtime Execution Lanes](execution-lanes.md). How scripts
 are composed, files uploaded, and sudo scoped lives in
 [tech-stack.md](tech-stack.md#gateway-to-node).
 
-Orbit Agent is reserved as a future node-local execution lane, not as a new
-control plane and not as arbitrary shell transport. V1 jobs are typed Orbit
-jobs submitted by the gateway. The Orbit Agent may execute user-level work
-locally and, on macOS, may invoke OS privilege prompts for protected steps. V1
-has no separate approval UI or pending/approve flow: the prompt is the
-operating system prompt. The menu-bar surface is intentionally minimal: it can
-show that the process is running, perform a one-shot gateway ping on menu open,
-and offer Restart and Quit actions. The menu ping shows Connected or
-Disconnected, the node name, and the gateway name/host; job history belongs in
-gateway operation/activity history.
+Orbit Agent is reserved as a node-local execution lane, not as a new control
+plane and not as arbitrary shell transport. The gateway-side skeleton already
+owns typed job state, a `noop` proof job, poll/claim, lifecycle reporting, and
+operation/activity recording; the external Orbit Agent runtime is not shipped
+yet. V1 jobs are typed Orbit jobs submitted by the gateway. The Orbit Agent may
+execute user-level work locally and, on macOS, may invoke OS privilege prompts
+for protected steps. V1 has no separate approval UI or pending/approve flow:
+the prompt is the operating system prompt. The menu-bar surface is
+intentionally minimal: it can show that the process is running, perform a
+one-shot gateway ping on menu open, and offer Restart and Quit actions. The menu
+ping shows Connected or Disconnected, the node name, and the gateway name/host;
+job history belongs in gateway operation/activity history.
 
 `RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
 helper logic that needs host file access plus PHP/PDO without relying on ad hoc

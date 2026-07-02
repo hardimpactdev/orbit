@@ -413,9 +413,15 @@ These terms describe how nodes communicate and how authority is enforced.
 - **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,
   `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
 
-The future Orbit Agent lane starts with macOS `app-dev` and self-managed
-workload nodes. The gateway remains authoritative; the Orbit Agent polls for
-typed Orbit jobs, executes user-level work locally, may invoke OS privilege
+The Orbit Agent lane starts with macOS `app-dev` and self-managed workload
+nodes. The gateway remains authoritative and now owns the protocol skeleton for
+typed `noop` jobs, polling/claim, lifecycle reporting, and operation/activity
+history. The gateway marks eligible nodes with explicit Orbit Agent capability
+state; the existing `agent` workload role does not imply Orbit Agent
+capability.
+
+The external Orbit Agent runtime is still deferred; when it exists, it polls
+for typed Orbit jobs, executes user-level work locally, may invoke OS privilege
 prompts for protected macOS work, and reports lifecycle events back to gateway
 operation/activity history. V1 has no WebSocket requirement, no arbitrary shell
 transport, no menu job history, and no separate approval UI.

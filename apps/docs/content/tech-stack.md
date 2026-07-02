@@ -284,14 +284,17 @@ execute user-level work locally and may invoke the macOS/sudo OS prompt when a
 protected step needs administrator access. V1 has no separate Orbit approval UI
 or pending/approve flow.
 
-#### Future Orbit Agent lane
+#### Orbit Agent lane and gateway protocol skeleton
 
-Orbit Agent is the future node-local executor for gateway-owned typed jobs on
+Orbit Agent is the planned node-local executor for gateway-owned typed jobs on
 supported nodes. The gateway remains authoritative for intent, authorization,
 release manifests, immutable update plans, operation history, and activity logs.
-The Orbit Agent receives typed jobs, executes them locally, reports lifecycle,
-privilege-requested, success, and failure events back to the gateway, and does
-not create a separate control plane.
+The gateway now owns a minimal protocol skeleton: typed `noop` jobs, polling
+and claim, lifecycle reporting, and operation/activity recording. The external
+Orbit Agent runtime is still deferred. When that runtime exists, it receives
+typed jobs, executes them locally, reports lifecycle, privilege-requested,
+success, and failure events back to the gateway, and does not create a separate
+control plane.
 
 V1 is scoped narrowly:
 
@@ -307,6 +310,8 @@ Orbit Agent is distinct from the existing `agent` workload role and from Agent
 IDE adapters. The `agent` role runs autonomous agent tools such as OpenClaw and
 Hermes as managed workloads; Agent IDE adapters support human-driven coding
 sessions. Orbit Agent is a node-local execution lane for Orbit operations.
+Gateway jobs are limited to nodes explicitly marked `orbit_agent_capable`, not
+to nodes merely carrying the `agent` workload role.
 
 ### Proxy
 

@@ -90,6 +90,13 @@ class NodeFactory extends Factory
         return $this->withActiveRole('agent');
     }
 
+    public function orbitAgentCapable(): static
+    {
+        return $this->state([
+            'orbit_agent_capable' => true,
+        ]);
+    }
+
     public function ingress(): static
     {
         return $this->withActiveRole('ingress');

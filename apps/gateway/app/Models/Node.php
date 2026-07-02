@@ -39,6 +39,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $host_key_pin_mode
  * @property string|null $user
  * @property string $orbit_path
+ * @property bool $orbit_agent_capable
  * @property NodeStatus $status
  * @property-read Collection<int, NodeTool> $nodeTools
  * @property-read Collection<int, NodeRoleAssignment> $roleAssignments
@@ -71,6 +72,7 @@ class Node extends Model
         'host_key_pin_mode',
         'user',
         'orbit_path',
+        'orbit_agent_capable',
         'status',
     ];
 
@@ -82,6 +84,7 @@ class Node extends Model
             'installed_cli' => InstalledCliArtifactCast::class,
             'installed_gateway_image' => InstalledGatewayImageCast::class,
             'host_key_pinned_at' => 'datetime',
+            'orbit_agent_capable' => 'bool',
             'status' => NodeStatus::class,
         ];
     }
