@@ -125,7 +125,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and($shell->scriptsFor('agent-1'))
-        ->toBe([$shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
+        ->toBe([$shell->scriptFor('agent-1'), 'orbit doctor --self --stream-json'])
         ->and($shell->activeLeases)
         ->toBe([
             'agent-1' => ['node:agent-1'],
@@ -278,7 +278,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->and($shell->updatedNodes())
         ->toBe(['app-dev-1'])
         ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --stream-json'])
         ->and($shell->scriptFor('app-dev-1'))
         ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
         ->and(workloadUpdaterStepMessages($run))
@@ -312,7 +312,7 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         ->and($results[1]['doctor_issues'])
         ->toBe(0)
         ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --stream-json'])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
@@ -349,7 +349,7 @@ it('keeps a workload update completed when advisory node doctor fails', function
             ],
         ])
         ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --stream-json'])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
@@ -475,7 +475,7 @@ it('continues updating later workload nodes when one remote update fails', funct
         ->and($shell->scriptsFor('app-dev-1'))
         ->toHaveCount(1)
         ->and($shell->scriptsFor('app-prod-1'))
-        ->toBe([$shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
+        ->toBe([$shell->scriptFor('app-prod-1'), 'orbit doctor --self --stream-json'])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
 });
@@ -942,9 +942,19 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
 
             return new RemoteShellResult(
                 exitCode: 0,
-                stdout: json_encode([
-                    'success' => ['data' => ['doctor' => ['summary' => ['issues' => $issues]]]],
-                ], JSON_THROW_ON_ERROR),
+                stdout: implode("\n", [
+                    json_encode(['event' => 'doctor.node.start'], JSON_THROW_ON_ERROR),
+                    json_encode([
+                        'event' => $issues > 0 ? 'event:error' : 'doctor.node.done',
+                        'data' => [
+                            'doctor' => [
+                                'summary' => [
+                                    'issues' => $issues,
+                                ],
+                            ],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ]),
                 stderr: '',
                 durationMs: 8,
             );
