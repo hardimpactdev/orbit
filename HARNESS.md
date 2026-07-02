@@ -285,9 +285,14 @@ broader `composer quality-check` artifact. Other diffs require successful
 `composer quality-check` artifact evidence. Topology-relevant PHP diffs
 additionally require retained topology proof to be `passed`; docs-app tooling
 PHP under `apps/docs/` is excluded unless the slice also changes topology
-behavior. A passed retained topology row names the topology id/kind, checkout
-roles or inspected nodes, exact command, and captured terminal/session or
-artifact evidence. Stale-commit and
+behavior. The only allowed non-passed topology row for topology-relevant PHP is
+a user-approved release lane where the proof cannot run until a main-based RC
+artifact is built and deployed. That row must be `not applicable`, must name the
+release acceptance lane, and must name the post-merge proof commands such as
+`orbit update:all` and the live Solo `--node=` checks; keep the release goal
+active until that live proof passes. A passed retained topology row names the
+topology id/kind, checkout roles or inspected nodes, exact command, and captured
+terminal/session or artifact evidence. Stale-commit and
 timing-threshold warnings remain the job of
 `composer quality-gate:final-check` and the quality-gate triage skill.
 
