@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OrbitAgentJob;
@@ -39,6 +40,22 @@ function queue_orbit_agent_noop_job(Node $node, array $payload = ['reason' => 'p
     return app(OrbitAgentJobDispatcher::class)->queueNoop(targetNode: $node, payload: $payload);
 }
 
+function queue_orbit_agent_app_dev_convergence_job(Node $node): OrbitAgentJob
+{
+    $assignment = NodeRoleAssignment::query()
+        ->where('node_id', $node->id)
+        ->where('role', 'app-dev')
+        ->sole();
+    $tld = $assignment->settings['tld'] ?? null;
+
+    expect($tld)->toBeString();
+
+    return app(OrbitAgentJobDispatcher::class)->queueAppDevConvergence(
+        targetNode: $node,
+        tld: $tld,
+    );
+}
+
 it('claims a queued typed noop job only for the authenticated target node', function (): void {
     $nodeA = create_orbit_agent_protocol_node(name: 'agent-a', wireGuardAddress: '10.6.0.41');
     $nodeB = create_orbit_agent_protocol_node(name: 'agent-b', wireGuardAddress: '10.6.0.42');
@@ -65,6 +82,33 @@ it('claims a queued typed noop job only for the authenticated target node', func
                 ->missing('shell')
                 ->missing('password')
                 ->missing('secret')
+                ->etc())
+            ->etc(),
+    );
+
+    expect($job->refresh()->status)->toBe('accepted');
+});
+
+it('claims a queued typed app-dev convergence job only for the authenticated target node', function (): void {
+    $node = create_orbit_agent_protocol_node(name: 'mac-app-dev', wireGuardAddress: '10.6.0.45');
+    $job = queue_orbit_agent_app_dev_convergence_job($node);
+
+    $response = post_orbit_agent_protocol_json(node: $node, uri: '/api/orbit-agent/jobs/claim')
+        ->assertOk();
+
+    $response->assertJson(
+        fn (AssertableJson $json) => $json
+            ->where('job.id', $job->id)
+            ->where('job.type', 'app-dev-convergence')
+            ->where('job.target_node.name', 'mac-app-dev')
+            ->has('job.payload', fn (AssertableJson $json) => $json
+                ->where('operation', 'app_dev_convergence')
+                ->where('role', 'app-dev')
+                ->where('tld', 'mac-app-dev.app')
+                ->where('tools', ['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
+                ->missing('command')
+                ->missing('argv')
+                ->missing('shell')
                 ->etc())
             ->etc(),
     );
@@ -204,7 +248,20 @@ it('rejects shell-style jobs and lifecycle payloads at the public contract bound
 
     expect(fn () => app(OrbitAgentJobDispatcher::class)->queue(targetNode: $node, type: 'shell', payload: [
         'command' => 'cat /etc/passwd',
-    ]))->toThrow(\InvalidArgumentException::class, 'Orbit Agent jobs only support typed noop work.');
+    ]))->toThrow(\InvalidArgumentException::class, 'Orbit Agent jobs only support typed noop and app-dev convergence work.');
+
+    expect(fn () => app(OrbitAgentJobDispatcher::class)->queue(
+        targetNode: $node,
+        type: 'app-dev-convergence',
+        payload: [
+            'operation' => 'app_dev_convergence',
+            'role' => 'app-dev',
+            'tld' => 'test',
+            'tools' => ['docker'],
+            'shell' => 'cat /etc/passwd',
+        ],
+    ))
+        ->toThrow(OperationPayloadRejected::class);
 
     expect(fn () => app(OrbitAgentJobDispatcher::class)->queueNoop(targetNode: $node, payload: [
         $apiKey => $sensitiveValue,

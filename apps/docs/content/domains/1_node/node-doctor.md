@@ -152,12 +152,12 @@ The node probe reads gateway node records and checks these layers:
 Public IPv4/IPv6 metadata is not a probe fact. Node doctor does not detect,
 compare, repair, or adopt public address metadata until a detection contract specific to the provider exists.
 
-Future macOS Orbit Agent-capable nodes may surface OS privilege prompts when
-`doctor --restore`, role convergence, updates, or another typed job submitted
-by the gateway needs protected local work. V1 has no separate Orbit approval UI:
-there is no pending/approve queue for doctor, node, or update jobs. The result
-of the job and any privilege-requested, success, or failure event belongs in
-gateway operation/activity history.
+Later privileged Orbit Agent job slices may surface OS privilege prompts when
+the gateway submits a typed job that needs protected local work. The current
+runtime bootstrap does not implement privileged doctor, node, or update jobs,
+and V1 has no separate Orbit approval UI or pending/approve queue. The result
+of an agent job and any privilege-requested, success, or failure event belongs
+in gateway operation/activity history.
 
 The SSH/bootstrap endpoint and gateway endpoint are operator-supplied
 connectivity facts. Node doctor may verify that an endpoint works for the node

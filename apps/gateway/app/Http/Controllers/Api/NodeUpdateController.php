@@ -154,7 +154,7 @@ final class NodeUpdateController implements Loggable
     }
 
     /**
-     * @param  array<string, string>  $providedFields
+     * @param  array<string, bool|string>  $providedFields
      * @return array{field: string, role: string}|null
      */
     private function detectRoleIncompatibleField(Node $node, array $providedFields): ?array
@@ -185,8 +185,8 @@ final class NodeUpdateController implements Loggable
     }
 
     /**
-     * @param  array<string, string>  $providedFields
-     * @return array<string, string>
+     * @param  array<string, bool|string>  $providedFields
+     * @return array<string, bool|string>
      */
     private function computeChanges(Node $node, array $providedFields): array
     {
@@ -217,6 +217,12 @@ final class NodeUpdateController implements Loggable
 
         if (isset($providedFields['public_ipv6']) && $providedFields['public_ipv6'] !== $node->public_ipv6) {
             $changes['public_ipv6'] = $providedFields['public_ipv6'];
+        }
+
+        $orbitAgentCapable = $providedFields['orbit_agent_capable'] ?? null;
+
+        if (is_bool($orbitAgentCapable) && $orbitAgentCapable !== $node->orbit_agent_capable) {
+            $changes['orbit_agent_capable'] = $orbitAgentCapable;
         }
 
         return $changes;

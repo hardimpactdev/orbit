@@ -69,10 +69,10 @@ orbit update:all --stream-json
    workload nodes. Production installs update the native CLI binary artifact;
    source-dev topologies keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit`.
-   For future agent-capable workload nodes, the same immutable update plan may
-   select both the CLI artifact and Orbit Agent artifact. The Orbit Agent
-   process on the node relaunches itself after an Orbit Agent artifact update;
-   the update runner does not reboot the machine by default.
+   A later Orbit Agent update slice may let the same immutable update plan
+   select both the CLI artifact and Orbit Agent artifact for agent-capable
+   workload nodes. Orbit Agent artifact replacement, relaunch, and self-update
+   mechanics are not implemented in the current runtime bootstrap.
 5. The CLI follows the operation event journal over Server-Sent Events. If the
    gateway service is replaced mid-stream, the CLI reconnects with
    `Last-Event-ID` and replays only events it has not rendered.
@@ -122,9 +122,9 @@ the exact shape of both modes.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
 - The gateway can reach every selected node through its node execution path
-  (currently SSH via `RemoteShell`; future agent-capable nodes may receive
-  typed Orbit Agent update jobs, with SSH retained for bootstrap, recovery, and
-  fallback).
+  (currently SSH via `RemoteShell`; a later Orbit Agent update slice may use
+  typed Orbit Agent update jobs for agent-capable nodes, with SSH retained for
+  bootstrap, recovery, and fallback).
 - The gateway can persist operation rows, event journal rows, immutable update
   plans, and expiring update leases.
 - The gateway can launch a one-shot runner from the target `orbit-gateway`
@@ -136,9 +136,9 @@ the exact shape of both modes.
   from the gateway's per-operation artifact endpoint, not directly from GitHub
   or the candidate source. Targets also need permission to write the binary and
   update the user-local launcher link.
-- Future agent-capable workload targets use the same immutable plan for any
-  Orbit Agent artifact selected by the release manifest. Orbit Agent artifact
-  updates relaunch the Orbit Agent instead of rebooting the node.
+- Orbit Agent artifact replacement and relaunch remain deferred. The bootstrap
+  does not update itself; current workload targets update the Orbit CLI
+  artifact, not an Orbit Agent artifact.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.

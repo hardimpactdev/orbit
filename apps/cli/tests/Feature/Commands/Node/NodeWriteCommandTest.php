@@ -425,6 +425,56 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['action'])->toBe('updated');
     });
 
+    it('sends node:update Orbit Agent capability opt-in payloads', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'changed' => ['orbit_agent_capable'],
+            'action' => 'updated',
+        ]));
+
+        [$exitCode] = runCommand($this, 'node:update', [
+            'name' => 'app-1',
+            '--orbit-agent-capable' => true,
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PUT'
+                && str_contains($request->url(), '/api/nodes/app-1')
+                && $request['orbit_agent_capable'] === true
+                && ! isset($request['host'])
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('sends node:update Orbit Agent capability opt-out payloads', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'changed' => ['orbit_agent_capable'],
+            'action' => 'updated',
+        ]));
+
+        [$exitCode] = runCommand($this, 'node:update', [
+            'name' => 'app-1',
+            '--no-orbit-agent-capable' => true,
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PUT'
+                && str_contains($request->url(), '/api/nodes/app-1')
+                && $request['orbit_agent_capable'] === false
+                && ! isset($request['host'])
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('validates node:update required input before gateway IO', function (array $params, string $field): void {
         Http::fake();
 
@@ -928,6 +978,36 @@ describe('node write commands', function (): void {
         );
 
         expect($exitCode)->toBe(0);
+    });
+
+    it('preserves queued Orbit Agent app-dev convergence metadata in node role:add JSON output', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'app-1',
+            'assignment' => ['role' => 'app-dev', 'status' => 'active'],
+            'agent_job' => [
+                'id' => 'job-123',
+                'type' => 'app-dev-convergence',
+                'status' => 'queued',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node role:add', [
+            'node' => 'app-1',
+            'role' => 'app-dev',
+            '--tld' => 'test',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['agent_job'])
+            ->toBe([
+                'id' => 'job-123',
+                'type' => 'app-dev-convergence',
+                'status' => 'queued',
+            ]);
     });
 
     it('renders node role:add human output as a progress tree with a success footer', function (): void {

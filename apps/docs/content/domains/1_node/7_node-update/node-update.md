@@ -16,7 +16,7 @@ and [`node role:add`](../12_node-role-add/node-role-add.md).
 ## Usage
 
 ```bash
-orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--orbit-agent-capable|--no-orbit-agent-capable] [--json]
 ```
 
 Run without arguments in a TTY to let the interactive input mode prompt for
@@ -36,6 +36,8 @@ orbit node:update beast --user=nckrtl
 orbit node:update app-1 --tld=test
 orbit node:update app-1 --gateway-endpoint=10.3.0.2
 orbit node:update gateway-1 --public-ipv4=203.0.113.2
+orbit node:update NMBP --orbit-agent-capable
+orbit node:update NMBP --no-orbit-agent-capable
 orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 ```
 
@@ -69,6 +71,13 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 - `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator.
   Valid for `gateway` and workload-role-bearing nodes. Forbidden on
   operator-identity nodes.
+- `--orbit-agent-capable`: Opt the node into the Orbit Agent typed-job lane.
+  Defaults to off for every node until explicitly enabled. This only changes
+  gateway registry capability; it does not install, start, or update the local
+  Orbit Agent process.
+- `--no-orbit-agent-capable`: Opt the node out of the Orbit Agent typed-job
+  lane. New gateway operations that require Orbit Agent delivery do not queue
+  for the node while this is disabled.
 - `--json`: Output JSON.
 
 Each field flag may be supplied at most once per invocation. Supplying the
@@ -114,6 +123,10 @@ that are directly affected by the changed metadata.
   contract for the DNS substrate is
   [`docs/domains/3_tool/dns-bootstrap-contract.md`](../../3_tool/dns-bootstrap-contract.md).
   Other field changes do not touch DNS.
+- Toggles Orbit Agent capability when one of the Orbit Agent flags is supplied.
+  Capability is an explicit opt-in marker for typed gateway jobs on supported
+  nodes; it is not implied by the `agent` workload role, macOS platform
+  detection, or the presence of an agent process on the node.
 - Does not change node role after creation. Role change is an identity
   migration outside `node:update` scope; a future explicit role-migration
   contract will own that flow.

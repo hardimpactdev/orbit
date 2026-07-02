@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Models\OrbitAgentJob;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
@@ -212,11 +213,12 @@ describe('NodeRoleAddController', function (): void {
     });
 
     it('allows macos workload role additions through platform validation', function (
+        string $platform,
         string $role,
         array $settings,
     ): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
-        $target->forceFill(['platform' => 'macos_14'])->save();
+        $target->forceFill(['platform' => $platform])->save();
 
         app()->instance(NodeRoleBaselineConverger::class, new NodeRoleAddNoopConverger);
 
@@ -231,9 +233,66 @@ describe('NodeRoleAddController', function (): void {
             ->assertJsonPath('success.data.assignment.role', $role)
             ->assertJsonPath('success.data.assignment.status', 'active');
     })->with([
-        'app-dev' => ['app-dev', ['tld' => 'test']],
-        'database' => ['database', []],
+        'macos app-dev' => ['macos_14', 'app-dev', ['tld' => 'test']],
+        'darwin app-dev' => ['darwin', 'app-dev', ['tld' => 'test']],
+        'macos database' => ['macos_14', 'database', []],
     ]);
+
+    it('queues typed app-dev convergence for opted-in macos agent-capable nodes', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $target->forceFill([
+            'platform' => 'darwin',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.6.0.45',
+        ])->save();
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'app-dev',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.assignment.role', 'app-dev')
+            ->assertJsonPath('success.data.agent_job.type', 'app-dev-convergence')
+            ->assertJsonPath('success.data.agent_job.status', 'queued');
+
+        $job = OrbitAgentJob::query()->sole();
+
+        expect($job->target_node_id)
+            ->toBe($target->id)
+            ->and($job->type)
+            ->toBe('app-dev-convergence')
+            ->and($job->status)
+            ->toBe('queued')
+            ->and($job->payload)
+            ->toMatchArray([
+                'operation' => 'app_dev_convergence',
+                'role' => 'app-dev',
+                'tld' => 'test',
+                'tools' => ['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'],
+            ]);
+    });
+
+    it('does not queue app-dev convergence jobs for macos nodes until agent capability is opted in', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $target->forceFill([
+            'platform' => 'macos_14',
+            'orbit_agent_capable' => false,
+            'wireguard_address' => '10.6.0.45',
+        ])->save();
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'app-dev',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonMissingPath('success.data.agent_job');
+
+        expect(OrbitAgentJob::query()->exists())->toBeFalse();
+    });
 
     it('keeps ubuntu-only roles unsupported on macos workload nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);

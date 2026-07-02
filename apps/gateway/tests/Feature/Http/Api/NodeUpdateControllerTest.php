@@ -166,6 +166,63 @@ describe('NodeUpdateController', function (): void {
         expect($node->host)->toBe('10.6.0.8')->and($node->public_ipv4)->toBe('203.0.113.10');
     });
 
+    it('enables Orbit Agent capability when explicitly requested', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode();
+
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['orbit_agent_capable' => true],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.changed', ['orbit_agent_capable']);
+
+        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('orbit_agent_capable'))->toBeTrue();
+    });
+
+    it('disables Orbit Agent capability when explicitly requested', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['orbit_agent_capable' => true]);
+
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['orbit_agent_capable' => false],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.changed', ['orbit_agent_capable']);
+
+        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('orbit_agent_capable'))->toBeFalse();
+    });
+
+    it('does not change Orbit Agent capability when omitted', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['orbit_agent_capable' => true]);
+
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.changed', ['host']);
+
+        expect((bool) DB::table('nodes')->where('name', 'app-1')->value('orbit_agent_capable'))->toBeTrue();
+    });
+
     it('updates gateway endpoint metadata and re-enacts node artifacts', function (): void {
         $reenactor = new class extends ReenactNodeArtifacts {
             public ?string $nodeName = null;

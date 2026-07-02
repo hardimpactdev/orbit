@@ -35,10 +35,12 @@ execution.
    node.
 6. Validate `node_update.gateway_endpoint` when present: it must be a valid IP
    address or dotted DNS name.
-7. Compute the configuration delta (which fields actually changed).
-8. Write the updated node record.
-9. Re-apply node-owned host artifacts for changed fields.
-10. Return the result.
+7. Validate `node_update.orbit_agent_capable` when present: it must be an
+   explicit boolean opt-in or opt-out value.
+8. Compute the configuration delta (which fields actually changed).
+9. Write the updated node record.
+10. Re-apply node-owned host artifacts for changed fields.
+11. Return the result.
 
 Environment switching between `app-dev` and `app-prod` is a role-assignment
 change outside `node:update`.
@@ -53,6 +55,8 @@ change outside `node:update`.
   operator-identity node, or `--user` on the gateway node).
 - Fail before side effects with `node.tld_in_use` when `--tld` matches another
   active node's stored TLD.
+- Fail before side effects when both Orbit Agent capability flags are supplied
+  in one invocation.
 - Fail before side effects when the same field flag is supplied more than
   once in a single invocation.
 - Report artifact applying failures as structured warnings under

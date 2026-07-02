@@ -24,7 +24,7 @@
 ## Signature
 
 ```bash
-orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--orbit-agent-capable|--no-orbit-agent-capable] [--json]
 ```
 
 ## Input Contract
@@ -41,6 +41,7 @@ This command follows the shared
 | `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
+| `orbit_agent_capable` | `--orbit-agent-capable` or `--no-orbit-agent-capable` | Optional. | Never. | Omitted/unchanged; stored default is `false`. | Explicit boolean opt-in/out for Orbit Agent typed-job delivery. Both flags in one invocation fail validation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 Each field flag may be supplied at most once per invocation. Supplying the same
@@ -61,6 +62,7 @@ metadata is valid only for gateway and nodes. Concretely:
 | `--gateway-endpoint` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv4` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv6` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
+| `--orbit-agent-capable`, `--no-orbit-agent-capable` | every active node | Never. |
 
 Clients are CLI callers reached through WireGuard. They have no SSH bootstrap
 endpoint and no ingress, so `--host`, `--gateway-endpoint`, `--public-ipv4`,
@@ -92,6 +94,13 @@ writes a timestamped backup before editing, and applies the live peer endpoint
 with `wg set` without restarting the interface. For gateway nodes, the field is
 advertised endpoint metadata used by future peer configs.
 
+`node:update --orbit-agent-capable` and
+`node:update --no-orbit-agent-capable` toggle the node registry's
+`orbit_agent_capable` flag. The flag is explicit opt-in state for typed Orbit
+Agent jobs on supported nodes. It does not install the agent, start a menu-bar
+process, grant a role, create credentials, or prove that the node-local agent is
+currently reachable.
+
 Role-conditional validity is enforced after the target node is resolved.
 Incompatible fields fail with `node.field_role_incompatible` before any
 gateway-owned side effects.
@@ -111,12 +120,18 @@ gateway-owned side effects.
      present.
    - Resolve `node_update.public_ipv4` from `--public-ipv4` when present.
    - Resolve `node_update.public_ipv6` from `--public-ipv6` when present.
+   - Resolve `node_update.orbit_agent_capable=true` from
+     `--orbit-agent-capable` when present.
+   - Resolve `node_update.orbit_agent_capable=false` from
+     `--no-orbit-agent-capable` when present.
 4. Validate role-conditional field eligibility.
    - If `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6` is
      present and the target is an operator-identity node, fail before side
      effects with `node.field_role_incompatible`.
    - If `--user` is present and the target is the gateway node, fail before
      side effects with `node.field_role_incompatible`.
+   - If both Orbit Agent capability flags are present, fail before side effects
+     with `validation_failed` and `meta.field=orbit_agent_capable`.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
      the duplicated field name. Symfony last-wins is not accepted.
@@ -169,6 +184,9 @@ Input mode behavior is split out of the canonical command contract:
 - Changing `public_ipv4` on an `app-dev` node may change the managed
   `orbit-caddy` HTTP/HTTPS bindings when the value is an RFC1918 caller-facing
   LAN address. The private backend port remains WireGuard-only.
+- Changing `orbit_agent_capable` records whether the gateway may queue typed
+  Orbit Agent jobs for the node. The changed field appears in `changed` when
+  the supplied boolean differs from the stored value.
 
 ### Artifact Re-applying Rules
 
@@ -204,6 +222,9 @@ Input mode behavior is split out of the canonical command contract:
 - SSH into the target node unless re-applying a changed field requires it.
 - Mint identity, write peer material, or grant access.
 - Treat an unchanged-value update as a failure.
+- Install, start, update, restart, or uninstall the Orbit Agent process.
+- Infer Orbit Agent capability from platform, SSH reachability, the `agent`
+  workload role, or a successful ping.
 - Re-apply node-owned artifacts when configuration did not change. Re-applying
   unchanged gateway-tracked configuration is owned by
   `doctor --family=node --restore`, not `node:update`.

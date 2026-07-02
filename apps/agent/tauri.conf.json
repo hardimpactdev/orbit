@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Orbit Agent",
+  "version": "0.1.0",
+  "identifier": "dev.hardimpact.orbit.agent",
+  "build": {
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "visible": false,
+        "title": "Orbit Agent"
+      }
+    ]
+  }
+}

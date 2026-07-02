@@ -403,8 +403,8 @@ These terms describe how nodes communicate and how authority is enforced.
   `php apps/gateway/artisan` from a controlled gateway shell. The public `orbit`
   command does not dispatch to gateway Artisan.
 - **Gateway-to-node edge:** Current SSH through `RemoteShell` for node-side
-  applying from the gateway. Future nodes that are agent-capable may use an
-  Orbit Agent lane that runs on the node for gateway-owned typed jobs, with SSH
+  applying from the gateway. Nodes that are agent-capable may use an Orbit
+  Agent lane that runs on the node for gateway-owned typed jobs, with SSH
   retained for bootstrap, recovery, and fallback.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
@@ -414,17 +414,22 @@ These terms describe how nodes communicate and how authority is enforced.
   `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
 
 The Orbit Agent lane starts with macOS `app-dev` and self-managed workload
-nodes. The gateway remains authoritative and now owns the protocol skeleton for
+nodes. The gateway remains authoritative and owns the protocol skeleton for
 typed `noop` jobs, polling/claim, lifecycle reporting, and operation/activity
-history. The gateway marks eligible nodes with explicit Orbit Agent capability
-state; the existing `agent` workload role does not imply Orbit Agent
-capability.
+history. The local runtime bootstrap lives under `apps/agent` as a tiny
+Tauri/Rust macOS menu-bar app. The gateway marks eligible nodes with explicit
+Orbit Agent capability state; the existing `agent` workload role does not imply
+Orbit Agent capability.
 
-The external Orbit Agent runtime is still deferred; when it exists, it polls
-for typed Orbit jobs, executes user-level work locally, may invoke OS privilege
-prompts for protected macOS work, and reports lifecycle events back to gateway
-operation/activity history. V1 has no WebSocket requirement, no arbitrary shell
-transport, no menu job history, and no separate approval UI.
+The runtime bootstrap polls for typed Orbit jobs, reports lifecycle events back
+to gateway operation/activity history, and exposes only a tiny menu surface for
+process-running status, one-shot gateway ping, node/gateway identity, Restart,
+and Quit. A headless `--worker` mode uses the same polling loop when Orbit Agent
+is hosted by a local process manager. V1 has no WebSocket requirement, no
+arbitrary shell transport, no menu job history, no production packaging or
+autostart installer, no self-update, and no separate approval UI.
+`app-dev-convergence` is limited to fixed Orbit app-dev installer steps and may
+use the operating system's sudo prompt.
 
 ## Access Policy
 

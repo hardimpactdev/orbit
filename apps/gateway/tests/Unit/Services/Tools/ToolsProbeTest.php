@@ -958,12 +958,36 @@ describe('ToolsProbe', function (): void {
                 }
             },
         ]));
-        $probe = new ToolsProbe(new ExecutingToolsProbeRemoteShell, $catalog);
+        $shell = new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(
+                0,
+                json_encode([
+                    'name' => 'caddy',
+                    'installed' => true,
+                    'path' => '/bin/sh',
+                    'version' => null,
+                    'state' => 'missing',
+                    'container_exists' => false,
+                    'container_state' => 'missing',
+                    'container_spec_hash' => null,
+                    'provider_reachable' => null,
+                    'provider_error' => null,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                '',
+                1,
+            ),
+        );
+        $probe = new ToolsProbe($shell, $catalog);
 
         $snapshot = $probe->introspectMany([$tool])['caddy'];
         $drift = $probe->diff($tool, $snapshot);
 
-        expect($snapshot->get('caddy'))
+        expect($shell->scripts[0])
+            ->toContain('# orbit-tool-probe:capability-batch')
+            ->toContain("container='orbit-caddy'")
+            ->toContain('docker container inspect "$container"')
+            ->and($snapshot->get('caddy'))
             ->toMatchArray([
                 'installed' => true,
                 'container_exists' => false,

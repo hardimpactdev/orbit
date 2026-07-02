@@ -286,15 +286,17 @@ or pending/approve flow.
 
 #### Orbit Agent lane and gateway protocol skeleton
 
-Orbit Agent is the planned node-local executor for gateway-owned typed jobs on
+Orbit Agent is the node-local executor lane for gateway-owned typed jobs on
 supported nodes. The gateway remains authoritative for intent, authorization,
 release manifests, immutable update plans, operation history, and activity logs.
-The gateway now owns a minimal protocol skeleton: typed `noop` jobs, polling
-and claim, lifecycle reporting, and operation/activity recording. The external
-Orbit Agent runtime is still deferred. When that runtime exists, it receives
-typed jobs, executes them locally, reports lifecycle, privilege-requested,
-success, and failure events back to the gateway, and does not create a separate
-control plane.
+The gateway owns a minimal protocol skeleton: typed `noop` and
+`app-dev-convergence` jobs, polling and claim, lifecycle reporting, and
+operation/activity recording. The local runtime bootstrap now lives under
+`apps/agent` as a tiny Tauri/Rust macOS menu-bar app with a headless `--worker`
+mode for background polling. It loads local agent config, pings the configured
+gateway from the menu surface, claims typed jobs, reports
+accepted/running/succeeded or failed lifecycle events, and does not create a
+separate control plane.
 
 V1 is scoped narrowly:
 
@@ -304,7 +306,11 @@ V1 is scoped narrowly:
   Disconnected plus node name and gateway name/host;
 - menu icon state means the process is running, with Restart and Quit actions;
 - no menu job history;
-- no separate approval UI beyond OS privilege prompts.
+- `app-dev-convergence` may run fixed sudo-protected installer steps and rely
+  on the operating system prompt, but there is no arbitrary privileged shell or
+  separate approval UI in this bootstrap;
+- no production packaging, autostart, signing, notarization, self-update, or
+  SSH/RemoteShell replacement.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent
 IDE adapters. The `agent` role runs autonomous agent tools such as OpenClaw and

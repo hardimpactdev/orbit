@@ -434,6 +434,8 @@ class NodeRoleAssignments
             return null;
         }
 
-        return explode('_', $platform, 2)[0];
+        $platform = explode('_', $platform, 2)[0];
+
+        return $platform === 'darwin' ? 'macos' : $platform;
     }
 }

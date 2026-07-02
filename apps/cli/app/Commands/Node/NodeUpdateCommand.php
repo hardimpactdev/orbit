@@ -22,6 +22,8 @@ final class NodeUpdateCommand extends GatewayCommand
         {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--public-ipv4= : Public IPv4 address metadata}
         {--public-ipv6= : Public IPv6 address metadata}
+        {--orbit-agent-capable : Mark this node as Orbit Agent capable}
+        {--no-orbit-agent-capable : Mark this node as not Orbit Agent capable}
         {--json : Output JSON}';
 
     #[\Override]
@@ -35,6 +37,14 @@ final class NodeUpdateCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'Node name is required.', ['field' => 'name']);
         }
 
+        if ($this->orbitAgentCapabilityOptionConflict()) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Use only one of --orbit-agent-capable or --no-orbit-agent-capable.',
+                ['field' => 'orbit_agent_capable'],
+            );
+        }
+
         $payload = array_filter(
             [
                 'host' => $this->stringOption('host'),
@@ -43,8 +53,9 @@ final class NodeUpdateCommand extends GatewayCommand
                 'gateway_endpoint' => $this->stringOption('gateway-endpoint'),
                 'public_ipv4' => $this->stringOption('public-ipv4'),
                 'public_ipv6' => $this->stringOption('public-ipv6'),
+                'orbit_agent_capable' => $this->orbitAgentCapabilityOption(),
             ],
-            fn (?string $value): bool => $value !== null,
+            fn (mixed $value): bool => $value !== null,
         );
 
         if ($payload === []) {
@@ -67,7 +78,7 @@ final class NodeUpdateCommand extends GatewayCommand
     }
 
     /**
-     * @param  array<string, string>  $payload
+     * @param  array<string, bool|string>  $payload
      */
     private function renderUpdateTree(string $name, array $payload): int
     {
@@ -132,7 +143,7 @@ final class NodeUpdateCommand extends GatewayCommand
     }
 
     /**
-     * @param  array<string, string>  $payload
+     * @param  array<string, bool|string>  $payload
      * @return array<string, mixed>
      */
     private function updateNode(string $name, array $payload): array
@@ -145,7 +156,7 @@ final class NodeUpdateCommand extends GatewayCommand
      * their operator-facing message so the failed footer renders the documented
      * prose rather than a JSON envelope.
      *
-     * @param  array<string, string>  $payload
+     * @param  array<string, bool|string>  $payload
      * @return array<string, mixed>
      */
     private function updateNodeForHuman(string $name, array $payload): array
@@ -237,5 +248,34 @@ final class NodeUpdateCommand extends GatewayCommand
         $value = $this->option($key);
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function orbitAgentCapabilityOption(): ?bool
+    {
+        if ($this->booleanFlagOption('orbit-agent-capable')) {
+            return true;
+        }
+
+        if ($this->booleanFlagOption('no-orbit-agent-capable')) {
+            return false;
+        }
+
+        return null;
+    }
+
+    private function orbitAgentCapabilityOptionConflict(): bool
+    {
+        return $this->booleanFlagOption('orbit-agent-capable') && $this->booleanFlagOption('no-orbit-agent-capable');
+    }
+
+    private function booleanFlagOption(string $key): bool
+    {
+        if ($this->input->hasParameterOption("--{$key}")) {
+            return true;
+        }
+
+        $value = $this->option($key);
+
+        return $value === true || $value === 1 || $value === '1' || $value === 'true';
     }
 }

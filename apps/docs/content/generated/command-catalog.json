@@ -5124,7 +5124,8 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php"
+                "apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/OrbitAgentJobProtocolControllerTest.php"
             ],
             "verification_hints": [
                 {
@@ -5140,6 +5141,13 @@
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/NodeRoleAddControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/NodeRoleAddControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/OrbitAgentJobProtocolControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/OrbitAgentJobProtocolControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/OrbitAgentJobProtocolControllerTest.php"
                 }
             ],
             "p4_mapping": {
@@ -6013,6 +6021,8 @@
                 "gateway-endpoint",
                 "public-ipv4",
                 "public-ipv6",
+                "orbit-agent-capable",
+                "no-orbit-agent-capable",
                 "json"
             ],
             "renderers": {

@@ -61,6 +61,51 @@ final readonly class MonorepoUnitMapBuilder
             ],
             'tooling_base_path' => '',
         ],
+        'apps-agent' => [
+            'type' => 'tauri-rust-agent-app',
+            'purpose' => 'Tiny Tauri/Rust macOS menu-bar and headless worker Orbit Agent runtime app. It owns local agent config loading, one-shot gateway ping, polling/claim/report client behavior, fixed typed job execution, and app-local Rust tests.',
+            'start_when' => [
+                'Changing the macOS Orbit Agent menu-bar runtime, headless worker mode, tray/menu status behavior, local agent config, gateway ping, polling worker, or typed agent job execution.',
+                'Verifying Orbit Agent Rust/Tauri build, formatting, linting, or focused unit tests.',
+            ],
+            'do_not_start_when' => [
+                'Changing gateway claim/report endpoint implementation instead of the local agent client boundary.',
+                'Adding autostart installers, signing, notarization, DMG packaging, self-update, arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior.',
+            ],
+            'owning_paths' => [
+                'apps/agent',
+                'apps/docs/content/architecture.md',
+                'apps/docs/content/tech-stack.md',
+                'apps/docs/content/domains/1_node/node-concepts.md',
+            ],
+            'entrypoints' => [
+                'apps/agent/Cargo.toml',
+                'apps/agent/tauri.conf.json',
+            ],
+            'authority_docs' => [
+                'apps/docs/content/architecture.md',
+                'apps/docs/content/tech-stack.md',
+                'apps/docs/content/domains/1_node/node-concepts.md',
+            ],
+            'agent_skills' => [
+                '.agents/skills/implementing-features/SKILL.md',
+            ],
+            'verification' => [
+                'preferred_commands' => [
+                    'cd apps/agent && cargo test',
+                    'cd apps/agent && cargo fmt -- --check',
+                    'cd apps/agent && cargo clippy --all-targets -- -D warnings',
+                    'cd apps/agent && cargo check',
+                ],
+                'path_argument_rules' => [
+                    'Run Cargo/Tauri-compatible Rust checks from apps/agent; do not route them through root Composer, Laravel Artisan, Pest, or Mago wrappers.',
+                    'Keep retained-topology proof out of routine apps-agent verification until a local macOS app is configured against a dev gateway.',
+                    'Do not suggest composer test:e2e* commands for Orbit Agent runtime bootstrap verification.',
+                ],
+                'manual_only_commands' => [],
+            ],
+            'tooling_base_path' => 'apps/agent',
+        ],
         'apps-cli' => [
             'type' => 'laravel-zero-cli',
             'purpose' => 'Local Orbit CLI and executor application. It owns command classes, human/JSON rendering, local config, gateway client calls, and CLI Pest coverage.',
@@ -514,7 +559,9 @@ final readonly class MonorepoUnitMapBuilder
         };
 
         return [
+            'cargo_toml' => $existingPath('Cargo.toml'),
             'composer_json' => $existingPath('composer.json'),
+            'tauri_config' => $existingPath('tauri.conf.json'),
             'package_json' => $existingPath('package.json'),
             'phpunit_xml' => $existingPath('phpunit.xml'),
             'mago_config' => $existingPath('mago.toml'),

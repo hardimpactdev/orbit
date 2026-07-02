@@ -42,9 +42,9 @@ These terms describe the update workflow and its components.
   or `error` event is persisted.
 - **Immutable update plan:** Persisted plan keyed by `operation_run_id`.
   Captures target version, gateway image digest, manifest snapshot, CLI artifact
-  hashes, and required role images. For future agent-capable targets, the same
-  plan may also include Orbit Agent artifact identity so CLI and Orbit Agent
-  artifacts update from one immutable source of truth.
+  hashes, and required role images. A later Orbit Agent update slice may extend
+  the same plan with Orbit Agent artifact identity so CLI and Orbit Agent
+  artifacts can update from one immutable source of truth.
 - **Update lease:** Expiring lease row for mutually exclusive update work, such
   as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
@@ -62,10 +62,10 @@ update targets. A target succeeds only when all required update steps succeed;
 target results include both successful and failed targets when a fleet update
 partially fails.
 
-When a future update target is agent-capable, the gateway-owned update plan may
-select both the Orbit CLI artifact and Orbit Agent artifact for that node. The
-Orbit Agent relaunches itself after an Orbit Agent artifact update; Orbit does
-not reboot the machine by default.
+The gateway may later extend an update plan so it selects both the Orbit CLI
+artifact and Orbit Agent artifact for an agent-capable node. The current Orbit
+Agent bootstrap does not replace artifacts, relaunch itself, sign packages,
+notarize packages, or produce production packages.
 
 ## Doctor
 

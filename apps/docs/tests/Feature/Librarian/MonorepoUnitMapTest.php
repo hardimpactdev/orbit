@@ -14,6 +14,7 @@ it('builds compact routing entries for every known Orbit unit', function (): voi
         ->toHaveKey('llm_contract.purpose')
         ->and(array_keys($map['units']))
         ->toBe([
+            'apps-agent',
             'apps-cli',
             'apps-docs',
             'apps-e2e',
@@ -69,6 +70,25 @@ it('maps app and package units to their local tooling and preferred verification
         ->toHaveKey('facts.tooling.composer_json', 'packages/sdk/composer.json')
         ->and($map['units']['packages-sdk']['verification']['preferred_commands'])
         ->toContain('cd packages/sdk && vendor/bin/pest --compact');
+});
+
+it('maps the Orbit Agent runtime to Cargo and Tauri verification', function (): void {
+    $agent = app(MonorepoUnitMapBuilder::class)->build()['units']['apps-agent'];
+
+    expect($agent)
+        ->toHaveKey('type', 'tauri-rust-agent-app')
+        ->toHaveKey('facts.tooling.cargo_toml', 'apps/agent/Cargo.toml')
+        ->toHaveKey('facts.tooling.tauri_config', 'apps/agent/tauri.conf.json')
+        ->and($agent['purpose'])
+        ->toContain('menu-bar and headless worker Orbit Agent runtime app')
+        ->and($agent['verification']['preferred_commands'])
+        ->toContain('cd apps/agent && cargo test')
+        ->toContain('cd apps/agent && cargo fmt -- --check')
+        ->toContain('cd apps/agent && cargo clippy --all-targets -- -D warnings')
+        ->and($agent['do_not_start_when'][1])
+        ->toContain('self-update')
+        ->toContain('arbitrary privileged shell execution')
+        ->toContain('SSH/RemoteShell replacement');
 });
 
 it('marks E2E commands as manual-only instead of preferred agent verification', function (): void {
@@ -242,6 +262,10 @@ it('keeps preferred verification commands pointed at current repo entrypoints', 
                 $executable = explode(' ', $nestedCommand)[0];
 
                 if (is_file("{$repoRoot}/{$directory}/{$executable}")) {
+                    continue;
+                }
+
+                if ($executable === 'cargo' && is_file("{$repoRoot}/{$directory}/Cargo.toml")) {
                     continue;
                 }
             }
