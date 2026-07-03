@@ -9,9 +9,9 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 | `gateway` | Ubuntu | Canonical SQLite DB, typed HTTPS API, Orbit root CA, node access policy, and doctor convergence |
 | `vpn` | Ubuntu | Gateway-coupled WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime |
 | `router` | Ubuntu | Gateway-coupled private `.orbit` service names, route artifacts, backend pools, and private routing |
-| `app-dev` | Ubuntu | Development app/workspace files, local TLD routes, FrankenPHP runtimes, and dev host toolchain |
+| `app-dev` | Ubuntu/macOS | Development app/workspace files, local TLD routes, FrankenPHP runtimes, and dev host toolchain |
 | `app-prod` | Ubuntu | Production app files, private backend routes, FrankenPHP runtimes, and deploy/runtime policy |
-| `database` | Ubuntu | Private database-role node capability and managed database process dependencies |
+| `database` | Ubuntu/macOS | Private database-role node capability and managed database process dependencies |
 | `agent` | Ubuntu | Exclusive autonomous agent workload role and internal agent tool routes |
 | `ingress` | Ubuntu | Public production HTTP/HTTPS edge and forwarding to `router` over WireGuard |
 | `websocket` | Ubuntu | Private Laravel Reverb backend, reached through router-owned routes |
@@ -21,6 +21,25 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 An **operator** is a node identity with the operator permission preset and
 grants. It is not a stored role. Any gateway-known node can be a client when it
 runs the CLI.
+
+## Orbit Agent lane
+
+Orbit Agent capability is explicit gateway registry state for supported nodes,
+starting with macOS `app-dev` and self-managed workload nodes. The local runtime
+bootstrap lives under `apps/agent` as a Tauri/Rust macOS menu-bar app and
+headless worker that polls for typed Orbit jobs and reports lifecycle events
+back to the gateway.
+
+The `agent` workload role is separate from Orbit Agent capability. The role owns
+autonomous agent tools and internal agent-tool routes on Ubuntu nodes. It does
+not imply that a node can receive Orbit Agent jobs, and Orbit Agent capability
+does not assign the `agent` role.
+
+`orbit node:update --orbit-agent-capable` toggles only the capability flag. It
+does not install, start, update, restart, uninstall, or prove reachability of
+the macOS app. For source changes under `apps/agent`, use the
+`tauri-agent-development` skill and verify native tray/menu behavior on the
+implementing Mac host.
 
 ## Architecture in one diagram
 

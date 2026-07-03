@@ -1,6 +1,6 @@
 ---
 name: orbit
-description: Operate the Orbit CLI for sovereign Laravel environments  -  bootstrap gateways and clients, provision workload-role nodes, create development and production apps, manage workspaces/processes/schedules, configure database connections, publish S3/Cloudflare/metrics surfaces, deploy, profile, and diagnose drift via `orbit doctor`. Use when the user wants to set up Orbit, create or modify an app, create a workspace, manage database/S3/metrics/DNS/VPN/firewall, run a deployment, profile a request, change PHP runtime selection, repair a node, or inspect fleet state. Triggers include "set up orbit", "set up this app", "register an app", "create a workspace", "database connection", "publish S3", "metrics", "Cloudflare DNS", "what's running", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or any Orbit fleet task.
+description: Operate the Orbit CLI for sovereign Laravel environments - bootstrap gateways and clients, provision workload nodes, create apps, manage workspaces/processes/schedules, configure database/S3/metrics/DNS/VPN/firewall, deploy, profile, diagnose drift via `orbit doctor`, or inspect Orbit Agent capability state. Triggers include "set up orbit", "register an app", "create a workspace", "check orbit health", "fix drift", "deploy myapp", "switch PHP version", "create a node", "list nodes", "vpn client", or fleet tasks.
 allowed-tools: Bash(orbit *)
 ---
 
@@ -19,6 +19,16 @@ SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
 similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
 fallbacks.
 
+Orbit Agent is a separate native lane. The Orbit Agent macOS app lives under
+`apps/agent` as a Tauri/Rust menu-bar app and headless worker for supported
+macOS `app-dev` and self-managed workload nodes. It is not the `agent` workload
+role and is not an agent tool installed through `tool:install`.
+The `agent` workload role does not imply Orbit Agent capability.
+A locally installed or locally launched `Orbit Agent.app` on macOS is
+host-local runtime evidence for native tray work, but the current Orbit CLI
+product surface does not install, start, update, restart, or uninstall the
+macOS app.
+
 The CLI is the public product contract. Gateway Artisan is maintenance/internal
 automation only. When work must happen on a node, the gateway uses SSH
 execution lanes (`RemoteShell`, local executor, or gateway runtime executor)
@@ -36,9 +46,9 @@ over the Orbit/WireGuard network.
 ## Core concepts (load on demand)
 
 See [`references/concepts.md`](references/concepts.md) for: gateway/client
-terminology, node roles, state families and `doctor`, identity slug rules,
-execution lanes, JSON envelope shape, and the `--node` / `--app` /
-`--workspace` resolution order.
+terminology, node roles, Orbit Agent capability, state families and `doctor`,
+identity slug rules, execution lanes, JSON envelope shape, and the `--node` /
+`--app` / `--workspace` resolution order.
 
 See [`references/skill.md`](references/skill.md) for installing the bundled
 Orbit skill into Codex, Claude, Antigravity, Grok, or an explicit local path.
@@ -98,7 +108,7 @@ command catalog when command completeness matters.
 | `orbit node:new [name]` | Create a client identity or provision a workload-role node |
 | `orbit node:list` | List nodes in the gateway registry |
 | `orbit node:show [name]` | Show one node's registry record |
-| `orbit node:update [name]` | Update node host, TLD, gateway endpoint, or public IP metadata |
+| `orbit node:update [name]` | Update node host, TLD, gateway endpoint, public IP metadata, or explicit Orbit Agent capability |
 | `orbit node:remove [name]` | Remove a node from the registry |
 | `orbit node:default [name]` | Choose, show, or clear the local default development node |
 | `orbit node:grant <consumer> <server>` | Grant one node access to another |
@@ -370,6 +380,16 @@ orbit app:agent-ide myapp inherit    # use node default
 orbit app:agent-ide myapp polyscope  # per-app override
 ```
 
+**Mark a supported node as Orbit Agent capable**
+
+```bash
+orbit node:update mini --orbit-agent-capable
+```
+
+This only toggles gateway registry state for typed Orbit Agent job delivery. It
+does not install, start, update, restart, or uninstall the macOS app, and the
+`agent` workload role does not imply Orbit Agent capability.
+
 ## Conventions when calling Orbit
 
 - Resolve target order for `--node`-aware commands: explicit `--node` -> app/workspace ownership -> local `node:default` -> interactive prompt or non-interactive failure.
@@ -383,11 +403,16 @@ orbit app:agent-ide myapp polyscope  # per-app override
 - `doctor --family=process --node=<node>` is valid for every node with at
   least one active role assignment. Role-less client/operator identities remain
   node-family only.
+- For source changes under `apps/agent`, use
+  `.agents/skills/tauri-agent-development/SKILL.md`; native tray/menu behavior
+  must be verified on the implementing Mac host, not substituted with retained
+  Incus.
 - Don't SSH to nodes manually to "fix" Orbit state  -  use `doctor --fix` so intent and reality stay aligned.
 
 ## When to read which reference
 
 - Setting up a node, configuring grants, choosing a default -> [`node.md`](references/node.md), [`gateway.md`](references/gateway.md)
+- Understanding Orbit Agent capability or the native macOS app boundary -> [`concepts.md`](references/concepts.md), `.agents/skills/tauri-agent-development/SKILL.md`
 - Creating, removing, registering, or pruning apps -> [`app.md`](references/app.md)
 - Workspace lifecycle, setup/teardown step pipelines -> [`workspace.md`](references/workspace.md)
 - Long-running app processes (queues, websockets, vite) -> [`process.md`](references/process.md)

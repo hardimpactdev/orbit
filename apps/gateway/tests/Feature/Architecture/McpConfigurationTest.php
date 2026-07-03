@@ -318,6 +318,23 @@ it('routes Orbit Agent Tauri work through a dedicated skill and reviewer persona
         ->toContain('VERDICT:');
 });
 
+it('keeps the general Orbit skill aligned with the macOS Orbit Agent app boundary', function (): void {
+    $skill = file_get_contents(repo_path('.agents/skills/orbit/SKILL.md')) ?: '';
+    $concepts = file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md')) ?: '';
+
+    expect($skill)
+        ->toContain('Orbit Agent macOS app')
+        ->toContain('apps/agent')
+        ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
+        ->toContain('does not install, start, update, restart, or uninstall the macOS app')
+        ->toContain('The `agent` workload role does not imply Orbit Agent capability')
+        ->and($concepts)
+        ->toContain('Orbit Agent lane')
+        ->toContain('apps/agent')
+        ->toContain('Tauri/Rust macOS menu-bar app')
+        ->toContain('The `agent` workload role is separate from Orbit Agent capability.');
+});
+
 it('provides first-party boost skill sources in orbit packages', function (): void {
     expect(repo_path('packages/core/resources/boost/skills/orbit-core-development/SKILL.md'))
         ->toBeFile()
