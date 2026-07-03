@@ -250,7 +250,7 @@ mod tests {
     fn loads_orbit_tray_icon_asset() {
         let icon = tray_icon();
 
-        assert_eq!(icon.width(), 36);
-        assert_eq!(icon.height(), 18);
+        assert_eq!(icon.width(), 18);
+        assert_eq!(icon.height(), 9);
     }
 }
