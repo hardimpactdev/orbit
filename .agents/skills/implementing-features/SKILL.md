@@ -100,6 +100,12 @@ Responsibilities:
   expected, then stop or delete the process in a separate command. Never run
   output capture and process deletion in parallel.
 - Run or require the verification gates and independently read the results.
+- For native Orbit Agent changes under `apps/agent`, resolve live topology to
+  the implementing macOS host. On Darwin, record the `Retained topology proof`
+  row as `passed - host topology kind=host-macos; host=<hostname>; os=<Darwin
+  and sw_vers>; command=<exact command>; evidence=<terminal/session/Computer Use
+  evidence>`. On non-Darwin, stop or delegate the slice to a Mac implementation
+  host instead of substituting retained Incus topology.
 - Run applicable reviewer personas from `HARNESS.md` after implementation
   evidence exists. For documentation-heavy changes, use
   `.agents/review-personas/docs-librarian.md`; for CLI command changes, use
@@ -803,21 +809,29 @@ command address/output transcript.
     directory and label older artifacts as stale in the report. If this cannot
     be completed, report the blocker explicitly instead of widening the release
     path.
-17. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+17. For native Orbit Agent changes, use the implementing Mac as the live
+   topology target. On Darwin, capture host identity with commands such as
+   `hostname`, `uname -s`, and `sw_vers`, then prove the Agent feature with the
+   focused Cargo checks and Computer Use or terminal evidence that exercises the
+   native app behavior. Record `host topology kind=host-macos`, `host=`, `os=`,
+   `command=`, and `evidence=` in the `Retained topology proof` row. On
+   non-Darwin, stop or move the implementation to a Mac host; do not use
+   retained Incus as the substitute proof for a Tauri/macOS app.
+18. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-18. Run focused in-memory verification for the active slice. For multi-slice
+19. Run focused in-memory verification for the active slice. For multi-slice
     features, do not spend prepared E2E on every internal slice by default. Run
-    retained topology proof as the feature-level topology gate when the final
-    branch diff needs real topology evidence. When retained topology proof is
+    the matching topology proof as the feature-level topology gate when the final
+    branch diff needs real topology evidence. When topology proof is
     required for feature acceptance and cannot be completed, stop the loop if
     the blocker cannot be resolved inside this slice. Do not commit, merge,
-    clean up, or run final loop-improvement extraction while required retained
-    topology proof is still blocked; record the blocker, owner, and unblock
+    clean up, or run final loop-improvement extraction while required topology
+    proof is still blocked; record the blocker, owner, and unblock
     condition in `.orbit/loop.md` and the report.
-19. Run the applicable reviewer persona from the `HARNESS.md` routing table once
+20. Run the applicable reviewer persona from the `HARNESS.md` routing table once
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
@@ -942,7 +956,10 @@ command address/output transcript.
     verification` with explicit `passed`, `blocked`, or `not applicable` rows
     for retained topology proof and `composer quality-check`. A passed retained
     topology row must name the topology id/kind, inspected roles or nodes, exact
-    command, and captured terminal/session or artifact evidence. Do not mark the
+    command, and captured terminal/session or artifact evidence. A passed
+    host-Mac row for native Orbit Agent changes must name
+    `host topology kind=host-macos`, `host=`, `os=`, `command=`, and
+    `evidence=`. Do not mark the
     loop `complete` or `complete + loop improvement`
     while any diff-required verification is blocked, pending, skipped, missing,
     deferred, unresolved, or not run. Update, create, curate, retire, or intentionally
@@ -1171,7 +1188,8 @@ Post-feature session review:
 - Required verification:
   - Retained topology proof: <passed, blocked, or not applicable with topology
     id/kind, inspected roles or nodes, exact command, terminal/session/artifact
-    evidence, blocker, or reason>
+    evidence; or host topology kind=host-macos with host=, os=, command=, and
+    evidence=; blocker, or reason>
   - `composer quality-check`: <passed, blocked, or not applicable with
     command/evidence, blocker, or reason>
 - Finalization gate fit: <why the branch diff makes docs-lint, quality-check,

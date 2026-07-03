@@ -57,6 +57,12 @@ Orbit has three supported verification lanes:
 3. Manual prepared E2E backed by Docker or Incus when the user explicitly runs
    the Composer command from a shell.
 
+Native Orbit Agent/Tauri app behavior uses the implementing Mac as the runtime
+surface under lane 2. For non-Markdown `apps/agent` diffs, the finalization
+packet records `Retained topology proof: passed - host topology kind=host-macos;
+host=...; os=...; command=...; evidence=...`. This proves the macOS host running
+the native app, not a retained Incus topology.
+
 Provider provisioning is the on-demand artifact-preparation and installer
 verification substrate behind those feature lanes. Docker and Incus provider
 provision commands are explicit and can be delegated independently when each
@@ -89,7 +95,9 @@ that consumes the built CLI/gateway assets when that artifact-backed lane
 exists.
 
 Standing live infrastructure is not a test lane. Do not use persistent gateway,
-operator, or app nodes as verification targets.
+operator, or app nodes as verification targets. The Orbit Agent host-Mac proof
+is different: the implementing Mac is the native app runtime under test, not a
+standing fleet node.
 
 For the MONO local-executor migration, prepared Docker and Incus E2E are the
 primary verification paths. Standing live infrastructure is diagnostic only.
@@ -108,7 +116,9 @@ These rules order the lanes above into a development workflow:
 
 - Focused in-memory Pest tests are the fast feature loop. Incus or Docker
   topologies retained with a source mount are the default integrated-topology
-  proof when the feature needs real topology behavior.
+  proof when the feature needs real topology behavior. The exception is native
+  Orbit Agent/Tauri behavior, where the matching integrated proof target is the
+  implementing Darwin host running the macOS app.
 - Retained prepared topologies are for feature proof, manual diagnosis,
   debugging, and performance testing. They use the same prepared-topology
   substrate, are not standing live infrastructure, and must be explicitly
@@ -177,6 +187,9 @@ composer docs-lint
 composer quality-check
 
 # Focused Orbit Agent Cargo/Tauri checks
+hostname
+uname -s
+sw_vers
 cd apps/agent && cargo test
 cd apps/agent && cargo fmt -- --check
 cd apps/agent && cargo check
@@ -196,10 +209,15 @@ composer test:e2e:provision:incus
 
 Run the narrowest useful check while developing. For `apps/agent`, run focused
 Cargo checks from `apps/agent`; broad `composer quality-check` includes those
-Cargo subgates for handoff. Run `composer quality-check` before handing off a
-broad code change. When behavior touches the integrated topology, capture
-retained topology proof for the matching topology and provider. Provisioning
-and Docker artifact/image/preparer commands run only when the user explicitly
-invokes the matching Composer command from a shell.
+Cargo subgates for handoff. For native `apps/agent` diffs, also capture the
+host-Mac topology row from the implementing Darwin host and use Computer Use
+when native tray/menu rendering is in scope.
+
+Run `composer quality-check` before handing off a broad code change. When
+behavior touches the integrated topology, capture retained topology proof for
+the matching topology and provider.
+
+Provisioning and Docker artifact/image/preparer commands run only when the user
+explicitly invokes the matching Composer command from a shell.
 Agents must not run any `composer test:e2e*` command, including the aggregate
 `composer test:e2e:provision`; those commands are reserved for user-run checks.

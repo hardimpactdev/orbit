@@ -140,8 +140,15 @@ For PHP files, the hook applies one more rule. If the PHP file is outside
 does not need retained topology proof unless the slice also changes topology
 behavior. The retained topology row must name the topology id/kind, inspected
 roles or nodes, exact command, and captured terminal/session or artifact
-evidence. Use `composer quality-gate:final-check` to review warnings for stale
-commits or slow timings.
+evidence.
+
+For native Orbit Agent/Tauri changes, the hook applies a host topology rule
+instead. Non-Markdown files under `apps/agent/` require the final packet to run
+from a Darwin implementation host and record `Retained topology proof: passed -
+host topology kind=host-macos; host=...; os=...; command=...; evidence=...`.
+Retained Incus does not satisfy this proof because the macOS app itself is the
+runtime under test. Use `composer quality-gate:final-check` to review warnings
+for stale commits or slow timings.
 
 Evidence is stale when the latest artifact exceeds the configured max-age
 window or was captured for a different Git commit than the current worktree

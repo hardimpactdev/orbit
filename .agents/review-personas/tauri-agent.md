@@ -68,7 +68,8 @@ the APIs it uses.
 Lead with correctness and native-behavior risks. Treat Cargo checks as evidence
 that Rust compiled and tests passed, not proof that macOS tray rendering is
 usable. A Tauri Agent change is not ready when Rust behavior, product docs,
-quality-gate wiring, and native macOS behavior disagree.
+quality-gate wiring, host-Mac topology proof, and native macOS behavior
+disagree.
 
 ## Checklist
 
@@ -84,6 +85,10 @@ quality-gate wiring, and native macOS behavior disagree.
   replacement behavior unless the active contract explicitly owns it.
 - Raw screenshots, transcripts, and negative examples are represented in the
   Done Contract, tests, native verification, or explicit deferrals.
+- Non-Markdown `apps/agent` diffs use the implementing Mac as live topology.
+  The final packet records `Retained topology proof: passed - host topology
+  kind=host-macos; host=...; os=...; command=...; evidence=...`. Retained Incus
+  is not accepted as proof for native Tauri/macOS behavior.
 
 ### Native Tray And Menu Behavior
 
@@ -124,5 +129,9 @@ cd apps/agent && cargo clippy --all-targets -- -D warnings
 
 - Broad handoff evidence includes `composer quality-check` when the diff is not
   docs-only.
+- Native `apps/agent` diffs include host-Mac topology evidence captured on the
+  Darwin implementation host. If the work ran on non-Darwin, the review is
+  blocked until the slice is moved to a Mac host or a Mac-host proof is supplied
+  from the implementation machine.
 - If native tray rendering changed, Computer Use evidence is present or the
   report names the blocker and why acceptance can proceed without it.

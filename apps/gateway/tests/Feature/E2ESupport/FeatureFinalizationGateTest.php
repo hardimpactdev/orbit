@@ -991,6 +991,157 @@ it('allows topology-relevant php finalization with artifact-backed quality-check
     }
 });
 
+it('blocks native Orbit Agent finalization on Darwin when host macOS proof is missing', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - native Orbit Agent source diff
+          - `composer quality-check`: passed - composer quality-check
+        - Fresh analyzer:
+          - Verdict: pass - no missed signals
+        - Accepted durable updates:
+          - apps/agent/src/main.rs changed native Tauri behavior.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'apps/agent/src/main.rs',
+        contents: "fn main() {}\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'quality-check',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(
+            repo: $repo,
+            command: 'git merge feature',
+            environment: ['ORBIT_FINALIZATION_HOST_OS_FAMILY' => 'Darwin'],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('native Orbit Agent diff requires Retained topology proof: passed with host-macos evidence');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('allows native Orbit Agent finalization on Darwin with host macOS proof', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: passed - host topology kind=host-macos; host=NMBP; os=Darwin 25.5.0; command `uname -s && sw_vers && open -a Orbit Agent`; evidence `.orbit/evidence/agent-host-macos-computer-use.png`
+          - `composer quality-check`: passed - composer quality-check
+        - Fresh analyzer:
+          - Verdict: pass - host macOS proof accepted.
+        - Accepted durable updates:
+          - apps/agent/src/main.rs changed native Tauri behavior.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'apps/agent/src/main.rs',
+        contents: "fn main() {}\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'quality-check',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(
+            repo: $repo,
+            command: 'git merge feature',
+            environment: ['ORBIT_FINALIZATION_HOST_OS_FAMILY' => 'Darwin'],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('blocks native Orbit Agent finalization on non Darwin implementation hosts', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: passed - host topology kind=host-macos; host=NMBP; os=Darwin 25.5.0; command `uname -s && sw_vers && open -a Orbit Agent`; evidence `.orbit/evidence/agent-host-macos-computer-use.png`
+          - `composer quality-check`: passed - composer quality-check
+        - Fresh analyzer:
+          - Verdict: pass - host macOS proof accepted.
+        - Accepted durable updates:
+          - apps/agent/src/main.rs changed native Tauri behavior.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'apps/agent/src/main.rs',
+        contents: "fn main() {}\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'quality-check',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(
+            repo: $repo,
+            command: 'git merge feature',
+            environment: ['ORBIT_FINALIZATION_HOST_OS_FAMILY' => 'Linux'],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('native Orbit Agent diff requires macOS host topology proof from a Darwin implementation host');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
 it('blocks worktree removal when no matching session archive exists', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
 
@@ -1426,13 +1577,20 @@ function compact_single_slice_finalization_packet(): string
         MARKDOWN;
 }
 
-function run_finalization_gate(string $repo, string $command): Process
+/**
+ * @param  array<string, string>  $environment
+ */
+function run_finalization_gate(string $repo, string $command, array $environment = []): Process
 {
-    $process = new Process([
-        PHP_BINARY,
-        repo_path('bin/orbit-codex-pre-tool-use-hook'),
-        $command,
-    ], $repo);
+    $process = new Process(
+        [
+            PHP_BINARY,
+            repo_path('bin/orbit-codex-pre-tool-use-hook'),
+            $command,
+        ],
+        $repo,
+        $environment,
+    );
     $process->run();
 
     return $process;

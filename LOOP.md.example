@@ -117,8 +117,9 @@ meaningful value.
   - <complete | blocked | complete + loop improvement>
 - Required verification:
   - Retained topology proof: <passed | blocked | not applicable> -
-    <topology id/kind, checkout roles or inspected nodes, exact command,
-    terminal/session/artifact evidence, blocker, or reason>
+    <retained topology id/kind plus checkout roles or inspected nodes, or host
+    topology kind=host-macos; host=<hostname>; os=<Darwin/sw_vers>; command=<exact command>;
+    evidence=<terminal/session/artifact/Computer Use evidence>; blocker, or reason>
   - `composer quality-check`: <passed | blocked | not applicable> -
     <command/evidence, blocker, or reason>
 - Finalization gate fit:

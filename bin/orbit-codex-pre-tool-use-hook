@@ -674,7 +674,7 @@ function is_mergeable_loop_outcome(string $value): bool
 }
 
 /**
- * @param  array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_topology_relevant_php: bool}  $requirements
+ * @param  array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_topology_relevant_php: bool, has_native_orbit_agent: bool}  $requirements
  */
 function required_verification_problem(string $section, string $worktree, array $requirements): ?string
 {
@@ -732,6 +732,24 @@ function required_verification_problem(string $section, string $worktree, array 
 
     $retainedTopologyProof = required_verification_row($values, 'Retained topology proof');
 
+    if ($requirements['has_native_orbit_agent']) {
+        if (! is_darwin_finalization_host()) {
+            return 'native Orbit Agent diff requires macOS host topology proof from a Darwin implementation host; '
+                .'rerun the finalization gate from the Mac that implemented the Tauri app change instead of substituting retained Incus topology';
+        }
+
+        if (
+            $retainedTopologyProof === null
+            || ! is_passed_verification_value($retainedTopologyProof)
+            || ! is_host_macos_topology_proof($retainedTopologyProof)
+        ) {
+            $current = $retainedTopologyProof ?? 'missing row';
+
+            return 'native Orbit Agent diff requires Retained topology proof: passed with host-macos evidence '
+                .'naming host=, os=, command=, and evidence=; current row: '.$current;
+        }
+    }
+
     if (
         $requirements['has_topology_relevant_php']
         && ($retainedTopologyProof === null || ! is_passed_verification_value($retainedTopologyProof))
@@ -746,7 +764,7 @@ function required_verification_problem(string $section, string $worktree, array 
 }
 
 /**
- * @return array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_topology_relevant_php: bool}
+ * @return array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_topology_relevant_php: bool, has_native_orbit_agent: bool}
  */
 function verification_requirements(string $root, string $worktree, string $subject): array
 {
@@ -754,6 +772,7 @@ function verification_requirements(string $root, string $worktree, string $subje
     $docsOnly = $changedFiles !== [] && every($changedFiles, fn (string $path): bool => is_docs_class_file($path));
     $phpFiles = array_values(array_filter($changedFiles, fn (string $path): bool => is_php_file($path)));
     $topologyRelevantPhpFiles = array_values(array_filter($phpFiles, fn (string $path): bool => is_topology_relevant_php_file($path)));
+    $nativeOrbitAgentFiles = array_values(array_filter($changedFiles, fn (string $path): bool => is_native_orbit_agent_file($path)));
 
     return [
         'changed_files' => $changedFiles,
@@ -761,6 +780,7 @@ function verification_requirements(string $root, string $worktree, string $subje
         'requires_quality_check' => $changedFiles !== [] && ! $docsOnly,
         'has_php' => $phpFiles !== [],
         'has_topology_relevant_php' => $topologyRelevantPhpFiles !== [],
+        'has_native_orbit_agent' => $nativeOrbitAgentFiles !== [],
     ];
 }
 
@@ -860,6 +880,41 @@ function is_topology_relevant_php_file(string $path): bool
     }
 
     return ! str_starts_with($path, 'apps/docs/');
+}
+
+function is_native_orbit_agent_file(string $path): bool
+{
+    return str_starts_with($path, 'apps/agent/')
+        && ! is_markdown_file($path);
+}
+
+function is_darwin_finalization_host(): bool
+{
+    return strcasecmp(finalization_host_os_family(), 'Darwin') === 0;
+}
+
+function finalization_host_os_family(): string
+{
+    $override = getenv('ORBIT_FINALIZATION_HOST_OS_FAMILY');
+
+    if (is_string($override) && trim($override) !== '') {
+        return trim($override);
+    }
+
+    return PHP_OS_FAMILY;
+}
+
+function is_host_macos_topology_proof(string $value): bool
+{
+    $normalized = strtolower($value);
+
+    foreach (['host-macos', 'host=', 'os=', 'command', 'evidence'] as $requiredToken) {
+        if (! str_contains($normalized, $requiredToken)) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 function docs_only_artifact_problem(string $worktree): ?string

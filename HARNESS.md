@@ -328,8 +328,8 @@ recorded honestly. The gate also warns without blocking when
 updates are non-none — that shape suggests signals were reconstructed post-hoc
 instead of collected during the loop.
 
-Required verification rows use the status-first shape and must include retained
-topology proof and `composer quality-check`:
+Required verification rows use the status-first shape and must include the
+topology-proof row and `composer quality-check`:
 `- Retained topology proof: passed | blocked | not applicable - <evidence or reason>`.
 If the feature required a lane and it is blocked, the feature outcome is
 `blocked`; do not write `complete` with a deferred verification follow-up.
@@ -341,14 +341,21 @@ can satisfy the gate with a successful `composer docs-lint` or broader
 non-test PHP outside `apps/docs/` —
 additionally require retained topology proof to be `passed`; docs-app tooling
 PHP under `apps/docs/` is excluded unless the slice also changes topology
-behavior. The only allowed non-passed topology row for topology-relevant PHP is
+behavior. Native Orbit Agent diffs — non-Markdown files under `apps/agent/` —
+resolve live topology to the implementing macOS host, not to retained Incus. On
+Darwin, the row must be `passed` with `host-macos` evidence naming `host=`,
+`os=`, `command=`, and `evidence=`. On non-Darwin, the gate blocks and the work
+must move to a Mac implementation host instead of substituting a retained
+topology. The only allowed non-passed topology row for topology-relevant PHP is
 a user-approved release lane where the proof cannot run until a main-based RC
 artifact is built and deployed. That row must be `not applicable`, must name the
 release acceptance lane, and must name the post-merge proof commands such as
 `orbit update:all` and the live Solo `--node=` checks; keep the release goal
 active until that live proof passes. A passed retained topology row names the
 topology id/kind, checkout roles or inspected nodes, exact command, and captured
-terminal/session or artifact evidence. Stale-commit and
+terminal/session or artifact evidence; a passed host-Mac row names
+`host topology kind=host-macos`, the host identity, OS version, exact command,
+and Computer Use or terminal evidence. Stale-commit and
 timing-threshold warnings remain the job of
 `composer quality-gate:final-check` and the quality-gate triage skill.
 
@@ -600,7 +607,7 @@ Use this table to pick the smallest workflow that can prove the change.
 | Quality-gate failure or slowdown | `quality-gate-triage`, plus `pest-testing`, `e2e-verification-lanes`, or `cli-output-pty-capture` by lane | `apps/docs/content/testing/README.md`, `quality-gates.md`, `in-memory/performance.md`, `e2e/environment.md`, `e2e/performance.md` | Inspect existing evidence under `.orbit/quality-gates/` and `.orbit/evidence/`; do not rerun expensive gates just to classify | Owner/human only after classification points at product behavior | Record recurring flakes, missing baselines, or confusing lane failures | Aggregate provision command, live-node mutation, or product fix before classification |
 | Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, orchestrator/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh Solo Codex analyzer report for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
 | CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; retained topology proof; PTY frame capture and reviewer analysis before human UX review | `.agents/review-personas/cli-command.md` via Solo Antigravity, or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained topology proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
-| Orbit Agent Tauri app | `.agents/skills/tauri-agent-development/SKILL.md`, `implementing-features` | `apps/agent/**`, `apps/docs/content/architecture.md`, `apps/docs/content/tech-stack.md`, `apps/docs/content/domains/1_node/node-concepts.md` | Focused Cargo checks from `apps/agent`; `composer quality-check` for broad handoff; Computer Use for native tray/menu rendering changes | `.agents/review-personas/tauri-agent.md` via Solo Antigravity, or human for native UX/product contract changes | Record repeated native-menu, Cargo-gate, or docs/unit-map drift | No current Cargo proof, no Computer Use evidence when native tray rendering changed, or the change expands installer/signing/privileged execution scope without approval |
+| Orbit Agent Tauri app | `.agents/skills/tauri-agent-development/SKILL.md`, `implementing-features` | `apps/agent/**`, `apps/docs/content/architecture.md`, `apps/docs/content/tech-stack.md`, `apps/docs/content/domains/1_node/node-concepts.md` | Focused Cargo checks from `apps/agent`; `composer quality-check` for broad handoff; host-Mac topology proof on the implementing Darwin machine for native `apps/agent` diffs; Computer Use for native tray/menu rendering changes | `.agents/review-personas/tauri-agent.md` via Solo Antigravity, or human for native UX/product contract changes | Record repeated native-menu, Cargo-gate, host-Mac proof, or docs/unit-map drift | No current Cargo proof, no `host-macos` topology row for native Agent diffs, no Computer Use evidence when native tray rendering changed, non-Darwin implementation host, or the change expands installer/signing/privileged execution scope without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; retained topology proof when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
 | Provisioning/live-node | `implementing-features`; `e2e-verification-lanes` only for existing artifact triage or manual command reference | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |
 | Release | `release` | Release skill, changelog/version files, product docs touched by release | Release gates: doctor before, `update:all`, doctor after, `node:list`, plus exception checks | Human before tag, publish, or merge/push beyond the approved release step | Record release-gate surprises and recurring fleet drift | Any release gate fails or approval boundary is not explicit |
@@ -648,22 +655,23 @@ for handoff.
 Validate each slice with the narrowest checks that keep the feature branch
 honest: focused Pest, docs-lint, static checks, or PTY proof when the slice
 changes terminal behavior. Do not spend E2E on feature slices by default. The
-finalization gate derives the feature-level proof from the final
-branch diff: docs-only changes need docs-lint evidence, non-docs changes need
-quality-check evidence, and topology-relevant PHP changes need retained
-topology proof. Run retained topology proof when the active slice cannot be
-judged without real topology behavior.
+finalization gate derives the feature-level proof from the final branch diff:
+docs-only changes need docs-lint evidence, non-docs changes need quality-check
+evidence, topology-relevant PHP changes need retained topology proof, and native
+Orbit Agent changes need host-Mac topology proof from the implementing Darwin
+machine. Run the matching topology proof when the active slice cannot be judged
+without real topology behavior.
 
-When retained topology proof is required for acceptance and cannot be completed,
+When topology proof is required for acceptance and cannot be completed,
 the feature loop halts if the blocker cannot be resolved inside the current
 slice. Do not finalize, merge, clean up, or mine final loop improvements while
-required retained topology proof is still blocked. Record the exact blocker,
+required topology proof is still blocked. Record the exact blocker,
 owner, and unblock condition in `.orbit/loop.md` under `Required verification`, set the loop
 outcome to `blocked`, then hand back unresolved work.
 
 Treat this as the `blocked` feature-loop outcome, not as a candidate learning.
-It becomes a loop-improvement signal only when the reason for the retained
-topology proof block reveals a recurring process gap.
+It becomes a loop-improvement signal only when the reason for the topology
+proof block reveals a recurring process gap.
 
 ## Review Scope
 

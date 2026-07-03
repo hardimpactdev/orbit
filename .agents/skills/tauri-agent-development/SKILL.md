@@ -39,14 +39,18 @@ including `TrayIconBuilder`, `MenuBuilder`, `MenuItemBuilder`,
 1. Start from the assigned Orbit worktree and prove `pwd`, branch, and status.
 2. Keep Rust/Tauri edits inside `apps/agent` unless the handoff explicitly owns
    shared docs, quality gates, or harness changes.
-3. Prefer focused Rust unit coverage for behavior that can be tested without a
+3. For non-Markdown changes under `apps/agent`, treat the implementing macOS
+   host as the live topology target. Prove the host with `hostname`, `uname -s`,
+   and `sw_vers`; do not substitute retained Incus for Tauri/macOS behavior. If
+   the implementation host is not Darwin, stop or move the slice to a Mac host.
+4. Prefer focused Rust unit coverage for behavior that can be tested without a
    running macOS tray.
-4. For tray/menu UI behavior, verify with Computer Use against the installed or
+5. For tray/menu UI behavior, verify with Computer Use against the installed or
    locally launched macOS app when acceptance depends on native rendering.
-5. Keep menu layouts compact and stable. Status labels and IP values must align
+6. Keep menu layouts compact and stable. Status labels and IP values must align
    predictably, avoid unnecessary width, and remain readable in the macOS tray
    dropdown.
-6. Treat root `composer quality-check` as the broad handoff gate. During
+7. Treat root `composer quality-check` as the broad handoff gate. During
    development, run the focused Cargo commands directly from `apps/agent`.
 
 ## Verification
@@ -74,3 +78,13 @@ composer quality-check
 `composer quality-check` includes the same `apps/agent` Cargo subgates. If
 native tray rendering changed, include the Computer Use verification evidence
 or record why native verification was not applicable.
+
+For native `apps/agent` diffs, the finalization packet's topology row must use
+the existing label and host-Mac evidence shape:
+
+```markdown
+- Retained topology proof: passed - host topology kind=host-macos; host=<hostname>; os=<uname/sw_vers>; command=<exact command>; evidence=<terminal/session/Computer Use artifact>
+```
+
+This row proves the implementing Mac is the topology under test. A retained
+Incus topology does not satisfy native Orbit Agent/Tauri app behavior.
