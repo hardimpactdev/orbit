@@ -197,6 +197,11 @@ fn should_refresh_for_tray_event(event: &TrayIconEvent) -> bool {
 }
 
 fn tray_icon() -> Image<'static> {
+    Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
+        .unwrap_or_else(|_| fallback_tray_icon())
+}
+
+fn fallback_tray_icon() -> Image<'static> {
     const SIZE: u32 = 18;
     const INNER_RADIUS: f32 = 5.0;
     const OUTER_RADIUS: f32 = 8.0;
@@ -239,5 +244,13 @@ mod tests {
             WORKER_FLAG.to_string(),
         ]));
         assert!(!is_worker_mode(["orbit-agent".to_string()]));
+    }
+
+    #[test]
+    fn loads_orbit_tray_icon_asset() {
+        let icon = tray_icon();
+
+        assert_eq!(icon.width(), 36);
+        assert_eq!(icon.height(), 18);
     }
 }
