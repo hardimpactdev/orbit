@@ -21,6 +21,7 @@ const REFRESH_MENU_ID: &str = "refresh_connection";
 const RESTART_MENU_ID: &str = "restart_agent";
 const QUIT_MENU_ID: &str = "quit_agent";
 const WORKER_FLAG: &str = "--worker";
+const MIN_IP_ROW_WIDTH: usize = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RefreshSource {
@@ -90,13 +91,13 @@ struct TrayMenuItems {
 impl TrayMenuItems {
     fn new(app: &AppHandle, state: &MenuState) -> tauri::Result<Self> {
         let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
-        let label_width = state.label_width();
+        let ip_row_width = state.ip_row_width();
 
         for (index, node) in state.granted_nodes.iter().enumerate() {
             granted_nodes.push(disabled_menu_item(
                 app,
                 format!("granted_node_{index}"),
-                granted_node_label(node, label_width),
+                granted_node_label(node, ip_row_width),
             )?);
         }
 
@@ -105,30 +106,30 @@ impl TrayMenuItems {
             node_ip: disabled_menu_item(
                 app,
                 NODE_IP_MENU_ID,
-                aligned_ip_label("IP", state.node_ip(), label_width),
+                aligned_ip_label("IP", state.node_ip(), ip_row_width),
             )?,
             gateway: disabled_menu_item(
                 app,
                 GATEWAY_MENU_ID,
-                aligned_ip_label("Gateway", &state.gateway_ip, label_width),
+                aligned_ip_label("Gateway", &state.gateway_ip, ip_row_width),
             )?,
             granted_nodes,
         })
     }
 
     fn update(&self, state: &MenuState) {
-        let label_width = state.label_width();
+        let ip_row_width = state.ip_row_width();
 
         let _ = self.status.set_text(state.status.label());
         let _ = self
             .node_ip
-            .set_text(aligned_ip_label("IP", state.node_ip(), label_width));
+            .set_text(aligned_ip_label("IP", state.node_ip(), ip_row_width));
         let _ = self
             .gateway
-            .set_text(aligned_ip_label("Gateway", &state.gateway_ip, label_width));
+            .set_text(aligned_ip_label("Gateway", &state.gateway_ip, ip_row_width));
 
         for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
-            let _ = item.set_text(granted_node_label(node, label_width));
+            let _ = item.set_text(granted_node_label(node, ip_row_width));
         }
     }
 
@@ -207,7 +208,11 @@ fn granted_node_label(node: &GrantedNodeMenuRow, label_width: usize) -> String {
 }
 
 fn aligned_ip_label(label: &str, ip: &str, label_width: usize) -> String {
-    format!("{label:<label_width$}: {ip}")
+    if label.len() + ip.len() >= label_width {
+        return format!("{label} {ip}");
+    }
+
+    format!("{label}{ip:>width$}", width = label_width - label.len())
 }
 
 fn disabled_menu_item(
@@ -403,13 +408,17 @@ impl MenuState {
         self.node_ip.as_deref().unwrap_or("unknown")
     }
 
-    fn label_width(&self) -> usize {
+    fn ip_row_width(&self) -> usize {
         self.granted_nodes
             .iter()
-            .map(|node| node.name.len())
-            .chain(["IP".len(), "Gateway".len()])
+            .map(|node| node.name.len() + node.ip().len())
+            .chain([
+                "IP".len() + self.node_ip().len(),
+                "Gateway".len() + self.gateway_ip.len(),
+            ])
             .max()
-            .unwrap_or("Gateway".len())
+            .unwrap_or_default()
+            .max(MIN_IP_ROW_WIDTH)
     }
 }
 
@@ -636,20 +645,20 @@ mod tests {
             gateway_ip: "10.6.0.2".to_string(),
             granted_nodes: vec![granted_node_row("ingress1", "10.6.0.10")],
         };
-        let label_width = state.label_width();
 
-        assert_eq!(
-            aligned_ip_label("IP", state.node_ip(), label_width),
-            "IP      : 10.6.0.3"
-        );
-        assert_eq!(
-            aligned_ip_label("Gateway", &state.gateway_ip, label_width),
-            "Gateway : 10.6.0.2"
-        );
-        assert_eq!(
-            granted_node_label(&state.granted_nodes[0], label_width),
-            "ingress1: 10.6.0.10"
-        );
+        let labels = [
+            aligned_ip_label("IP", state.node_ip(), state.ip_row_width()),
+            aligned_ip_label("Gateway", &state.gateway_ip, state.ip_row_width()),
+            granted_node_label(&state.granted_nodes[0], state.ip_row_width()),
+        ];
+
+        assert!(labels.iter().all(|label| !label.contains(':')));
+        assert!(labels[0].ends_with("10.6.0.3"));
+        assert!(labels[1].ends_with("10.6.0.2"));
+        assert!(labels[2].ends_with("10.6.0.10"));
+        assert_eq!(labels[0].len(), MIN_IP_ROW_WIDTH);
+        assert_eq!(labels[1].len(), MIN_IP_ROW_WIDTH);
+        assert_eq!(labels[2].len(), MIN_IP_ROW_WIDTH);
     }
 
     fn node_list_payload(name: &str, ip: &str) -> NodeListPayload {
