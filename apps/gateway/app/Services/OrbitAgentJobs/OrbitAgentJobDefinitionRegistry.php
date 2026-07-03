@@ -13,11 +13,11 @@ final readonly class OrbitAgentJobDefinitionRegistry
     public const string TYPE_APP_DEV_CONVERGENCE = 'app-dev-convergence';
 
     private const array APP_DEV_TOOL_CATALOG = [
-        'caddy',
-        'composer',
         'docker',
-        'laravel-installer',
         'php-cli',
+        'composer',
+        'laravel-installer',
+        'caddy',
     ];
 
     /**

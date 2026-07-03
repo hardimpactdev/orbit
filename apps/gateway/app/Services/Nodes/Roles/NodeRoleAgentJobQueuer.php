@@ -52,19 +52,17 @@ final readonly class NodeRoleAgentJobQueuer
             return false;
         }
 
-        return $this->isMacPlatform($node->platform);
+        return $this->isSupportedAppDevAgentPlatform($node->platform);
     }
 
-    private function isMacPlatform(?string $platform): bool
+    private function isSupportedAppDevAgentPlatform(?string $platform): bool
     {
-        return (
-            is_string($platform)
-            && (
-                $platform === 'macos'
-                || $platform === 'darwin'
-                || str_starts_with($platform, 'macos_')
-                || str_starts_with($platform, 'darwin_')
-            )
-        );
+        if (! is_string($platform) || trim($platform) === '') {
+            return false;
+        }
+
+        $family = strtolower(explode(separator: '_', string: trim($platform), limit: 2)[0]);
+
+        return in_array(needle: $family, haystack: ['darwin', 'linux', 'macos', 'ubuntu'], strict: true);
     }
 }

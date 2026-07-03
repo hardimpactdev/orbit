@@ -1,0 +1,20 @@
+[package]
+name = "orbit-macos"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[[bin]]
+name = "orbit-macos"
+path = "src/main.rs"
+
+[dependencies]
+orbit-agent = { path = "../agent" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["image-png", "tray-icon"] }
+ureq = { version = "2", features = ["native-certs"] }
+url = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

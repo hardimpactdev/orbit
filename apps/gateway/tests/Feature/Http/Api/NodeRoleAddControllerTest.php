@@ -270,7 +270,43 @@ describe('NodeRoleAddController', function (): void {
                 'operation' => 'app_dev_convergence',
                 'role' => 'app-dev',
                 'tld' => 'test',
-                'tools' => ['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'],
+                'tools' => ['docker', 'php-cli', 'composer', 'laravel-installer', 'caddy'],
+            ]);
+    });
+
+    it('queues typed app-dev convergence for opted-in linux agent-capable nodes', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+        $target->forceFill([
+            'platform' => 'ubuntu',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.6.0.45',
+        ])->save();
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'app-dev',
+            'settings' => ['tld' => 'test'],
+        ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.assignment.role', 'app-dev')
+            ->assertJsonPath('success.data.agent_job.type', 'app-dev-convergence')
+            ->assertJsonPath('success.data.agent_job.status', 'queued');
+
+        $job = OrbitAgentJob::query()->sole();
+
+        expect($job->target_node_id)
+            ->toBe($target->id)
+            ->and($job->type)
+            ->toBe('app-dev-convergence')
+            ->and($job->status)
+            ->toBe('queued')
+            ->and($job->payload)
+            ->toMatchArray([
+                'operation' => 'app_dev_convergence',
+                'role' => 'app-dev',
+                'tld' => 'test',
+                'tools' => ['docker', 'php-cli', 'composer', 'laravel-installer', 'caddy'],
             ]);
     });
 

@@ -413,21 +413,24 @@ These terms describe how nodes communicate and how authority is enforced.
 - **VPN role settings:** Assignment-local `vpn` settings: `public_endpoint`,
   `wireguard_cidr`, `wireguard_port`, and `dns_ip`.
 
-The Orbit Agent lane starts with macOS `app-dev` and self-managed workload
-nodes. The gateway remains authoritative and owns the protocol skeleton for
-typed `noop` jobs, polling/claim, lifecycle reporting, and operation/activity
-history. The local runtime bootstrap lives under `apps/agent` as a tiny
-Tauri/Rust macOS menu-bar app. The gateway marks eligible nodes with explicit
-Orbit Agent capability state; the existing `agent` workload role does not imply
-Orbit Agent capability.
+The Orbit Agent lane supports explicitly `orbit_agent_capable` Linux (Ubuntu)
+and macOS `app-dev` (and other self-managed workload) nodes. The gateway remains
+authoritative and owns the protocol skeleton for typed `noop` jobs, polling/claim,
+lifecycle reporting, and operation/activity history. The local runtime is split
+between `apps/agent`, the headless Rust/Axum service binary that owns the
+background polling/job execution loop (Linux and macOS), and `apps/macos`, the
+Tauri tray UI that runs only on macOS. The gateway marks eligible nodes with
+explicit Orbit Agent capability state; the existing `agent` workload role does
+not imply Orbit Agent capability.
 
-The runtime bootstrap polls for typed Orbit jobs, reports lifecycle events back
-to gateway operation/activity history, and exposes only a tiny menu surface for
-process-running status, one-shot gateway ping, node/gateway identity, Restart,
-and Quit. A headless `--worker` mode uses the same polling loop when Orbit Agent
-is hosted by a local process manager. V1 has no WebSocket requirement, no
-arbitrary shell transport, no menu job history, no production packaging or
-autostart installer, no self-update, and no separate approval UI.
+The headless service polls for typed Orbit jobs, reports lifecycle events back
+to gateway operation/activity history, and exposes minimal loopback health and
+status endpoints for local UI/readiness checks. The macOS UI can show service
+or gateway status, node/gateway identity, Refresh, Restart, and Quit, but
+launching or quitting the UI does not own the service lifetime. V1 has no
+WebSocket requirement, no arbitrary shell transport, no menu job history, no
+production packaging or autostart installer, no self-update, and no separate
+approval UI.
 `app-dev-convergence` is limited to fixed Orbit app-dev installer steps and may
 use the operating system's sudo prompt.
 

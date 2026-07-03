@@ -155,6 +155,12 @@ watching or to bypass the Solo orchestrator handoff:
 6. After prompt delivery and a visible first checkpoint or explicit delivery
    blocker, report the handoff result and stop. Resume only if the user asks for
    watcher or recovery work.
+7. If the Solo Codex wrapper wedges or disappears before a visible first
+   checkpoint, recover only with another tracked Codex route for the same Solo
+   project, such as a Solo terminal running `codex exec` in the prepared
+   worktree. If no tracked Codex route is available, stop and report the
+   blocker. Do not substitute Grok or another implementation worker as feature
+   owner.
 
 The Solo Codex orchestrator continues this same skill from Orchestrator Role.
 It owns `.orbit/loop.md`, worker planning, implementation delegation, review,

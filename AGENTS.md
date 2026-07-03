@@ -137,7 +137,7 @@ composer quality-check
 ```
 
 `composer quality-check` fans out docs linting, Pest, Mago, Rector, and
-`apps/agent` Cargo checks across every app/package.
+`apps/agent` plus `apps/macos` Cargo checks across every app/package.
 
 When behavior touches the integrated topology, require retained topology proof:
 capture the retained topology id/kind, inspected roles or nodes, exact command,

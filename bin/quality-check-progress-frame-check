@@ -15,6 +15,7 @@ function quality_check_progress_areas(): array
         'apps/e2e',
         'apps/reverb',
         'apps/agent',
+        'apps/macos',
         'packages/core',
         'packages/sdk',
     ];
@@ -30,6 +31,7 @@ function quality_check_progress_fast_app_areas(): array
         'apps/e2e',
         'apps/reverb',
         'apps/agent',
+        'apps/macos',
     ];
 }
 
@@ -202,8 +204,8 @@ function quality_check_progress_validate_frames(array $frames): array
 
         $maxRunningRows = max($maxRunningRows, $runningRows);
 
-        if ($runningRows > 6) {
-            $errors[] = 'more than 6 rows were Running in one frame';
+        if ($runningRows > 7) {
+            $errors[] = 'more than 7 rows were Running in one frame';
         }
     }
 

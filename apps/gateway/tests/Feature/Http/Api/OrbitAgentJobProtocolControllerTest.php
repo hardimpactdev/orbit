@@ -105,7 +105,7 @@ it('claims a queued typed app-dev convergence job only for the authenticated tar
                 ->where('operation', 'app_dev_convergence')
                 ->where('role', 'app-dev')
                 ->where('tld', 'mac-app-dev.app')
-                ->where('tools', ['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
+                ->where('tools', ['docker', 'php-cli', 'composer', 'laravel-installer', 'caddy'])
                 ->missing('command')
                 ->missing('argv')
                 ->missing('shell')

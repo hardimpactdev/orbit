@@ -62,13 +62,14 @@ final readonly class MonorepoUnitMapBuilder
             'tooling_base_path' => '',
         ],
         'apps-agent' => [
-            'type' => 'tauri-rust-agent-app',
-            'purpose' => 'Tiny Tauri/Rust macOS menu-bar and headless worker Orbit Agent runtime app. It owns local agent config loading, one-shot gateway ping, polling/claim/report client behavior, fixed typed job execution, and app-local Rust tests.',
+            'type' => 'rust-agent-service',
+            'purpose' => 'Headless Rust/Axum Orbit Agent service binary. It owns local agent config loading, gateway ping/status, polling/claim/report client behavior, fixed typed job execution, the node-local background service loop, and app-local Rust tests.',
             'start_when' => [
-                'Changing the macOS Orbit Agent menu-bar runtime, headless worker mode, tray/menu status behavior, local agent config, gateway ping, polling worker, or typed agent job execution.',
-                'Verifying Orbit Agent Rust/Tauri build, formatting, linting, or focused unit tests.',
+                'Changing the headless Orbit Agent service, local agent config, health/status HTTP surface, gateway ping, polling worker, or typed agent job execution.',
+                'Verifying Orbit Agent Rust service build, formatting, linting, or focused unit tests.',
             ],
             'do_not_start_when' => [
+                'Changing macOS menu-bar runtime, tray/menu status behavior, Tauri config, or native macOS UI packaging; use apps/macos.',
                 'Changing gateway claim/report endpoint implementation instead of the local agent client boundary.',
                 'Adding autostart installers, signing, notarization, DMG packaging, self-update, arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior.',
             ],
@@ -80,7 +81,53 @@ final readonly class MonorepoUnitMapBuilder
             ],
             'entrypoints' => [
                 'apps/agent/Cargo.toml',
-                'apps/agent/tauri.conf.json',
+                'apps/agent/src/main.rs',
+            ],
+            'authority_docs' => [
+                'apps/docs/content/architecture.md',
+                'apps/docs/content/tech-stack.md',
+                'apps/docs/content/domains/1_node/node-concepts.md',
+            ],
+            'agent_skills' => [
+                '.agents/skills/implementing-features/SKILL.md',
+            ],
+            'verification' => [
+                'preferred_commands' => [
+                    'cd apps/agent && cargo test',
+                    'cd apps/agent && cargo fmt -- --check',
+                    'cd apps/agent && cargo check',
+                    'cd apps/agent && cargo clippy --all-targets -- -D warnings',
+                ],
+                'path_argument_rules' => [
+                    'Run focused headless Rust service checks from apps/agent while developing; root composer quality-check includes the same apps/agent Cargo subgates for broad handoff.',
+                    'Keep native tray/menu and Tauri verification in apps/macos.',
+                    'Do not suggest composer test:e2e* commands for Orbit Agent runtime bootstrap verification.',
+                ],
+                'manual_only_commands' => [],
+            ],
+            'tooling_base_path' => 'apps/agent',
+        ],
+        'apps-macos' => [
+            'type' => 'tauri-macos-agent-ui',
+            'purpose' => 'macOS-only Tauri tray app for Orbit Agent UI. It owns native tray/menu status behavior and queries the independent headless Orbit Agent service instead of owning the long-running background service loop.',
+            'start_when' => [
+                'Changing the macOS Orbit Agent menu-bar runtime, tray/menu status behavior, Tauri config, native assets, or service-status UI.',
+                'Verifying Orbit Agent macOS Rust/Tauri build, formatting, linting, or focused unit tests.',
+            ],
+            'do_not_start_when' => [
+                'Changing the headless service polling loop, gateway claim/report client, typed job execution, or Axum health/status service; use apps/agent.',
+                'Changing gateway claim/report endpoint implementation instead of the local agent client boundary.',
+                'Adding launchd packaging, signing, notarization, DMG packaging, self-update, arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior.',
+            ],
+            'owning_paths' => [
+                'apps/macos',
+                'apps/docs/content/architecture.md',
+                'apps/docs/content/tech-stack.md',
+                'apps/docs/content/domains/1_node/node-concepts.md',
+            ],
+            'entrypoints' => [
+                'apps/macos/Cargo.toml',
+                'apps/macos/tauri.conf.json',
             ],
             'authority_docs' => [
                 'apps/docs/content/architecture.md',
@@ -93,19 +140,19 @@ final readonly class MonorepoUnitMapBuilder
             ],
             'verification' => [
                 'preferred_commands' => [
-                    'cd apps/agent && cargo test',
-                    'cd apps/agent && cargo fmt -- --check',
-                    'cd apps/agent && cargo clippy --all-targets -- -D warnings',
-                    'cd apps/agent && cargo check',
+                    'cd apps/macos && cargo test',
+                    'cd apps/macos && cargo fmt -- --check',
+                    'cd apps/macos && cargo check',
+                    'cd apps/macos && cargo clippy --all-targets -- -D warnings',
                 ],
                 'path_argument_rules' => [
-                    'Run focused Cargo/Tauri-compatible Rust checks from apps/agent while developing; root composer quality-check includes the same apps/agent Cargo subgates for broad handoff.',
-                    'Keep retained-topology proof out of routine apps-agent verification until a local macOS app is configured against a dev gateway.',
-                    'Do not suggest composer test:e2e* commands for Orbit Agent runtime bootstrap verification.',
+                    'Run focused Cargo/Tauri-compatible Rust checks from apps/macos while developing; root composer quality-check includes the same apps/macos Cargo subgates for broad handoff.',
+                    'Use host-Mac topology proof for native tray/menu behavior; retained Incus topology does not prove macOS Tauri UI behavior.',
+                    'Do not suggest composer test:e2e* commands for Orbit Agent macOS UI verification.',
                 ],
                 'manual_only_commands' => [],
             ],
-            'tooling_base_path' => 'apps/agent',
+            'tooling_base_path' => 'apps/macos',
         ],
         'apps-cli' => [
             'type' => 'laravel-zero-cli',

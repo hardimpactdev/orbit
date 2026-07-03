@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -367,11 +367,11 @@ struct RawAppDevConvergencePayload {
 }
 
 const APP_DEV_TOOL_CATALOG: [AppDevTool; 5] = [
-    AppDevTool::Caddy,
-    AppDevTool::Composer,
     AppDevTool::Docker,
-    AppDevTool::LaravelInstaller,
     AppDevTool::PhpCli,
+    AppDevTool::Composer,
+    AppDevTool::LaravelInstaller,
+    AppDevTool::Caddy,
 ];
 
 fn validate_app_dev_convergence_payload(
@@ -487,6 +487,104 @@ pub fn connection_status_from_ping(status_code: u16) -> ConnectionStatus {
     }
 
     ConnectionStatus::Disconnected(format!("gateway returned HTTP {status_code}"))
+}
+
+pub fn gateway_host_from_config(config: &AgentConfig) -> String {
+    Url::parse(&config.gateway_url)
+        .ok()
+        .and_then(|url| url.host_str().map(ToString::to_string))
+        .unwrap_or_else(|| config.gateway_url.clone())
+}
+
+pub fn ping_gateway_connection(config: &AgentConfig) -> ConnectionStatus {
+    let client = GatewayClient::new(config.clone());
+    let request = client.build_ping_request();
+
+    let url = match client.absolute_url(&request.path) {
+        Ok(url) => url,
+        Err(error) => return ConnectionStatus::Disconnected(format!("{error:?}")),
+    };
+
+    let mut ping = ureq::get(&url);
+    ping = ping.timeout(GATEWAY_TIMEOUT);
+
+    if let Some(token) = request.bearer_token {
+        ping = ping.set("Authorization", &format!("Bearer {token}"));
+    }
+
+    match ping.call() {
+        Ok(response) => connection_status_from_ping(response.status()),
+        Err(ureq::Error::Status(status, _)) => connection_status_from_ping(status),
+        Err(error) => ConnectionStatus::Disconnected(error.to_string()),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceStatusSnapshot {
+    pub connection: String,
+    pub gateway_ip: String,
+    pub node_ip: Option<String>,
+    pub node_name: Option<String>,
+    pub config_loaded: bool,
+}
+
+pub fn build_service_status_snapshot() -> ServiceStatusSnapshot {
+    match AgentConfig::load_default() {
+        Ok(config) => {
+            let gateway_ip = gateway_host_from_config(&config);
+            let status = ping_gateway_connection(&config);
+
+            ServiceStatusSnapshot {
+                connection: status.label(),
+                gateway_ip,
+                node_ip: None,
+                node_name: Some(config.node_name.clone()),
+                config_loaded: true,
+            }
+        }
+        Err(ConfigError::MissingConfig(path)) => ServiceStatusSnapshot {
+            connection: ConnectionStatus::MissingConfig(path.clone()).label(),
+            gateway_ip: "unknown".to_string(),
+            node_ip: None,
+            node_name: None,
+            config_loaded: false,
+        },
+        Err(error) => ServiceStatusSnapshot {
+            connection: ConnectionStatus::Disconnected(error.to_string()).label(),
+            gateway_ip: "unknown".to_string(),
+            node_ip: None,
+            node_name: None,
+            config_loaded: false,
+        },
+    }
+}
+
+pub fn poll_once_from_default_config() {
+    if let Ok(config) = AgentConfig::load_default() {
+        let gateway = HttpAgentGateway::new(config);
+        let mut worker = PollingWorker::new(gateway);
+
+        if let Err(error) = worker.poll_once() {
+            eprintln!("Orbit Agent poll failed: {error:?}");
+        }
+    }
+}
+
+pub fn run_polling_worker_loop(poll_interval: Duration) {
+    loop {
+        poll_once_from_default_config();
+        std::thread::sleep(poll_interval);
+    }
+}
+
+pub fn default_http_bind_addr() -> String {
+    if let Ok(addr) = std::env::var("ORBIT_AGENT_HTTP_BIND") {
+        if !addr.trim().is_empty() {
+            return addr;
+        }
+    }
+
+    "127.0.0.1:9477".to_string()
 }
 
 pub trait AgentGateway {
@@ -648,6 +746,20 @@ impl LocalJobExecutor {
         )
     }
 
+    fn script_working_directory() -> PathBuf {
+        Self::script_working_directory_for(
+            std::env::var_os("HOME").map(PathBuf::from),
+            PathBuf::from("/tmp"),
+        )
+    }
+
+    fn script_working_directory_for(home: Option<PathBuf>, fallback: PathBuf) -> PathBuf {
+        match home {
+            Some(home) if home.is_dir() => home,
+            _ => fallback,
+        }
+    }
+
     fn converge_app_dev(&self, payload: &AppDevConvergencePayload) -> Result<(), GatewayError> {
         for tool in &payload.tools {
             self.converge_tool(*tool)?;
@@ -671,10 +783,12 @@ impl LocalJobExecutor {
     fn run_script(&self, label: &str, script: &str) -> Result<(), GatewayError> {
         let script = Self::script_with_launchd_safe_path(script);
         let path = Self::launchd_safe_path();
+        let working_directory = Self::script_working_directory();
         let output = Command::new("/bin/bash")
             .arg("-lc")
             .arg(script)
             .env("PATH", path)
+            .current_dir(working_directory)
             .output()
             .map_err(|error| {
                 GatewayError::Transport(format!("{label} failed to start: {error}"))
@@ -809,19 +923,30 @@ sudo chmod -h 0755 /usr/local/bin/php 2>/dev/null || true
 const COMPOSER_SCRIPT: &str = r#"
 set -e
 
-PHP_BIN="/opt/orbit/php/8.5/bin/php"
-if [ ! -x "${PHP_BIN}" ]; then
-    PHP_BIN="$(command -v php)"
-fi
-
-if command -v composer >/dev/null 2>&1; then
-    composer --version >/dev/null
+if command -v composer >/dev/null 2>&1 || [ -x /usr/local/bin/composer ]; then
     exit 0
 fi
 
+PHP_BIN="/opt/orbit/php/8.5/bin/php"
+if [ ! -x "${PHP_BIN}" ]; then
+    if command -v php >/dev/null 2>&1; then
+        PHP_BIN="$(command -v php)"
+    else
+        echo "php is required before installing composer." >&2
+        exit 1
+    fi
+fi
+
 cd /tmp
-EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"
-curl -fsSL https://getcomposer.org/installer -o composer-setup.php
+if ! EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"; then
+    echo "Failed to fetch Composer installer signature." >&2
+    exit 1
+fi
+
+if ! curl -fsSL https://getcomposer.org/installer -o composer-setup.php; then
+    echo "Failed to download Composer installer." >&2
+    exit 1
+fi
 
 if command -v sha384sum >/dev/null 2>&1; then
     ACTUAL_SIG="$(sha384sum composer-setup.php | awk '{print $1}')"
@@ -839,9 +964,17 @@ if [ "${EXPECTED_SIG}" != "${ACTUAL_SIG}" ]; then
     exit 1
 fi
 
-sudo "${PHP_BIN}" composer-setup.php --install-dir=/usr/local/bin --filename=composer
+if ! sudo "${PHP_BIN}" composer-setup.php --install-dir=/usr/local/bin --filename=composer; then
+    echo "Composer installer command failed." >&2
+    rm -f composer-setup.php
+    exit 1
+fi
+
 rm -f composer-setup.php
-/usr/local/bin/composer --version >/dev/null
+if [ ! -x /usr/local/bin/composer ]; then
+    echo "Composer installation did not create /usr/local/bin/composer." >&2
+    exit 1
+fi
 "#;
 
 const LARAVEL_INSTALLER_SCRIPT: &str = r#"
@@ -1206,7 +1339,7 @@ bearer_token = "dev-token-placeholder"
       "operation": "app_dev_convergence",
       "role": "app-dev",
       "tld": "test",
-      "tools": ["caddy", "composer", "docker", "laravel-installer", "php-cli"]
+      "tools": ["docker", "php-cli", "composer", "laravel-installer", "caddy"]
     }
   }
 }"#,
@@ -1224,11 +1357,11 @@ bearer_token = "dev-token-placeholder"
                 role: "app-dev".to_string(),
                 tld: "test".to_string(),
                 tools: vec![
-                    AppDevTool::Caddy,
-                    AppDevTool::Composer,
                     AppDevTool::Docker,
-                    AppDevTool::LaravelInstaller,
                     AppDevTool::PhpCli,
+                    AppDevTool::Composer,
+                    AppDevTool::LaravelInstaller,
+                    AppDevTool::Caddy,
                 ],
             })
         );
@@ -1310,6 +1443,18 @@ bearer_token = "dev-token-placeholder"
     }
 
     #[test]
+    fn composer_script_treats_existing_binary_as_installed() {
+        assert!(COMPOSER_SCRIPT.contains("command -v composer >/dev/null 2>&1"));
+        assert!(COMPOSER_SCRIPT.contains("[ -x /usr/local/bin/composer ]"));
+        assert!(COMPOSER_SCRIPT.contains("php is required before installing composer."));
+        assert!(COMPOSER_SCRIPT.contains("Failed to fetch Composer installer signature."));
+        assert!(COMPOSER_SCRIPT.contains("Failed to download Composer installer."));
+        assert!(COMPOSER_SCRIPT.contains("Composer installer command failed."));
+        assert!(COMPOSER_SCRIPT
+            .contains("Composer installation did not create /usr/local/bin/composer."));
+    }
+
+    #[test]
     fn laravel_installer_script_repairs_symlink_permissions_and_verifies_output() {
         assert!(LARAVEL_INSTALLER_SCRIPT.contains(r#"sudo chmod -h 0755 /usr/local/bin/laravel"#));
         assert!(LARAVEL_INSTALLER_SCRIPT.contains(r#"grep -q "Laravel Installer""#));
@@ -1333,6 +1478,28 @@ bearer_token = "dev-token-placeholder"
         assert!(script.contains("/.orbstack/bin"));
         assert!(script.contains("/opt/homebrew/bin"));
         assert!(script.ends_with("\ndocker --version"));
+    }
+
+    #[test]
+    fn local_executor_runs_tool_scripts_from_safe_working_directory() {
+        let temp_dir = std::env::temp_dir();
+        let fallback_dir = PathBuf::from("/tmp/orbit-agent-fallback");
+
+        assert_eq!(
+            LocalJobExecutor::script_working_directory_for(
+                Some(temp_dir.clone()),
+                fallback_dir.clone()
+            ),
+            temp_dir
+        );
+
+        assert_eq!(
+            LocalJobExecutor::script_working_directory_for(
+                Some(PathBuf::from("/orbit-agent/missing-home")),
+                fallback_dir.clone()
+            ),
+            fallback_dir
+        );
     }
 
     #[test]
@@ -1370,11 +1537,11 @@ bearer_token = "dev-token-placeholder"
                         role: "app-dev".to_string(),
                         tld: "test".to_string(),
                         tools: vec![
-                            AppDevTool::Caddy,
-                            AppDevTool::Composer,
                             AppDevTool::Docker,
-                            AppDevTool::LaravelInstaller,
                             AppDevTool::PhpCli,
+                            AppDevTool::Composer,
+                            AppDevTool::LaravelInstaller,
+                            AppDevTool::Caddy,
                         ],
                     }),
                 }),
@@ -1394,11 +1561,11 @@ bearer_token = "dev-token-placeholder"
             summary.executed_operations,
             vec![ExecutedOperation::AppDevConvergence {
                 tools: vec![
-                    AppDevTool::Caddy,
-                    AppDevTool::Composer,
                     AppDevTool::Docker,
-                    AppDevTool::LaravelInstaller,
                     AppDevTool::PhpCli,
+                    AppDevTool::Composer,
+                    AppDevTool::LaravelInstaller,
+                    AppDevTool::Caddy,
                 ],
             }]
         );

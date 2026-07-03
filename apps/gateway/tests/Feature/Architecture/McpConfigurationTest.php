@@ -299,7 +299,7 @@ it('routes Orbit Agent Tauri work through a dedicated skill and reviewer persona
         ->and(repo_path('.agents/review-personas/tauri-agent.md'))
         ->toBeFile()
         ->and($harness)
-        ->toContain('| Orbit Agent Tauri app |')
+        ->toContain('| Orbit Agent Rust services |')
         ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
         ->toContain('.agents/review-personas/tauri-agent.md')
         ->and($implementingFeatures)
@@ -307,11 +307,13 @@ it('routes Orbit Agent Tauri work through a dedicated skill and reviewer persona
         ->and($skill)
         ->toContain('name: tauri-agent-development')
         ->toContain('apps/agent')
+        ->toContain('apps/macos')
         ->toContain('cargo test')
         ->toContain('Computer Use')
         ->and($reviewer)
         ->toContain('Spawn per the Solo Role Matrix in HARNESS.md')
         ->toContain('apps/agent')
+        ->toContain('apps/macos')
         ->toContain('cargo test')
         ->toContain('cargo clippy --all-targets -- -D warnings')
         ->toContain('Computer Use')
@@ -323,15 +325,17 @@ it('keeps the general Orbit skill aligned with the macOS Orbit Agent app boundar
     $concepts = file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md')) ?: '';
 
     expect($skill)
-        ->toContain('Orbit Agent macOS app')
+        ->toContain('The macOS tray UI lives under `apps/macos`')
         ->toContain('apps/agent')
+        ->toContain('apps/macos')
         ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
         ->toContain('does not install, start, update, restart, or uninstall the macOS app')
         ->toContain('The `agent` workload role does not imply Orbit Agent capability')
         ->and($concepts)
         ->toContain('Orbit Agent lane')
         ->toContain('apps/agent')
-        ->toContain('Tauri/Rust macOS menu-bar app')
+        ->toContain('apps/macos')
+        ->toContain('Tauri tray UI')
         ->toContain('The `agent` workload role is separate from Orbit Agent capability.');
 });
 

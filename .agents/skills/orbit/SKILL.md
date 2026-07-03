@@ -19,10 +19,12 @@ SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
 similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
 fallbacks.
 
-Orbit Agent is a separate native lane. The Orbit Agent macOS app lives under
-`apps/agent` as a Tauri/Rust menu-bar app and headless worker for supported
-macOS `app-dev` and self-managed workload nodes. It is not the `agent` workload
-role and is not an agent tool installed through `tool:install`.
+Orbit Agent is a separate native lane. The headless Orbit Agent service lives
+under `apps/agent` as a Rust/Axum service binary for supported explicitly
+agent-capable Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes.
+The macOS tray UI lives under `apps/macos` as a Tauri/Rust menu-bar app that
+does not own the long-running service loop. It is not the `agent` workload role
+and is not an agent tool installed through `tool:install`.
 The `agent` workload role does not imply Orbit Agent capability.
 A locally installed or locally launched `Orbit Agent.app` on macOS is
 host-local runtime evidence for native tray work, but the current Orbit CLI
@@ -403,10 +405,10 @@ does not install, start, update, restart, or uninstall the macOS app, and the
 - `doctor --family=process --node=<node>` is valid for every node with at
   least one active role assignment. Role-less client/operator identities remain
   node-family only.
-- For source changes under `apps/agent`, use
+- For source changes under `apps/agent` or `apps/macos`, use
   `.agents/skills/tauri-agent-development/SKILL.md`; native tray/menu behavior
-  must be verified on the implementing Mac host, not substituted with retained
-  Incus.
+  under `apps/macos` must be verified on the implementing Mac host, not
+  substituted with retained Incus.
 - Don't SSH to nodes manually to "fix" Orbit state  -  use `doctor --fix` so intent and reality stay aligned.
 
 ## When to read which reference

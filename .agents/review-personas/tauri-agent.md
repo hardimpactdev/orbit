@@ -22,9 +22,11 @@ VERDICT: <pass|findings|blocked>
 - `blocked`: required evidence or context was missing; the review could not
   complete.
 
-Use this reviewer for Orbit Agent changes under `apps/agent`, especially
-Tauri/Rust macOS tray behavior, native menu layout, headless worker behavior,
-local config loading, gateway ping, polling, and typed job execution.
+Use this reviewer for Orbit Agent macOS UI changes under `apps/macos`,
+especially Tauri/Rust tray behavior, native menu layout, and service-status UI.
+Also use it for coordinated `apps/agent` service changes when the headless
+service contract affects the macOS UI, gateway ping, polling, or typed job
+execution.
 
 This is a reviewer persona, not an implementation workflow. It does not replace
 `.agents/skills/implementing-features/SKILL.md`,
@@ -52,8 +54,10 @@ Read only the files needed for the Orbit Agent surface under review:
 - `apps/docs/content/tech-stack.md`
 - `apps/docs/content/domains/1_node/node-concepts.md`
 - `apps/agent/Cargo.toml`
-- `apps/agent/tauri.conf.json`
-- The changed Rust source and focused Rust tests under `apps/agent/src`
+- `apps/macos/Cargo.toml`
+- `apps/macos/tauri.conf.json`
+- The changed Rust source and focused Rust tests under `apps/agent/src` or
+  `apps/macos/src`
 - The raw user-provided screenshots, transcripts, failure text, negative
   examples, and explicit deferrals recorded in `.orbit/loop.md`, the feature
   scratchpad, or the implementation report
@@ -75,8 +79,8 @@ disagree.
 
 ### Contract And Scope
 
-- The change stays inside `apps/agent` or explicitly owned harness/docs/gate
-  files.
+- The change keeps headless service code in `apps/agent`, native macOS UI code
+  in `apps/macos`, or explicitly owned harness/docs/gate files.
 - Product docs, generated unit map source, tests, and implementation agree on
   whether focused Cargo checks are run directly and broad handoff uses
   `composer quality-check`.
@@ -85,7 +89,7 @@ disagree.
   replacement behavior unless the active contract explicitly owns it.
 - Raw screenshots, transcripts, and negative examples are represented in the
   Done Contract, tests, native verification, or explicit deferrals.
-- Non-Markdown `apps/agent` diffs use the implementing Mac as live topology.
+- Non-Markdown `apps/macos` diffs use the implementing Mac as live topology.
   The final packet records `Retained topology proof: passed - host topology
   kind=host-macos; host=...; os=...; command=...; evidence=...`. Retained Incus
   is not accepted as proof for native Tauri/macOS behavior.
@@ -106,8 +110,10 @@ disagree.
 
 ### Rust And Tauri
 
-- `apps/agent` Rust code remains typed and small; avoid stringly native-menu
+- `apps/macos` Rust code remains typed and small; avoid stringly native-menu
   state when local structs or helpers already express the contract.
+- `apps/agent` owns the headless service loop; `apps/macos` may query service
+  status but must not own long-running polling or job execution.
 - Tauri v2 tray/menu APIs are used consistently for menu items, tray events,
   and menu event handling.
 - Local config, gateway ping, job polling, and typed job execution failures are
@@ -116,8 +122,8 @@ disagree.
 
 ### Tests And Verification
 
-- Focused `apps/agent` tests cover behavior that can be tested without a native
-  macOS tray.
+- Focused `apps/agent` and `apps/macos` tests cover behavior that can be tested
+  without a native macOS tray.
 - Required Cargo evidence is present:
 
 ```bash
@@ -125,11 +131,15 @@ cd apps/agent && cargo test
 cd apps/agent && cargo fmt -- --check
 cd apps/agent && cargo check
 cd apps/agent && cargo clippy --all-targets -- -D warnings
+cd apps/macos && cargo test
+cd apps/macos && cargo fmt -- --check
+cd apps/macos && cargo check
+cd apps/macos && cargo clippy --all-targets -- -D warnings
 ```
 
 - Broad handoff evidence includes `composer quality-check` when the diff is not
   docs-only.
-- Native `apps/agent` diffs include host-Mac topology evidence captured on the
+- Native `apps/macos` diffs include host-Mac topology evidence captured on the
   Darwin implementation host. If the work ran on non-Darwin, the review is
   blocked until the slice is moved to a Mac host or a Mac-host proof is supplied
   from the implementation machine.

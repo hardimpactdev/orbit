@@ -58,7 +58,7 @@ Orbit has three supported verification lanes:
    the Composer command from a shell.
 
 Native Orbit Agent/Tauri app behavior uses the implementing Mac as the runtime
-surface under lane 2. For non-Markdown `apps/agent` diffs, the finalization
+surface under lane 2. For non-Markdown `apps/macos` diffs, the finalization
 packet records `Retained topology proof: passed - host topology kind=host-macos;
 host=...; os=...; command=...; evidence=...`. This proves the macOS host running
 the native app, not a retained Incus topology.
@@ -186,7 +186,7 @@ composer docs-lint
 # Broad local quality gate
 composer quality-check
 
-# Focused Orbit Agent Cargo/Tauri checks
+# Focused Orbit Agent headless service checks
 hostname
 uname -s
 sw_vers
@@ -194,6 +194,12 @@ cd apps/agent && cargo test
 cd apps/agent && cargo fmt -- --check
 cd apps/agent && cargo check
 cd apps/agent && cargo clippy --all-targets -- -D warnings
+
+# Focused Orbit Agent macOS UI Cargo/Tauri checks
+cd apps/macos && cargo test
+cd apps/macos && cargo fmt -- --check
+cd apps/macos && cargo check
+cd apps/macos && cargo clippy --all-targets -- -D warnings
 
 # Manual prepared-topology feature E2E
 composer test:e2e
@@ -207,11 +213,12 @@ composer test:e2e:provision:docker
 composer test:e2e:provision:incus
 ```
 
-Run the narrowest useful check while developing. For `apps/agent`, run focused
-Cargo checks from `apps/agent`; broad `composer quality-check` includes those
-Cargo subgates for handoff. For native `apps/agent` diffs, also capture the
-host-Mac topology row from the implementing Darwin host and use Computer Use
-when native tray/menu rendering is in scope.
+Run the narrowest useful check while developing. For the headless Orbit Agent
+service, run focused Cargo checks from `apps/agent`. For the macOS tray UI, run
+focused Cargo/Tauri checks from `apps/macos`. Broad `composer quality-check`
+includes both Rust surfaces for handoff. For native `apps/macos` diffs, also
+capture the host-Mac topology row from the implementing Darwin host and use
+Computer Use when native tray/menu rendering is in scope.
 
 Run `composer quality-check` before handing off a broad code change. When
 behavior touches the integrated topology, capture retained topology proof for

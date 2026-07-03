@@ -1005,7 +1005,7 @@ it('blocks native Orbit Agent finalization on Darwin when host macOS proof is mi
         - Fresh analyzer:
           - Verdict: pass - no missed signals
         - Accepted durable updates:
-          - apps/agent/src/main.rs changed native Tauri behavior.
+          - apps/macos/src/main.rs changed native Tauri behavior.
         - Rejected or already-covered signals:
           - None.
         - Deferred follow-ups:
@@ -1016,7 +1016,7 @@ it('blocks native Orbit Agent finalization on Darwin when host macOS proof is mi
 
     commit_finalization_gate_file(
         worktree: $worktree,
-        path: 'apps/agent/src/main.rs',
+        path: 'apps/macos/src/main.rs',
         contents: "fn main() {}\n",
     );
     write_finalization_gate_artifact(
@@ -1056,7 +1056,7 @@ it('allows native Orbit Agent finalization on Darwin with host macOS proof', fun
         - Fresh analyzer:
           - Verdict: pass - host macOS proof accepted.
         - Accepted durable updates:
-          - apps/agent/src/main.rs changed native Tauri behavior.
+          - apps/macos/src/main.rs changed native Tauri behavior.
         - Rejected or already-covered signals:
           - None.
         - Deferred follow-ups:
@@ -1067,7 +1067,7 @@ it('allows native Orbit Agent finalization on Darwin with host macOS proof', fun
 
     commit_finalization_gate_file(
         worktree: $worktree,
-        path: 'apps/agent/src/main.rs',
+        path: 'apps/macos/src/main.rs',
         contents: "fn main() {}\n",
     );
     write_finalization_gate_artifact(
@@ -1105,7 +1105,7 @@ it('blocks native Orbit Agent finalization on non Darwin implementation hosts', 
         - Fresh analyzer:
           - Verdict: pass - host macOS proof accepted.
         - Accepted durable updates:
-          - apps/agent/src/main.rs changed native Tauri behavior.
+          - apps/macos/src/main.rs changed native Tauri behavior.
         - Rejected or already-covered signals:
           - None.
         - Deferred follow-ups:
@@ -1116,7 +1116,7 @@ it('blocks native Orbit Agent finalization on non Darwin implementation hosts', 
 
     commit_finalization_gate_file(
         worktree: $worktree,
-        path: 'apps/agent/src/main.rs',
+        path: 'apps/macos/src/main.rs',
         contents: "fn main() {}\n",
     );
     write_finalization_gate_artifact(

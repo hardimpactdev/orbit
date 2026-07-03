@@ -14,7 +14,7 @@ Client
   -> gateway HTTPS exposure
   -> orbit-gateway
   -> node execution lane
-     (current SSH/RemoteShell; future Orbit Agent where supported)
+     (SSH/RemoteShell plus typed Orbit Agent where supported)
 
 Public production HTTP:
 
@@ -78,7 +78,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
-| Gateway to node | Current: SSH through `RemoteShell`, classified by execution lane. Future: node-local Orbit Agent for supported agent-capable nodes, starting with macOS `app-dev` and self-managed workload nodes. |
+| Gateway to node | Current: SSH through `RemoteShell` for general execution lanes, plus node-local Orbit Agent for supported explicitly `orbit_agent_capable` Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
@@ -220,13 +220,13 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 ### Gateway to node
 
 See [Architecture: Trust And Transport](architecture.md#trust-and-transport)
-for the current SSH/RemoteShell edge and the future Orbit Agent direction.
+for the SSH/RemoteShell edge and the typed Orbit Agent lane.
 
-The implemented gateway-to-node path today is SSH through `RemoteShell`. The
-future Orbit Agent runs on supported nodes, starting with macOS `app-dev` and
-self-managed workload nodes. It is not implemented by this document:
-SSH/RemoteShell remains bootstrap, recovery, fallback, and the current path
-anywhere the Orbit Agent lane does not exist.
+The general gateway-to-node path today is SSH through `RemoteShell`. The typed
+Orbit Agent lane is current for supported nodes explicitly marked
+`orbit_agent_capable`, including Linux/Ubuntu and macOS `app-dev` or
+self-managed workload nodes. SSH/RemoteShell remains bootstrap, recovery,
+fallback, and the current path anywhere the Orbit Agent lane does not exist.
 
 Gateway-to-node work is split into `RemoteHostExecutor` for host substrate
 work, gateway-container execution for gateway Laravel/artisan/PDO work inside
@@ -277,12 +277,12 @@ The current sudo model intentionally grants the managed maintenance user broad
 passwordless sudo on managed nodes. Least-privilege sudo wrappers are not part
 of the current security baseline.
 
-That passwordless sudo contract applies to the current SSH/RemoteShell lane. It
-is not the intended privilege UX for the future macOS Orbit Agent lane. On an
-agent-capable macOS node, a typed Orbit job submitted by the gateway may
-execute user-level work locally and may invoke the macOS/sudo OS prompt when a
-protected step needs administrator access. V1 has no separate Orbit approval UI
-or pending/approve flow.
+That passwordless sudo contract applies to the SSH/RemoteShell lane. It is not
+the intended privilege UX for the Orbit Agent lane. On an agent-capable node, a
+typed Orbit job submitted by the gateway may execute user-level work locally and
+may invoke the operating system sudo prompt when a protected step needs
+administrator access. V1 has no separate Orbit approval UI or pending/approve
+flow.
 
 #### Orbit Agent lane and gateway protocol skeleton
 
@@ -291,20 +291,21 @@ supported nodes. The gateway remains authoritative for intent, authorization,
 release manifests, immutable update plans, operation history, and activity logs.
 The gateway owns a minimal protocol skeleton: typed `noop` and
 `app-dev-convergence` jobs, polling and claim, lifecycle reporting, and
-operation/activity recording. The local runtime bootstrap now lives under
-`apps/agent` as a tiny Tauri/Rust macOS menu-bar app with a headless `--worker`
-mode for background polling. It loads local agent config, pings the configured
-gateway from the menu surface, claims typed jobs, reports
-accepted/running/succeeded or failed lifecycle events, and does not create a
-separate control plane.
+operation/activity recording. The local runtime is split across two Rust
+surfaces: `apps/agent` is the headless Rust/Axum service binary that loads
+local agent config, exposes minimal loopback `/health` and `/status` endpoints,
+claims typed jobs, and reports accepted/running/succeeded or failed lifecycle
+events; `apps/macos` is the macOS-only Tauri tray UI that reads service status
+and performs one-shot gateway status refreshes without owning the service loop.
 
 V1 is scoped narrowly:
 
 - typed Orbit jobs only, not arbitrary shell transport;
 - polling for jobs, with no WebSocket requirement;
-- one-shot gateway ping when the macOS menu opens, showing Connected or
-  Disconnected plus node name and gateway name/host;
-- menu icon state means the process is running, with Restart and Quit actions;
+- one-shot gateway/status refresh when the macOS menu opens, showing Connected
+  or Disconnected plus node name and gateway name/host;
+- menu icon state belongs to the UI process, with UI Restart and Quit actions
+  that do not manage the independent service lifetime;
 - no menu job history;
 - `app-dev-convergence` may run fixed sudo-protected installer steps and rely
   on the operating system prompt, but there is no arbitrary privileged shell or

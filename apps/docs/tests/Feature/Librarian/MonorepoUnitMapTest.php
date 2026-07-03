@@ -19,6 +19,7 @@ it('builds compact routing entries for every known Orbit unit', function (): voi
             'apps-docs',
             'apps-e2e',
             'apps-gateway',
+            'apps-macos',
             'apps-reverb',
             'packages-core',
             'packages-sdk',
@@ -72,31 +73,45 @@ it('maps app and package units to their local tooling and preferred verification
         ->toContain('cd packages/sdk && vendor/bin/pest --compact');
 });
 
-it('maps the Orbit Agent runtime to Cargo and Tauri verification', function (): void {
+it('maps the Orbit Agent service and macOS UI to separate Cargo verification', function (): void {
     $agent = app(MonorepoUnitMapBuilder::class)->build()['units']['apps-agent'];
+    $macos = app(MonorepoUnitMapBuilder::class)->build()['units']['apps-macos'];
 
     expect($agent)
-        ->toHaveKey('type', 'tauri-rust-agent-app')
+        ->toHaveKey('type', 'rust-agent-service')
         ->toHaveKey('facts.tooling.cargo_toml', 'apps/agent/Cargo.toml')
-        ->toHaveKey('facts.tooling.tauri_config', 'apps/agent/tauri.conf.json')
+        ->toHaveKey('facts.tooling.tauri_config', null)
         ->and($agent['purpose'])
-        ->toContain('menu-bar and headless worker Orbit Agent runtime app')
+        ->toContain('Headless Rust/Axum Orbit Agent service binary')
         ->and($agent['verification']['preferred_commands'])
         ->toContain('cd apps/agent && cargo test')
         ->toContain('cd apps/agent && cargo fmt -- --check')
-        ->toContain('cd apps/agent && cargo clippy --all-targets -- -D warnings')
         ->toContain('cd apps/agent && cargo check')
-        ->and($agent['agent_skills'])
-        ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
+        ->toContain('cd apps/agent && cargo clippy --all-targets -- -D warnings')
         ->and($agent['verification']['path_argument_rules'])
         ->toContain(
-            'Run focused Cargo/Tauri-compatible Rust checks from apps/agent while developing; root composer quality-check includes the same apps/agent Cargo subgates for broad handoff.',
+            'Run focused headless Rust service checks from apps/agent while developing; root composer quality-check includes the same apps/agent Cargo subgates for broad handoff.',
         )
         ->not
         ->toContain(
             'Run Cargo/Tauri-compatible Rust checks from apps/agent; do not route them through root Composer, Laravel Artisan, Pest, or Mago wrappers.',
         )
         ->and($agent['do_not_start_when'][1])
+        ->toContain('gateway claim/report endpoint')
+        ->and($macos)
+        ->toHaveKey('type', 'tauri-macos-agent-ui')
+        ->toHaveKey('facts.tooling.cargo_toml', 'apps/macos/Cargo.toml')
+        ->toHaveKey('facts.tooling.tauri_config', 'apps/macos/tauri.conf.json')
+        ->and($macos['purpose'])
+        ->toContain('queries the independent headless Orbit Agent service')
+        ->and($macos['verification']['preferred_commands'])
+        ->toContain('cd apps/macos && cargo test')
+        ->toContain('cd apps/macos && cargo fmt -- --check')
+        ->toContain('cd apps/macos && cargo check')
+        ->toContain('cd apps/macos && cargo clippy --all-targets -- -D warnings')
+        ->and($macos['agent_skills'])
+        ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
+        ->and($macos['do_not_start_when'][2])
         ->toContain('self-update')
         ->toContain('arbitrary privileged shell execution')
         ->toContain('SSH/RemoteShell replacement');

@@ -25,10 +25,11 @@ runs the CLI.
 ## Orbit Agent lane
 
 Orbit Agent capability is explicit gateway registry state for supported nodes,
-starting with macOS `app-dev` and self-managed workload nodes. The local runtime
-bootstrap lives under `apps/agent` as a Tauri/Rust macOS menu-bar app and
-headless worker that polls for typed Orbit jobs and reports lifecycle events
-back to the gateway.
+including explicitly agent-capable Linux/Ubuntu and macOS `app-dev` or
+self-managed workload nodes. The local runtime is split between `apps/agent`,
+the headless Rust/Axum service that polls for typed Orbit jobs and reports
+lifecycle events back to the gateway, and `apps/macos`, the Tauri tray UI that
+runs only on macOS.
 
 The `agent` workload role is separate from Orbit Agent capability. The role owns
 autonomous agent tools and internal agent-tool routes on Ubuntu nodes. It does
@@ -37,9 +38,9 @@ does not assign the `agent` role.
 
 `orbit node:update --orbit-agent-capable` toggles only the capability flag. It
 does not install, start, update, restart, uninstall, or prove reachability of
-the macOS app. For source changes under `apps/agent`, use the
-`tauri-agent-development` skill and verify native tray/menu behavior on the
-implementing Mac host.
+the macOS app or headless service. For source changes under `apps/agent` or
+`apps/macos`, use the `tauri-agent-development` skill and verify native
+tray/menu behavior on the implementing Mac host when `apps/macos` changes.
 
 ## Architecture in one diagram
 

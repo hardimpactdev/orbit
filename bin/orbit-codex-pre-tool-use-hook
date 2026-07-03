@@ -884,7 +884,7 @@ function is_topology_relevant_php_file(string $path): bool
 
 function is_native_orbit_agent_file(string $path): bool
 {
-    return str_starts_with($path, 'apps/agent/')
+    return str_starts_with($path, 'apps/macos/')
         && ! is_markdown_file($path);
 }
 

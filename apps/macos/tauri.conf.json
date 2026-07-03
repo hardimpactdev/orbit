@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Orbit Agent",
+  "productName": "Orbit macOS",
   "version": "0.1.0",
-  "identifier": "dev.hardimpact.orbit.agent",
+  "identifier": "dev.hardimpact.orbit.macos",
   "build": {
     "frontendDist": "frontend"
   },
@@ -11,7 +11,7 @@
       {
         "label": "main",
         "visible": false,
-        "title": "Orbit Agent"
+        "title": "Orbit macOS"
       }
     ]
   }

@@ -17,12 +17,12 @@ composer docs-lint
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, Mago analyze/lint/format checks, Rector
 dry-run, the default Pest suites for the gateway, CLI, docs, core, and SDK, and
-Cargo checks for the Tauri/Rust Orbit Agent app.
+Cargo checks for the headless Orbit Agent service and macOS Tauri UI.
 
 In an interactive TTY, `bin/quality-check.sh` renders an in-place progress tree
 for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/e2e`,
-`apps/reverb`, `apps/agent`, `packages/core`, `packages/sdk`) while subgates
-run, leaves the final pass/fail tree visible, and then prints the same
+`apps/reverb`, `apps/agent`, `apps/macos`, `packages/core`, `packages/sdk`)
+while subgates run, leaves the final pass/fail tree visible, and then prints the same
 per-subgate logs and summaries as before.
 
 In the tree, every row for an area starts as queued. It changes to running when
@@ -72,12 +72,13 @@ started. Mago and Rector still cover `apps/e2e` during the aggregate
 quality-check, but E2E-app Pest tests are not part of the default aggregate
 gate. E2E Pest remains manual-only through the explicit E2E command surface.
 
-The Orbit Agent lane runs Cargo/Tauri-compatible checks from `apps/agent`:
-`cargo test`, `cargo fmt -- --check`, `cargo check`, and
+The Orbit Agent lanes run Cargo checks from both Rust surfaces. `apps/agent`
+is the headless service lane and `apps/macos` is the macOS Tauri UI lane. Each
+lane runs `cargo test`, `cargo fmt -- --check`, `cargo check`, and
 `cargo clippy --all-targets -- -D warnings`. In `composer quality-check:fix`,
-the formatting subgate runs `cargo fmt` instead of `cargo fmt -- --check`.
-Focused development can still run the same Cargo commands directly from
-`apps/agent`; the root aggregate gate exists for broad handoff evidence.
+each formatting subgate runs `cargo fmt` instead of `cargo fmt -- --check`.
+Focused development can still run the same Cargo commands directly from the
+owning app; the root aggregate gate exists for broad handoff evidence.
 
 Core Pest still runs after all background Pest lanes because the core progress
 tests fork ticker children and must stay isolated from unrelated Pest process
@@ -143,7 +144,7 @@ roles or nodes, exact command, and captured terminal/session or artifact
 evidence.
 
 For native Orbit Agent/Tauri changes, the hook applies a host topology rule
-instead. Non-Markdown files under `apps/agent/` require the final packet to run
+instead. Non-Markdown files under `apps/macos/` require the final packet to run
 from a Darwin implementation host and record `Retained topology proof: passed -
 host topology kind=host-macos; host=...; os=...; command=...; evidence=...`.
 Retained Incus does not satisfy this proof because the macOS app itself is the

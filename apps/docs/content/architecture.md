@@ -290,11 +290,12 @@ Current Orbit has two implemented network edges.
 | Gateway → node | SSH today; Orbit Agent polling where supported | Node-side work or typed job dispatch |
 
 The gateway owns the first Orbit Agent protocol skeleton and the monorepo now
-contains the local macOS runtime bootstrap under `apps/agent`. The lane does
-not add a node-side control plane: an agent-capable node polls the gateway for
-typed Orbit jobs over the existing gateway API trust path, reports lifecycle
-events back to the gateway, and keeps SSH as bootstrap, recovery, and fallback.
-V1 has no WebSocket requirement.
+contains two local Rust surfaces: `apps/agent` is the headless Axum service
+binary and `apps/macos` is the macOS-only Tauri tray UI. The lane does not add
+a node-side control plane: an agent-capable node polls the gateway for typed
+Orbit jobs over the existing gateway API trust path, reports lifecycle events
+back to the gateway, and keeps SSH as bootstrap, recovery, and fallback. V1 has
+no WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -321,11 +322,11 @@ Orbit Agent is reserved as a node-local execution lane. It is not a new control
 plane or arbitrary shell transport. The gateway owns typed job state, a `noop`
 proof job, poll/claim, lifecycle reporting, and operation/activity recording.
 
-The local Orbit Agent bootstrap lives in `apps/agent` as a tiny Tauri/Rust
-macOS menu-bar app with a headless `--worker` mode for background polling. The
-bootstrap loads local config, performs a one-shot gateway ping from the menu
-surface, polls for typed `noop` and `app-dev-convergence` jobs, and reports
-accepted/running/succeeded or failed lifecycle events.
+The local Orbit Agent service lives in `apps/agent` as a headless Rust/Axum
+binary. It loads local config, exposes minimal loopback `/health` and `/status`
+HTTP endpoints, polls for typed `noop` and `app-dev-convergence` jobs, and
+reports accepted/running/succeeded or failed lifecycle events. The background
+service loop belongs to this service binary.
 
 The bootstrap is not production packaged, autostarted, signed, notarized,
 self-updating, or a replacement for SSH/RemoteShell fallback. V1 jobs are typed
@@ -334,11 +335,11 @@ only fixed local installer steps for Orbit's approved app-dev tool catalog and
 may rely on the operating system's sudo prompt. It is not an arbitrary shell
 transport and does not add a separate Orbit approval queue.
 
-The menu-bar surface is intentionally minimal: it can show that the process is
-running, perform a one-shot gateway ping on menu open or Refresh, and offer
-Restart and Quit actions. The menu ping shows Connected or Disconnected, the
-node name, and the gateway name/host. Job history belongs in gateway
-operation/activity history.
+The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
+it can show service/gateway status, refresh status on menu open or Refresh, and
+offer UI-level Restart and Quit actions. Launching or quitting the macOS UI does
+not own the independent `apps/agent` service lifetime. Job history belongs in
+gateway operation/activity history.
 
 `RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
 helper logic that needs host file access plus PHP/PDO without relying on ad hoc

@@ -206,6 +206,7 @@ PROGRESS_AREAS=(
     apps/e2e
     apps/reverb
     apps/agent
+    apps/macos
     packages/core
     packages/sdk
 )
@@ -263,6 +264,9 @@ quality_check_label_area() {
             ;;
         agent_*)
             echo apps/agent
+            ;;
+        macos_*)
+            echo apps/macos
             ;;
         core_*)
             echo packages/core
@@ -682,6 +686,10 @@ APP_BEFORE_PACKAGE_CHECK_LABELS=(
     agent_cargo_fmt
     agent_cargo_check
     agent_cargo_clippy
+    macos_cargo_test
+    macos_cargo_fmt
+    macos_cargo_check
+    macos_cargo_clippy
 )
 
 APP_REMAINING_CHECK_LABELS=(
@@ -731,6 +739,10 @@ BACKGROUND_CHECK_LABELS=(
     agent_cargo_fmt
     agent_cargo_check
     agent_cargo_clippy
+    macos_cargo_test
+    macos_cargo_fmt
+    macos_cargo_check
+    macos_cargo_clippy
     core_mago_analyze
     core_mago_lint
     core_rector
@@ -778,6 +790,10 @@ CHECK_LABELS=(
     agent_cargo_fmt
     agent_cargo_check
     agent_cargo_clippy
+    macos_cargo_test
+    macos_cargo_fmt
+    macos_cargo_check
+    macos_cargo_clippy
     cli_pest
     docs_pest
     core_pest
@@ -860,14 +876,19 @@ run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../rever
 
 if [ "$FIX_MODE" -eq 1 ]; then
     run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt'
-    wait_for_bg_labels agent_cargo_fmt
+    run_bg macos_cargo_fmt bash -lc 'cd apps/macos && cargo fmt'
+    wait_for_bg_labels agent_cargo_fmt macos_cargo_fmt
     quality_check_progress_render_pending
 else
     run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt -- --check'
+    run_bg macos_cargo_fmt bash -lc 'cd apps/macos && cargo fmt -- --check'
 fi
 run_bg agent_cargo_test bash -lc 'cd apps/agent && cargo test'
 run_bg agent_cargo_check bash -lc 'cd apps/agent && cargo check'
 run_bg agent_cargo_clippy bash -lc 'cd apps/agent && cargo clippy --all-targets -- -D warnings'
+run_bg macos_cargo_test bash -lc 'cd apps/macos && cargo test'
+run_bg macos_cargo_check bash -lc 'cd apps/macos && cargo check'
+run_bg macos_cargo_clippy bash -lc 'cd apps/macos && cargo clippy --all-targets -- -D warnings'
 
 wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"
 quality_check_progress_render_pending

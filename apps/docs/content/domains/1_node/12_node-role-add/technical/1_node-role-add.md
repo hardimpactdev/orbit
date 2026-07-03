@@ -66,16 +66,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
-- When the added role is `app-dev`, the target node is macOS/Darwin, and the
-  target node has `orbit_agent_capable=true`, the gateway queues a typed
-  Orbit Agent job with `type=app-dev-convergence`. The job payload is fixed by
-  the gateway and contains `operation=app_dev_convergence`, `role=app-dev`,
-  the app-dev TLD, and the catalog tools `caddy`, `composer`, `docker`,
-  `laravel-installer`, and `php-cli`.
+- When the added role is `app-dev` and the target node has
+  `orbit_agent_capable=true` (supported on Ubuntu and macOS/Darwin platforms),
+  the gateway queues a typed Orbit Agent job with `type=app-dev-convergence`.
+  The job payload is fixed by the gateway and contains `operation=app_dev_convergence`,
+  `role=app-dev`, the app-dev TLD, and the dependency-ordered catalog tools
+  `docker`, `php-cli`, `composer`, `laravel-installer`, and `caddy`.
 - Orbit Agent jobs are not queued for `app-dev` role additions until the node
   has explicitly opted in through `node:update <node> --orbit-agent-capable`.
-  The `agent` workload role and macOS platform detection do not imply Orbit
-  Agent capability.
+  The `agent` workload role and platform alone do not imply Orbit Agent
+  capability.
 - If synchronous convergence leaves the assignment in `error`, return a failure
   envelope and leave the errored assignment for `doctor --family=node --restore`.
 

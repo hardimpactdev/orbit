@@ -10,8 +10,8 @@ fn ensure_tauri_context_icon() {
         return;
     }
 
-    std::fs::create_dir_all("icons").expect("failed to create Orbit Agent icon directory");
-    std::fs::write(icon_path, png_icon()).expect("failed to write Orbit Agent icon");
+    std::fs::create_dir_all("icons").expect("failed to create Orbit macOS icon directory");
+    std::fs::write(icon_path, png_icon()).expect("failed to write Orbit macOS icon");
 }
 
 fn png_icon() -> Vec<u8> {
