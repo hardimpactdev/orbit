@@ -251,6 +251,6 @@ mod tests {
         let icon = tray_icon();
 
         assert_eq!(icon.width(), 18);
-        assert_eq!(icon.height(), 9);
+        assert_eq!(icon.height(), 18);
     }
 }
