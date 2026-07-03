@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-03T11:46:20Z",
+    "ended_at": "2026-07-03T11:46:26Z",
+    "duration_seconds": 6,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/host-macos-topology-proof",
+        "commit": "7ea8b226d4da83d7705241091035a60cb132d9ef"
+    },
+    "subgates": []
+}

@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-03T11:52:36+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-host-macos-topology-proof/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-03-135236-codex-host-macos-topology-proof",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-03-135236-codex-host-macos-topology-proof/agent-sessions",
+    "copied_entries": [
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
