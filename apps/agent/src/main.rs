@@ -21,7 +21,15 @@ const REFRESH_MENU_ID: &str = "refresh_connection";
 const RESTART_MENU_ID: &str = "restart_agent";
 const QUIT_MENU_ID: &str = "quit_agent";
 const WORKER_FLAG: &str = "--worker";
-const MIN_IP_ROW_WIDTH: usize = 24;
+// Tauri's native menu rows expose one title string, so these approximate
+// macOS menu-font widths keep IP suffixes aligned without a wide fixed column.
+const IP_ROW_MIN_GAP_WIDTH_UNITS: usize = 1_200;
+const IP_ROW_PAD_WIDE: char = '\u{2002}';
+const IP_ROW_PAD_WIDE_WIDTH_UNITS: usize = 642;
+const IP_ROW_PAD_MEDIUM: char = '\u{2009}';
+const IP_ROW_PAD_MEDIUM_WIDTH_UNITS: usize = 175;
+const IP_ROW_PAD_NARROW: char = '\u{200A}';
+const IP_ROW_PAD_NARROW_WIDTH_UNITS: usize = 84;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RefreshSource {
@@ -91,13 +99,13 @@ struct TrayMenuItems {
 impl TrayMenuItems {
     fn new(app: &AppHandle, state: &MenuState) -> tauri::Result<Self> {
         let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
-        let ip_row_width = state.ip_row_width();
+        let ip_row_layout = state.ip_row_layout();
 
         for (index, node) in state.granted_nodes.iter().enumerate() {
             granted_nodes.push(disabled_menu_item(
                 app,
                 format!("granted_node_{index}"),
-                granted_node_label(node, ip_row_width),
+                granted_node_label(node, ip_row_layout),
             )?);
         }
 
@@ -106,30 +114,32 @@ impl TrayMenuItems {
             node_ip: disabled_menu_item(
                 app,
                 NODE_IP_MENU_ID,
-                aligned_ip_label("IP", state.node_ip(), ip_row_width),
+                aligned_ip_label("IP", state.node_ip(), ip_row_layout),
             )?,
             gateway: disabled_menu_item(
                 app,
                 GATEWAY_MENU_ID,
-                aligned_ip_label("Gateway", &state.gateway_ip, ip_row_width),
+                aligned_ip_label("Gateway", &state.gateway_ip, ip_row_layout),
             )?,
             granted_nodes,
         })
     }
 
     fn update(&self, state: &MenuState) {
-        let ip_row_width = state.ip_row_width();
+        let ip_row_layout = state.ip_row_layout();
 
         let _ = self.status.set_text(state.status.label());
         let _ = self
             .node_ip
-            .set_text(aligned_ip_label("IP", state.node_ip(), ip_row_width));
-        let _ = self
-            .gateway
-            .set_text(aligned_ip_label("Gateway", &state.gateway_ip, ip_row_width));
+            .set_text(aligned_ip_label("IP", state.node_ip(), ip_row_layout));
+        let _ = self.gateway.set_text(aligned_ip_label(
+            "Gateway",
+            &state.gateway_ip,
+            ip_row_layout,
+        ));
 
         for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
-            let _ = item.set_text(granted_node_label(node, ip_row_width));
+            let _ = item.set_text(granted_node_label(node, ip_row_layout));
         }
     }
 
@@ -203,16 +213,135 @@ fn build_tray_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<TrayMenu
     Ok(TrayMenu { menu, items })
 }
 
-fn granted_node_label(node: &GrantedNodeMenuRow, label_width: usize) -> String {
-    aligned_ip_label(&node.name, node.ip(), label_width)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct IpRowLayout {
+    target_title_width_units: usize,
 }
 
-fn aligned_ip_label(label: &str, ip: &str, label_width: usize) -> String {
-    if label.len() + ip.len() >= label_width {
-        return format!("{label} {ip}");
+fn granted_node_label(node: &GrantedNodeMenuRow, layout: IpRowLayout) -> String {
+    aligned_ip_label(&node.name, node.ip(), layout)
+}
+
+fn aligned_ip_label(label: &str, ip: &str, layout: IpRowLayout) -> String {
+    let content_width_units = menu_title_width_units(label) + menu_title_width_units(ip);
+    let padding_width_units = layout
+        .target_title_width_units
+        .saturating_sub(content_width_units)
+        .max(IP_ROW_MIN_GAP_WIDTH_UNITS);
+
+    format!("{label}{}{ip}", ip_row_padding(padding_width_units))
+}
+
+fn ip_row_padding(width_units: usize) -> String {
+    let base_wide_count = width_units / IP_ROW_PAD_WIDE_WIDTH_UNITS;
+    let mut best = (usize::MAX, usize::MAX, 0, 0, 0);
+    let first_wide_count = base_wide_count.saturating_sub(1);
+    let last_wide_count = base_wide_count.saturating_add(1);
+
+    for wide_count in first_wide_count..=last_wide_count {
+        for medium_count in 0..=10 {
+            for narrow_count in 0..=10 {
+                let candidate_width = wide_count * IP_ROW_PAD_WIDE_WIDTH_UNITS
+                    + medium_count * IP_ROW_PAD_MEDIUM_WIDTH_UNITS
+                    + narrow_count * IP_ROW_PAD_NARROW_WIDTH_UNITS;
+                let error = candidate_width.abs_diff(width_units);
+                let glyph_count = wide_count + medium_count + narrow_count;
+
+                if (error, glyph_count) < (best.0, best.1) {
+                    best = (error, glyph_count, wide_count, medium_count, narrow_count);
+                }
+            }
+        }
     }
 
-    format!("{label}{ip:>width$}", width = label_width - label.len())
+    let (_, _, wide_count, medium_count, narrow_count) = best;
+    let mut padding = String::with_capacity(wide_count + medium_count + narrow_count);
+
+    padding.extend(std::iter::repeat_n(IP_ROW_PAD_WIDE, wide_count));
+    padding.extend(std::iter::repeat_n(IP_ROW_PAD_MEDIUM, medium_count));
+    padding.extend(std::iter::repeat_n(IP_ROW_PAD_NARROW, narrow_count));
+
+    padding
+}
+
+fn menu_title_width_units(text: &str) -> usize {
+    text.chars().map(menu_title_char_width_units).sum()
+}
+
+fn menu_title_char_width_units(character: char) -> usize {
+    match character {
+        IP_ROW_PAD_WIDE => IP_ROW_PAD_WIDE_WIDTH_UNITS,
+        IP_ROW_PAD_MEDIUM => IP_ROW_PAD_MEDIUM_WIDTH_UNITS,
+        IP_ROW_PAD_NARROW => IP_ROW_PAD_NARROW_WIDTH_UNITS,
+        'a' => 710,
+        'b' => 791,
+        'c' => 720,
+        'd' => 791,
+        'e' => 735,
+        'f' => 463,
+        'g' => 785,
+        'h' => 757,
+        'i' => 314,
+        'j' => 313,
+        'k' => 698,
+        'l' => 321,
+        'm' => 1_124,
+        'n' => 751,
+        'o' => 760,
+        'p' => 786,
+        'q' => 785,
+        'r' => 488,
+        's' => 673,
+        't' => 465,
+        'u' => 751,
+        'v' => 697,
+        'w' => 999,
+        'x' => 674,
+        'y' => 698,
+        'z' => 693,
+        'A' => 868,
+        'B' => 847,
+        'C' => 923,
+        'D' => 937,
+        'E' => 767,
+        'F' => 736,
+        'G' => 963,
+        'H' => 957,
+        'I' => 340,
+        'J' => 692,
+        'K' => 849,
+        'L' => 731,
+        'M' => 1_129,
+        'N' => 957,
+        'O' => 995,
+        'P' => 818,
+        'Q' => 995,
+        'R' => 842,
+        'S' => 821,
+        'T' => 816,
+        'U' => 951,
+        'V' => 868,
+        'W' => 1_251,
+        'X' => 875,
+        'Y' => 844,
+        'Z' => 853,
+        '0' => 811,
+        '1' => 595,
+        '2' => 777,
+        '3' => 807,
+        '4' => 829,
+        '5' => 796,
+        '6' => 820,
+        '7' => 733,
+        '8' => 823,
+        '9' => 820,
+        '.' => 378,
+        '-' => 606,
+        '_' => 751,
+        ' ' => 358,
+        ':' => 378,
+        _ => 760,
+    }
 }
 
 fn disabled_menu_item(
@@ -408,17 +537,21 @@ impl MenuState {
         self.node_ip.as_deref().unwrap_or("unknown")
     }
 
-    fn ip_row_width(&self) -> usize {
-        self.granted_nodes
+    fn ip_row_layout(&self) -> IpRowLayout {
+        let widest_content_width_units = self
+            .granted_nodes
             .iter()
-            .map(|node| node.name.len() + node.ip().len())
+            .map(|node| menu_title_width_units(&node.name) + menu_title_width_units(node.ip()))
             .chain([
-                "IP".len() + self.node_ip().len(),
-                "Gateway".len() + self.gateway_ip.len(),
+                menu_title_width_units("IP") + menu_title_width_units(self.node_ip()),
+                menu_title_width_units("Gateway") + menu_title_width_units(&self.gateway_ip),
             ])
             .max()
-            .unwrap_or_default()
-            .max(MIN_IP_ROW_WIDTH)
+            .unwrap_or_default();
+
+        IpRowLayout {
+            target_title_width_units: widest_content_width_units + IP_ROW_MIN_GAP_WIDTH_UNITS,
+        }
     }
 }
 
@@ -638,27 +771,51 @@ mod tests {
     }
 
     #[test]
-    fn ip_labels_share_the_same_value_column() {
+    fn ip_labels_use_compact_visual_padding_for_native_menu_alignment() {
         let state = MenuState {
             status: ConnectionStatus::Connected,
-            node_ip: Some("10.6.0.3".to_string()),
+            node_ip: Some("10.6.0.8".to_string()),
             gateway_ip: "10.6.0.2".to_string(),
-            granted_nodes: vec![granted_node_row("ingress1", "10.6.0.10")],
+            granted_nodes: vec![
+                granted_node_row("agent", "10.6.0.11"),
+                granted_node_row("mini", "10.6.0.8"),
+                granted_node_row("gateway", "10.6.0.2"),
+                granted_node_row("beast", "10.6.0.7"),
+                granted_node_row("ingress1", "10.6.0.10"),
+            ],
         };
+        let layout = state.ip_row_layout();
 
-        let labels = [
-            aligned_ip_label("IP", state.node_ip(), state.ip_row_width()),
-            aligned_ip_label("Gateway", &state.gateway_ip, state.ip_row_width()),
-            granted_node_label(&state.granted_nodes[0], state.ip_row_width()),
+        let labels = vec![
+            aligned_ip_label("IP", state.node_ip(), layout),
+            aligned_ip_label("Gateway", &state.gateway_ip, layout),
+            granted_node_label(&state.granted_nodes[0], layout),
+            granted_node_label(&state.granted_nodes[1], layout),
+            granted_node_label(&state.granted_nodes[2], layout),
+            granted_node_label(&state.granted_nodes[3], layout),
+            granted_node_label(&state.granted_nodes[4], layout),
         ];
+        let visual_widths = labels
+            .iter()
+            .map(|label| menu_title_width_units(label))
+            .collect::<Vec<_>>();
+        let narrowest = visual_widths.iter().min().copied().unwrap();
+        let widest = visual_widths.iter().max().copied().unwrap();
 
         assert!(labels.iter().all(|label| !label.contains(':')));
-        assert!(labels[0].ends_with("10.6.0.3"));
+        assert!(labels[0].ends_with("10.6.0.8"));
         assert!(labels[1].ends_with("10.6.0.2"));
-        assert!(labels[2].ends_with("10.6.0.10"));
-        assert_eq!(labels[0].len(), MIN_IP_ROW_WIDTH);
-        assert_eq!(labels[1].len(), MIN_IP_ROW_WIDTH);
-        assert_eq!(labels[2].len(), MIN_IP_ROW_WIDTH);
+        assert!(labels[2].ends_with("10.6.0.11"));
+        assert!(labels[6].ends_with("10.6.0.10"));
+
+        for label in labels {
+            assert!(!label.contains('\t'));
+            assert!(!label.contains(' '));
+            assert!(!label.contains('\u{2007}'));
+        }
+
+        assert!(widest - narrowest <= IP_ROW_PAD_NARROW_WIDTH_UNITS);
+        assert!(layout.target_title_width_units < 13_000);
     }
 
     fn node_list_payload(name: &str, ip: &str) -> NodeListPayload {
