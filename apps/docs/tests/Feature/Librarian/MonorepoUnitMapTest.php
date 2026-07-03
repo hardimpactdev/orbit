@@ -85,6 +85,17 @@ it('maps the Orbit Agent runtime to Cargo and Tauri verification', function (): 
         ->toContain('cd apps/agent && cargo test')
         ->toContain('cd apps/agent && cargo fmt -- --check')
         ->toContain('cd apps/agent && cargo clippy --all-targets -- -D warnings')
+        ->toContain('cd apps/agent && cargo check')
+        ->and($agent['agent_skills'])
+        ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
+        ->and($agent['verification']['path_argument_rules'])
+        ->toContain(
+            'Run focused Cargo/Tauri-compatible Rust checks from apps/agent while developing; root composer quality-check includes the same apps/agent Cargo subgates for broad handoff.',
+        )
+        ->not
+        ->toContain(
+            'Run Cargo/Tauri-compatible Rust checks from apps/agent; do not route them through root Composer, Laravel Artisan, Pest, or Mago wrappers.',
+        )
         ->and($agent['do_not_start_when'][1])
         ->toContain('self-update')
         ->toContain('arbitrary privileged shell execution')

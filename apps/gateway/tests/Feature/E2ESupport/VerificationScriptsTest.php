@@ -98,6 +98,7 @@ function quality_check_progress_frame(array $states, string $footer = 'Working..
         'apps/docs',
         'apps/e2e',
         'apps/reverb',
+        'apps/agent',
         'packages/core',
         'packages/sdk',
     ] as $area) {
@@ -495,9 +496,22 @@ it('renders a TTY progress tree for aggregate quality-check areas', function ():
         ->toContain('apps/docs')
         ->toContain('apps/e2e')
         ->toContain('apps/reverb')
+        ->toContain('apps/agent')
         ->toContain('packages/core')
         ->toContain('packages/sdk')
+        ->toContain('agent_cargo_test')
+        ->toContain('agent_cargo_fmt')
+        ->toContain('agent_cargo_check')
+        ->toContain('agent_cargo_clippy')
+        ->toContain('cd apps/agent && cargo test')
+        ->toContain('cd apps/agent && cargo fmt -- --check')
+        ->toContain('cd apps/agent && cargo check')
+        ->toContain('cd apps/agent && cargo clippy --all-targets -- -D warnings')
         ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST')
+        ->and($scriptPosition("run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt'"))
+        ->toBeLessThan($scriptPosition('wait_for_bg_labels agent_cargo_fmt'))
+        ->and($scriptPosition('wait_for_bg_labels agent_cargo_fmt'))
+        ->toBeLessThan($scriptPosition("run_bg agent_cargo_test bash -lc 'cd apps/agent && cargo test'"))
         ->and($scriptPosition('quality_check_progress_start_ticker'))
         ->toBeLessThan($scriptPosition('run_bg gateway_mago_analyze'))
         ->and($scriptPosition('quality_check_progress_stop_ticker'))
@@ -553,6 +567,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/docs' => 'Queued',
         'apps/e2e' => 'Queued',
         'apps/reverb' => 'Queued',
+        'apps/agent' => 'Queued',
         'packages/core' => 'Queued',
         'packages/sdk' => 'Queued',
     ];
@@ -563,12 +578,14 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/docs' => 'Running',
         'apps/e2e' => 'Running',
         'apps/reverb' => 'Running',
+        'apps/agent' => 'Running',
     ]);
 
     $fastAppsPassed = array_merge($appsRunning, [
         'apps/docs' => 'Passed',
         'apps/e2e' => 'Passed',
         'apps/reverb' => 'Passed',
+        'apps/agent' => 'Passed',
     ]);
 
     $acceptedChunksPath = quality_check_progress_chunks_path([
@@ -595,7 +612,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
 
     expect($accepted->getOutput())
         ->toContain('quality-check progress frames: passed')
-        ->toContain('max_running_rows=5')
+        ->toContain('max_running_rows=6')
         ->toContain('apps/gateway: Queued -> Running -> Passed')
         ->toContain('packages/core: Queued -> Running -> Passed');
 
@@ -666,11 +683,57 @@ it('maps every aggregate subgate to a quality-check progress area', function ():
         'apps/docs=8',
         'apps/e2e=4',
         'apps/reverb=3',
+        'apps/agent=4',
         'packages/core=5',
         'packages/sdk=5',
-        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,packages/core,packages/sdk',
+        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,apps/agent,packages/core,packages/sdk',
         'failed=apps/gateway',
     ]);
+});
+
+it('keeps Mago version pins aligned with Composer locks', function (): void {
+    foreach ([
+        'apps/gateway',
+        'apps/cli',
+        'apps/docs',
+        'apps/e2e',
+        'apps/reverb',
+        'packages/core',
+        'packages/sdk',
+    ] as $unitPath) {
+        $lock = json_decode(
+            file_get_contents(repo_path("{$unitPath}/composer.lock")) ?: '',
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        $packages = [
+            ...($lock['packages'] ?? []),
+            ...($lock['packages-dev'] ?? []),
+        ];
+
+        $magoPackage = null;
+
+        foreach ($packages as $package) {
+            if (($package['name'] ?? null) !== 'carthage-software/mago') {
+                continue;
+            }
+
+            $magoPackage = $package;
+
+            break;
+        }
+
+        expect($magoPackage)
+            ->not
+            ->toBeNull();
+
+        $expectedVersion = ltrim((string) $magoPackage['version'], 'v');
+        $magoConfig = file_get_contents(repo_path("{$unitPath}/mago.toml")) ?: '';
+
+        expect($magoConfig)
+            ->toContain("version = \"{$expectedVersion}\"");
+    }
 });
 
 it('includes monorepo path packages in the gateway image build context', function (): void {

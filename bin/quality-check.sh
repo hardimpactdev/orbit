@@ -205,6 +205,7 @@ PROGRESS_AREAS=(
     apps/docs
     apps/e2e
     apps/reverb
+    apps/agent
     packages/core
     packages/sdk
 )
@@ -259,6 +260,9 @@ quality_check_label_area() {
             ;;
         reverb_*)
             echo apps/reverb
+            ;;
+        agent_*)
+            echo apps/agent
             ;;
         core_*)
             echo packages/core
@@ -674,6 +678,10 @@ APP_BEFORE_PACKAGE_CHECK_LABELS=(
     reverb_mago_analyze
     reverb_mago_lint
     reverb_mago_format
+    agent_cargo_test
+    agent_cargo_fmt
+    agent_cargo_check
+    agent_cargo_clippy
 )
 
 APP_REMAINING_CHECK_LABELS=(
@@ -719,6 +727,10 @@ BACKGROUND_CHECK_LABELS=(
     reverb_mago_analyze
     reverb_mago_lint
     reverb_mago_format
+    agent_cargo_test
+    agent_cargo_fmt
+    agent_cargo_check
+    agent_cargo_clippy
     core_mago_analyze
     core_mago_lint
     core_rector
@@ -762,6 +774,10 @@ CHECK_LABELS=(
     core_mago_format
     sdk_mago_format
     e2e_mago_format
+    agent_cargo_test
+    agent_cargo_fmt
+    agent_cargo_check
+    agent_cargo_clippy
     cli_pest
     docs_pest
     core_pest
@@ -841,6 +857,17 @@ run_bg e2e_mago_format bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bas
 run_bg reverb_mago_analyze bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
 run_bg reverb_mago_lint bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
 run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
+
+if [ "$FIX_MODE" -eq 1 ]; then
+    run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt'
+    wait_for_bg_labels agent_cargo_fmt
+    quality_check_progress_render_pending
+else
+    run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt -- --check'
+fi
+run_bg agent_cargo_test bash -lc 'cd apps/agent && cargo test'
+run_bg agent_cargo_check bash -lc 'cd apps/agent && cargo check'
+run_bg agent_cargo_clippy bash -lc 'cd apps/agent && cargo clippy --all-targets -- -D warnings'
 
 wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"
 quality_check_progress_render_pending

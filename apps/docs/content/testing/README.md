@@ -176,6 +176,12 @@ composer docs-lint
 # Broad local quality gate
 composer quality-check
 
+# Focused Orbit Agent Cargo/Tauri checks
+cd apps/agent && cargo test
+cd apps/agent && cargo fmt -- --check
+cd apps/agent && cargo check
+cd apps/agent && cargo clippy --all-targets -- -D warnings
+
 # Manual prepared-topology feature E2E
 composer test:e2e
 composer test:e2e:docker
@@ -188,10 +194,12 @@ composer test:e2e:provision:docker
 composer test:e2e:provision:incus
 ```
 
-Run the narrowest useful check while developing. Run `composer quality-check`
-before handing off a broad code change. When behavior touches the integrated
-topology, capture retained topology proof for the matching topology and
-provider. Provisioning and Docker artifact/image/preparer commands run only
-when the user explicitly invokes the matching Composer command from a shell.
+Run the narrowest useful check while developing. For `apps/agent`, run focused
+Cargo checks from `apps/agent`; broad `composer quality-check` includes those
+Cargo subgates for handoff. Run `composer quality-check` before handing off a
+broad code change. When behavior touches the integrated topology, capture
+retained topology proof for the matching topology and provider. Provisioning
+and Docker artifact/image/preparer commands run only when the user explicitly
+invokes the matching Composer command from a shell.
 Agents must not run any `composer test:e2e*` command, including the aggregate
 `composer test:e2e:provision`; those commands are reserved for user-run checks.

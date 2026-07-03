@@ -42,7 +42,8 @@
                 "apps/docs/content/domains/1_node/node-concepts.md"
             ],
             "agent_skills": [
-                ".agents/skills/implementing-features/SKILL.md"
+                ".agents/skills/implementing-features/SKILL.md",
+                ".agents/skills/tauri-agent-development/SKILL.md"
             ],
             "verification": {
                 "preferred_commands": [
@@ -52,7 +53,7 @@
                     "cd apps/agent && cargo check"
                 ],
                 "path_argument_rules": [
-                    "Run Cargo/Tauri-compatible Rust checks from apps/agent; do not route them through root Composer, Laravel Artisan, Pest, or Mago wrappers.",
+                    "Run focused Cargo/Tauri-compatible Rust checks from apps/agent while developing; root composer quality-check includes the same apps/agent Cargo subgates for broad handoff.",
                     "Keep retained-topology proof out of routine apps-agent verification until a local macOS app is configured against a dev gateway.",
                     "Do not suggest composer test:e2e* commands for Orbit Agent runtime bootstrap verification."
                 ],

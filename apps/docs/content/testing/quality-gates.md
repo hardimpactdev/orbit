@@ -16,13 +16,14 @@ composer docs-lint
 
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, Mago analyze/lint/format checks, Rector
-dry-run, and the default Pest suites for the gateway, CLI, docs, core, and SDK.
+dry-run, the default Pest suites for the gateway, CLI, docs, core, and SDK, and
+Cargo checks for the Tauri/Rust Orbit Agent app.
 
 In an interactive TTY, `bin/quality-check.sh` renders an in-place progress tree
 for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/e2e`,
-`apps/reverb`, `packages/core`, `packages/sdk`) while subgates run, leaves the
-final pass/fail tree visible, and then prints the same per-subgate logs and
-summaries as before.
+`apps/reverb`, `apps/agent`, `packages/core`, `packages/sdk`) while subgates
+run, leaves the final pass/fail tree visible, and then prints the same
+per-subgate logs and summaries as before.
 
 In the tree, every row for an area starts as queued. It changes to running when
 the scheduler starts the first real subgate for that area, then remains running
@@ -70,6 +71,13 @@ The SDK Pest lane runs as a background subgate after the gateway lane has
 started. Mago and Rector still cover `apps/e2e` during the aggregate
 quality-check, but E2E-app Pest tests are not part of the default aggregate
 gate. E2E Pest remains manual-only through the explicit E2E command surface.
+
+The Orbit Agent lane runs Cargo/Tauri-compatible checks from `apps/agent`:
+`cargo test`, `cargo fmt -- --check`, `cargo check`, and
+`cargo clippy --all-targets -- -D warnings`. In `composer quality-check:fix`,
+the formatting subgate runs `cargo fmt` instead of `cargo fmt -- --check`.
+Focused development can still run the same Cargo commands directly from
+`apps/agent`; the root aggregate gate exists for broad handoff evidence.
 
 Core Pest still runs after all background Pest lanes because the core progress
 tests fork ticker children and must stay isolated from unrelated Pest process

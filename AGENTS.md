@@ -136,8 +136,8 @@ Before handing off a code change that should be broadly safe, run:
 composer quality-check
 ```
 
-`composer quality-check` fans out docs linting, Pest, Mago, and Rector
-across every app/package.
+`composer quality-check` fans out docs linting, Pest, Mago, Rector, and
+`apps/agent` Cargo checks across every app/package.
 
 When behavior touches the integrated topology, require retained topology proof:
 capture the retained topology id/kind, inspected roles or nodes, exact command,

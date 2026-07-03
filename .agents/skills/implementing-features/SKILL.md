@@ -103,7 +103,8 @@ Responsibilities:
 - Run applicable reviewer personas from `HARNESS.md` after implementation
   evidence exists. For documentation-heavy changes, use
   `.agents/review-personas/docs-librarian.md`; for CLI command changes, use
-  `.agents/review-personas/cli-command.md` before accepting the slice.
+  `.agents/review-personas/cli-command.md`; for Orbit Agent Tauri changes, use
+  `.agents/review-personas/tauri-agent.md` before accepting the slice.
 - Build the local post-feature packet before completion, request fresh-context
   post-feature analysis when the loop was non-trivial, and adjudicate analyzer
   findings before any durable guardrail is changed.
@@ -820,10 +821,11 @@ command address/output transcript.
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
-    Spawn any code-reviewer or CLI-reviewer persona using the spawn recipe and
-    unavailability rule in the `HARNESS.md` Solo Role Matrix. Preserve the
-    reviewer report itself as the evidence artifact when the selected reviewer
-    has no provider-session archive support.
+    For Orbit Agent Tauri changes, run `.agents/review-personas/tauri-agent.md`.
+    Spawn any code-reviewer, CLI-reviewer, or Tauri-reviewer persona using the
+    spawn recipe and unavailability rule in the `HARNESS.md` Solo Role Matrix.
+    Preserve the reviewer report itself as the evidence artifact when the
+    selected reviewer has no provider-session archive support.
     Resolve or explicitly report findings before commit.
     If the reviewer finds a mismatch between implementation evidence and the
     raw user examples, treat it as a contract mismatch first; only downgrade it

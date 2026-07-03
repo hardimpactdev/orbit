@@ -263,6 +263,7 @@ it('requires checkout proof and machine-parseable verdicts from Solo-spawned rev
         '.agents/review-personas/cli-command.md',
         '.agents/review-personas/docs-librarian.md',
         '.agents/review-personas/post-feature-analyzer.md',
+        '.agents/review-personas/tauri-agent.md',
     ];
 
     foreach ($personaPaths as $personaPath) {
@@ -285,6 +286,36 @@ it('requires checkout proof and machine-parseable verdicts from Solo-spawned rev
         ->toContain('redundant')
         ->toContain('wrong-target')
         ->toContain('defer');
+});
+
+it('routes Orbit Agent Tauri work through a dedicated skill and reviewer persona', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $skill = file_get_contents(repo_path('.agents/skills/tauri-agent-development/SKILL.md')) ?: '';
+    $reviewer = file_get_contents(repo_path('.agents/review-personas/tauri-agent.md')) ?: '';
+
+    expect(repo_path('.agents/skills/tauri-agent-development/SKILL.md'))
+        ->toBeFile()
+        ->and(repo_path('.agents/review-personas/tauri-agent.md'))
+        ->toBeFile()
+        ->and($harness)
+        ->toContain('| Orbit Agent Tauri app |')
+        ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
+        ->toContain('.agents/review-personas/tauri-agent.md')
+        ->and($implementingFeatures)
+        ->toContain('.agents/review-personas/tauri-agent.md')
+        ->and($skill)
+        ->toContain('name: tauri-agent-development')
+        ->toContain('apps/agent')
+        ->toContain('cargo test')
+        ->toContain('Computer Use')
+        ->and($reviewer)
+        ->toContain('Spawn per the Solo Role Matrix in HARNESS.md')
+        ->toContain('apps/agent')
+        ->toContain('cargo test')
+        ->toContain('cargo clippy --all-targets -- -D warnings')
+        ->toContain('Computer Use')
+        ->toContain('VERDICT:');
 });
 
 it('provides first-party boost skill sources in orbit packages', function (): void {
