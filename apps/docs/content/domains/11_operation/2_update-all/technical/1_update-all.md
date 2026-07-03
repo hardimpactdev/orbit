@@ -249,13 +249,15 @@ The expected target shape per calling context:
   the update still records the node as completed with an unknown doctor issue
   count. Operators run the normal post-update fleet doctor for release gating.
 - Production workload updates install the binary into the node user's Orbit
-  install root. When the host launcher is system-wide under `/usr/local/bin/`,
-  the remote update also publishes the binary to a shared root-owned executable
-  path under `/usr/local/lib/orbit/` and links the system launcher there. This
-  lets unprivileged role users execute the CLI without traversing the node
-  user's home directory. The remote update may use non-interactive `sudo -n`
-  only for the shared copy and symlink replacement; it must fail rather than
-  prompt.
+  install root. macOS workload nodes use the node user's
+  `$HOME/.local/bin/orbit` launcher so self-managed app-dev machines do not
+  need privileged `/usr/local/bin` writes during fleet updates. When the host
+  launcher is system-wide under `/usr/local/bin/`, the remote update also
+  publishes the binary to a shared root-owned executable path under
+  `/usr/local/lib/orbit/` and links the system launcher there. This lets
+  unprivileged role users execute the CLI without traversing the node user's
+  home directory. The remote update may use non-interactive `sudo -n` only for
+  the shared copy and symlink replacement; it must fail rather than prompt.
 - Production workload updates verify the downloaded binary hash before install
   and verify the installed binary hash after relinking the launcher. The gateway
   writes `installed_cli` for that node only after the remote replacement command

@@ -14,6 +14,7 @@ final class RemoteShellMetadata
         'APP_URL',
         'ORBIT_APP',
         'ORBIT_APP_PATH',
+        'ORBIT_BIN_PATH',
         'ORBIT_NODE_ID',
         'ORBIT_OPERATION_ID',
         'ORBIT_PHP_VERSION',

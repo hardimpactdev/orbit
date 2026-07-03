@@ -12,6 +12,7 @@ use App\Exceptions\UpdateLeaseConflict;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use RuntimeException;
 use Throwable;
@@ -24,6 +25,7 @@ final readonly class WorkloadNodeUpdater
 
     public function __construct(
         private NodeRoleAssignments $roles,
+        private NodeHostPaths $hostPaths,
         private RemoteShell $remoteShell,
         private UpdateLeaseManager $leases,
         private OperationRunRecorder $operationRuns,
@@ -143,9 +145,7 @@ final readonly class WorkloadNodeUpdater
         $result = $this->remoteShell->run($node, $script, [
             'cwd' => $node->orbit_path,
             'timeout' => 300,
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => $operationRun->id,
-            ],
+            'metadata' => $this->remoteShellMetadata($operationRun, $node),
         ]);
 
         if (! $result->successful()) {
@@ -192,9 +192,7 @@ final readonly class WorkloadNodeUpdater
             $result = $this->remoteShell->run($node, self::DoctorCommand, [
                 'cwd' => $node->orbit_path,
                 'timeout' => self::DoctorTimeoutSeconds,
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => $operationRun->id,
-                ],
+                'metadata' => $this->remoteShellMetadata($operationRun, $node),
             ]);
         } catch (Throwable) {
             return null;
@@ -338,6 +336,22 @@ final readonly class WorkloadNodeUpdater
                 operationRunId: $operationRun->id,
             ),
         ])->save();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function remoteShellMetadata(OperationRun $operationRun, Node $node): array
+    {
+        $metadata = [
+            'ORBIT_OPERATION_ID' => $operationRun->id,
+        ];
+
+        if (NodeHostPaths::isMacosPlatform($node->platform)) {
+            $metadata['ORBIT_BIN_PATH'] = $this->hostPaths->homeDirectory($node).'/.local/bin/orbit';
+        }
+
+        return $metadata;
     }
 
     /**

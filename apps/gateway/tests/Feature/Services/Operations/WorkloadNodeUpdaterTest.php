@@ -302,7 +302,8 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
         ->create([
             'name' => 'NMBP',
             'platform' => 'macos_26-5-1',
-            'orbit_path' => '/Users/nckrtl/.local/share/orbit',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
@@ -339,6 +340,11 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
         ->toContain('check_sha256 "$tmp/orbit"')
         ->toContain('command -v sha256sum')
         ->toContain('shasum -a 256 "$file"')
+        ->and($shell->calls[0]['options']['metadata'])
+        ->toBe([
+            'ORBIT_OPERATION_ID' => $run->id,
+            'ORBIT_BIN_PATH' => '/Users/nckrtl/.local/bin/orbit',
+        ])
         ->and($node->fresh()->installed_cli?->platform)
         ->toBe('darwin-arm64')
         ->and($node->fresh()->installed_cli?->sha256)

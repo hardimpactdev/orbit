@@ -92,6 +92,20 @@ it('allows local executor operation id metadata', function (): void {
     ));
 });
 
+it('allows Orbit binary path metadata used by workload updates', function (): void {
+    Process::fake(['*' => Process::result(output: "ok\n")]);
+    Process::preventStrayProcesses();
+
+    new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'test -x "$ORBIT_BIN_PATH"', [
+        'metadata' => ['ORBIT_BIN_PATH' => '/Users/nckrtl/.local/bin/orbit'],
+    ]);
+
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        'export ORBIT_BIN_PATH=',
+    ));
+});
+
 it('allows proxy route suffix metadata used by doctor probes', function (): void {
     Process::fake(['*' => Process::result(output: "ok\n")]);
     Process::preventStrayProcesses();
