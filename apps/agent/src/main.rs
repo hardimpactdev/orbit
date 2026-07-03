@@ -5,9 +5,10 @@ use orbit_agent::{
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 use url::Url;
@@ -21,6 +22,12 @@ const RESTART_MENU_ID: &str = "restart_agent";
 const QUIT_MENU_ID: &str = "quit_agent";
 const WORKER_FLAG: &str = "--worker";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RefreshSource {
+    TrayClick,
+    MenuCommand,
+}
+
 fn main() {
     if is_worker_mode(std::env::args()) {
         run_worker_loop(Duration::from_secs(15));
@@ -30,23 +37,32 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            let menu = build_tray_menu(app.handle(), &load_menu_state())?;
+            let tray_menu = build_tray_menu(app.handle(), &load_menu_state())?;
+            let menu_items = Arc::new(Mutex::new(tray_menu.items));
+            let menu_command_items = Arc::clone(&menu_items);
+            let tray_click_items = Arc::clone(&menu_items);
 
             TrayIconBuilder::with_id(TRAY_ID)
                 .tooltip("Orbit Agent")
                 .icon(tray_icon())
                 .icon_as_template(true)
-                .menu(&menu)
+                .menu(&tray_menu.menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
-                    REFRESH_MENU_ID => refresh_menu(app),
+                    REFRESH_MENU_ID => {
+                        refresh_menu(app, &menu_command_items, RefreshSource::MenuCommand)
+                    }
                     RESTART_MENU_ID => app.restart(),
                     QUIT_MENU_ID => app.exit(0),
                     _ => {}
                 })
                 .on_tray_icon_event(move |tray, event| {
                     if should_refresh_for_tray_event(&event) {
-                        refresh_menu(tray.app_handle());
+                        refresh_menu(
+                            tray.app_handle(),
+                            &tray_click_items,
+                            RefreshSource::TrayClick,
+                        );
                     }
                 })
                 .build(app)?;
@@ -59,13 +75,95 @@ fn main() {
         .expect("failed to run Orbit Agent");
 }
 
-fn refresh_menu(app: &AppHandle) {
-    let menu_state = load_menu_state();
+struct TrayMenu {
+    menu: Menu<Wry>,
+    items: TrayMenuItems,
+}
 
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        if let Ok(menu) = build_tray_menu(app, &menu_state) {
-            let _ = tray.set_menu(Some(menu));
+struct TrayMenuItems {
+    status: MenuItem<Wry>,
+    node_ip: MenuItem<Wry>,
+    gateway: MenuItem<Wry>,
+    granted_nodes: Vec<MenuItem<Wry>>,
+}
+
+impl TrayMenuItems {
+    fn new(app: &AppHandle, state: &MenuState) -> tauri::Result<Self> {
+        let mut granted_nodes = Vec::with_capacity(state.granted_nodes.len());
+        let label_width = state.label_width();
+
+        for (index, node) in state.granted_nodes.iter().enumerate() {
+            granted_nodes.push(disabled_menu_item(
+                app,
+                format!("granted_node_{index}"),
+                granted_node_label(node, label_width),
+            )?);
         }
+
+        Ok(Self {
+            status: disabled_menu_item(app, STATUS_MENU_ID, state.status.label())?,
+            node_ip: disabled_menu_item(
+                app,
+                NODE_IP_MENU_ID,
+                aligned_ip_label("IP", state.node_ip(), label_width),
+            )?,
+            gateway: disabled_menu_item(
+                app,
+                GATEWAY_MENU_ID,
+                aligned_ip_label("Gateway", &state.gateway_ip, label_width),
+            )?,
+            granted_nodes,
+        })
+    }
+
+    fn update(&self, state: &MenuState) {
+        let label_width = state.label_width();
+
+        let _ = self.status.set_text(state.status.label());
+        let _ = self
+            .node_ip
+            .set_text(aligned_ip_label("IP", state.node_ip(), label_width));
+        let _ = self
+            .gateway
+            .set_text(aligned_ip_label("Gateway", &state.gateway_ip, label_width));
+
+        for (item, node) in self.granted_nodes.iter().zip(state.granted_nodes.iter()) {
+            let _ = item.set_text(granted_node_label(node, label_width));
+        }
+    }
+
+    fn grant_row_count(&self) -> usize {
+        self.granted_nodes.len()
+    }
+}
+
+fn refresh_menu(
+    app: &AppHandle,
+    menu_items: &Arc<Mutex<TrayMenuItems>>,
+    refresh_source: RefreshSource,
+) {
+    let menu_state = load_menu_state();
+    let current_grant_rows = menu_items
+        .lock()
+        .map(|items| items.grant_row_count())
+        .unwrap_or_default();
+
+    if should_replace_menu_for_refresh(
+        refresh_source,
+        current_grant_rows,
+        menu_state.granted_nodes.len(),
+    ) {
+        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+            if let Ok(tray_menu) = build_tray_menu(app, &menu_state) {
+                if tray.set_menu(Some(tray_menu.menu)).is_ok() {
+                    if let Ok(mut items) = menu_items.lock() {
+                        *items = tray_menu.items;
+                    }
+                }
+            }
+        }
+    } else if let Ok(items) = menu_items.lock() {
+        items.update(&menu_state);
     }
 
     if let Some(window) = app.get_webview_window("main") {
@@ -73,47 +171,50 @@ fn refresh_menu(app: &AppHandle) {
     }
 }
 
-fn build_tray_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<Menu<Wry>> {
-    let status = disabled_menu_item(app, STATUS_MENU_ID, state.status.label())?;
-    let node_ip = disabled_menu_item(app, NODE_IP_MENU_ID, format!("IP: {}", state.node_ip()))?;
-    let gateway = disabled_menu_item(
-        app,
-        GATEWAY_MENU_ID,
-        format!("Gateway: {}", state.gateway_ip),
-    )?;
+fn should_replace_menu_for_refresh(
+    refresh_source: RefreshSource,
+    current_grant_rows: usize,
+    next_grant_rows: usize,
+) -> bool {
+    matches!(refresh_source, RefreshSource::MenuCommand) && current_grant_rows != next_grant_rows
+}
 
-    let mut grant_items = Vec::with_capacity(state.granted_nodes.len());
-
-    for (index, node) in state.granted_nodes.iter().enumerate() {
-        grant_items.push(disabled_menu_item(
-            app,
-            format!("granted_node_{index}"),
-            format!("{}: {}", node.name, node.ip()),
-        )?);
-    }
+fn build_tray_menu(app: &AppHandle, state: &MenuState) -> tauri::Result<TrayMenu> {
+    let items = TrayMenuItems::new(app, state)?;
 
     let mut menu = MenuBuilder::new(app)
-        .item(&status)
-        .item(&node_ip)
-        .item(&gateway)
+        .item(&items.status)
+        .item(&items.node_ip)
+        .item(&items.gateway)
         .separator();
 
-    for item in &grant_items {
+    for item in &items.granted_nodes {
         menu = menu.item(item);
     }
 
-    menu.separator()
+    let menu = menu
+        .separator()
         .text(REFRESH_MENU_ID, "Refresh")
         .text(RESTART_MENU_ID, "Restart")
         .text(QUIT_MENU_ID, "Quit")
-        .build()
+        .build()?;
+
+    Ok(TrayMenu { menu, items })
+}
+
+fn granted_node_label(node: &GrantedNodeMenuRow, label_width: usize) -> String {
+    aligned_ip_label(&node.name, node.ip(), label_width)
+}
+
+fn aligned_ip_label(label: &str, ip: &str, label_width: usize) -> String {
+    format!("{label:<label_width$}: {ip}")
 }
 
 fn disabled_menu_item(
     app: &AppHandle,
     id: impl Into<tauri::menu::MenuId>,
     text: impl AsRef<str>,
-) -> tauri::Result<tauri::menu::MenuItem<Wry>> {
+) -> tauri::Result<MenuItem<Wry>> {
     MenuItemBuilder::with_id(id, text).enabled(false).build(app)
 }
 
@@ -300,6 +401,15 @@ struct MenuState {
 impl MenuState {
     fn node_ip(&self) -> &str {
         self.node_ip.as_deref().unwrap_or("unknown")
+    }
+
+    fn label_width(&self) -> usize {
+        self.granted_nodes
+            .iter()
+            .map(|node| node.name.len())
+            .chain(["IP".len(), "Gateway".len()])
+            .max()
+            .unwrap_or("Gateway".len())
     }
 }
 
@@ -491,6 +601,54 @@ mod tests {
                 granted_node_row("gateway", "10.6.0.2"),
                 granted_node_row("beast", "10.6.0.7"),
             ]
+        );
+    }
+
+    #[test]
+    fn tray_click_refresh_does_not_replace_the_native_menu() {
+        assert!(!should_replace_menu_for_refresh(
+            RefreshSource::TrayClick,
+            0,
+            5
+        ));
+        assert!(!should_replace_menu_for_refresh(
+            RefreshSource::TrayClick,
+            5,
+            0
+        ));
+        assert!(!should_replace_menu_for_refresh(
+            RefreshSource::MenuCommand,
+            5,
+            5
+        ));
+        assert!(should_replace_menu_for_refresh(
+            RefreshSource::MenuCommand,
+            4,
+            5
+        ));
+    }
+
+    #[test]
+    fn ip_labels_share_the_same_value_column() {
+        let state = MenuState {
+            status: ConnectionStatus::Connected,
+            node_ip: Some("10.6.0.3".to_string()),
+            gateway_ip: "10.6.0.2".to_string(),
+            granted_nodes: vec![granted_node_row("ingress1", "10.6.0.10")],
+        };
+        let label_width = state.label_width();
+
+        assert_eq!(
+            aligned_ip_label("IP", state.node_ip(), label_width),
+            "IP      : 10.6.0.3"
+        );
+        assert_eq!(
+            aligned_ip_label("Gateway", &state.gateway_ip, label_width),
+            "Gateway : 10.6.0.2"
+        );
+        assert_eq!(
+            granted_node_label(&state.granted_nodes[0], label_width),
+            "ingress1: 10.6.0.10"
         );
     }
 
