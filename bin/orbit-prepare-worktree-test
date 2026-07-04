@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-prepare-worktree-test.XXXXXX")"
+
+cleanup() {
+    rm -rf "$TMP"
+}
+
+trap cleanup EXIT
+
+fail() {
+    printf 'FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+assert_file_equals() {
+    local path="$1"
+    local expected="$2"
+
+    [ -f "$path" ] || fail "missing file: $path"
+    [ "$(cat "$path")" = "$expected" ] || fail "unexpected contents for: $path"
+}
+
+run_prepare_worktree() {
+    local branch="$1"
+
+    if ! PATH="$STUB_BIN:$PATH" "$REPO/bin/orbit-prepare-worktree" "$branch" --skip-tests >/tmp/orbit-prepare-worktree-test.out 2>/tmp/orbit-prepare-worktree-test.err; then
+        cat /tmp/orbit-prepare-worktree-test.err >&2
+        fail "prepare-worktree failed for branch: $branch"
+    fi
+}
+
+REPO="$TMP/repo"
+STUB_BIN="$TMP/bin"
+
+mkdir -p "$REPO/bin" "$STUB_BIN"
+cp "$ROOT/bin/orbit-prepare-worktree" "$REPO/bin/orbit-prepare-worktree"
+
+cat >"$REPO/bin/quality-gate-seed-baselines" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$REPO/bin/orbit-prepare-worktree" "$REPO/bin/quality-gate-seed-baselines"
+
+cat >"$STUB_BIN/composer" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$STUB_BIN/composer"
+
+cat >"$REPO/LOOP.md.example" <<'EOF'
+# Loop Template
+
+Seeded by the test fixture.
+EOF
+
+(
+    cd "$REPO"
+
+    git init -b main >/dev/null
+    git config user.name 'Orbit Prepare Worktree Test'
+    git config user.email 'orbit-prepare-worktree-test@example.invalid'
+
+    printf '.worktrees\n/.worktrees/\n' >.gitignore
+    git add .gitignore LOOP.md.example bin/orbit-prepare-worktree bin/quality-gate-seed-baselines
+    git commit -m 'Initial fixture' >/dev/null
+)
+
+run_prepare_worktree feature-loop
+
+LOOP_PATH="$REPO/.worktrees/feature-loop/.orbit/loop.md"
+assert_file_equals "$LOOP_PATH" "$(cat "$REPO/LOOP.md.example")"
+
+printf 'custom active packet\n' >"$LOOP_PATH"
+
+run_prepare_worktree feature-loop
+
+assert_file_equals "$LOOP_PATH" 'custom active packet'
+
+printf 'orbit-prepare-worktree tests passed\n'

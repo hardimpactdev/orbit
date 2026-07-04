@@ -195,6 +195,40 @@ it('provides a compact Solo todo handoff skill for Codex implementation agents',
         ->toBeLessThanOrEqual(4000);
 });
 
+it('keeps worktree preparation responsible for seeding the active loop packet', function (): void {
+    $prepareWorktree = file_get_contents(repo_path('bin/orbit-prepare-worktree')) ?: '';
+    $fastPath = file_get_contents(repo_path('AGENT_FAST_PATH.md')) ?: '';
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $todoHandoff = file_get_contents(repo_path('.agents/skills/solo-todo-handoff/SKILL.md')) ?: '';
+
+    expect($prepareWorktree)
+        ->toContain('seed_loop_packet')
+        ->toContain('LOOP.md.example')
+        ->toContain('.orbit/loop.md')
+        ->toContain('skip .orbit/loop.md seed: target exists');
+
+    expect($fastPath)
+        ->toContain('`bin/orbit-prepare-worktree`; it seeds `.orbit/loop.md` when missing')
+        ->toContain('Fill the seeded `.orbit/loop.md`');
+
+    expect($harness)
+        ->toContain('`bin/orbit-prepare-worktree` seeds `.orbit/loop.md`')
+        ->toContain('The handoff owner or feature')
+        ->toContain('orchestrator enriches that seeded packet');
+
+    expect($implementingFeatures)
+        ->toContain('seeds `.orbit/loop.md` when it is missing')
+        ->toContain('Fill or update the seeded `.orbit/loop.md`')
+        ->toContain('If `.orbit/loop.md` is missing, report a setup blocker before editing.')
+        ->toContain('Do not create `.orbit/loop.md`')
+        ->not->toContain('`.orbit/loop.md` when that file exists')
+        ->not->toContain('then copy it to `.orbit/loop.md`');
+
+    expect($todoHandoff)
+        ->toContain('fill the seeded .orbit/loop.md Done Contract');
+});
+
 it('does not keep gateway-local generated agent artifacts', function (): void {
     $gatewayRoot = repo_path('apps/gateway');
 

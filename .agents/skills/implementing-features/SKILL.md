@@ -50,7 +50,10 @@ Responsibilities:
   them in `.orbit/loop.md`, the feature scratchpad, or the worker prompt. When
   decomposing into slices, explicitly mark which parts are in scope now, which
   are deferred, and why the deferral is compatible with acceptance.
-- Prepare and own the dedicated Orbit worktree.
+- Prepare and own the dedicated Orbit worktree. `bin/orbit-prepare-worktree`
+  seeds `.orbit/loop.md` when it is missing; the feature owner enriches that
+  seeded packet with source context and the active Done Contract before worker
+  dispatch.
 - Read the handoff, docs, and existing code enough to define clear worker tasks.
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
@@ -143,19 +146,24 @@ watching or to bypass the Solo orchestrator handoff:
 1. Preserve the raw user feature contract, acceptance criteria, explicit
    deferrals, and source thread pointer in the feature scratchpad or the
    handoff prompt.
-2. Prepare the dedicated worktree with `bin/orbit-prepare-worktree`.
-3. Discover the enabled `Codex` tool with `list_agent_tools`, then spawn a
+2. Prepare the dedicated worktree with `bin/orbit-prepare-worktree`, which
+   seeds `.orbit/loop.md` when it is missing.
+3. Fill or update the seeded `.orbit/loop.md` with the source discussion
+   pointer, feature scratchpad URL or `none`, worktree path, branch, current
+   slice, and initial Done Contract. If `.orbit/loop.md` is missing after
+   worktree prep, stop and report the setup blocker.
+4. Discover the enabled `Codex` tool with `list_agent_tools`, then spawn a
    Solo-managed Codex orchestrator for the same Solo project with
    `spawn_agent`. If Codex is not available through Solo, stop and report the
    blocker instead of substituting another model.
-4. Record the Solo project id, orchestrator process id/name, worktree path,
+5. Record the Solo project id, orchestrator process id/name, worktree path,
    branch, source thread pointer, and prompt/scratchpad pointer in the feature
-   scratchpad and `.orbit/loop.md` when that file exists.
-5. Send the Solo Codex orchestrator a complete implementation prompt.
-6. After prompt delivery and a visible first checkpoint or explicit delivery
+   scratchpad and `.orbit/loop.md`.
+6. Send the Solo Codex orchestrator a complete implementation prompt.
+7. After prompt delivery and a visible first checkpoint or explicit delivery
    blocker, report the handoff result and stop. Resume only if the user asks for
    watcher or recovery work.
-7. If the Solo Codex wrapper wedges or disappears before a visible first
+8. If the Solo Codex wrapper wedges or disappears before a visible first
    checkpoint, recover only with another tracked Codex route for the same Solo
    project, such as a Solo terminal running `codex exec` in the prepared
    worktree. If no tracked Codex route is available, stop and report the
@@ -199,10 +207,13 @@ Rules:
 - First prove `pwd`, `git status --short --branch`, and the active Solo process
   identity before broad reads or edits.
 - Keep all implementation work inside the assigned worktree.
+- Read `.orbit/loop.md` before reconstructing scope; treat it as the active
+  current-slice packet seeded by the preparer.
 - Treat this process id as the telemetry root. Record it in `.orbit/loop.md`
   and the feature scratchpad, then spawn all child workers/reviewers/terminals
   from inside Solo so they inherit this process as `parent_process_id`.
-- Fill the active Done Contract before implementation worker dispatch.
+- Validate and complete the active Done Contract before implementation worker
+  dispatch.
 - Follow the normal Solo worker, TDD, review, verification, finalization,
   merge-back, and cleanup gates in this skill without weakening them.
 - Do not ask the source Codex app session to keep coordinating unless delivery,
@@ -236,7 +247,8 @@ Worktree:
 Read and follow:
 - AGENTS.md
 - HARNESS.md
-- LOOP.md.example, then copy it to `.orbit/loop.md` for this active slice
+- LOOP.md.example as template reference, then read existing `.orbit/loop.md`.
+  If `.orbit/loop.md` is missing, report a setup blocker before editing.
 - HARNESS_SIGNALS.md
 - harness-signals/README.md
 - .agents/skills/implementing-features/SKILL.md
@@ -251,6 +263,8 @@ negative examples, or state `none`; list deferred parts with reason and owner>
 
 Rules:
 - Edit only inside the assigned worktree.
+- Do not create `.orbit/loop.md`; worktree preparation and the feature
+  orchestrator own the active packet.
 - If a feature scratchpad exists, read its slice outcomes before editing and
   treat `.orbit/loop.md` as the current slice contract, not feature history.
 - Inspect the current branch diff or log enough to understand prior slices that

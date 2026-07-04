@@ -138,10 +138,10 @@ Start at the monorepo root and read in this order:
 4. **`apps/docs/content/generated/monorepo-unit-map.json`**: compact
    machine-readable app/package routing facts for LLM agents; not product
    authority
-5. **`LOOP.md.example`**: local loop-state template; copy it to
-   `.orbit/loop.md` for non-trivial active work
-6. **`.orbit/loop.md`**: current slice state when present; never treat
-   absence in a fresh checkout as a product gap
+5. **`LOOP.md.example`**: local loop-state template used by
+   `bin/orbit-prepare-worktree` when it seeds `.orbit/loop.md`
+6. **`.orbit/loop.md`**: current slice state after worktree preparation; never
+   treat absence in a fresh checkout as a product gap
 7. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
 8. **`harness-signals/`**: curated signal records to search for prior
    occurrences, guardrail changes, and recurrence checks; start with
@@ -424,6 +424,10 @@ Use the least durable state that can keep the work coherent.
 
 - A small request can start directly in one feature worktree with one
   `.orbit/loop.md`.
+- `bin/orbit-prepare-worktree` seeds `.orbit/loop.md` from
+  `LOOP.md.example` when the packet is missing. The handoff owner or feature
+  orchestrator enriches that seeded packet with the source context, current
+  slice, Done Contract, and scratchpad pointer before worker dispatch.
 - A request that is too large for one implementation slice gets one lightweight
   Solo scratchpad. The scratchpad records feature intent, rough slice order,
   slice outcomes, open decisions, and the final verification gate. It is not a

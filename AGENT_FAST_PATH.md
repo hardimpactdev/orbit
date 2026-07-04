@@ -18,9 +18,10 @@ navigation aid, not product authority.
 
 1. Use Solo scratchpads for multi-slice roadmaps and eval artifacts.
 2. For repository implementation, create an isolated worktree with
-   `bin/orbit-prepare-worktree`; do not edit the primary checkout directly.
-3. Copy `LOOP.md.example` to `.orbit/loop.md` for non-trivial work and keep it
-   current.
+   `bin/orbit-prepare-worktree`; it seeds `.orbit/loop.md` when missing. Do
+   not edit the primary checkout directly.
+3. Fill the seeded `.orbit/loop.md` with the current slice, Done Contract,
+   scratchpad or source pointer, and keep it current.
 4. Make `bin/orbit-feature-finalization-check --lint .orbit/loop.md` a
    first-checkpoint habit: lint the packet shape early and after edits, not
    only at the merge boundary.

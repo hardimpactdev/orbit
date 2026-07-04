@@ -75,7 +75,7 @@ Solo todo id or URL.
 
 Required workflow:
 - Read and follow AGENTS.md, HARNESS.md, and .agents/skills/implementing-features/SKILL.md.
-- Act as the Orbit feature owner/orchestrator: create the Done Contract, prepare the implementation worktree with bin/orbit-prepare-worktree, delegate through Solo only when the workflow requires it, verify, and report completion evidence.
+- Act as the Orbit feature owner/orchestrator: prepare the implementation worktree with bin/orbit-prepare-worktree, fill the seeded .orbit/loop.md Done Contract, delegate through Solo only when the workflow requires it, verify, and report completion evidence.
 
 Goal:
 - <one concrete objective from the todo>
