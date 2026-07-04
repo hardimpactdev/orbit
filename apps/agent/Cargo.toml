@@ -19,3 +19,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 toml = "0.8"
 ureq = { version = "2", features = ["native-certs"] }
 url = "2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

@@ -1,8 +1,16 @@
 # Runtime Execution Lanes
 
-This page defines how the gateway may execute work on managed nodes. The SSH
-transport stays `RemoteShell`, but every gateway-to-node workload must belong
-to one of three execution lanes.
+This page defines how the gateway may execute work on managed nodes. Orbit's
+managed execution target has two normal paths: `gateway-only` for gateway-owned
+reads/writes and `agent-push` for node-local execution through typed command
+envelopes.
+
+Transport selection chooses the delivery path for an envelope:
+`gateway-only`, `agent-push`, `auto`, or `transitional-ssh-fallback` during v1
+migration/recovery. Every gateway-to-node workload that requires node execution
+belongs to an execution lane; gateway-only work bypasses node execution. See
+[Tech Stack](tech-stack.md#gateway-to-node). Break-glass SSH is operator-owned
+super-admin recovery outside normal Orbit command execution.
 
 ## Scope
 
@@ -250,9 +258,13 @@ Use these rules for every new or migrated gateway-to-node execution path.
   CLI/local-executor artifact uses the native CLI binary's embedded PHP in
   production installs, while source-dev Docker/Incus development and E2E
   nodes invoke `<source>/apps/cli/orbit`; host PHP remains forbidden.
-- `RemoteShell` is transport, not a workload classification. New call sites
-  must choose `RemoteHostExecutor`, `RemoteGatewayRuntimeExecutor`, or
-  `RemoteLocalExecutor` explicitly.
+- Agent push is the managed node-local execution mechanism beneath typed
+  command envelopes. Transport selection (`gateway-only`, `agent-push`, `auto`,
+  or `transitional-ssh-fallback`) decides the delivery path for a given
+  envelope without mutating existing `RemoteShell` call sites. Gateway-only
+  envelopes stay on the gateway; agent execution is explicit per envelope.
+  `RemoteShell` remains transitional migration/recovery infrastructure, not a
+  permanent first-class managed execution transport.
 - A host-lane command may control containers, including `docker exec`, but it
   must not execute Orbit's own framework PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside

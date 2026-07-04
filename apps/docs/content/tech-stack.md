@@ -14,7 +14,7 @@ Client
   -> gateway HTTPS exposure
   -> orbit-gateway
   -> node execution lane
-     (SSH/RemoteShell plus typed Orbit Agent where supported)
+     (gateway-only for gateway-owned work, agent-push for node-local execution, transitional SSH fallback during migration)
 
 Public production HTTP:
 
@@ -78,7 +78,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
-| Gateway to node | Current: SSH through `RemoteShell` for general execution lanes, plus node-local Orbit Agent for supported explicitly `orbit_agent_capable` Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes. |
+| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` prefers `agent-push` when the node is active + capable + the envelope supports it. V1 may return `transitional-ssh-fallback` while command families migrate, but SSH/RemoteShell is recovery/migration infrastructure, not the strategic Orbit transport. Agent execution is allowlisted per envelope/command id with gateway-issued operation tokens; no arbitrary shell-over-HTTP. Polling is fallback or deferred compatibility, not the primary target architecture. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
@@ -220,13 +220,15 @@ The CLI consumes these events and renders the normal Orbit progress tree locally
 ### Gateway to node
 
 See [Architecture: Trust And Transport](architecture.md#trust-and-transport)
-for the SSH/RemoteShell edge and the typed Orbit Agent lane.
+for the managed execution boundary and the typed Orbit Agent lane.
 
-The general gateway-to-node path today is SSH through `RemoteShell`. The typed
-Orbit Agent lane is current for supported nodes explicitly marked
-`orbit_agent_capable`, including Linux/Ubuntu and macOS `app-dev` or
-self-managed workload nodes. SSH/RemoteShell remains bootstrap, recovery,
-fallback, and the current path anywhere the Orbit Agent lane does not exist.
+The long-term gateway-to-node model has two normal managed paths:
+`gateway-only` for gateway-owned reads/writes and `agent-push` for node-local
+execution on nodes explicitly marked `orbit_agent_capable`, including
+Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes. Existing
+SSH/RemoteShell dispatch remains transitional migration and recovery
+infrastructure in v1. Break-glass SSH belongs to operator-owned super-admin
+recovery outside normal Orbit command execution.
 
 Gateway-to-node work is split into `RemoteHostExecutor` for host substrate
 work, gateway-container execution for gateway Laravel/artisan/PDO work inside
@@ -252,14 +254,14 @@ runs the VPN-role runtime command there through the execution lane contract.
 Forwarded Artisan commands use the gateway container boundary; they are not
 host PHP. This exception is for VPN-role infrastructure administration only.
 
-The gateway-to-node primitive is the `RemoteShell` contract:
+The transitional v1 SSH fallback uses the `RemoteShell` contract:
 
 - `run` — execute a short script and return structured output
 - `stream` — execute a long-running command and stream chunks
 - `upload` — write a file atomically
 - `download` — read a file
 
-`RemoteShell` connects as the steady-state SSH user stored on the node record
+`RemoteShell` connects as the configured SSH user stored on the node record
 (`nodes.user`). Provisioned Linux nodes default to `orbit`, but existing
 compatible nodes may intentionally persist a different managed user such as
 `nckrtl`. The `node:new --user=<user>` argument is a one-time bootstrap
@@ -290,18 +292,21 @@ Orbit Agent is the node-local executor lane for gateway-owned typed jobs on
 supported nodes. The gateway remains authoritative for intent, authorization,
 release manifests, immutable update plans, operation history, and activity logs.
 The gateway owns a minimal protocol skeleton: typed `noop` and
-`app-dev-convergence` jobs, polling and claim, lifecycle reporting, and
+`app-dev-convergence` envelopes, authenticated Agent listener delivery over
+Orbit/WireGuard, scoped operation tokens, lifecycle reporting, and
 operation/activity recording. The local runtime is split across two Rust
 surfaces: `apps/agent` is the headless Rust/Axum service binary that loads
-local agent config, exposes minimal loopback `/health` and `/status` endpoints,
-claims typed jobs, and reports accepted/running/succeeded or failed lifecycle
-events; `apps/macos` is the macOS-only Tauri tray UI that reads service status
-and performs one-shot gateway status refreshes without owning the service loop.
+local agent config, exposes an authenticated Agent listener plus minimal
+loopback `/health` and `/status` endpoints, receives typed envelopes, and
+reports accepted/running/succeeded or failed lifecycle events; `apps/macos` is
+the macOS-only Tauri tray UI that reads service status and performs one-shot
+gateway status refreshes without owning the service loop.
 
 V1 is scoped narrowly:
 
 - typed Orbit jobs only, not arbitrary shell transport;
-- polling for jobs, with no WebSocket requirement;
+- gateway-pushed HTTP delivery over Orbit/WireGuard, with polling only as a
+  fallback or deferred compatibility path and no WebSocket requirement;
 - one-shot gateway/status refresh when the macOS menu opens, showing Connected
   or Disconnected plus node name and gateway name/host;
 - menu icon state belongs to the UI process, with UI Restart and Quit actions
@@ -310,8 +315,7 @@ V1 is scoped narrowly:
 - `app-dev-convergence` may run fixed sudo-protected installer steps and rely
   on the operating system prompt, but there is no arbitrary privileged shell or
   separate approval UI in this bootstrap;
-- no production packaging, autostart, signing, notarization, self-update, or
-  SSH/RemoteShell replacement.
+- no production packaging, autostart, signing, notarization, or self-update.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent
 IDE adapters. The `agent` role runs autonomous agent tools such as OpenClaw and
@@ -697,7 +701,7 @@ gateway entries and use `gateway:use <name>` to switch the active one.
 
 The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. The `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress`, `websocket`, and `s3` role drivers currently support Ubuntu only; `metrics` supports Ubuntu and Debian hosts; `app-dev` and `database` support Ubuntu and macOS. macOS role support applies to adopted/self-managed workload nodes and requires a reachable Docker-compatible container provider: Orbit uses an already-working Docker provider first and recommends Colima (`brew install docker colima`, `colima start --runtime docker`) when none is reachable, while OrbStack and Docker Desktop remain compatible when already installed and licensed/allowed for the user's context. Hosted provisioning through `node:new` templates remains Ubuntu-only. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept and [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support) for the full matrix.
 
-The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. When work needs to run on a node (file writes, service control, log access), the gateway opens an SSH connection back to that node via `RemoteShell` — even if the CLI that initiated the work is on that same node.
+The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. Gateway-owned reads/writes stay gateway-only. Node-local execution should use `agent-push` when the command family has an Agent envelope; SSH/RemoteShell remains a transitional v1 fallback while command families migrate.
 
 One machine in the network carries the gateway service. Gateway code runs only
 in that runtime and assumes it is the gateway; it does not require a role flag

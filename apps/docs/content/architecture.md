@@ -16,7 +16,7 @@ Client
   -> gateway HTTPS exposure
   -> orbit-gateway
   -> node execution lane
-     (current SSH/RemoteShell; future Orbit Agent where supported)
+     (gateway-only for gateway-owned work, agent-push for node-local execution, transitional SSH fallback during migration)
 
 Public production HTTP:
 
@@ -93,14 +93,15 @@ decisions.
 
 The gateway is the central store of everything Orbit knows: apps, nodes, workspaces, processes, schedules, tools, and firewall rules. It is the source of truth for all of them.
 
-The gateway exposes the typed API that the CLI talks to. Today it holds SSH
-access to other nodes and applies changes through `RemoteShell`. For supported
-future nodes, starting with macOS `app-dev` and self-managed workload nodes, the
-node-local Orbit Agent is the intended execution lane for gateway-owned typed
-jobs. The gateway remains the source of truth for intent, authorization,
-operation history, release manifests, update plans, and activity logs; the
-Orbit Agent is the local executor. SSH remains bootstrap, recovery, fallback,
-and the current path anywhere the Orbit Agent lane does not exist.
+The gateway exposes the typed API that the CLI talks to. The intended managed
+execution model has two normal paths: gateway-owned work stays gateway-only, and
+node-local execution goes through Orbit Agent. Today some command families still
+use SSH through `RemoteShell`; that is transitional migration and recovery
+infrastructure, not the strategic Orbit transport. Long-term break-glass SSH is
+operator-owned recovery performed by a super admin whose SSH key is present on
+the nodes, outside normal Orbit command execution. The gateway remains the
+source of truth for intent, authorization, operation history, release manifests,
+update plans, and activity logs; the Orbit Agent is the local executor.
 
 The gateway API runs in the Swarm-managed `orbit-gateway` service, using the
 first-party `ghcr.io/hardimpactdev/orbit-gateway:<version>` FrankenPHP image.
@@ -287,15 +288,18 @@ Current Orbit has two implemented network edges.
 | Edge | Transport | Purpose |
 |---|---|---|
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
-| Gateway → node | SSH today; Orbit Agent polling where supported | Node-side work or typed job dispatch |
+| Gateway -> node | Strategic: `gateway-only` or `agent-push`; transitional: SSH fallback for migration/recovery only | Gateway-owned work or typed node-local command-envelope dispatch |
 
 The gateway owns the first Orbit Agent protocol skeleton and the monorepo now
 contains two local Rust surfaces: `apps/agent` is the headless Axum service
 binary and `apps/macos` is the macOS-only Tauri tray UI. The lane does not add
-a node-side control plane: an agent-capable node polls the gateway for typed
-Orbit jobs over the existing gateway API trust path, reports lifecycle events
-back to the gateway, and keeps SSH as bootstrap, recovery, and fallback. V1 has
-no WebSocket requirement.
+a node-side control plane: for reachable agent-capable nodes, the gateway opens
+an authenticated HTTP connection to the node's Agent listener over the
+Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
+operation token, receives lifecycle frames back, and keeps SSH as bootstrap,
+recovery, and transitional fallback during migration. Polling is only a fallback
+or deferred compatibility path, not the primary target architecture. V1 has no
+WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -304,33 +308,36 @@ The blast radius of any single caller, including an AI agent driving Orbit, is b
 CLI callers can run on any node — a client, the gateway, or a node carrying workload roles. The caller location changes how local context (current app, current workspace) is resolved. The convenience wrapper only resolves the repo root and execs the CLI source entrypoint; the source entrypoint initializes `ORBIT_HOST_CWD` when absent and preserves supplied values so current-directory ergonomics survive dispatch without broad host access. Caller location never changes who writes state — that is always the gateway.
 
 Nodes other than the gateway do not accept Orbit API calls from other nodes.
-They run workloads, not orchestration. Today, when something needs to happen on
-such a node, the gateway opens the SSH connection and runs the work there. On an
-agent-capable node, the node-local Orbit Agent may instead poll for and execute
-a typed gateway job. In both cases nodes never accept inbound Orbit RPC.
-They do send a small amount of outbound traffic back to the gateway — process
-crash notifications, scheduler run history, and Orbit Agent job lifecycle
-events.
+They run workloads, not orchestration. When node-local execution is needed, the
+managed steady state is an authenticated gateway-pushed command envelope over
+the Orbit/WireGuard network to the node-local Orbit Agent. This is a narrow
+Agent listener endpoint, not general inbound Orbit RPC: the Agent executes only
+allowlisted typed envelopes with scoped operation tokens. During migration, some
+existing command families still use `RemoteShell` over SSH as a transitional
+fallback. That SSH path is not the long-term managed execution model.
 
-The SSH primitive the gateway uses to act on other nodes is called
-`RemoteShell`. `RemoteShell` is transport; workload lane selection is defined
-by [Runtime Execution Lanes](execution-lanes.md). How scripts
-are composed, files uploaded, and sudo scoped lives in
-[tech-stack.md](tech-stack.md#gateway-to-node).
+Break-glass SSH is outside normal Orbit command execution. It is operator-owned
+recovery performed by a super admin who has an SSH key installed on all nodes;
+Orbit command selection should not depend on that access as a managed
+transport.
 
 Orbit Agent is reserved as a node-local execution lane. It is not a new control
-plane or arbitrary shell transport. The gateway owns typed job state, a `noop`
-proof job, poll/claim, lifecycle reporting, and operation/activity recording.
+plane or arbitrary shell transport. The gateway owns typed command envelopes, a
+`noop` proof envelope, authenticated Agent listener delivery, scoped operation
+tokens, lifecycle reporting, and operation/activity recording. Poll/claim
+semantics are fallback or deferred compatibility, not the primary transport.
 
 The local Orbit Agent service lives in `apps/agent` as a headless Rust/Axum
-binary. It loads local config, exposes minimal loopback `/health` and `/status`
-HTTP endpoints, polls for typed `noop` and `app-dev-convergence` jobs, and
-reports accepted/running/succeeded or failed lifecycle events. The background
-service loop belongs to this service binary.
+binary. It loads local config, exposes an authenticated Agent listener reachable
+from the gateway over Orbit/WireGuard plus minimal loopback `/health` and
+`/status` endpoints, receives typed `noop` and `app-dev-convergence` envelopes,
+and reports accepted/running/succeeded or failed lifecycle events. The
+background service loop belongs to this service binary.
 
-The bootstrap is not production packaged, autostarted, signed, notarized,
-self-updating, or a replacement for SSH/RemoteShell fallback. V1 jobs are typed
-Orbit jobs submitted by the gateway. The `app-dev-convergence` job executes
+The bootstrap is not production packaged, autostarted, signed, notarized, or
+self-updating. V1 jobs are typed Orbit jobs submitted by the gateway, with
+transitional SSH fallback only while command families migrate. The
+`app-dev-convergence` job executes
 only fixed local installer steps for Orbit's approved app-dev tool catalog and
 may rely on the operating system's sudo prompt. It is not an arbitrary shell
 transport and does not add a separate Orbit approval queue.
@@ -346,11 +353,11 @@ helper logic that needs host file access plus PHP/PDO without relying on ad hoc
 `python3` or `sqlite3` snippets. The gateway still owns authority. The
 authority path is:
 
-`CLI caller -> gateway API -> gateway authorization -> operation record -> RemoteShell to node -> token-gated local executor -> result recorded`
+`CLI caller -> gateway API -> gateway authorization -> operation record -> agent-push to node -> token-gated local executor -> result recorded`
 
-On agent-capable nodes, the dispatch step may be a typed Orbit Agent job instead
-of `RemoteShell`. The authority path still starts and ends at the
-gateway.
+During migration, the dispatch step may still be transitional `RemoteShell` SSH
+fallback where no Agent envelope exists. The authority path still starts and
+ends at the gateway.
 
 Node-local CLI execution is never an authority bypass. Internal local executor
 commands are hidden from normal CLI help, require a gateway-issued operation
@@ -571,6 +578,6 @@ orbit_docs_feature-docs_vite
 ### Next
 
 For backend implementations — WireGuard, `orbit-caddy`, Docker runtime
-containers, the SQLite schema, the current gateway-to-node `RemoteShell`
-primitive, and the future Orbit Agent lane — see [tech-stack.md](tech-stack.md).
+containers, the SQLite schema, transitional `RemoteShell` infrastructure, and
+the Orbit Agent push lane — see [tech-stack.md](tech-stack.md).
 Command contracts live under [docs/domains/](domains/).

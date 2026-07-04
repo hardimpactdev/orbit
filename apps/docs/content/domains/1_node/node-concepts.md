@@ -402,10 +402,15 @@ These terms describe how nodes communicate and how authority is enforced.
 - **Gateway maintenance edge:** `bin/orbit-gateway-artisan` or direct
   `php apps/gateway/artisan` from a controlled gateway shell. The public `orbit`
   command does not dispatch to gateway Artisan.
-- **Gateway-to-node edge:** Current SSH through `RemoteShell` for node-side
-  applying from the gateway. Nodes that are agent-capable may use an Orbit
-  Agent lane that runs on the node for gateway-owned typed jobs, with SSH
-  retained for bootstrap, recovery, and fallback.
+- **Gateway-to-node edge:** Typed command envelopes are delivered by transport
+  selection. `gateway-only` covers gateway-owned reads/writes; `agent-push` is
+  available for active `orbit_agent_capable` nodes when the gateway can reach
+  the node's Agent listener over Orbit/WireGuard and the envelope opts in;
+  `auto` keeps v1 `transitional-ssh-fallback` while command families migrate.
+  SSH/RemoteShell is recovery/migration infrastructure, not the long-term
+  managed execution transport. Break-glass SSH is owned by a super admin and
+  stays outside normal Orbit command execution. The Agent lane executes
+  allowlisted typed envelopes with operation tokens, never arbitrary shell.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
@@ -415,22 +420,29 @@ These terms describe how nodes communicate and how authority is enforced.
 
 The Orbit Agent lane supports explicitly `orbit_agent_capable` Linux (Ubuntu)
 and macOS `app-dev` (and other self-managed workload) nodes. The gateway remains
-authoritative and owns the protocol skeleton for typed `noop` jobs, polling/claim,
-lifecycle reporting, and operation/activity history. The local runtime is split
-between `apps/agent`, the headless Rust/Axum service binary that owns the
-background polling/job execution loop (Linux and macOS), and `apps/macos`, the
-Tauri tray UI that runs only on macOS. The gateway marks eligible nodes with
-explicit Orbit Agent capability state; the existing `agent` workload role does
-not imply Orbit Agent capability.
+authoritative and owns the protocol skeleton for typed `noop` envelopes,
+Agent listener delivery authenticated by the gateway over Orbit/WireGuard,
+scoped operation tokens, lifecycle reporting, and operation/activity history.
+Polling is fallback or deferred compatibility, not the primary architecture for
+reachable workload nodes.
 
-The headless service polls for typed Orbit jobs, reports lifecycle events back
-to gateway operation/activity history, and exposes minimal loopback health and
-status endpoints for local UI/readiness checks. The macOS UI can show service
-or gateway status, node/gateway identity, Refresh, Restart, and Quit, but
-launching or quitting the UI does not own the service lifetime. V1 has no
-WebSocket requirement, no arbitrary shell transport, no menu job history, no
-production packaging or autostart installer, no self-update, and no separate
-approval UI.
+The local runtime is split between `apps/agent`, the headless Rust/Axum service
+binary that owns the Agent listener and execution loop (Linux and macOS), and
+`apps/macos`, the Tauri tray UI that runs only on macOS. The gateway marks
+eligible nodes with explicit Orbit Agent capability state; the existing `agent`
+workload role does not imply Orbit Agent capability.
+
+The headless service receives typed Orbit envelopes from the gateway, reports
+lifecycle events back to gateway operation/activity history, and exposes
+minimal loopback health and status endpoints for local UI/readiness checks. The
+macOS UI can show service or gateway status, node/gateway identity, Refresh,
+Restart, and Quit, but launching or quitting the UI does not own the service
+lifetime.
+
+V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
+menu job history, no production packaging or autostart installer, no
+self-update, and no separate approval UI. Agent execution is limited to
+explicitly supported typed command envelopes.
 `app-dev-convergence` is limited to fixed Orbit app-dev installer steps and may
 use the operating system's sudo prompt.
 

@@ -146,12 +146,6 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Apps/SetupApp.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/SetupApp.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 1
@@ -452,12 +446,6 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Workspaces/SetupWorkspace.php"
-code = "literal-named-argument"
-message = "Literal argument `''` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/SetupWorkspace.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
 count = 1
@@ -472,12 +460,6 @@ count = 1
 file = "app/Actions/Workspaces/SetupWorkspace.php"
 code = "no-else-clause"
 message = "Avoid `elseif` clauses."
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/SetupWorkspace.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
 count = 1
 
 [[issues]]
@@ -2060,21 +2042,9 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/NodeRoleAddController.php"
-code = "halstead"
-message = "Method has a high halstead effort"
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeRoleAddController.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/NodeRoleAddController.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/NodeRoleAddController.php"
@@ -3170,12 +3140,6 @@ count = 1
 
 [[issues]]
 file = "app/Http/Requests/Api/UpdateNodeApiRequest.php"
-code = "inline-variable-return"
-message = "Variable assignment can be inlined into the return statement."
-count = 1
-
-[[issues]]
-file = "app/Http/Requests/Api/UpdateNodeApiRequest.php"
 code = "literal-named-argument"
 message = "Literal argument `'.'` should be passed as a named argument for clarity."
 count = 1
@@ -3286,13 +3250,13 @@ count = 1
 file = "app/Providers/AppServiceProvider.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 5
+count = 3
 
 [[issues]]
 file = "app/Providers/AppServiceProvider.php"
 code = "prefer-static-closure"
 message = "This closure does not use `$this` and should be declared static."
-count = 3
+count = 1
 
 [[issues]]
 file = "app/Services/Activity/ActivityHistory.php"
@@ -3310,7 +3274,7 @@ count = 1
 file = "app/Services/Activity/ActivityHistory.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 6
+count = 4
 
 [[issues]]
 file = "app/Services/Activity/ActivityHistory.php"
@@ -3550,12 +3514,6 @@ count = 1
 file = "app/Services/Apps/AppDevelopmentInnerTlsPolicy.php"
 code = "too-many-methods"
 message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Services/Apps/AppDevelopmentPackagesMount.php"
-code = "constant-name"
-message = "Constant name `SafeSourcePattern` should be in constant case."
 count = 1
 
 [[issues]]
@@ -6356,12 +6314,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Operations/FleetVersionProbe.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Operations/FleetVersionProbe.php"
 code = "literal-named-argument"
 message = "Literal argument `'0.0.0'` should be passed as a named argument for clarity."
 count = 1
@@ -6842,12 +6794,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Operations/WorkloadNodeUpdater.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Operations/WorkloadNodeUpdater.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
 count = 2
@@ -7071,12 +7017,6 @@ count = 1
 [[issues]]
 file = "app/Services/Processes/ProcessDockerContainerRenderer.php"
 code = "literal-named-argument"
-message = "Literal argument `''` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessDockerContainerRenderer.php"
-code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 1
 
@@ -7126,12 +7066,6 @@ count = 1
 file = "app/Services/Processes/ProcessOwnerContext.php"
 code = "inline-variable-return"
 message = "Variable assignment can be inlined into the return statement."
-count = 2
-
-[[issues]]
-file = "app/Services/Processes/ProcessOwnerContext.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
 count = 2
 
 [[issues]]
@@ -7436,21 +7370,9 @@ count = 1
 
 [[issues]]
 file = "app/Services/Processes/SystemdUnitRenderer.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/SystemdUnitRenderer.php"
-code = "literal-named-argument"
-message = "Literal argument `''` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/SystemdUnitRenderer.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/Processes/SystemdUnitRenderer.php"
@@ -7502,12 +7424,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteFixer.php"
-code = "halstead"
-message = "Method has a high halstead difficulty and effort"
-count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteFixer.php"
 code = "kan-defect"
 message = "Class has a high kan defect score."
 count = 1
@@ -7516,19 +7432,13 @@ count = 1
 file = "app/Services/Proxy/ProxyRouteFixer.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 8
+count = 7
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteFixer.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
 count = 1
-
-[[issues]]
-file = "app/Services/Proxy/ProxyRouteFixer.php"
-code = "no-else-clause"
-message = "Avoid `else` clauses."
-count = 2
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteFixer.php"
@@ -7606,7 +7516,7 @@ count = 2
 file = "app/Services/Proxy/ProxyRouteProbe.php"
 code = "literal-named-argument"
 message = "Literal argument `6` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/Proxy/ProxyRouteProbe.php"
@@ -8114,24 +8024,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/RemoteShell/SshCommandBuilder.php"
-code = "explicit-octal"
-message = "Use explicit octal numeral notation."
-count = 2
-
-[[issues]]
-file = "app/Services/RemoteShell/SshCommandBuilder.php"
-code = "literal-named-argument"
-message = "Literal argument `0600` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/SshCommandBuilder.php"
-code = "literal-named-argument"
-message = "Literal argument `0700` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/SshCommandBuilder.php"
 code = "literal-named-argument"
 message = "Literal argument `0` should be passed as a named argument for clarity."
 count = 1
@@ -8153,12 +8045,6 @@ file = "app/Services/RemoteShell/SshCommandBuilder.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
 count = 1
-
-[[issues]]
-file = "app/Services/RemoteShell/SshCommandBuilder.php"
-code = "no-error-control-operator"
-message = "Unsafe use of error control operator `@`."
-count = 2
 
 [[issues]]
 file = "app/Services/RemoteShell/SshCommandBuilder.php"
@@ -9184,12 +9070,6 @@ count = 1
 file = "app/Services/Tools/ToolsProbe.php"
 code = "kan-defect"
 message = "Class has a high kan defect score."
-count = 1
-
-[[issues]]
-file = "app/Services/Tools/ToolsProbe.php"
-code = "literal-named-argument"
-message = "Literal argument `10` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -16502,12 +16382,6 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/NodeRoleAddControllerTest.php"
-code = "file-name"
-message = "Class `NodeRoleAddMetricsRecordingShell` should be in a file named `NodeRoleAddMetricsRecordingShell.php`, found `NodeRoleAddControllerTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/NodeRoleAddControllerTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume"
 count = 1
@@ -20032,12 +19906,6 @@ count = 1
 file = "tests/Unit/Services/Analytics/AppAnalyticsBindingServiceTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Apps/AppDevelopmentInnerTlsPolicyTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app-prod'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
