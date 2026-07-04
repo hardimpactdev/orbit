@@ -78,7 +78,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
-| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` prefers `agent-push` when the node is active + capable + the envelope supports it. V1 may return `transitional-ssh-fallback` while command families migrate, but SSH/RemoteShell is recovery/migration infrastructure, not the strategic Orbit transport. Agent execution is allowlisted per envelope/command id with gateway-issued operation tokens; no arbitrary shell-over-HTTP. Polling is fallback or deferred compatibility, not the primary target architecture. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
+| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` prefers `agent-push` when the node is active + capable + the envelope supports it. V1 may return `transitional-ssh-fallback` while command families migrate, but SSH/RemoteShell is recovery/migration infrastructure, not the strategic Orbit transport. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Polling is fallback or deferred compatibility, not the primary target architecture. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
@@ -244,6 +244,15 @@ is not an app/workspace runtime fallback and must not replace FrankenPHP
 containers. See
 [Runtime Execution Lanes](execution-lanes.md).
 
+`agent-push` V1 sends a structured request containing `operation_id`, `binary`,
+`argv`, `operation_token`, `timeout_seconds`, and `stream` from the gateway to
+the target node Agent listener. The gateway owns caller authorization, grants,
+node targeting, and argv construction. The Agent validates the bearer token and
+operation token, enforces a node-local binary allowlist beginning with `orbit`,
+and executes the binary with a no-shell process API. The Agent returns collected
+stdout, stderr, status, and exit frames. V1 does not add a gateway-side Orbit
+command whitelist.
+
 VPN-role runtime administration is the one runtime exception to the normal
 gateway-to-node flow. Commands that administer VPN clients (`vpn-client:*`) or
 the VPN web UI (`vpn-web-ui:*`) execute against the active `vpn` role runtime.
@@ -291,20 +300,21 @@ flow.
 Orbit Agent is the node-local executor lane for gateway-owned typed jobs on
 supported nodes. The gateway remains authoritative for intent, authorization,
 release manifests, immutable update plans, operation history, and activity logs.
-The gateway owns a minimal protocol skeleton: typed `noop` and
-`app-dev-convergence` envelopes, authenticated Agent listener delivery over
-Orbit/WireGuard, scoped operation tokens, lifecycle reporting, and
-operation/activity recording. The local runtime is split across two Rust
-surfaces: `apps/agent` is the headless Rust/Axum service binary that loads
-local agent config, exposes an authenticated Agent listener plus minimal
-loopback `/health` and `/status` endpoints, receives typed envelopes, and
-reports accepted/running/succeeded or failed lifecycle events; `apps/macos` is
-the macOS-only Tauri tray UI that reads service status and performs one-shot
-gateway status refreshes without owning the service loop.
+The gateway owns a minimal protocol skeleton: structured `binary + argv`
+envelopes, authenticated Agent listener delivery over Orbit/WireGuard, scoped
+operation tokens, lifecycle reporting, and operation/activity recording. The
+local runtime is split across two Rust surfaces: `apps/agent` is the headless
+Rust/Axum service binary that loads local agent config, exposes an
+authenticated Agent listener plus minimal loopback `/health` and `/status`
+endpoints, receives binary argv envelopes, executes only node-local
+allowlisted binaries through no-shell process APIs, and reports collected
+stdout/stderr/status/exit frames; `apps/macos` is the macOS-only Tauri tray UI
+that reads service status and performs one-shot gateway status refreshes
+without owning the service loop.
 
 V1 is scoped narrowly:
 
-- typed Orbit jobs only, not arbitrary shell transport;
+- gateway-built `binary + argv` requests only, not arbitrary shell transport;
 - gateway-pushed HTTP delivery over Orbit/WireGuard, with polling only as a
   fallback or deferred compatibility path and no WebSocket requirement;
 - one-shot gateway/status refresh when the macOS menu opens, showing Connected

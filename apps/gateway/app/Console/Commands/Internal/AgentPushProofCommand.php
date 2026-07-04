@@ -13,12 +13,13 @@ use App\Services\NodeCommandTransport\NodeTransportPreference;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 #[Signature('orbit:internal:agent-push-proof
     {node : Target node registry name}
     {--operation-token= : Scoped operation token accepted by the target Agent listener}
     {--json : Emit structured JSON proof output}')]
-#[Description('Run a typed noop envelope through the Orbit Agent push transport')]
+#[Description('Run a typed binary argv envelope through the Orbit Agent push transport')]
 class AgentPushProofCommand extends Command
 {
     #[\Override]
@@ -40,7 +41,11 @@ class AgentPushProofCommand extends Command
         /** @var Node $node */
         $node = Node::query()->where('name', $nodeName)->firstOrFail();
 
-        $envelope = NodeCommandEnvelope::agentPushNoop();
+        $envelope = NodeCommandEnvelope::agentPushBinary(
+            operationId: 'op_'.Str::uuid()->toString(),
+            binary: 'orbit',
+            argv: ['version', '--json'],
+        );
         $transport = $selector->select($node, $envelope, NodeTransportPreference::Auto);
 
         if ($transport !== NodeTransport::AgentPush) {
@@ -48,7 +53,8 @@ class AgentPushProofCommand extends Command
                 'node' => $node->name,
                 'transport' => $transport->value,
                 'status' => 'failed',
-                'command_id' => $envelope->commandId,
+                'operation_id' => $envelope->operationId,
+                'binary' => $envelope->binary,
                 'error' => 'agent-push transport is unavailable for the target node',
             ]);
 
@@ -70,7 +76,9 @@ class AgentPushProofCommand extends Command
             'node' => $node->name,
             'transport' => $result->transport,
             'status' => $result->status,
-            'command_id' => $result->commandId,
+            'operation_id' => $result->operationId,
+            'binary' => $result->binary,
+            'exit_code' => $result->exitCode,
             'frames' => $result->frames,
         ]);
 

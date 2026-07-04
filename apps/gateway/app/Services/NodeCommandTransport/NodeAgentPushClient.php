@@ -12,7 +12,8 @@ use SensitiveParameter;
 
 final readonly class NodeAgentPushClient
 {
-    private const string AGENT_PUSH_NOOP_COMMAND_ID = 'orbit.agent.noop';
+    private const string AGENT_PUSH_BINARY_COMMAND_ID = 'orbit.agent.binary';
+    private const string AGENT_PUSH_BINARY_ALLOWLISTED_BINARY = 'orbit';
 
     public function execute(
         Node $node,
@@ -31,11 +32,7 @@ final readonly class NodeAgentPushClient
         $response = Http::timeout(10)
             ->acceptJson()
             ->withToken($operationToken)
-            ->post($this->urlFor($node), [
-                'command_id' => $envelope->commandId,
-                'operation_token' => $operationToken,
-                'payload' => $this->payloadForTransport($envelope),
-            ]);
+            ->post($this->urlFor($node), $this->payloadForTransport($envelope, $operationToken));
 
         if (! $response->successful()) {
             throw new RuntimeException("Orbit Agent push request failed with HTTP {$response->status()}.");
@@ -44,21 +41,23 @@ final readonly class NodeAgentPushClient
         /** @var array<string, mixed> $payload */
         $payload = $response->json();
 
-        return new NodeAgentPushResult(
-            transport: $this->stringValue($payload, 'transport'),
-            commandId: $this->stringValue($payload, 'command_id'),
-            status: $this->stringValue($payload, 'status'),
-            frames: $this->frames($payload),
-        );
+        return new NodeAgentPushResult([
+            'transport' => $this->stringValue($payload, 'transport'),
+            'operation_id' => $this->stringValue($payload, 'operation_id'),
+            'binary' => $this->stringValue($payload, 'binary'),
+            'status' => $this->stringValue($payload, 'status'),
+            'frames' => $this->frames($payload),
+            'exit_code' => $this->intValue($payload, 'exit_code'),
+        ]);
     }
 
     private function assertAllowlisted(NodeCommandEnvelope $envelope): void
     {
         if (
-            $envelope->commandId === self::AGENT_PUSH_NOOP_COMMAND_ID
+            $envelope->commandId === self::AGENT_PUSH_BINARY_COMMAND_ID
             && $envelope->requiresNodeExecution
             && $envelope->supportsAgentPushTransport
-            && $envelope->payload === []
+            && $envelope->binary === self::AGENT_PUSH_BINARY_ALLOWLISTED_BINARY
         ) {
             return;
         }
@@ -79,13 +78,29 @@ final readonly class NodeAgentPushClient
         return "http://{$host}:9477/v1/commands";
     }
 
-    private function payloadForTransport(NodeCommandEnvelope $envelope): object|array
-    {
-        if ($envelope->payload === []) {
-            return (object) [];
-        }
-
-        return $envelope->payload;
+    /**
+     * @return array{
+     *     operation_id: string,
+     *     binary: string,
+     *     argv: list<string>,
+     *     operation_token: string,
+     *     timeout_seconds: int,
+     *     stream: bool,
+     * }
+     */
+    private function payloadForTransport(
+        NodeCommandEnvelope $envelope,
+        #[SensitiveParameter]
+        string $operationToken,
+    ): array {
+        return [
+            'operation_id' => (string) $envelope->operationId,
+            'binary' => (string) $envelope->binary,
+            'argv' => $envelope->argv,
+            'operation_token' => $operationToken,
+            'timeout_seconds' => $envelope->timeoutSeconds,
+            'stream' => $envelope->stream,
+        ];
     }
 
     /**
@@ -114,5 +129,21 @@ final readonly class NodeAgentPushClient
             $payload['frames'],
             is_array(...),
         ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function intValue(array $payload, string $key): ?int
+    {
+        if (! array_key_exists($key, $payload)) {
+            return null;
+        }
+
+        if (! is_int($payload[$key])) {
+            throw new RuntimeException("Orbit Agent push response '{$key}' must be an integer.");
+        }
+
+        return $payload[$key];
     }
 }

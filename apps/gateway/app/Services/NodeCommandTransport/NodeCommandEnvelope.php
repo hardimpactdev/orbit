@@ -6,23 +6,63 @@ namespace App\Services\NodeCommandTransport;
 
 final readonly class NodeCommandEnvelope
 {
+    public string $commandId;
+
+    public bool $requiresNodeExecution;
+
+    public bool $supportsAgentPushTransport;
+
     /**
-     * @param  array<string, mixed>  $payload
+     * @var array<string, mixed>
      */
-    private function __construct(
-        public string $commandId,
-        public bool $requiresNodeExecution,
-        public bool $supportsAgentPushTransport,
-        public array $payload = [],
-    ) {}
+    public array $payload;
+
+    public ?string $operationId;
+
+    public ?string $binary;
+
+    /**
+     * @var list<string>
+     */
+    public array $argv;
+
+    public int $timeoutSeconds;
+
+    public bool $stream;
+
+    /**
+     * @param  array{
+     *     command_id: string,
+     *     requires_node_execution: bool,
+     *     supports_agent_push_transport: bool,
+     *     payload?: array<string, mixed>,
+     *     operation_id?: string|null,
+     *     binary?: string|null,
+     *     argv?: list<string>,
+     *     timeout_seconds?: int,
+     *     stream?: bool,
+     * }  $attributes
+     */
+    private function __construct(array $attributes)
+    {
+        $this->commandId = $attributes['command_id'];
+        $this->requiresNodeExecution = $attributes['requires_node_execution'];
+        $this->supportsAgentPushTransport = $attributes['supports_agent_push_transport'];
+        $this->payload = $attributes['payload'] ?? [];
+        $this->operationId = $attributes['operation_id'] ?? null;
+        $this->binary = $attributes['binary'] ?? null;
+        $this->argv = $attributes['argv'] ?? [];
+        $this->timeoutSeconds = $attributes['timeout_seconds'] ?? 30;
+        $this->stream = $attributes['stream'] ?? true;
+    }
 
     public static function gatewayOnlyRead(string $commandId): self
     {
-        return new self(
-            commandId: $commandId,
-            requiresNodeExecution: false,
-            supportsAgentPushTransport: false,
-        );
+        return new self([
+            'command_id' => $commandId,
+            'requires_node_execution' => false,
+            'supports_agent_push_transport' => false,
+        ]);
     }
 
     /**
@@ -33,21 +73,33 @@ final readonly class NodeCommandEnvelope
         bool $supportsAgentPushTransport = false,
         array $payload = [],
     ): self {
-        return new self(
-            commandId: $commandId,
-            requiresNodeExecution: true,
-            supportsAgentPushTransport: $supportsAgentPushTransport,
-            payload: $payload,
-        );
+        return new self([
+            'command_id' => $commandId,
+            'requires_node_execution' => true,
+            'supports_agent_push_transport' => $supportsAgentPushTransport,
+            'payload' => $payload,
+        ]);
     }
 
-    public static function agentPushNoop(): self
-    {
-        return new self(
-            commandId: 'orbit.agent.noop',
-            requiresNodeExecution: true,
-            supportsAgentPushTransport: true,
-            payload: [],
-        );
+    /**
+     * @param  list<string>  $argv
+     */
+    public static function agentPushBinary(
+        string $operationId,
+        string $binary,
+        array $argv,
+        int $timeoutSeconds = 30,
+        bool $stream = true,
+    ): self {
+        return new self([
+            'command_id' => 'orbit.agent.binary',
+            'requires_node_execution' => true,
+            'supports_agent_push_transport' => true,
+            'operation_id' => $operationId,
+            'binary' => $binary,
+            'argv' => $argv,
+            'timeout_seconds' => $timeoutSeconds,
+            'stream' => $stream,
+        ]);
     }
 }

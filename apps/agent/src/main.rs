@@ -10,8 +10,11 @@ use orbit_agent::{
     ServiceStatusSnapshot,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::time::Duration;
+use std::{
+    process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
 
 #[tokio::main]
 async fn main() {
@@ -88,37 +91,123 @@ async fn command_push(
         );
     }
 
-    if request.command_id != "orbit.agent.noop" {
-        return command_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported Orbit Agent command envelope",
-        );
+    if request.binary != "orbit" {
+        return command_error(StatusCode::BAD_REQUEST, "unsupported Orbit Agent binary");
     }
 
-    if !request
-        .payload
-        .as_object()
-        .is_some_and(|payload| payload.is_empty())
-    {
-        return command_error(
-            StatusCode::BAD_REQUEST,
-            "orbit.agent.noop does not accept command payload",
-        );
-    }
+    let execution = execute_binary(&request);
 
     (
         StatusCode::OK,
         Json(CommandPushResponse {
             transport: "agent-push".to_string(),
-            command_id: request.command_id,
-            status: "succeeded".to_string(),
-            frames: vec![CommandPushFrame {
-                frame_type: "status".to_string(),
-                message: "noop accepted".to_string(),
-            }],
+            operation_id: request.operation_id,
+            binary: request.binary,
+            status: execution.status,
+            frames: execution.frames,
+            exit_code: execution.exit_code,
         }),
     )
         .into_response()
+}
+
+fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
+    let timeout_seconds = request.timeout_seconds.clamp(1, 300);
+    let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+
+    let mut child = match Command::new(&request.binary)
+        .args(&request.argv)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            return CommandExecution {
+                status: "failed".to_string(),
+                exit_code: None,
+                frames: vec![CommandPushFrame {
+                    frame_type: "stderr".to_string(),
+                    message: format!("failed to execute allowlisted binary: {error}"),
+                }],
+            };
+        }
+    };
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                return command_output_to_execution(
+                    child
+                        .wait_with_output()
+                        .expect("completed child output should be readable"),
+                );
+            }
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+
+                return CommandExecution {
+                    status: "failed".to_string(),
+                    exit_code: None,
+                    frames: vec![CommandPushFrame {
+                        frame_type: "stderr".to_string(),
+                        message: format!(
+                            "binary execution timed out after {timeout_seconds} seconds"
+                        ),
+                    }],
+                };
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(25)),
+            Err(error) => {
+                return CommandExecution {
+                    status: "failed".to_string(),
+                    exit_code: None,
+                    frames: vec![CommandPushFrame {
+                        frame_type: "stderr".to_string(),
+                        message: format!("failed to wait for allowlisted binary: {error}"),
+                    }],
+                };
+            }
+        }
+    }
+}
+
+fn command_output_to_execution(output: std::process::Output) -> CommandExecution {
+    let mut frames = Vec::new();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let exit_code = output.status.code();
+
+    if !stdout.is_empty() {
+        frames.push(CommandPushFrame {
+            frame_type: "stdout".to_string(),
+            message: stdout,
+        });
+    }
+
+    if !stderr.is_empty() {
+        frames.push(CommandPushFrame {
+            frame_type: "stderr".to_string(),
+            message: stderr,
+        });
+    }
+
+    frames.push(CommandPushFrame {
+        frame_type: "exit".to_string(),
+        message: exit_code
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "terminated".to_string()),
+    });
+
+    CommandExecution {
+        status: if output.status.success() {
+            "succeeded".to_string()
+        } else {
+            "failed".to_string()
+        },
+        exit_code,
+        frames,
+    }
 }
 
 fn command_error(status: StatusCode, message: &str) -> axum::response::Response {
@@ -138,17 +227,30 @@ struct HealthResponse {
 
 #[derive(Debug, Clone, Deserialize)]
 struct CommandPushRequest {
-    command_id: String,
+    operation_id: String,
+    binary: String,
+    argv: Vec<String>,
     operation_token: String,
-    payload: Value,
+    timeout_seconds: u64,
+    #[allow(dead_code)]
+    stream: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 struct CommandPushResponse {
     transport: String,
-    command_id: String,
+    operation_id: String,
+    binary: String,
     status: String,
     frames: Vec<CommandPushFrame>,
+    exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct CommandExecution {
+    status: String,
+    frames: Vec<CommandPushFrame>,
+    exit_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,8 +268,10 @@ struct CommandPushError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
     use axum::http::{header, Method, Request, StatusCode};
     use orbit_agent::default_http_bind_addr;
+    use serde_json::Value;
     use tower::ServiceExt;
 
     #[test]
@@ -185,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn command_push_endpoint_accepts_allowlisted_noop_envelope() {
+    async fn command_push_endpoint_accepts_allowlisted_binary_argv_envelope() {
         std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
 
         let response = app_with_push_token(Some("op_test_123".to_string()))
@@ -197,9 +301,12 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(axum::body::Body::from(
                         serde_json::json!({
-                            "command_id": "orbit.agent.noop",
+                            "operation_id": "op_agent_test_123",
+                            "binary": "orbit",
+                            "argv": ["version", "--json"],
                             "operation_token": "op_test_123",
-                            "payload": {},
+                            "timeout_seconds": 30,
+                            "stream": true,
                         })
                         .to_string(),
                     ))
@@ -209,10 +316,24 @@ mod tests {
             .expect("response");
 
         assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("body bytes");
+        let payload: Value = serde_json::from_slice(&body).expect("json response");
+
+        assert_eq!(payload["transport"], "agent-push");
+        assert_eq!(payload["operation_id"], "op_agent_test_123");
+        assert_eq!(payload["binary"], "orbit");
+        assert_eq!(payload["status"], "succeeded");
+        assert!(payload["frames"]
+            .as_array()
+            .is_some_and(|frames| !frames.is_empty()));
+        assert!(payload["exit_code"].is_i64());
     }
 
     #[tokio::test]
-    async fn command_push_endpoint_rejects_unsupported_command_ids() {
+    async fn command_push_endpoint_rejects_non_allowlisted_binaries() {
         std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
 
         let response = app_with_push_token(Some("op_test_123".to_string()))
@@ -224,9 +345,12 @@ mod tests {
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(axum::body::Body::from(
                         serde_json::json!({
-                            "command_id": "shell.exec",
+                            "operation_id": "op_agent_test_123",
+                            "binary": "rm",
+                            "argv": ["-rf", "/tmp/orbit-agent-push-test"],
                             "operation_token": "op_test_123",
-                            "payload": {"argv": ["whoami"]},
+                            "timeout_seconds": 30,
+                            "stream": true,
                         })
                         .to_string(),
                     ))
@@ -236,5 +360,65 @@ mod tests {
             .expect("response");
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn command_push_endpoint_rejects_mismatched_operation_tokens() {
+        std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
+
+        let response = app_with_push_token(Some("op_test_123".to_string()))
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands")
+                    .header(header::AUTHORIZATION, "Bearer op_test_123")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_test_123",
+                            "binary": "orbit",
+                            "argv": ["version", "--json"],
+                            "operation_token": "op_wrong_123",
+                            "timeout_seconds": 30,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn command_push_endpoint_rejects_mismatched_bearer_tokens() {
+        std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
+
+        let response = app_with_push_token(Some("op_test_123".to_string()))
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands")
+                    .header(header::AUTHORIZATION, "Bearer op_wrong_123")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_test_123",
+                            "binary": "orbit",
+                            "argv": ["version", "--json"],
+                            "operation_token": "op_test_123",
+                            "timeout_seconds": 30,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }

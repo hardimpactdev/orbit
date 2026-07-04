@@ -410,7 +410,8 @@ These terms describe how nodes communicate and how authority is enforced.
   SSH/RemoteShell is recovery/migration infrastructure, not the long-term
   managed execution transport. Break-glass SSH is owned by a super admin and
   stays outside normal Orbit command execution. The Agent lane executes
-  allowlisted typed envelopes with operation tokens, never arbitrary shell.
+  gateway-built `binary + argv` requests with scoped operation tokens and a
+  node-local binary allowlist, never arbitrary shell.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built
   lifecycle events, not node-side control-plane authority.
 - **Node reality:** Observed role assignments, assignment status, platform,
@@ -420,11 +421,15 @@ These terms describe how nodes communicate and how authority is enforced.
 
 The Orbit Agent lane supports explicitly `orbit_agent_capable` Linux (Ubuntu)
 and macOS `app-dev` (and other self-managed workload) nodes. The gateway remains
-authoritative and owns the protocol skeleton for typed `noop` envelopes,
-Agent listener delivery authenticated by the gateway over Orbit/WireGuard,
+authoritative and owns caller authorization, grants, node targeting, argv
+construction, Agent listener delivery authenticated over Orbit/WireGuard,
 scoped operation tokens, lifecycle reporting, and operation/activity history.
-Polling is fallback or deferred compatibility, not the primary architecture for
-reachable workload nodes.
+Agent-push V1 carries `operation_id`, `binary`, `argv`, `operation_token`,
+`timeout_seconds`, and `stream`. The node Agent is the final local protection
+point: it allows only known binaries, initially `orbit`, executes them through
+no-shell process APIs, and returns collected stdout, stderr, status, and exit
+frames. Polling is fallback or deferred compatibility, not the primary
+architecture for reachable workload nodes.
 
 The local runtime is split between `apps/agent`, the headless Rust/Axum service
 binary that owns the Agent listener and execution loop (Linux and macOS), and
@@ -432,17 +437,17 @@ binary that owns the Agent listener and execution loop (Linux and macOS), and
 eligible nodes with explicit Orbit Agent capability state; the existing `agent`
 workload role does not imply Orbit Agent capability.
 
-The headless service receives typed Orbit envelopes from the gateway, reports
-lifecycle events back to gateway operation/activity history, and exposes
-minimal loopback health and status endpoints for local UI/readiness checks. The
-macOS UI can show service or gateway status, node/gateway identity, Refresh,
-Restart, and Quit, but launching or quitting the UI does not own the service
-lifetime.
+The headless service receives structured `binary + argv` Orbit envelopes from
+the gateway, reports lifecycle events back to gateway operation/activity
+history, and exposes minimal loopback health and status endpoints for local
+UI/readiness checks. The macOS UI can show service or gateway status,
+node/gateway identity, Refresh, Restart, and Quit, but launching or quitting
+the UI does not own the service lifetime.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
 menu job history, no production packaging or autostart installer, no
 self-update, and no separate approval UI. Agent execution is limited to
-explicitly supported typed command envelopes.
+explicitly supported binary argv envelopes with node-local binary allowlisting.
 `app-dev-convergence` is limited to fixed Orbit app-dev installer steps and may
 use the operating system's sudo prompt.
 

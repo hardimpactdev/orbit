@@ -15,19 +15,21 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-it('pushes an allowlisted noop envelope to the target node agent listener', function (): void {
+it('pushes an allowlisted binary argv envelope to the target node agent listener', function (): void {
     Http::preventStrayRequests();
     $operationToken = agent_push_client_test_operation_token();
 
     Http::fake([
         'http://10.6.0.23:9477/v1/commands' => Http::response([
             'transport' => 'agent-push',
-            'command_id' => 'orbit.agent.noop',
+            'operation_id' => 'op_gateway_test_123',
+            'binary' => 'orbit',
             'status' => 'succeeded',
+            'exit_code' => 0,
             'frames' => [
                 [
-                    'type' => 'status',
-                    'message' => 'noop accepted',
+                    'type' => 'stdout',
+                    'message' => '{"version":"0.1.0"}',
                 ],
             ],
         ]),
@@ -43,24 +45,34 @@ it('pushes an allowlisted noop envelope to the target node agent listener', func
 
     $result = new NodeAgentPushClient()->execute(
         node: $node,
-        envelope: NodeCommandEnvelope::agentPushNoop(),
+        envelope: NodeCommandEnvelope::agentPushBinary(
+            operationId: 'op_gateway_test_123',
+            binary: 'orbit',
+            argv: ['app:list', '--json'],
+        ),
         operationToken: $operationToken,
     );
 
     expect($result->transport)->toBe('agent-push');
-    expect($result->commandId)->toBe('orbit.agent.noop');
+    expect($result->operationId)->toBe('op_gateway_test_123');
+    expect($result->binary)->toBe('orbit');
     expect($result->status)->toBe('succeeded');
+    expect($result->exitCode)->toBe(0);
     expect($result->frames)->toHaveCount(1);
 
-    Http::assertSent(function (Request $request): bool {
-        return (
+    Http::assertSent(
+        fn (Request $request): bool => (
             $request->method() === 'POST'
             && $request->url() === 'http://10.6.0.23:9477/v1/commands'
             && $request->hasHeader('Authorization')
-            && $request['command_id'] === 'orbit.agent.noop'
-            && str_contains($request->body(), '"payload":{}')
-        );
-    });
+            && $request['operation_id'] === 'op_gateway_test_123'
+            && $request['binary'] === 'orbit'
+            && $request['argv'] === ['app:list', '--json']
+            && $request['operation_token'] !== null
+            && $request['timeout_seconds'] === 30
+            && $request['stream'] === true
+        ),
+    );
 });
 
 it('refuses to push envelopes that are not allowlisted for agent push', function (): void {

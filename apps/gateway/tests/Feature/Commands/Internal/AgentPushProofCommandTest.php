@@ -12,19 +12,21 @@ use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-it('runs an agent-push noop proof against a named node and returns structured json', function (): void {
+it('runs an agent-push binary argv proof against a named node and returns structured json', function (): void {
     Http::preventStrayRequests();
     $operationToken = agent_push_proof_test_operation_token();
 
     Http::fake([
         'http://10.6.0.23:9477/v1/commands' => Http::response([
             'transport' => 'agent-push',
-            'command_id' => 'orbit.agent.noop',
+            'operation_id' => 'op_agent_push_proof_123',
+            'binary' => 'orbit',
             'status' => 'succeeded',
+            'exit_code' => 0,
             'frames' => [
                 [
-                    'type' => 'status',
-                    'message' => 'noop accepted',
+                    'type' => 'stdout',
+                    'message' => '{"version":"0.1.0"}',
                 ],
             ],
         ]),
@@ -46,22 +48,30 @@ it('runs an agent-push noop proof against a named node and returns structured js
 
     expect($exitCode)->toBe(0);
 
-    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($payload)->toMatchArray([
         'node' => 'mini',
         'transport' => 'agent-push',
         'status' => 'succeeded',
-        'command_id' => 'orbit.agent.noop',
+        'binary' => 'orbit',
+        'exit_code' => 0,
     ]);
+    expect($payload['operation_id'])->toBeString()->toStartWith('op_');
+    expect($payload['frames'])->toHaveCount(1);
 
-    Http::assertSent(function (Request $request): bool {
-        return (
+    Http::assertSent(
+        fn (Request $request): bool => (
             $request->url() === 'http://10.6.0.23:9477/v1/commands'
             && $request->hasHeader('Authorization')
-            && $request['command_id'] === 'orbit.agent.noop'
-        );
-    });
+            && $request['binary'] === 'orbit'
+            && $request['argv'] === ['version', '--json']
+            && is_string($request['operation_id'])
+            && str_starts_with($request['operation_id'], 'op_')
+            && $request['timeout_seconds'] === 30
+            && $request['stream'] === true
+        ),
+    );
 });
 
 it('fails before transport when agent-push selection is unavailable', function (): void {
@@ -83,13 +93,13 @@ it('fails before transport when agent-push selection is unavailable', function (
 
     expect($exitCode)->toBe(1);
 
-    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
 
     expect($payload)->toMatchArray([
         'node' => 'mini',
         'transport' => 'transitional-ssh-fallback',
         'status' => 'failed',
-        'command_id' => 'orbit.agent.noop',
+        'binary' => 'orbit',
     ]);
 });
 

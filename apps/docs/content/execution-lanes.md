@@ -3,7 +3,9 @@
 This page defines how the gateway may execute work on managed nodes. Orbit's
 managed execution target has two normal paths: `gateway-only` for gateway-owned
 reads/writes and `agent-push` for node-local execution through typed command
-envelopes.
+envelopes. In V1, agent-push envelopes are structured `binary + argv` requests
+created by the gateway and executed by the node Agent through a node-local
+binary allowlist.
 
 Transport selection chooses the delivery path for an envelope:
 `gateway-only`, `agent-push`, `auto`, or `transitional-ssh-fallback` during v1
@@ -259,10 +261,14 @@ Use these rules for every new or migrated gateway-to-node execution path.
   production installs, while source-dev Docker/Incus development and E2E
   nodes invoke `<source>/apps/cli/orbit`; host PHP remains forbidden.
 - Agent push is the managed node-local execution mechanism beneath typed
-  command envelopes. Transport selection (`gateway-only`, `agent-push`, `auto`,
-  or `transitional-ssh-fallback`) decides the delivery path for a given
-  envelope without mutating existing `RemoteShell` call sites. Gateway-only
-  envelopes stay on the gateway; agent execution is explicit per envelope.
+  command envelopes. V1 Agent envelopes carry `operation_id`, `binary`, `argv`,
+  `operation_token`, `timeout_seconds`, and `stream`; the gateway builds the
+  argv and owns caller authorization, while the Agent enforces the node-local
+  binary allowlist and uses no-shell process execution. Transport selection
+  (`gateway-only`, `agent-push`, `auto`, or `transitional-ssh-fallback`)
+  decides the delivery path for a given envelope without mutating existing
+  `RemoteShell` call sites. Gateway-only envelopes stay on the gateway; agent
+  execution is explicit per envelope.
   `RemoteShell` remains transitional migration/recovery infrastructure, not a
   permanent first-class managed execution transport.
 - A host-lane command may control containers, including `docker exec`, but it

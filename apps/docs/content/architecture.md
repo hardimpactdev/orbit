@@ -288,7 +288,7 @@ Current Orbit has two implemented network edges.
 | Edge | Transport | Purpose |
 |---|---|---|
 | CLI caller → gateway | HTTPS over the VPN | Commands, reads, streaming progress |
-| Gateway -> node | Strategic: `gateway-only` or `agent-push`; transitional: SSH fallback for migration/recovery only | Gateway-owned work or typed node-local command-envelope dispatch |
+| Gateway -> node | Strategic: `gateway-only` or `agent-push`; transitional: SSH fallback for migration/recovery only | Gateway-owned work or structured node-local `binary + argv` dispatch |
 
 The gateway owns the first Orbit Agent protocol skeleton and the monorepo now
 contains two local Rust surfaces: `apps/agent` is the headless Axum service
@@ -296,10 +296,10 @@ binary and `apps/macos` is the macOS-only Tauri tray UI. The lane does not add
 a node-side control plane: for reachable agent-capable nodes, the gateway opens
 an authenticated HTTP connection to the node's Agent listener over the
 Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
-operation token, receives lifecycle frames back, and keeps SSH as bootstrap,
-recovery, and transitional fallback during migration. Polling is only a fallback
-or deferred compatibility path, not the primary target architecture. V1 has no
-WebSocket requirement.
+operation token, receives stdout/stderr/status/exit frames back, and keeps SSH
+as bootstrap, recovery, and transitional fallback during migration. Polling is
+only a fallback or deferred compatibility path, not the primary target
+architecture. V1 has no WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -311,8 +311,9 @@ Nodes other than the gateway do not accept Orbit API calls from other nodes.
 They run workloads, not orchestration. When node-local execution is needed, the
 managed steady state is an authenticated gateway-pushed command envelope over
 the Orbit/WireGuard network to the node-local Orbit Agent. This is a narrow
-Agent listener endpoint, not general inbound Orbit RPC: the Agent executes only
-allowlisted typed envelopes with scoped operation tokens. During migration, some
+Agent listener endpoint, not general inbound Orbit RPC: the gateway sends
+structured `binary + argv` requests and the Agent executes only allowlisted
+node-local binaries with scoped operation tokens. During migration, some
 existing command families still use `RemoteShell` over SSH as a transitional
 fallback. That SSH path is not the long-term managed execution model.
 
@@ -322,22 +323,27 @@ Orbit command selection should not depend on that access as a managed
 transport.
 
 Orbit Agent is reserved as a node-local execution lane. It is not a new control
-plane or arbitrary shell transport. The gateway owns typed command envelopes, a
-`noop` proof envelope, authenticated Agent listener delivery, scoped operation
-tokens, lifecycle reporting, and operation/activity recording. Poll/claim
-semantics are fallback or deferred compatibility, not the primary transport.
+plane or arbitrary shell transport. The gateway owns structured binary argv
+envelopes, a hidden `orbit version --json` proof envelope, authenticated Agent
+listener delivery, scoped operation tokens, lifecycle reporting, and
+operation/activity recording. Poll/claim semantics are fallback or deferred
+compatibility, not the primary transport.
 
 The local Orbit Agent service lives in `apps/agent` as a headless Rust/Axum
 binary. It loads local config, exposes an authenticated Agent listener reachable
 from the gateway over Orbit/WireGuard plus minimal loopback `/health` and
-`/status` endpoints, receives typed `noop` and `app-dev-convergence` envelopes,
-and reports accepted/running/succeeded or failed lifecycle events. The
-background service loop belongs to this service binary.
+`/status` endpoints, receives gateway-authorized `binary + argv` requests, and
+reports collected stdout, stderr, status, and exit frames. The gateway builds
+the argv and owns caller authorization, grants, node targeting, operation
+history, and activity history. The Agent keeps a final node-local binary
+allowlist, starting with `orbit`, and executes with no-shell process APIs
+rather than shell strings or `sh -c`. The background service loop belongs to
+this service binary.
 
 The bootstrap is not production packaged, autostarted, signed, notarized, or
-self-updating. V1 jobs are typed Orbit jobs submitted by the gateway, with
-transitional SSH fallback only while command families migrate. The
-`app-dev-convergence` job executes
+self-updating. V1 agent-push requests are structured Orbit CLI invocations
+submitted by the gateway, with transitional SSH fallback only while command
+families migrate. The `app-dev-convergence` job executes
 only fixed local installer steps for Orbit's approved app-dev tool catalog and
 may rely on the operating system's sudo prompt. It is not an arbitrary shell
 transport and does not add a separate Orbit approval queue.

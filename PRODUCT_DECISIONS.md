@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-07-04 — Agent-push V1 uses gateway-authorized structured `binary + argv` requests to the node Agent listener; the gateway builds the argv and owns caller authorization, while the Agent executes only node-local allowlisted binaries, starting with `orbit`, through no-shell process APIs.
 - 2026-07-04 — Orbit managed execution converges on two normal paths: `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution through typed allowlisted command envelopes with scoped operation tokens. SSH/RemoteShell is transitional migration and recovery infrastructure only; long-term break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution.
 - 2026-07-04 — Orbit Agent transport is gateway-pushed HTTP over the Orbit/WireGuard network for reachable agent-capable workload nodes: the gateway opens an authenticated request to the node's Agent listener carrying a typed command envelope and scoped operation token; polling is fallback or deferred compatibility, not the primary target architecture. SSH/RemoteShell remains bootstrap, recovery, and v1 fallback.
 - 2026-07-03 — Orbit Agent is split into two Rust surfaces: `apps/agent` is the headless Axum service binary that owns the node-local polling/job execution loop and builds on Linux and macOS, while `apps/macos` is the macOS-only Tauri tray UI that can launch or quit independently and must not own the long-running background service loop.
