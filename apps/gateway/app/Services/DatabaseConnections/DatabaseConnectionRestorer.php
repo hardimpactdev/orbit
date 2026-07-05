@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\RemoteShell\RemoteEnvFile;
 use RuntimeException;
 
 final readonly class DatabaseConnectionRestorer
@@ -16,7 +16,7 @@ final readonly class DatabaseConnectionRestorer
     public function __construct(
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,
-        private RemoteShell $remoteShell,
+        private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
     ) {}
 
@@ -37,17 +37,7 @@ final readonly class DatabaseConnectionRestorer
             return;
         }
 
-        $script = sprintf(
-            'mkdir -p %s && printf %%s %s | base64 -d > %s',
-            escapeshellarg(dirname($path)),
-            escapeshellarg(base64_encode($updated)),
-            escapeshellarg($path),
-        );
-        $result = $this->remoteShell->run($this->targetNode($target), $script, ['throw' => false]);
-
-        if (! $result->successful()) {
-            throw new RuntimeException($result->output());
-        }
+        $this->remoteEnvFile->write($this->targetNode($target), $path, $updated);
     }
 
     /**
@@ -78,13 +68,7 @@ final readonly class DatabaseConnectionRestorer
             return (string) file_get_contents($path);
         }
 
-        $result = $this->remoteShell->run(
-            $this->targetNode($target),
-            sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)),
-            ['throw' => false],
-        );
-
-        return $result->successful() ? $result->stdout : '';
+        return $this->remoteEnvFile->read($this->targetNode($target), $path) ?? '';
     }
 
     private function envPath(DatabaseConnectionTarget $target): ?string

@@ -443,120 +443,60 @@ describe('command list visibility', function (): void {
         'analytics:update',
     ]);
 
-    it('hides internal:executor:verify', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'internal:executor:verify');
+    it('hides non-product and internal commands', function (string $name): void {
+        $command = findCommandInList(commandList: orbitCommandList(), name: $name);
         expect($command)
             ->not
             ->toBeNull()
             ->and($command['hidden'] ?? false)
             ->toBeTrue();
-    });
-
-    it('hides internal:wg-easy:state', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'internal:wg-easy:state');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides internal:database-query-local', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'internal:database-query-local');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides internal:workspace-adapter:lookup', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'internal:workspace-adapter:lookup');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides internal:workspace-adapter:update', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'internal:workspace-adapter:update');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides make:command', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'make:command');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides make:test', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'make:test');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides app:build', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'app:build');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides app:install', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'app:install');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides app:rename', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'app:rename');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides test', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'test');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides vendor:publish', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'vendor:publish');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
-
-    it('hides stub:publish', function (): void {
-        $command = findCommandInList(orbitCommandList(), 'stub:publish');
-        expect($command)
-            ->not
-            ->toBeNull()
-            ->and($command['hidden'] ?? false)
-            ->toBeTrue();
-    });
+    })->with([
+        'internal:executor:verify',
+        'internal:wg-easy:state',
+        'internal:agent-runtime:probe',
+        'internal:database-query-local',
+        'internal:database-add-user',
+        'internal:app-cache:clear',
+        'internal:app-runtime-configs:probe',
+        'internal:app-runtime-containers:probe',
+        'internal:app-runtime-extensions:probe',
+        'internal:app-source:create',
+        'internal:app-source-path:probe',
+        'internal:app-security:repair',
+        'internal:app-worker-readiness:probe',
+        'internal:caddy-config',
+        'internal:codex-app-config',
+        'internal:doctor-self',
+        'internal:env-file',
+        'internal:firewall-rule',
+        'internal:firewall-rule:probe',
+        'internal:fleet-update:verify',
+        'internal:gateway-runtime-backend:probe',
+        'internal:managed-file',
+        'internal:node-security-posture:probe',
+        'internal:process-docker-container',
+        'internal:process-docker-swarm-service',
+        'internal:process-logs',
+        'internal:process-systemd-service',
+        'internal:runtime-backend:probe',
+        'internal:s3-runtime:probe',
+        'internal:site-certificate:install',
+        'internal:unattended-upgrades:apply',
+        'internal:unattended-upgrades:probe',
+        'internal:websocket-runtime',
+        'internal:wireguard-endpoint:rotate',
+        'internal:wireguard-interface-public-key:read',
+        'internal:wireguard-self-route',
+        'internal:workspace-adapter:lookup',
+        'internal:workspace-adapter:update',
+        'internal:workspace-source:create',
+        'make:command',
+        'make:test',
+        'app:build',
+        'app:install',
+        'app:rename',
+        'test',
+        'vendor:publish',
+        'stub:publish',
+    ]);
 });

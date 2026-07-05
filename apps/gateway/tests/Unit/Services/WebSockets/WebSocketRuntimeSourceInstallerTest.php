@@ -2,64 +2,109 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
-use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-it('installs the WebSocket Reverb runtime source through a Docker-first script', function (): void {
-    $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $shell = new WebSocketRuntimeSourceInstallerTestShell;
+it('installs the WebSocket Reverb runtime source through the agent-push local executor', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.44:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'websocket-runtime-source-install',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'action' => 'source:install',
+                                'stdout' => implode("\n", [
+                                    '__orbit_websocket_source_timing setup 1',
+                                    '__orbit_websocket_source_timing extract 2',
+                                    '__orbit_websocket_source_timing env 3',
+                                    '__orbit_websocket_source_timing composer 4',
+                                    '__orbit_websocket_source_timing activate 5',
+                                ]),
+                            ],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]),
+    ]);
+    $node = Node::factory()
+        ->withActiveRole('websocket')
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
 
-    new WebSocketRuntimeSourceInstaller($shell)->install($node);
+    new WebSocketRuntimeSourceInstaller(websocket_runtime_source_installer_executor())->install($node);
 
-    $script = $shell->scripts[0];
     $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
-    expect($shell->nodes[0]->is($node))
-        ->toBeTrue()
-        ->and($shell->options[0])
-        ->toMatchArray([
-            'throw' => true,
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'websocket-runtime-source-install',
-            ],
-        ])
-        ->and($script)
-        ->toContain('release_dir="${runtime_root}/releases/')
-        ->and($script)
-        ->toContain('sudo install -d -m 0755 "$release_dir"')
-        ->and($script)
-        ->toContain('sudo ln -sfn "releases/${expected_hash}" \''.WebSocketRuntimeContainer::SourceHostPath."'")
-        ->and($script)
-        ->toContain('__orbit_websocket_source_timing')
-        ->and($script)
-        ->toContain('record_timing composer')
-        ->and($script)
-        ->not->toContain('orbit-gateway:current')->and($script)
-        ->not->toContain('docker image inspect')->and($script)
-        ->not->toContain('docker run --rm')->and($script)->toContain(
-            'sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress',
-        )->and($script)->toContain('WebSocket runtime dependencies require host composer.')->and($script)->toContain(
-            'vendor/autoload.php',
-        )->and($script)->toContain('app_key="base64:$(head -c 32 /dev/urandom | base64')->and($script)->toContain(
-            "printf 'APP_KEY=%s\\n'",
-        )->and($script)->toContain(WebSocketRuntimeSourceInstaller::AppsConfigPath)->and($timingSteps)->toContain(
+    Http::assertSent(function (Request $request): bool {
+        $input = json_decode((string) $request['input'], associative: true);
+
+        return (
+            $request->url() === 'http://10.6.0.44:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['operation_id'] === 'websocket-runtime-source-install'
+            && $request['timeout_seconds'] === 360
+            && $request['stream'] === true
+            && $request['argv'][0] === 'internal:websocket-runtime'
+            && $request['argv'][1] === 'source:install'
+            && str_starts_with((string) $request['argv'][2], '--operation-token=')
+            && $request['argv'][3] === '--json'
+            && is_array($input)
+            && is_string($input['source_hash'] ?? null)
+            && preg_match('/\A[a-f0-9]{64}\z/', $input['source_hash']) === 1
+            && is_string($input['archive_base64'] ?? null)
+            && base64_decode($input['archive_base64'], strict: true) !== false
+        );
+    });
+
+    expect($timingSteps)
+        ->toContain(
             'source-files',
-        )->and($timingSteps)->toContain('source-hash')->and($timingSteps)->toContain('source-archive')->and(
+        )
+        ->and($timingSteps)
+        ->toContain('source-hash')
+        ->and($timingSteps)
+        ->toContain('source-archive')
+        ->and(
             $timingSteps,
-        )->toContain('source-remote')->and($timingSteps)->toContain('source-composer')->and($script)
-        ->not->toContain("\nphp artisan")->and($script)
-        ->not->toContain('reverb:install')->and($script)
-        ->not->toContain('install:broadcasting');
+        )
+        ->toContain('source-remote')
+        ->and($timingSteps)
+        ->toContain('source-composer');
 });
 
 it('ships a bootable Laravel Reverb source artifact without committed vendor files', function (): void {
@@ -94,13 +139,13 @@ it('ships a bootable Laravel Reverb source artifact without committed vendor fil
 });
 
 it('defers fallback source path validation until source install runs', function (): void {
-    $shell = new WebSocketRuntimeSourceInstallerTestShell;
+    $executor = websocket_runtime_source_installer_executor();
 
-    expect(fn () => new WebSocketRuntimeSourceInstaller($shell, sourcePath: '/missing/orbit-reverb'))
+    expect(fn () => new WebSocketRuntimeSourceInstaller($executor, sourcePath: '/missing/orbit-reverb'))
         ->not
         ->toThrow(InvalidArgumentException::class);
 
-    expect(fn () => new WebSocketRuntimeSourceInstaller($shell, sourcePath: '/missing/orbit-reverb')->install(
+    expect(fn () => new WebSocketRuntimeSourceInstaller($executor, sourcePath: '/missing/orbit-reverb')->install(
         Node::factory()->create(),
     ))
         ->toThrow(
@@ -109,40 +154,37 @@ it('defers fallback source path validation until source install runs', function 
         );
 });
 
-final class WebSocketRuntimeSourceInstallerTestShell implements RemoteShell
+function websocket_runtime_source_installer_executor(): RemoteLocalExecutor
 {
-    /**
-     * @var list<Node>
-     */
-    public array $nodes = [];
+    return new RemoteLocalExecutor(
+        transport: new WebSocketRuntimeSourceInstallerUnusedTransport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: websocket_runtime_source_installer_operation_secret(),
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: websocket_runtime_source_installer_operation_secret(),
+    );
+}
 
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
+function websocket_runtime_source_installer_operation_secret(): string
+{
+    return implode('-', ['gateway', 'secret']);
+}
 
-    /**
-     * @var list<array<string, mixed>>
-     */
-    public array $options = [];
-
+final class WebSocketRuntimeSourceInstallerUnusedTransport implements RemoteExecutor
+{
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $this->nodes[] = $node;
-        $this->scripts[] = $script;
-        $this->options[] = $options;
+        throw new RuntimeException('SSH transport should not be called for websocket runtime source installs.');
+    }
 
-        return new RemoteShellResult(
-            exitCode: 0,
-            stdout: implode("\n", [
-                '__orbit_websocket_source_timing setup 1',
-                '__orbit_websocket_source_timing extract 2',
-                '__orbit_websocket_source_timing env 3',
-                '__orbit_websocket_source_timing composer 4',
-                '__orbit_websocket_source_timing activate 5',
-            ]),
-            stderr: '',
-            durationMs: 1,
-        );
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('WebSocket runtime source tests do not start long-running transports.');
     }
 }

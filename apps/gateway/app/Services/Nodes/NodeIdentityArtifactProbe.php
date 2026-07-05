@@ -4,45 +4,56 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
-use App\Contracts\RemoteShell;
 use App\Data\Nodes\NodeIdentityArtifact;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
-use JsonException;
+use App\Models\WireGuardPeer;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use RuntimeException;
 
 final readonly class NodeIdentityArtifactProbe
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     public function read(Node $node): NodeIdentityArtifact
     {
         $interfacePublicKey = $this->readInterfacePublicKey($node);
-        $gatewayNode = $this->gatewayRuntimeNode($node);
+        $peer = WireGuardPeer::query()
+            ->where('public_key', $interfacePublicKey)
+            ->first();
 
-        $result = $this->remoteShell->run(
-            $gatewayNode,
-            $this->registryLookupScript($interfacePublicKey),
-            $this->runtimeOptions($gatewayNode),
-        );
+        $registryNode = $node;
 
-        if (! $result->successful()) {
-            throw new RuntimeException(
-                "Failed to resolve node identity artifact through gateway runtime: {$this->failureOutput($result)}",
-            );
+        if ($peer instanceof WireGuardPeer) {
+            $activePeerNode = $peer->node()->where('status', NodeStatus::Active->value)->first();
+
+            if ($activePeerNode instanceof Node) {
+                $registryNode = $activePeerNode;
+            }
         }
 
-        $payload = $this->payload($result);
-
-        return NodeIdentityArtifact::fromArray($payload);
+        return NodeIdentityArtifact::fromArray(
+            $this->registryPayload($registryNode, $peer, $interfacePublicKey),
+        );
     }
 
     private function readInterfacePublicKey(Node $node): string
     {
-        $result = $this->remoteShell->run($node, $this->interfacePublicKeyScript(), ['timeout' => 15]);
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:wireguard-interface-public-key:read',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'node-identity.wireguard-public-key',
+                ],
+                'timeout' => 15,
+                'throw' => false,
+            ],
+        );
 
         if (! $result->successful()) {
             throw new RuntimeException(
@@ -50,93 +61,50 @@ final readonly class NodeIdentityArtifactProbe
             );
         }
 
-        return trim($result->stdout);
-    }
+        $publicKey = RemoteShellSuccessData::fromJsonEnvelope($result)['public_key'] ?? null;
 
-    private function gatewayRuntimeNode(Node $node): Node
-    {
-        $roleAssignments = app(NodeRoleAssignments::class);
+        if (! is_string($publicKey) || trim($publicKey) === '') {
+            $publicKey = trim($result->stdout);
 
-        if ($roleAssignments->nodeIsGateway($node)) {
-            return $node;
+            if ($publicKey === '') {
+                throw new RuntimeException(
+                    'Failed to read node WireGuard interface public key: response missing public key',
+                );
+            }
         }
 
-        $gatewayNode = $roleAssignments->activeGatewayNodeQuery()->first();
-
-        if (! $gatewayNode instanceof Node) {
-            throw new RuntimeException(
-                'Failed to resolve node identity artifact through gateway runtime: no active gateway node is registered.',
-            );
-        }
-
-        return $gatewayNode;
+        return trim($publicKey);
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     name: string|null,
+     *     role: string|null,
+     *     local_role: string|null,
+     *     status: string|null,
+     *     platform: string|null,
+     *     wireguard_address: string|null,
+     *     registry_public_key: string|null,
+     *     interface_public_key: string|null,
+     * }
      */
-    private function payload(RemoteShellResult $result): array
+    private function registryPayload(?Node $node, ?WireGuardPeer $peer, string $interfacePublicKey): array
     {
-        try {
-            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new RuntimeException('Failed to parse node identity artifact JSON.', previous: $exception);
-        }
-
-        if (! is_array($payload)) {
-            throw new RuntimeException('Node identity artifact response must be a JSON object.');
-        }
-
-        return $payload;
+        return [
+            'name' => $node?->name,
+            'role' => $node?->displayRole(),
+            'local_role' => $node?->displayRole(),
+            'status' => $node?->status?->value,
+            'platform' => $node?->platform,
+            'wireguard_address' => $node?->wireguard_address,
+            'registry_public_key' => $peer?->public_key,
+            'interface_public_key' => $interfacePublicKey,
+        ];
     }
 
-    /**
-     * @return array{timeout: int, cwd?: string}
-     */
-    private function runtimeOptions(Node $node): array
+    private function localExecutor(): RemoteLocalExecutor
     {
-        $options = ['timeout' => 15];
-
-        if (is_string($node->orbit_path) && $node->orbit_path !== '') {
-            $options['cwd'] = $node->orbit_path;
-        }
-
-        return $options;
-    }
-
-    private function interfacePublicKeyScript(): string
-    {
-        return <<<'BASH'
-            set -e
-            sudo wg show wg-orbit public-key
-            BASH;
-    }
-
-    private function registryLookupScript(string $interfacePublicKey): string
-    {
-        $encodedPublicKey = base64_encode($interfacePublicKey);
-
-        return <<<BASH
-            php apps/gateway/artisan tinker --execute='
-            \$publicKey = trim((string) base64_decode("{$encodedPublicKey}", true));
-            \$peer = App\Models\WireGuardPeer::query()
-                ->where("public_key", \$publicKey)
-                ->first();
-            \$node = \$peer instanceof App\Models\WireGuardPeer
-                ? \$peer->node()->where("status", App\Enums\Nodes\NodeStatus::Active->value)->first()
-                : null;
-            echo json_encode([
-                "name" => \$node?->name,
-                "role" => \$node?->displayRole(),
-                "local_role" => \$node?->displayRole(),
-                "status" => \$node?->status?->value,
-                "platform" => \$node?->platform,
-                "wireguard_address" => \$node?->wireguard_address,
-                "registry_public_key" => \$peer?->public_key,
-                "interface_public_key" => \$publicKey !== "" ? \$publicKey : null,
-            ], JSON_THROW_ON_ERROR);
-            '
-            BASH;
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     private function failureOutput(RemoteShellResult $result): string

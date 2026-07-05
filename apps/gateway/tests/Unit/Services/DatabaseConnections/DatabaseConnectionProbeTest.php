@@ -13,9 +13,13 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -306,7 +310,14 @@ describe('DatabaseConnectionProbe', function (): void {
         $shell = new DatabaseConnectionProbeRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                stdout: json_encode([
+                    'success' => [
+                        'data' => [
+                            'exit_code' => 0,
+                            'output' => "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR),
                 stderr: '',
                 durationMs: 1,
             ),
@@ -334,7 +345,9 @@ describe('DatabaseConnectionProbe', function (): void {
                 'message' => 'Linux node does not route its own WireGuard address locally.',
             ])
             ->and($shell->scripts)
-            ->toBe(["ip route get '10.6.0.7'"]);
+            ->toHaveCount(1)
+            ->and($shell->scripts[0])
+            ->toContain("internal:wireguard-self-route '10.6.0.7'");
     });
 
     it('reports macOS as unsupported for same-node managed database self-route diagnostics without route mutation', function (): void {
@@ -393,8 +406,31 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBe([]);
     });
 
-    it('reads remote env files through remote shell for hosted workspaces', function (): void {
-        $node = Node::factory()->appDev()->create(['name' => 'app-1', 'status' => 'active']);
+    it('reads remote env files through agent-push for hosted workspaces', function (): void {
+        request()->headers->set(
+            ExplicitRemoteShellFallback::HEADER,
+            NodeTransportPreference::AgentPush->value,
+        );
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.73:9477/v1/commands' => Http::sequence()
+                ->push(databaseConnectionProbeEnvReadResponse(
+                    "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=feature_docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
+                ))
+                ->push(databaseConnectionProbeEnvReadFailureResponse())
+                ->push(databaseConnectionProbeEnvReadResponse(
+                    "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=feature_docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
+                )),
+        ]);
+        $node = Node::factory()
+            ->appDev()
+            ->orbitAgentCapable()
+            ->create([
+                'name' => 'app-1',
+                'status' => 'active',
+                'wireguard_address' => '10.44.0.73',
+            ]);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
@@ -417,27 +453,23 @@ describe('DatabaseConnectionProbe', function (): void {
                 'env_prefix' => 'DB',
             ]);
 
-        $shell = new DatabaseConnectionProbeRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=feature_docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
-                stderr: '',
-                durationMs: 1,
-            ),
-        ]);
-        app()->instance(RemoteShell::class, $shell);
-
         $issues = app(DatabaseConnectionProbe::class)->probe($node);
 
-        expect($issues)
-            ->toBe([])
-            ->and($shell->scripts)
-            ->not
-            ->toBe([])
-            ->and($shell->scripts[0])
-            ->toContain("test -f '/srv/docs/.worktrees/feature/.env'")
-            ->and($shell->scripts[0])
-            ->toContain("cat '/srv/docs/.worktrees/feature/.env'");
+        expect($issues)->toBe([]);
+
+        Http::assertSent(function (Request $request): bool {
+            $input = json_decode((string) $request['input'], true);
+
+            return (
+                $request->url() === 'http://10.44.0.73:9477/v1/commands'
+                && $request['binary'] === 'orbit'
+                && $request['argv'][0] === 'internal:env-file'
+                && $input === [
+                    'action' => 'read',
+                    'path' => '/srv/docs/.worktrees/feature/.env',
+                ]
+            );
+        });
     });
 
     it('reports one actionable extra issue per unmapped observed supported prefix', function (): void {
@@ -655,6 +687,11 @@ describe('DatabaseConnectionProbe', function (): void {
     });
 
     it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {
+        request()->headers->set(
+            ExplicitRemoteShellFallback::HEADER,
+            NodeTransportPreference::AgentPush->value,
+        );
+
         $node = Node::factory()->appDev()->create(['name' => 'app-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-shadowed-remote');
         File::ensureDirectoryExists($path);
@@ -682,22 +719,33 @@ describe('DatabaseConnectionProbe', function (): void {
                 'env_prefix' => 'DB',
             ]);
 
-        $shell = new DatabaseConnectionProbeRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "DB_CONNECTION=pgsql\nDB_HOST=remote-host\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD={$credentialValue}\n",
-                stderr: '',
-                durationMs: 1,
-            ),
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.74:9477/v1/commands' => Http::response(databaseConnectionProbeEnvReadResponse(
+                "DB_CONNECTION=pgsql\nDB_HOST=remote-host\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD={$credentialValue}\n",
+            )),
         ]);
-        app()->instance(RemoteShell::class, $shell);
+        $node->forceFill([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.44.0.74',
+        ])->save();
 
         $issues = app(DatabaseConnectionProbe::class)->probe($node);
 
-        expect($issues)
-            ->toBeEmpty()
-            ->and($shell->scripts)
-            ->not->toBeEmpty();
+        expect($issues)->toBeEmpty();
+
+        Http::assertSent(function (Request $request) use ($path): bool {
+            $input = json_decode((string) $request['input'], true);
+
+            return (
+                $request->url() === 'http://10.44.0.74:9477/v1/commands'
+                && $request['argv'][0] === 'internal:env-file'
+                && $input === [
+                    'action' => 'read',
+                    'path' => $path.'/.env',
+                ]
+            );
+        });
     });
 
     it('limits combined app and workspace scope to the workspace owned by that app', function (): void {
@@ -787,4 +835,60 @@ final class DatabaseConnectionProbeRemoteShell implements RemoteShell
 
         return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected remote shell call', 1);
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function databaseConnectionProbeEnvReadResponse(string $contents): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'env-file.read',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'path' => '/srv/docs/.env',
+                            'contents' => $contents,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function databaseConnectionProbeEnvReadFailureResponse(): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'env-file.read',
+        'binary' => 'orbit',
+        'status' => 'failed',
+        'exit_code' => 1,
+        'frames' => [
+            [
+                'type' => 'stderr',
+                'message' => 'Env file was not found.',
+            ],
+            [
+                'type' => 'exit',
+                'message' => '1',
+            ],
+        ],
+    ];
 }

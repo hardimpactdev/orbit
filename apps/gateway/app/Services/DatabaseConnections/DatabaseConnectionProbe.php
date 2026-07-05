@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -12,6 +11,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
+use App\Services\RemoteShell\RemoteEnvFile;
 
 final readonly class DatabaseConnectionProbe
 {
@@ -24,7 +24,7 @@ final readonly class DatabaseConnectionProbe
     public function __construct(
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,
-        private RemoteShell $remoteShell,
+        private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
         private NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe,
     ) {}
@@ -110,13 +110,7 @@ final readonly class DatabaseConnectionProbe
             return is_string($contents) ? $contents : null;
         }
 
-        $script = sprintf(
-            'test -f %1$s && cat %1$s',
-            escapeshellarg($path),
-        );
-        $result = $this->remoteShell->run($node, $script, ['throw' => false]);
-
-        return $result->successful() ? $result->stdout : null;
+        return $this->remoteEnvFile->read($node, $path);
     }
 
     /**
@@ -319,9 +313,7 @@ final readonly class DatabaseConnectionProbe
         $path = rtrim($target->path, '/').'/.env';
         $contents = $this->shouldUseLocalFilesystem($node) && is_file($path)
             ? file_get_contents($path)
-            : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), [
-                'throw' => false,
-            ])->stdout;
+            : $this->remoteEnvFile->read($node, $path);
 
         if (! is_string($contents) || $contents === '') {
             return [];

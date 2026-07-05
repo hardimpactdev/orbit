@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Ca;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
@@ -14,7 +14,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
 {
     public function __construct(
         private OrbitCaService $ca,
-        private RemoteShell $remoteShell,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     /**
@@ -27,17 +27,29 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         $local = $this->ca->issueLeaf($host);
         $remote = $this->expectedPathsFor($node, $host);
 
-        $this->remoteShell->run(
-            $node,
-            $this->installScript(
-                node: $node,
-                certPath: $remote['cert'],
-                cert: File::get($local['cert']),
-                keyPath: $remote['key'],
-                key: File::get($local['key']),
-            ),
-            ['throw' => true],
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:site-certificate:install',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'site-certificate.install',
+                ],
+                'input' => json_encode([
+                    'cert_path' => $remote['cert'],
+                    'key_path' => $remote['key'],
+                    'cert' => File::get($local['cert']),
+                    'key' => File::get($local['key']),
+                    'owner' => $this->owner($node),
+                ], JSON_THROW_ON_ERROR),
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+                'throw' => false,
+            ],
         );
+
+        if (! $result->successful()) {
+            throw new RuntimeException('Site certificate install failed.');
+        }
 
         return $remote;
     }
@@ -57,51 +69,20 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         ];
     }
 
-    private function installScript(Node $node, string $certPath, string $cert, string $keyPath, string $key): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return sprintf(
-            <<<'SH'
-                set -e
-                sudo install -d -m 0755 %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
-                sudo chmod 0600 %s
-                %s
-                SH,
-            escapeshellarg(dirname($certPath)),
-            escapeshellarg(base64_encode($cert)),
-            escapeshellarg($certPath),
-            escapeshellarg(base64_encode($key)),
-            escapeshellarg($keyPath),
-            escapeshellarg($certPath),
-            escapeshellarg($keyPath),
-            $this->ownershipLines($node, $certPath, $keyPath),
-        );
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
-    private function ownershipLines(Node $node, string $certPath, string $keyPath): string
+    private function owner(Node $node): ?string
     {
         $user = $node->user ?: 'orbit';
 
         if ($user === 'root') {
-            return '';
+            return null;
         }
 
-        $owner = escapeshellarg($user);
-        $ownerAndGroup = escapeshellarg("{$user}:{$user}");
-
-        return sprintf(
-            "sudo chown %s %s || sudo chown %s %s\nsudo chown %s %s || sudo chown %s %s\n",
-            $ownerAndGroup,
-            escapeshellarg($certPath),
-            $owner,
-            escapeshellarg($certPath),
-            $ownerAndGroup,
-            escapeshellarg($keyPath),
-            $owner,
-            escapeshellarg($keyPath),
-        );
+        return $user;
     }
 
     private function nodeHome(Node $node): string

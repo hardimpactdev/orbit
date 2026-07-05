@@ -109,7 +109,7 @@ final class WorkspaceStoreController implements Loggable
         try {
             $result = $this->createWorkspace->handle($app, $name, $base, $phpVersion);
         } catch (WorkspaceCreateFailed $exception) {
-            $status = $exception->errorCode === 'workspace.ssh_failure' ? 503 : 422;
+            $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
             return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta, $status);
         }
@@ -207,7 +207,7 @@ final class WorkspaceStoreController implements Loggable
         try {
             $node = $this->createWorkspace->resolveAppNode($app);
         } catch (WorkspaceCreateFailed $exception) {
-            $status = $exception->errorCode === 'workspace.ssh_failure' ? 503 : 422;
+            $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
             return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta, $status);
         }

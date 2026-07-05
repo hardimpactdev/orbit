@@ -11,6 +11,7 @@ final class ToolStopCommand extends ToolLifecycleCommand
         {tool? : Tool catalog name to stop}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 

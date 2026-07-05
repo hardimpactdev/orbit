@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:process:input <process> [--node=<node>] [--input=<input>] [--json]
+orbit solo:process:input <process> [--node=<node>] [--node-transport=<transport>] [--input=<input>] [--json]
 ```
 
 ## Input Contract

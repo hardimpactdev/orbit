@@ -13,28 +13,42 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Ca\OrbitCaService;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+
     $this->webSocketBaselineStorage = sys_get_temp_dir().'/orbit-websocket-baseline-test-'.uniqid();
     mkdir($this->webSocketBaselineStorage.'/app/orbit', 0777, true);
     app()->useStoragePath($this->webSocketBaselineStorage);
 
     $this->webSocketBaselineShell = new WebSocketRoleBaselineTestShell;
     app()->instance(RemoteShell::class, $this->webSocketBaselineShell);
+    $this->webSocketBaselineSelfContainedImage = false;
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request) => webSocketBaselineAgentResponse(
+        request: $request,
+        selfContainedImage: $this->webSocketBaselineSelfContainedImage,
+    ));
 
     $this->webSocketBaselineIssued = new ArrayObject;
     app()->instance(OrbitCaService::class, new WebSocketRoleBaselineTestCa($this->webSocketBaselineIssued));
 });
 
 afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
     if (isset($this->webSocketBaselineStorage) && is_dir($this->webSocketBaselineStorage)) {
         File::deleteDirectory($this->webSocketBaselineStorage);
     }
@@ -46,7 +60,6 @@ it('converges websocket backend TLS material and runtime container through the r
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
     $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
     expect($this->webSocketBaselineIssued->getArrayCopy())
@@ -73,58 +86,45 @@ it('converges websocket backend TLS material and runtime container through the r
                 ->value('expected_state'),
         )
         ->toBe('installed')
-        ->and($scripts)
-        ->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
-        ->and($scripts)
-        ->toContain(
-            "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'",
-        )
-        ->and($scripts)
-        ->toContain('release_dir="${runtime_root}/releases/')
-        ->and($scripts)
-        ->toContain('sudo install -d -m 0755 "$release_dir"')
-        ->and($scripts)
-        ->not->toContain('orbit-gateway:current')->and($scripts)->toContain(
-            'sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress',
-        )->and($scripts)->toContain("docker network inspect 'orbit-network'")->and($scripts)->toContain(
-            "docker container inspect --format '{{json .}}' 'orbit-websocket-app-dev-1'",
-        )->and($scripts)->toContain("docker run -d --pull 'never' --name 'orbit-websocket-app-dev-1'")->and(
-            $scripts,
-        )->toContain("--label 'orbit.container.kind=websocket-runtime'")->and($scripts)
-        ->not->toContain('.websocket.orbit')->and($scripts)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")->and(
-            $scripts,
-        )->toContain("--env 'REDIS_HOST=10.6.0.3'")->and($scripts)->toContain(
-            'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44',
-        )->and($scripts)
-        ->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
+        ->and($this->webSocketBaselineShell->scripts)
+        ->toBe([]);
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'image:is-self-contained',
+    ));
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'container:apply',
+    ));
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineCertificateRequestMatches($request));
 });
 
 it('uses self-contained websocket images without installing source on the node', function (): void {
     $node = webSocketBaselineNode();
     $assignment = webSocketBaselineAssignment($node, redisNode: webSocketBaselineRedisNode());
-    $this->webSocketBaselineShell->selfContainedImage = true;
+    $this->webSocketBaselineSelfContainedImage = true;
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
     $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
     expect($timingSteps)
         ->toBe(['tools', 'image', 'env', 'render', 'certificates', 'container-apply'])
-        ->and($scripts)
-        ->toContain(
-            "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'",
-        )
-        ->and($scripts)
-        ->toContain('key_file=/etc/orbit/websocket/app.key')
-        ->and($scripts)
-        ->not->toContain('release_dir="${runtime_root}/releases/')->and($scripts)
-        ->not->toContain('composer install --no-dev')->and($scripts)
-        ->not->toContain("--mount 'type=bind,source=/opt/orbit/websocket/current,target=/app'")->and(
-            $scripts,
-        )->toContain("--mount 'type=bind,source=/etc/orbit,target=/etc/orbit,readonly'")->and($scripts)->toContain(
-            "--env 'APP_KEY=base64:self-contained-test-key'",
-        );
+        ->and($this->webSocketBaselineShell->scripts)
+        ->toBe([]);
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'image:is-self-contained',
+    ));
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'app-key:ensure',
+    ));
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'container:apply',
+    ));
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineCertificateRequestMatches($request));
 });
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {
@@ -148,7 +148,10 @@ it('starts an existing matching websocket runtime container when it is stopped',
 
     app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
 
-    expect($this->webSocketBaselineShell->scripts)->toContain("docker start 'orbit-websocket-app-dev-1'");
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'container:apply',
+    ));
 });
 
 it('removes websocket runtime containers through the role converger', function (): void {
@@ -168,7 +171,10 @@ it('removes websocket runtime containers through the role converger', function (
 
     app(NodeRoleBaselineConverger::class)->remove($node, $assignment, purgeData: false);
 
-    expect($this->webSocketBaselineShell->scripts)->toContain("docker rm -f 'orbit-websocket-app-dev-1'");
+    Http::assertSent(fn (Request $request): bool => webSocketBaselineRuntimeRequestMatches(
+        request: $request,
+        action: 'container:remove',
+    ));
 });
 
 it('rejects websocket convergence on gateway nodes', function (): void {
@@ -207,9 +213,159 @@ function webSocketBaselineNode(array $overrides = []): Node
         'name' => 'app-dev-1',
         'platform' => 'ubuntu',
         'host' => 'app-dev-1.example.com',
+        'orbit_agent_capable' => true,
         'wireguard_address' => '10.6.0.44',
         'status' => NodeStatus::Active,
     ], $overrides));
+}
+
+function webSocketBaselineAgentResponse(Request $request, bool $selfContainedImage): mixed
+{
+    $argv = $request['argv'] ?? null;
+    $command = is_array($argv) ? $argv[0] ?? null : null;
+
+    return match ($command) {
+        'internal:site-certificate:install' => webSocketBaselineCertificateAgentResponse(),
+        'internal:websocket-runtime' => webSocketBaselineRuntimeAgentResponse($request, $selfContainedImage),
+        default => webSocketBaselineFailedAgentResponse((string) $command),
+    };
+}
+
+function webSocketBaselineRuntimeAgentResponse(Request $request, bool $selfContainedImage): mixed
+{
+    $action = is_array($request['argv'] ?? null) ? $request['argv'][1] ?? null : null;
+    $data = match ($action) {
+        'image:is-self-contained' => [
+            'self_contained' => $selfContainedImage,
+            'output' => $selfContainedImage ? 'true' : 'false',
+        ],
+        'app-key:ensure' => [
+            'app_key' => 'base64:self-contained-test-key',
+        ],
+        'container:apply' => [
+            'container' => 'orbit-websocket-app-dev-1',
+            'status' => 'changed',
+        ],
+        'container:remove' => [
+            'container' => 'orbit-websocket-app-dev-1',
+            'removed' => true,
+        ],
+        default => [],
+    };
+
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => "websocket-runtime.{$action}",
+        'binary' => 'orbit',
+        'status' => $data === [] ? 'failed' : 'succeeded',
+        'exit_code' => $data === [] ? 1 : 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => $data === [] ? '1' : '0',
+            ],
+        ],
+    ]);
+}
+
+function webSocketBaselineCertificateAgentResponse(): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'websocket-certificate.install',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'cert_path' => '/etc/orbit/certs/10.6.0.44.crt',
+                            'key_path' => '/etc/orbit/certs/10.6.0.44.key',
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
+}
+
+function webSocketBaselineFailedAgentResponse(string $command): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => "unexpected.{$command}",
+        'binary' => 'orbit',
+        'status' => 'failed',
+        'exit_code' => 1,
+        'frames' => [
+            [
+                'type' => 'exit',
+                'message' => '1',
+            ],
+        ],
+    ]);
+}
+
+function webSocketBaselineRuntimeRequestMatches(Request $request, string $action): bool
+{
+    $argv = $request['argv'] ?? null;
+    $operationId = match ($action) {
+        'container:apply' => 'websocket-runtime-container-apply',
+        'container:remove' => 'websocket-runtime-container-remove',
+        default => "websocket-runtime.{$action}",
+    };
+
+    return (
+        $request['binary'] === 'orbit'
+        && $request['operation_id'] === $operationId
+        && is_array($argv)
+        && ($argv[0] ?? null) === 'internal:websocket-runtime'
+        && ($argv[1] ?? null) === $action
+    );
+}
+
+function webSocketBaselineCertificateRequestMatches(Request $request): bool
+{
+    $argv = $request['argv'] ?? null;
+
+    if (
+        $request['binary'] !== 'orbit'
+        || $request['operation_id'] !== 'websocket-certificate.install'
+        || ! is_array($argv)
+        || ($argv[0] ?? null) !== 'internal:site-certificate:install'
+        || ! str_starts_with((string) ($argv[1] ?? ''), '--operation-token=')
+        || ($argv[2] ?? null) !== '--json'
+        || ! array_key_exists('input', $request->data())
+    ) {
+        return false;
+    }
+
+    /** @var mixed $input */
+    $input = json_decode((string) $request['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $input === [
+        'cert_path' => '/etc/orbit/certs/10.6.0.44.crt',
+        'key_path' => '/etc/orbit/certs/10.6.0.44.key',
+        'cert' => 'certificate for 10.6.0.44',
+        'key' => 'key for 10.6.0.44',
+        'owner' => null,
+    ];
 }
 
 function webSocketBaselineRedisNode(array $overrides = []): Node
@@ -278,8 +434,6 @@ readonly class WebSocketRoleBaselineTestCa extends OrbitCaService
 
 final class WebSocketRoleBaselineTestShell implements RemoteShell
 {
-    public bool $selfContainedImage = false;
-
     /**
      * @var array<string, mixed>|null
      */
@@ -305,24 +459,6 @@ final class WebSocketRoleBaselineTestShell implements RemoteShell
         $this->nodes[] = $node;
         $this->scripts[] = $script;
         $this->options[] = $options;
-
-        if (str_contains($script, 'orbit.websocket.self_contained')) {
-            return new RemoteShellResult(
-                exitCode: 0,
-                stdout: $this->selfContainedImage ? "true\n" : "false\n",
-                stderr: '',
-                durationMs: 1,
-            );
-        }
-
-        if (str_contains($script, 'key_file=/etc/orbit/websocket/app.key')) {
-            return new RemoteShellResult(
-                exitCode: 0,
-                stdout: "base64:self-contained-test-key\n",
-                stderr: '',
-                durationMs: 1,
-            );
-        }
 
         if (str_contains($script, 'docker network inspect')) {
             return $this->success();

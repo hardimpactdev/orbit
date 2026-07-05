@@ -21,6 +21,7 @@ final class ScheduleLogsCommand extends GatewayCommand
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--run= : Run history id}
         {--lines=100 : Number of stdout/stderr lines}
         {--json}';

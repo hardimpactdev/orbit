@@ -10,11 +10,21 @@ use App\Models\AppSetupStep;
 use App\Models\Node;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppSetupStepRunner;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
+
+function allow_app_setup_remote_shell_fallback(): void
+{
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+}
 
 final class AppSetupStepRunnerTestShell implements RemoteShell
 {
@@ -57,6 +67,7 @@ function createAppSetupRunnerTestApp(array $overrides = []): App
 }
 
 it('runs app setup steps sequentially in the app path', function (): void {
+    allow_app_setup_remote_shell_fallback();
     $app = createAppSetupRunnerTestApp();
     $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
     $shell = new AppSetupStepRunnerTestShell;
@@ -87,6 +98,7 @@ it('runs app setup steps sequentially in the app path', function (): void {
 });
 
 it('routes php and composer setup steps through the app host php toolchain', function (): void {
+    allow_app_setup_remote_shell_fallback();
     $app = createAppSetupRunnerTestApp();
     $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
     $shell = new AppSetupStepRunnerTestShell;
@@ -114,6 +126,7 @@ it('routes php and composer setup steps through the app host php toolchain', fun
 });
 
 it('fails fast on the first failed setup step and records output', function (): void {
+    allow_app_setup_remote_shell_fallback();
     $app = createAppSetupRunnerTestApp();
     $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
     $shell = new AppSetupStepRunnerTestShell;
@@ -142,4 +155,31 @@ it('fails fast on the first failed setup step and records output', function (): 
         ->toContain('failed')
         ->and($runStep?->output)
         ->toContain('boom');
+});
+
+it('requires explicit transitional ssh fallback before running app setup commands', function (): void {
+    $app = createAppSetupRunnerTestApp();
+    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $shell = new AppSetupStepRunnerTestShell;
+    $runner = new AppSetupStepRunner($shell, app(AppCommandRouter::class));
+
+    $steps = [
+        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
+    ];
+
+    $result = $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
+
+    $run->refresh();
+    $runStep = $run->runSteps()->first();
+
+    expect($result)
+        ->toBeFalse()
+        ->and($shell->runs)
+        ->toBe([])
+        ->and($run->status)
+        ->toBe('failed')
+        ->and($runStep?->exit_code)
+        ->toBe(1)
+        ->and($runStep?->output)
+        ->toContain('requires explicit --node-transport=transitional-ssh-fallback');
 });

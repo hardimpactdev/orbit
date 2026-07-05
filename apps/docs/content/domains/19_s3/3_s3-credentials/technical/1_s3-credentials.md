@@ -1,4 +1,4 @@
-# Technical Contract: `orbit s3:credentials [--node=<node>] [--json]`
+# Technical Contract: `orbit s3:credentials [--node=<node>] [--node-transport=<transport>] [--json]`
 
 [Back to public `s3:credentials` documentation.](../s3-credentials.md)
 
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit s3:credentials [--node=<node>] [--json]
+orbit s3:credentials [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -25,6 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | The only visible active s3 node when exactly one exists. | Visible active node with the `s3` role. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Input Mode Contracts

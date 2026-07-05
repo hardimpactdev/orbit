@@ -13,6 +13,7 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use RuntimeException;
 use Throwable;
@@ -24,6 +25,7 @@ final readonly class WorkspaceRuntimeContainerManager
         private DockerCommandBuilder $commands,
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
     ) {}
 
     public function apply(Node $node, WorkspaceRuntimeContainer $container): WorkspaceRuntimeContainerApplyOutcome
@@ -536,6 +538,10 @@ final readonly class WorkspaceRuntimeContainerManager
 
     private function run(Node $node, string $script): RemoteShellResult
     {
+        if (! $this->explicitFallback->allowed()) {
+            throw new RuntimeException($this->explicitFallback->message('workspace runtime container convergence'));
+        }
+
         return $this->remoteShell->run($node, $script);
     }
 

@@ -20,6 +20,7 @@ final class PhpListCommand extends GatewayCommand
         {--app= : App selector}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--live : Inspect available PHP images live}
         {--json}';
 

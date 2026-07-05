@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:todo:comment:delete <comment> [--node=<node>] [--force] [--json]
+orbit solo:todo:comment:delete <comment> [--node=<node>] [--node-transport=<transport>] [--force] [--json]
 ```
 
 ## Input Contract

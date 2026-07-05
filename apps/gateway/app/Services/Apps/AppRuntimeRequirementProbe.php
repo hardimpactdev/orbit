@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
@@ -15,7 +14,7 @@ use App\Models\Node;
 final readonly class AppRuntimeRequirementProbe
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private RemoteAppRuntimeExtensionsProbe $extensionsProbe,
         private AppRuntimeContainerRenderer $renderer,
     ) {}
 
@@ -37,7 +36,9 @@ final readonly class AppRuntimeRequirementProbe
             return [];
         }
 
-        if (! $app->node instanceof Node) {
+        $node = $app->node;
+
+        if (! $node instanceof Node) {
             return [
                 new DriftEntry(
                     family: 'app',
@@ -54,10 +55,9 @@ final readonly class AppRuntimeRequirementProbe
         }
 
         $container = $this->renderer->containerName($app);
-        $script = sprintf('docker exec %s php -m', escapeshellarg($container));
-        $result = $this->remoteShell->run($app->node, $script);
+        $result = $this->extensionsProbe->probe($node, $container);
 
-        if (! $result->successful()) {
+        if ($result['exit_code'] !== 0) {
             return [
                 new DriftEntry(
                     family: 'app',
@@ -69,7 +69,7 @@ final readonly class AppRuntimeRequirementProbe
                         'instance' => $instance->name,
                         'container' => $container,
                         'required_extensions' => $required,
-                        'error' => trim($result->stderr) ?: trim($result->stdout),
+                        'error' => trim($result['stderr']) ?: trim($result['stdout']),
                     ],
                 ),
             ];
@@ -77,7 +77,7 @@ final readonly class AppRuntimeRequirementProbe
 
         $observed = array_map(
             static fn (string $extension): string => strtolower(trim($extension)),
-            array_filter(explode("\n", $result->stdout)),
+            array_filter(explode("\n", $result['stdout'])),
         );
 
         $missing = array_values(array_diff($required, $observed));

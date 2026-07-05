@@ -181,6 +181,15 @@ final class NodeStoreStreamConvergenceRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'internal:wg-easy:state')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         if (! str_contains($script, '# orbit-tool-probe:capability')) {
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }

@@ -16,6 +16,7 @@ final class AppRegisterCommand extends AppGatewayCommand
     protected $signature = 'app:register
         {name? : App name}
         {--node= : Target app node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--path= : Existing app path on the target node}
         {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}

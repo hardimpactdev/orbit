@@ -405,11 +405,12 @@ These terms describe how nodes communicate and how authority is enforced.
 - **Gateway-to-node edge:** Typed command envelopes are delivered by transport
   selection. `gateway-only` covers gateway-owned reads/writes; `agent-push` is
   available for active `orbit_agent_capable` nodes when the gateway can reach
-  the node's Agent listener over Orbit/WireGuard and the envelope opts in;
-  `auto` keeps v1 `transitional-ssh-fallback` while command families migrate.
-  SSH/RemoteShell is recovery/migration infrastructure, not the long-term
-  managed execution transport. Break-glass SSH is owned by a super admin and
-  stays outside normal Orbit command execution. The Agent lane executes
+  the node's Agent listener over Orbit/WireGuard and the envelope opts in.
+  `auto` selects agent-push for capable envelopes and fails clearly otherwise;
+  `transitional-ssh-fallback` is an explicit migration or break-glass
+  preference. SSH/RemoteShell is recovery/migration infrastructure, not the
+  long-term managed execution transport. Break-glass SSH is owned by a super
+  admin and stays outside normal Orbit command execution. The Agent lane executes
   gateway-built `binary + argv` requests with scoped operation tokens and a
   node-local binary allowlist, never arbitrary shell.
 - **Node event ingestion:** Narrow node-to-gateway callbacks for purpose-built

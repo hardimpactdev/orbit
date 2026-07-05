@@ -18,6 +18,7 @@ final class ExtensionDisableCommand extends GatewayCommand
     protected $signature = 'extension:disable
         {extension : Extension slug to disable}
         {--node= : Disable the extension on a specific node target}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

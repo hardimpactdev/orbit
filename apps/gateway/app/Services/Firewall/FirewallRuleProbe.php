@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Firewall;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Throwable;
 
 final readonly class FirewallRuleProbe
 {
@@ -23,7 +24,7 @@ final readonly class FirewallRuleProbe
     private const array Protocols = ['tcp', 'udp'];
 
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
+        private ?RemoteFirewallRuleProbe $remoteProbe = null,
     ) {}
 
     public function key(): string
@@ -49,38 +50,41 @@ final readonly class FirewallRuleProbe
 
     public function introspectNode(Node $node): ProbeSnapshot
     {
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $this->introspectionScript(), [
-            'throw' => true,
-        ]);
+        $probe = $this->remoteProbe();
+        $result = $probe->output($node);
 
-        return $this->snapshotFromStdout($result->stdout);
+        return $this->snapshotFromUfwOutput($probe->extractOutput($result));
     }
 
     /**
      * @return array{0: ProbeSnapshot|null, 1: string|null}
      */
-    public function tryIntrospectNode(Node $node, RemoteShell $remoteShell): array
+    public function tryIntrospectNode(Node $node): array
     {
-        $result = $remoteShell->run($node, $this->introspectionScript(), ['throw' => false]);
+        $probe = $this->remoteProbe();
+
+        try {
+            $result = $probe->outputIfAvailable($node);
+        } catch (Throwable $throwable) {
+            return [null, $throwable->getMessage()];
+        }
 
         if (! $result->successful()) {
-            $error = trim($result->stderr) !== ''
-                ? trim($result->stderr)
-                : "UFW introspection exited with code {$result->exitCode}.";
+            $error = $this->errorMessage($result);
 
             return [null, $error];
         }
 
-        return [$this->snapshotFromStdout($result->stdout), null];
+        return [$this->snapshotFromUfwOutput($probe->extractOutput($result)), null];
     }
 
-    private function snapshotFromStdout(string $stdout): ProbeSnapshot
+    public function snapshotFromUfwOutput(string $output): ProbeSnapshot
     {
         $items = [
             '__firewall_backend_inspected' => ['inspected' => true],
         ];
 
-        foreach (explode("\n", $stdout) as $line) {
+        foreach (explode("\n", $output) as $line) {
             $parsed = $this->parseUfwLine($line) ?? $this->parseUfwStoredRuleLine($line);
 
             if ($parsed === null) {
@@ -93,16 +97,22 @@ final readonly class FirewallRuleProbe
         return new ProbeSnapshot($items);
     }
 
-    private function introspectionScript(): string
+    private function remoteProbe(): RemoteFirewallRuleProbe
     {
-        return <<<'SH'
-            set -euo pipefail
-            sudo ufw status numbered
-            sudo awk '
-                FILENAME ~ /user6\.rules$/ && /^-A ufw6-user-input/ { print "__orbit_ufw_file:user6:" $0 }
-                FILENAME ~ /user\.rules$/ && /^-A ufw-user-input/ { print "__orbit_ufw_file:user:" $0 }
-            ' /etc/ufw/user.rules /etc/ufw/user6.rules 2>/dev/null || true
-            SH;
+        return $this->remoteProbe ?? app(RemoteFirewallRuleProbe::class);
+    }
+
+    private function errorMessage(RemoteShellResult $result): string
+    {
+        if (trim($result->stderr) !== '') {
+            return trim($result->stderr);
+        }
+
+        if (trim($result->stdout) !== '') {
+            return trim($result->stdout);
+        }
+
+        return "UFW introspection exited with code {$result->exitCode}.";
     }
 
     /**

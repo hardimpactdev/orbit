@@ -14,6 +14,7 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Schedules\OrbitScheduler;
 use App\Services\Schedules\ScheduleInterval;
 use App\Services\Schedules\SchedulesFixer;
@@ -25,6 +26,14 @@ use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
 
 it('runs one scheduler daemon tick on demand', function (): void {
     createOrbitSchedulerGatewayNode();
@@ -116,6 +125,50 @@ it('dispatches due app schedules from the gateway and records run history centra
         ->toBe($gateway->id)
         ->and($state->heartbeat_at?->toIso8601String())
         ->toBe('2026-05-06T12:34:00+00:00')
+        ->and(ScheduleLock::query()->count())
+        ->toBe(0);
+});
+
+it('records remote schedules as failed when transitional fallback is not explicit', function (): void {
+    $gateway = createOrbitSchedulerGatewayNode();
+    $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
+    Schedule::factory()
+        ->forApp($app)
+        ->create([
+            'name' => 'laravel-scheduler',
+            'schedule_key' => 'app:docs:laravel-scheduler',
+            'execution_value' => 'php artisan schedule:run',
+            'interval' => 'every minute',
+        ]);
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
+    $remoteShell = new OrbitSchedulerRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
+
+    $run = ScheduleRun::query()->firstOrFail();
+    $state = SchedulerState::query()->firstOrFail();
+
+    expect($result->dueSchedules)
+        ->toBe(1)
+        ->and($result->executedSchedules)
+        ->toBe(1)
+        ->and($remoteShell->scripts)
+        ->toBe([])
+        ->and($run->node_id)
+        ->toBe($appNode->id)
+        ->and($run->status)
+        ->toBe('failed')
+        ->and($run->exit_code)
+        ->toBe(1)
+        ->and($run->stderr)
+        ->toBe(
+            'schedule dispatch still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+        )
+        ->and($state->node_id)
+        ->toBe($gateway->id)
         ->and(ScheduleLock::query()->count())
         ->toBe(0);
 });

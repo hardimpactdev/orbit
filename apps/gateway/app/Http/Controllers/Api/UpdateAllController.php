@@ -16,6 +16,7 @@ use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\FleetUpdateTargetSelector;
 use App\Services\OrbitUpdater;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -285,6 +286,28 @@ final class UpdateAllController implements Loggable
     {
         if ($nodes->isEmpty()) {
             return [];
+        }
+
+        $fallback = app(ExplicitRemoteShellFallback::class);
+
+        if (! $fallback->allowed()) {
+            return array_values(
+                $nodes
+                    ->values()
+                    ->map(function (Node $node) use ($fallback, $reporter): array {
+                        $output = $fallback->message('update:all remote stages');
+                        $reporter?->stepFail($node->name, $output);
+
+                        return [
+                            'target' => $node->name,
+                            'node' => $node->name,
+                            'role' => $node->displayRole(),
+                            'status' => 'failed',
+                            'output' => $output,
+                        ];
+                    })
+                    ->all(),
+            );
         }
 
         $remoteShell = app(RemoteShell::class);

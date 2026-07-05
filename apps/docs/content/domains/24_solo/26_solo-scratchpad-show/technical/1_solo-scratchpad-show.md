@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:scratchpad:show <scratchpad> [--node=<node>] [--json]
+orbit solo:scratchpad:show <scratchpad> [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

@@ -16,10 +16,22 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
 
 function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
 {
@@ -95,6 +107,18 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
+        if (str_contains($script, "internal:caddy-config 'read-global'")) {
+            return enact_app_runtime_shell_success(['content' => '']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'write-site'")) {
+            return enact_app_runtime_shell_success(['path' => '/etc/caddy/sites/docs.test.caddy']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'reload'")) {
+            return enact_app_runtime_shell_success(['container' => 'orbit-caddy']);
+        }
+
         return (
             array_shift($this->responses) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)
         );
@@ -116,6 +140,10 @@ final readonly class EnactAppRuntimeTestCa extends OrbitCaService
 
 it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini config', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
+    $app->node->forceFill([
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.48.0.11',
+    ])->save();
 
     $shell = new EnactAppRuntimeRecordingShell(
         // network inspect (missing) + network create
@@ -130,6 +158,10 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     );
     app()->instance(RemoteShell::class, $shell);
+    Http::preventStrayRequests();
+    Http::fake([
+        '*' => enact_app_runtime_caddy_sequence('docs.test'),
+    ]);
 
     $drift = app(EnactAppRuntime::class)->handle($app);
 
@@ -175,10 +207,20 @@ function base64DecodedPhpIni(string $script): string
 }
 
 it('skips the FrankenPHP runtime container for static apps and serves the proxy route via file_server only', function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+
     $app = makeAppOnDevNode(AppRuntimeKind::Static);
+    $app->node->forceFill([
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.48.0.12',
+    ])->save();
 
     $shell = new EnactAppRuntimeRecordingShell;
     app()->instance(RemoteShell::class, $shell);
+    Http::preventStrayRequests();
+    Http::fake([
+        '*' => enact_app_runtime_caddy_sequence('docs.test'),
+    ]);
 
     $drift = app(EnactAppRuntime::class)->handle($app);
 
@@ -198,13 +240,7 @@ it('skips the FrankenPHP runtime container for static apps and serves the proxy 
         'php_socket' => null,
     ]);
 
-    $siteScript = collect($shell->scripts)
-        ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/'));
-
-    $caddySite = base64_decode(
-        (string) str((string) $siteScript)->match("/printf %s\\s+'([A-Za-z0-9+\\/=]+)'/")->toString(),
-        true,
-    );
+    $caddySite = (string) (enact_app_runtime_site_payload('10.48.0.12')['content'] ?? '');
 
     expect($caddySite)
         ->toContain('file_server')
@@ -543,4 +579,103 @@ function expectAppFrankenPhpRuntimeProcess(App $app): void
             'php_ini_path' => '/etc/orbit/apps/docs.ini',
             'container_spec_hash_label' => 'orbit.app.spec_hash',
         ]);
+}
+
+function enact_app_runtime_caddy_sequence(string $domain): \Illuminate\Http\Client\ResponseSequence
+{
+    $sequence = Http::sequence()
+        ->push(enact_app_runtime_agent_response('caddy-config.read-global', [
+            'content' => '',
+        ]))
+        ->push(enact_app_runtime_agent_response('caddy-config.write-site', [
+            'path' => "/etc/caddy/sites/{$domain}.caddy",
+        ]))
+        ->push(enact_app_runtime_agent_response('caddy-config.reload', [
+            'container' => 'orbit-caddy',
+        ]));
+
+    foreach (range(1, 6) as $index) {
+        $sequence->push(enact_app_runtime_agent_response("typed-runtime.{$index}", [
+            'status' => 'changed',
+        ]));
+    }
+
+    return $sequence;
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ */
+function enact_app_runtime_shell_success(array $data): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => $data,
+            ],
+        ], JSON_THROW_ON_ERROR)
+            ."\n",
+        stderr: '',
+        durationMs: 1,
+    );
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function enact_app_runtime_agent_response(string $operationId, array $data, int $exitCode = 0): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return list<Request>
+ */
+function enact_app_runtime_agent_requests(string $wireguardAddress): array
+{
+    return Http::recorded(
+        fn (Request $request): bool => $request->url() === "http://{$wireguardAddress}:9477/v1/commands",
+    )
+        ->map(fn (array $record): Request => $record[0])
+        ->values()
+        ->all();
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function enact_app_runtime_site_payload(string $wireguardAddress): array
+{
+    foreach (enact_app_runtime_agent_requests($wireguardAddress) as $request) {
+        if (($request['argv'][1] ?? null) !== 'write-site') {
+            continue;
+        }
+
+        /** @var array<string, mixed> */
+        return json_decode((string) ($request['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    return [];
 }

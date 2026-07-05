@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit database:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -25,6 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` | Optional. | None. | Visible app selector. |
 | `workspace` | `--workspace` | Optional. | None. | Visible workspace selector. |
 | `node` | `--node` | Optional. | None. | Visible node slug. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer. |
 
 `--app` and `--workspace` are mutually exclusive. `--node` is an additional

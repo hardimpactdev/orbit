@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit process:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--json]
+orbit process:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -23,6 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Required when listing node-owned processes. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:read`. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:read`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:read`; pass `--app` when the workspace name is ambiguous. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |

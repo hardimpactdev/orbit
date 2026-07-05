@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -12,8 +10,12 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -235,7 +237,20 @@ describe('DatabaseConnectionRestorer', function (): void {
     });
 
     it('writes remote managed database env through base64-safe transport', function (): void {
-        $node = Node::factory()->appDev()->create(['status' => 'active']);
+        request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.75:9477/v1/commands' => Http::sequence()
+                ->push(databaseConnectionRestorerEnvReadResponse('DB_CONNECTION=pgsql'.PHP_EOL))
+                ->push(databaseConnectionRestorerEnvWriteResponse()),
+        ]);
+        $node = Node::factory()
+            ->appDev()
+            ->orbitAgentCapable()
+            ->create([
+                'status' => 'active',
+                'wireguard_address' => '10.44.0.75',
+            ]);
         $databaseNode = Node::factory()
             ->database()
             ->create([
@@ -264,48 +279,81 @@ describe('DatabaseConnectionRestorer', function (): void {
                 'database_connection_id' => $connection->id,
                 'env_prefix' => 'DB',
             ]);
-        $shell = new DatabaseConnectionRestorerRemoteShell([
-            new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]);
-        app()->instance(RemoteShell::class, $shell);
-
         app(DatabaseConnectionRestorer::class)->restore($target);
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 
-        preg_match("/printf %s '([^']+)' \\| base64 -d/", $shell->scripts[1], $matches);
-        $written = base64_decode($matches[1] ?? '', strict: true);
+        $writeRequest = collect(Http::recorded())
+            ->map(fn (array $record) => $record[0])
+            ->filter(fn (Request $request): bool => ($request['argv'][0] ?? null) === 'internal:env-file')
+            ->last();
+        $input = json_decode((string) $writeRequest['input'], true);
+        $written = is_array($input) ? $input['contents'] ?? null : null;
 
-        expect($shell->scripts)
-            ->toHaveCount(2)
-            ->and($shell->scripts[1])
-            ->not->toContain($credentialValue)->and($shell->scripts[1])->toContain('base64 -d')->and(
-                $shell->scripts[1],
-            )->toContain('/srv/docs/.worktrees/feature/.env')->and($written)->toContain('DB_HOST=10.6.0.7')->and(
-                $written,
-            )
+        expect($writeRequest)
+            ->toBeInstanceOf(Request::class)
+            ->and($input)
+            ->toMatchArray([
+                'action' => 'write',
+                'path' => '/srv/docs/.worktrees/feature/.env',
+            ])
+            ->and($written)
+            ->toContain('DB_HOST=10.6.0.7')
+            ->and($written)
             ->not->toContain('DB_HOST=postgres.orbit')->and($written)
             ->not->toContain('DB_HOST=127.0.0.1');
     });
 });
 
-final class DatabaseConnectionRestorerRemoteShell implements RemoteShell
+/**
+ * @return array<string, mixed>
+ */
+function databaseConnectionRestorerEnvReadResponse(string $contents): array
 {
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'env-file.read',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'contents' => $contents,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+        ],
+    ];
+}
 
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results,
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
-
-        return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected remote shell call', 1);
-    }
+/**
+ * @return array<string, mixed>
+ */
+function databaseConnectionRestorerEnvWriteResponse(): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'env-file.write',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'bytes' => 10,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+        ],
+    ];
 }

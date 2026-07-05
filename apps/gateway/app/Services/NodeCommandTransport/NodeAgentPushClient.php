@@ -83,6 +83,7 @@ final readonly class NodeAgentPushClient
      *     operation_id: string,
      *     binary: string,
      *     argv: list<string>,
+     *     input?: string,
      *     operation_token: string,
      *     timeout_seconds: int,
      *     stream: bool,
@@ -93,7 +94,7 @@ final readonly class NodeAgentPushClient
         #[SensitiveParameter]
         string $operationToken,
     ): array {
-        return [
+        $payload = [
             'operation_id' => (string) $envelope->operationId,
             'binary' => (string) $envelope->binary,
             'argv' => $envelope->argv,
@@ -101,6 +102,12 @@ final readonly class NodeAgentPushClient
             'timeout_seconds' => $envelope->timeoutSeconds,
             'stream' => $envelope->stream,
         ];
+
+        if ($envelope->input !== null) {
+            $payload['input'] = $envelope->input;
+        }
+
+        return $payload;
     }
 
     /**

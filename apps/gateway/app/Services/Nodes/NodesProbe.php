@@ -26,12 +26,14 @@ use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDefinition;
 use App\Services\Nodes\Roles\NodeRoleRegistry;
 use App\Services\Platform\PlatformDetector;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Updates\UpdateDriverRegistry;
 use App\Services\Updates\UpdatePostureIssue;
 use App\Services\Updates\UpdateTargetFactory;
 use App\Services\WireGuard\WireGuardPeerRealityProbe;
 use InvalidArgumentException;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
@@ -50,6 +52,7 @@ final readonly class NodesProbe
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
         private ?UpdateDriverRegistry $updateDriverRegistry = null,
         private ?UpdateTargetFactory $updateTargetFactory = null,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     public function key(): string
@@ -80,7 +83,7 @@ final readonly class NodesProbe
         $drift = array_merge($drift, $this->checkAccessGrants($node));
         $drift = array_merge($drift, $this->checkWireguardIdentity($node));
         $drift = array_merge($drift, $this->checkPlatformReality($node));
-        $drift = array_merge($drift, $this->checkSshReachability($node));
+        $drift = array_merge($drift, $this->checkNodeReachability($node));
         $drift = array_merge($drift, $this->checkGatewayRuntime($node));
         $drift = array_merge($drift, $this->checkAppRuntime($node));
         $drift = array_merge($drift, $this->checkDevelopmentTld($node));
@@ -453,14 +456,22 @@ final readonly class NodesProbe
             }
         }
 
-        if ($this->remoteShell instanceof RemoteShell) {
+        if (($node->orbit_agent_capable ?? false) === true) {
             try {
-                $result = $this->remoteShell->run($node, 'id -u agent >/dev/null 2>&1', [
-                    'timeout' => 10,
-                    'throw' => false,
-                ]);
+                $result = $this->localExecutor()->runInternal(
+                    node: $node,
+                    commandName: 'internal:agent-runtime:probe',
+                    transportOptions: [
+                        'metadata' => [
+                            'ORBIT_OPERATION_ID' => 'node-agent-runtime.probe',
+                        ],
+                        'timeout' => 10,
+                        'throw' => false,
+                    ],
+                );
+                $agentRuntime = $this->successData($result->stdout);
 
-                if (! $result->successful()) {
+                if (! $result->successful() || ($agentRuntime['runtime_user'] ?? null) !== true) {
                     $drift[] = new DriftEntry(
                         family: $this->key(),
                         key: 'node.role_baseline_mismatch',
@@ -473,28 +484,20 @@ final readonly class NodesProbe
                     );
                 }
 
-                if ($result->successful()) {
-                    $cliResult = $this->remoteShell->run($node, $this->agentOrbitCliCommand(), [
-                        'timeout' => 10,
-                        'throw' => false,
-                    ]);
-
-                    if (! $cliResult->successful()) {
-                        $drift[] = new DriftEntry(
-                            family: $this->key(),
-                            key: 'node.role_baseline_mismatch',
-                            kind: DriftKind::Divergent,
-                            summary: "Role baseline for '{$assignment->role}' on node {$node->name} does not let the agent runtime user execute the Orbit CLI.",
-                            detail: [
-                                'role' => $assignment->role,
-                                'component' => 'agent_orbit_cli',
-                            ],
-                        );
-                    }
+                if (($agentRuntime['runtime_user'] ?? null) === true && ($agentRuntime['orbit_cli'] ?? null) !== true) {
+                    $drift[] = new DriftEntry(
+                        family: $this->key(),
+                        key: 'node.role_baseline_mismatch',
+                        kind: DriftKind::Divergent,
+                        summary: "Role baseline for '{$assignment->role}' on node {$node->name} does not let the agent runtime user execute the Orbit CLI.",
+                        detail: [
+                            'role' => $assignment->role,
+                            'component' => 'agent_orbit_cli',
+                        ],
+                    );
                 }
             } catch (Throwable) {
-                // If SSH fails, skip the agent user check rather than reporting
-                // an unverifiable drift. SSH reachability is its own check.
+                // Agent runtime reachability is covered by node transport checks.
             }
         }
 
@@ -798,7 +801,7 @@ final readonly class NodesProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkSshReachability(Node $node): array
+    private function checkNodeReachability(Node $node): array
     {
         if (
             ! $node->isActive()
@@ -809,16 +812,24 @@ final readonly class NodesProbe
         }
 
         try {
-            $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, 'true', [
-                'timeout' => 10,
-            ]);
+            $result = $this->localExecutor()->runInternal(
+                node: $node,
+                commandName: 'internal:executor:verify',
+                transportOptions: [
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => 'node.reachable',
+                    ],
+                    'timeout' => 10,
+                    'throw' => false,
+                ],
+            );
         } catch (Throwable $e) {
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'node.ssh_unreachable',
+                    key: 'node.transport_unreachable',
                     kind: DriftKind::Unverifiable,
-                    summary: "Gateway cannot reach node {$node->name} over SSH: {$e->getMessage()}",
+                    summary: "Gateway cannot reach node {$node->name} over node transport: {$e->getMessage()}",
                     detail: [
                         'exception' => $e::class,
                         'message' => $e->getMessage(),
@@ -831,9 +842,9 @@ final readonly class NodesProbe
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'node.ssh_unreachable',
+                    key: 'node.transport_unreachable',
                     kind: DriftKind::Unverifiable,
-                    summary: "Gateway cannot reach node {$node->name} over SSH.",
+                    summary: "Gateway cannot reach node {$node->name} over node transport.",
                     detail: [
                         'exit_code' => $result->exitCode,
                         'output' => trim($result->output()),
@@ -907,7 +918,7 @@ final readonly class NodesProbe
             $this->runtimeBackendProbe
             ?? (
                 $this->remoteShell instanceof RemoteShell
-                    ? new RuntimeBackendProbe($this->remoteShell)
+                    ? new RuntimeBackendProbe($this->remoteShell, $this->localExecutor)
                     : app(RuntimeBackendProbe::class)
             )
         );
@@ -923,8 +934,8 @@ final readonly class NodesProbe
         return (
             $this->nodeIdentityArtifactProbe
             ?? (
-                $this->remoteShell instanceof RemoteShell
-                    ? new NodeIdentityArtifactProbe($this->remoteShell)
+                $this->localExecutor instanceof RemoteLocalExecutor
+                    ? new NodeIdentityArtifactProbe($this->localExecutor)
                     : app(NodeIdentityArtifactProbe::class)
             )
         );
@@ -1550,8 +1561,48 @@ final readonly class NodesProbe
         return $this->updateTargetFactory ?? app(UpdateTargetFactory::class);
     }
 
-    private function agentOrbitCliCommand(): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return 'sudo -u agent -H /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version --local >/dev/null 2>&1';
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function successData(string $output): array
+    {
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
+
+        if (! is_array($payload)) {
+            return [];
+        }
+
+        /** @var mixed $success */
+        $success = $payload['success'] ?? null;
+
+        if (! is_array($success)) {
+            return [];
+        }
+
+        /** @var mixed $data */
+        $data = $success['data'] ?? null;
+
+        if (! is_array($data)) {
+            return [];
+        }
+
+        foreach (array_keys($data) as $key) {
+            if (! is_string($key)) {
+                return [];
+            }
+        }
+
+        /** @var array<string, mixed> $data */
+        return $data;
     }
 }

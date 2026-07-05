@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
@@ -10,6 +9,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
@@ -208,13 +208,13 @@ function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $tra
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 
 function polyscopeWorkspaceDriverUnusedBranchAligner(): PolyscopeWorkspaceBranchAligner
 {
     return new PolyscopeWorkspaceBranchAligner(
-        remoteShell: new PolyscopeWorkspaceDriverUnusedShell,
         localExecutor: polyscopeWorkspaceDriverExecutor(new PolyscopeWorkspaceDriverTransport(
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         )),
@@ -289,17 +289,5 @@ final class PolyscopeWorkspaceDriverTransport implements RemoteExecutor
     public function start(Node $node, string $script, array $options = []): InvokedProcess
     {
         throw new RuntimeException('The recording transport does not start processes.');
-    }
-}
-
-final class PolyscopeWorkspaceDriverUnusedShell implements RemoteShell
-{
-    /**
-     * @param  array<string, mixed>  $options
-     */
-    #[Override]
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        throw new RuntimeException('The unused remote shell should not run.');
     }
 }

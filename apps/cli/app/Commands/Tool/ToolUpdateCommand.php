@@ -11,6 +11,7 @@ final class ToolUpdateCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to update}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--expected-version= : Expected version constraint}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';

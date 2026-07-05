@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteShellPool;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Process;
@@ -25,6 +26,7 @@ final readonly class ScheduleDispatcher
     public function __construct(
         private RemoteShellPool $remoteShellPool,
         private NodeRoleAssignments $nodeRoleAssignments,
+        private ExplicitRemoteShellFallback $transport,
     ) {}
 
     public function run(Schedule $schedule): ScheduleDispatchResult
@@ -68,6 +70,16 @@ final readonly class ScheduleDispatcher
 
             if ($this->isGatewayNode($targetNode)) {
                 $resultsByIndex[$index] = $this->runLocallyAndRecord($schedule, $targetNode);
+
+                continue;
+            }
+
+            if (! $this->transport->allowed()) {
+                $resultsByIndex[$index] = $this->recordDispatchFailure(
+                    schedule: $schedule,
+                    targetNode: $targetNode,
+                    message: $this->transport->message('schedule dispatch'),
+                );
 
                 continue;
             }

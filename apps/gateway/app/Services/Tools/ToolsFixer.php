@@ -14,14 +14,21 @@ use App\Models\ProxyRoute;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use InvalidArgumentException;
+use RuntimeException;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 final readonly class ToolsFixer
 {
     public function __construct(
         private RemoteShell $remoteShell,
         private ?ToolCatalog $catalog = null,
         private ?ProxyRouteRenderer $proxyRouteRenderer = null,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     /**
@@ -36,16 +43,8 @@ final readonly class ToolsFixer
         }
 
         $result = match ($entry->key) {
-            'tool.config_missing', 'tool.config_mismatch' => $this->runRepairCommand(
-                $tool,
-                $this->configRepairCommand($tool),
-                $entry,
-            ),
-            'tool.credentials_missing', 'tool.credentials_mismatch' => $this->runRepairCommand(
-                $tool,
-                $this->secretRepairCommand($tool),
-                $entry,
-            ),
+            'tool.config_missing', 'tool.config_mismatch' => $this->repairManagedConfig($tool, $entry),
+            'tool.credentials_missing', 'tool.credentials_mismatch' => $this->repairManagedSecret($tool, $entry),
             'tool.container_missing',
             'tool.container_not_running',
             'tool.container_spec_mismatch',
@@ -68,6 +67,12 @@ final readonly class ToolsFixer
             return null;
         }
 
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return $this->failedResult($tool, $entry, $transport->message('tool:fix'));
+        }
+
         $this->remoteShell->run($tool->node, $command, ['throw' => true]);
 
         return $this->fixResult($tool, $entry);
@@ -88,6 +93,26 @@ final readonly class ToolsFixer
             'summary' => "Repaired tool {$tool->name} from gateway intent.",
             'details' => [
                 'tool' => $tool->name,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function failedResult(NodeTool $tool, DriftEntry $entry, string $error): array
+    {
+        return [
+            'family' => 'tool',
+            'node' => $tool->node?->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'failed',
+            'summary' => $error,
+            'details' => [
+                'tool' => $tool->name,
+                'error' => $error,
             ],
         ];
     }
@@ -132,32 +157,60 @@ final readonly class ToolsFixer
         return $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : []);
     }
 
-    private function configRepairCommand(NodeTool $tool): ?string
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function repairManagedConfig(NodeTool $tool, DriftEntry $entry): ?array
     {
         $config = is_array($tool->config) ? $tool->config : [];
         $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
 
         try {
-            return ManagedFile::fromIntent($managedConfig)->writeScript();
+            $file = ManagedFile::fromIntent($managedConfig);
         } catch (InvalidArgumentException) {
             return null;
         }
+
+        $this->applyManagedFile($tool, $file);
+
+        return $this->fixResult($tool, $entry);
     }
 
-    private function secretRepairCommand(NodeTool $tool): ?string
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function repairManagedSecret(NodeTool $tool, DriftEntry $entry): ?array
     {
         $credentials = is_array($tool->credentials) ? $tool->credentials : [];
         $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
 
         try {
-            return ManagedFile::fromIntent(
+            $file = ManagedFile::fromIntent(
                 intent: $managedSecret,
                 defaultMode: '0600',
                 defaultDirectoryMode: '0700',
                 sensitive: true,
-            )->writeScript();
+            );
         } catch (InvalidArgumentException) {
             return null;
+        }
+
+        $this->applyManagedFile($tool, $file);
+
+        return $this->fixResult($tool, $entry);
+    }
+
+    private function applyManagedFile(NodeTool $tool, ManagedFile $file): void
+    {
+        if ($tool->node === null) {
+            throw new RuntimeException("Tool {$tool->name} has no target node.");
+        }
+
+        $plan = $file->plan($file->probe($tool->node, $this->remoteShell));
+        $result = $file->apply($tool->node, $this->remoteShell, $plan);
+
+        if (! $result->successful()) {
+            throw new RuntimeException($result->summary);
         }
     }
 
@@ -262,6 +315,12 @@ final readonly class ToolsFixer
             return null;
         }
 
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return $this->failedResult($tool, $entry, $transport->message('tool:credentials'));
+        }
+
         $credResult = $this->remoteShell->run($tool->node, $credentialsScript, ['throw' => false]);
 
         if (! $credResult->successful()) {
@@ -285,14 +344,32 @@ final readonly class ToolsFixer
      */
     private function fixAgentUser(NodeTool $tool, DriftEntry $entry): array
     {
-        $this->remoteShell->run(
-            $tool->node,
-            'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent',
-            ['throw' => true],
+        if ($tool->node === null) {
+            throw new RuntimeException("Tool {$tool->name} has no target node.");
+        }
+
+        $result = $this->localExecutor()->runInternal(
+            node: $tool->node,
+            commandName: 'internal:agent-user:ensure',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'agent-user.ensure',
+                ],
+                'timeout' => 60,
+                'throw' => false,
+            ],
         );
-        $this->remoteShell->run($tool->node, 'sudo passwd -l agent >/dev/null 2>&1 || true', ['throw' => true]);
+
+        if (! $result->successful()) {
+            throw new RuntimeException('Could not ensure the Orbit agent runtime user.');
+        }
 
         return $this->fixResult($tool, $entry);
+    }
+
+    private function localExecutor(): RemoteLocalExecutor
+    {
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     private function agentTldForNode(Node $node): ?string

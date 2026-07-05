@@ -10,17 +10,38 @@ use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Tools\ToolsFixer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses()->group('doctor', 'fixer');
 uses(RefreshDatabase::class);
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
+
+function allow_tools_fixer_remote_shell_fallback(): void
+{
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+}
+
+function use_tools_fixer_agent_push(): void
+{
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+}
 
 describe('ToolsFixer', function (): void {
     it('returns null for tool.lifecycle_state_mismatch since runtime state is process-family owned', function (): void {
@@ -67,9 +88,49 @@ describe('ToolsFixer', function (): void {
         expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
-    it('rewrites managed config when the row contains complete content intent', function (): void {
-        $content = "address=/test/10.6.0.2\n";
+    it('requires explicit transitional ssh fallback before running repair commands', function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'node-exporter',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.version_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Tool node-exporter version differs from gateway intent.',
+            detail: [
+                'tool' => 'node-exporter',
+            ],
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.version_mismatch',
+                'status' => 'failed',
+            ])
+            ->and($action['summary'])
+            ->toContain('requires explicit --node-transport=transitional-ssh-fallback')
+            ->and($shell->scripts)
+            ->toBe([]);
+    });
+
+    it('rewrites managed config when the row contains complete content intent', function (): void {
+        use_tools_fixer_agent_push();
+
+        $content = "address=/test/10.6.0.2\n";
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.51',
+        ]);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'dns',
@@ -82,6 +143,13 @@ describe('ToolsFixer', function (): void {
             ],
         ]);
         $shell = new ToolsFixerRemoteShell;
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.47.0.51:9477/v1/commands' => tools_fixer_managed_file_sequence(
+                path: '/etc/orbit/dns.conf',
+                content: $content,
+            ),
+        ]);
 
         $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
@@ -101,15 +169,31 @@ describe('ToolsFixer', function (): void {
                 'key' => 'tool.config_mismatch',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
-            ->toContain("sudo install -d -m 0755 '/etc/orbit'")
-            ->and($shell->scripts[0])
-            ->toContain("base64 -d | sudo tee '/etc/orbit/dns.conf' >/dev/null");
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and(array_slice(tools_fixer_agent_requests('10.47.0.51')[0]['argv'] ?? [], offset: 0, length: 2))
+            ->toBe(['internal:managed-file', 'probe'])
+            ->and(array_slice(tools_fixer_agent_requests('10.47.0.51')[1]['argv'] ?? [], offset: 0, length: 2))
+            ->toBe(['internal:managed-file', 'write'])
+            ->and(tools_fixer_agent_payload('10.47.0.51', action: 'write'))
+            ->toMatchArray([
+                'path' => '/etc/orbit/dns.conf',
+                'content' => $content,
+                'mode' => '0644',
+                'directory_mode' => '0755',
+            ]);
     });
 
     it('honors managed config mode intent when rewriting managed config', function (): void {
+        use_tools_fixer_agent_push();
+
         $content = "address=/test/10.6.0.2\n";
-        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.52',
+        ]);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'dns',
@@ -124,6 +208,14 @@ describe('ToolsFixer', function (): void {
             ],
         ]);
         $shell = new ToolsFixerRemoteShell;
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.47.0.52:9477/v1/commands' => tools_fixer_managed_file_sequence(
+                path: '/etc/orbit/dns.conf',
+                content: $content,
+                mode: '0640',
+            ),
+        ]);
 
         $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
@@ -139,10 +231,15 @@ describe('ToolsFixer', function (): void {
         expect($action)
             ->not
             ->toBeNull()
-            ->and($shell->scripts[0])
-            ->toContain("sudo install -d -m 0750 '/etc/orbit'")
-            ->and($shell->scripts[0])
-            ->toContain("sudo chmod 0640 '/etc/orbit/dns.conf'");
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and(tools_fixer_agent_payload('10.47.0.52', action: 'write'))
+            ->toMatchArray([
+                'path' => '/etc/orbit/dns.conf',
+                'content' => $content,
+                'mode' => '0640',
+                'directory_mode' => '0750',
+            ]);
     });
 
     it('does not repair managed config when content does not match declared hash', function (): void {
@@ -172,8 +269,15 @@ describe('ToolsFixer', function (): void {
     });
 
     it('rewrites managed secret material when the row contains complete secret intent', function (): void {
+        use_tools_fixer_agent_push();
+
         $secret = 'generated-password';
-        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.53',
+        ]);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'opencode-cli',
@@ -186,6 +290,14 @@ describe('ToolsFixer', function (): void {
             ],
         ]);
         $shell = new ToolsFixerRemoteShell;
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.47.0.53:9477/v1/commands' => tools_fixer_managed_file_sequence(
+                path: '/home/orbit/.config/opencode-server/password',
+                content: $secret,
+                mode: '0600',
+            ),
+        ]);
 
         $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
@@ -205,12 +317,15 @@ describe('ToolsFixer', function (): void {
                 'key' => 'tool.credentials_missing',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
-            ->toContain("sudo install -d -m 0700 '/home/orbit/.config/opencode-server'")
-            ->and($shell->scripts[0])
-            ->toContain("base64 -d | sudo tee '/home/orbit/.config/opencode-server/password' >/dev/null")
-            ->and($shell->scripts[0])
-            ->toContain("sudo chmod 0600 '/home/orbit/.config/opencode-server/password'");
+            ->and($shell->scripts)
+            ->toBe([])
+            ->and(tools_fixer_agent_payload('10.47.0.53', action: 'write'))
+            ->toMatchArray([
+                'path' => '/home/orbit/.config/opencode-server/password',
+                'content' => $secret,
+                'mode' => '0600',
+                'directory_mode' => '0700',
+            ]);
     });
 
     it('does not repair managed secret material when content does not match declared hash', function (): void {
@@ -240,6 +355,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('installs missing host tools through catalog install script', function (): void {
+        allow_tools_fixer_remote_shell_fallback();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -271,6 +387,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('repairs missing git through the catalog apt install script', function (): void {
+        allow_tools_fixer_remote_shell_fallback();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -304,6 +421,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {
+        allow_tools_fixer_remote_shell_fallback();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -347,6 +465,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('passes the node managed user into host tool install scripts', function (): void {
+        allow_tools_fixer_remote_shell_fallback();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active', 'user' => 'nckrtl']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -430,6 +549,7 @@ describe('ToolsFixer', function (): void {
     ]);
 
     it('reconciles missing stopped or drifted orbit-caddy containers through the declared container spec', function (string $key): void {
+        allow_tools_fixer_remote_shell_fallback();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
         $tool = NodeTool::factory()->create([
@@ -589,6 +709,7 @@ describe('agent tool fixes', function (): void {
     });
 
     it('updates credentials when shell returns valid JSON array', function (): void {
+        allow_tools_fixer_remote_shell_fallback();
         [, $tool] = createAgentToolForFixer();
         $shell = new ToolsFixerRemoteShell([
             "echo '[\"user\",\"pass\"]'" => new RemoteShellResult(
@@ -617,7 +738,43 @@ describe('agent tool fixes', function (): void {
             ->toBe(['fields' => ['user', 'pass']]);
     });
 
+    it('requires explicit transitional ssh fallback before running credential repair scripts', function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+        [, $tool] = createAgentToolForFixer();
+        $shell = new ToolsFixerRemoteShell([
+            "echo '[\"user\",\"pass\"]'" => new RemoteShellResult(
+                exitCode: 0,
+                stdout: '["user","pass"]',
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
+
+        $fixer = new ToolsFixer(
+            remoteShell: $shell,
+            catalog: makeToolsFixerAgentToolCatalog([
+                'credentialsScript' => "echo '[\"user\",\"pass\"]'",
+            ]),
+        );
+
+        $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_credentials_missing'));
+
+        expect($result)
+            ->toMatchArray([
+                'family' => 'tool',
+                'key' => 'tool.agent_credentials_missing',
+                'status' => 'failed',
+            ])
+            ->and($result['summary'])
+            ->toContain('requires explicit --node-transport=transitional-ssh-fallback')
+            ->and($tool->fresh()->credentials)
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
+    });
+
     it('returns null when credential shell output is not a valid non-empty array', function (): void {
+        allow_tools_fixer_remote_shell_fallback();
         [, $tool] = createAgentToolForFixer();
         $shell = new ToolsFixerRemoteShell([
             'echo invalid' => new RemoteShellResult(
@@ -640,22 +797,21 @@ describe('agent tool fixes', function (): void {
         expect($result)->toBeNull()->and($tool->fresh()->credentials)->toBeNull();
     });
 
-    it('runs useradd and passwd commands and returns completed', function (): void {
-        [, $tool] = createAgentToolForFixer();
-        $shell = new ToolsFixerRemoteShell([
-            'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent' =>
-                new RemoteShellResult(
-                    exitCode: 0,
-                    stdout: '',
-                    stderr: '',
-                    durationMs: 1,
-                ),
-            'sudo passwd -l agent >/dev/null 2>&1 || true' => new RemoteShellResult(
-                exitCode: 0,
-                stdout: '',
-                stderr: '',
-                durationMs: 1,
-            ),
+    it('ensures the agent user through agent-push local executor', function (): void {
+        use_tools_fixer_agent_push();
+
+        [$node, $tool] = createAgentToolForFixer([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.61',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.47.0.61:9477/v1/commands' => tools_fixer_agent_response('agent-user.ensure', [
+                'user' => 'agent',
+                'created' => false,
+                'locked' => true,
+            ]),
         ]);
 
         $fixer = new ToolsFixer(
@@ -671,18 +827,26 @@ describe('agent tool fixes', function (): void {
             ->and($result['status'])
             ->toBe('completed')
             ->and($shell->calls)
-            ->toHaveCount(2);
+            ->toBe([])
+            ->and(tools_fixer_agent_requests('10.47.0.61'))
+            ->toHaveCount(1)
+            ->and(tools_fixer_agent_requests('10.47.0.61')[0]['argv'] ?? [])
+            ->toContain('internal:agent-user:ensure')
+            ->and($node->fresh()->name)
+            ->toBe('agent-node');
     });
 });
 
 /**
  * @return array{0: Node, 1: NodeTool}
  */
-function createAgentToolForFixer(): array
+function createAgentToolForFixer(array $nodeOverrides = []): array
 {
     $node = Node::factory()->create([
+        'name' => 'agent-node',
         'status' => 'active',
         'tld' => 'agent',
+        ...$nodeOverrides,
     ]);
     $node->roleAssignments()->create([
         'role' => 'agent',
@@ -743,6 +907,83 @@ function makeToolsFixerAgentToolCatalog(array $overrides = []): ToolCatalog
     );
 
     return new ToolCatalog(new ToolDefinitionRegistry([$definition]));
+}
+
+function tools_fixer_managed_file_sequence(
+    string $path,
+    string $content,
+    string $mode = '0644',
+): \Illuminate\Http\Client\ResponseSequence {
+    return Http::sequence()
+        ->push(tools_fixer_agent_response('managed-file.probe', [
+            'exists' => false,
+            'hash' => null,
+            'mode' => null,
+        ]))
+        ->push(tools_fixer_agent_response('managed-file.write', [
+            'path' => $path,
+            'hash' => hash(algo: 'sha256', data: $content),
+            'mode' => $mode,
+        ]));
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function tools_fixer_agent_response(string $operationId, array $data, int $exitCode = 0): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return list<Request>
+ */
+function tools_fixer_agent_requests(string $wireguardAddress): array
+{
+    return Http::recorded(
+        fn (Request $request): bool => $request->url() === "http://{$wireguardAddress}:9477/v1/commands",
+    )
+        ->map(fn (array $record): Request => $record[0])
+        ->values()
+        ->all();
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function tools_fixer_agent_payload(string $wireguardAddress, string $action): array
+{
+    foreach (tools_fixer_agent_requests($wireguardAddress) as $request) {
+        if (($request['argv'][1] ?? null) !== $action) {
+            continue;
+        }
+
+        /** @var array<string, mixed> */
+        return json_decode((string) ($request['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    return [];
 }
 
 final class ToolsFixerRemoteShell implements RemoteShell

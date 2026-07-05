@@ -18,6 +18,7 @@ use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteSecretFile;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
@@ -158,6 +159,15 @@ final readonly class ToolInstaller
             if ($routeConflict instanceof ToolRegistryFailure) {
                 return $routeConflict;
             }
+        }
+
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return ToolRegistryFailure::nodeTransportRequired(
+                $transport->message('tool:install'),
+                $transport->meta(),
+            );
         }
 
         $row = NodeTool::query()->updateOrCreate(

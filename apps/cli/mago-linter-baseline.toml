@@ -703,9 +703,39 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 1
 
 [[issues]]
+file = "app/Commands/Internal/CodexAppConfigCommand.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/DatabaseAddUserCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/DatabaseAddUserCommand.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
 file = "app/Commands/Internal/DatabaseQueryLocalCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/EnvFileCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/EnvFileCommand.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
@@ -736,6 +766,30 @@ count = 1
 file = "app/Commands/Internal/InternalExecutorCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `'_'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/SoloUpstreamRequestCommand.php"
+code = "constant-name"
+message = "Constant name `Methods` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/SoloUpstreamRequestCommand.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/SoloUpstreamRequestCommand.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/SoloUpstreamRequestCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -927,6 +981,12 @@ count = 1
 [[issues]]
 file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
 code = "constant-name"
+message = "Constant name `AdapterOpenCode` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
+code = "constant-name"
 message = "Constant name `AdapterPolyscope` should be in constant case."
 count = 1
 
@@ -945,6 +1005,18 @@ count = 1
 [[issues]]
 file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
 code = "constant-name"
+message = "Constant name `MaxWorkspacePathLength` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
+code = "constant-name"
+message = "Constant name `UpdateHostBranch` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
+code = "constant-name"
 message = "Constant name `UpdateWorkspaceBranch` should be in constant case."
 count = 1
 
@@ -952,6 +1024,12 @@ count = 1
 file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
+code = "halstead"
+message = "Method has a high halstead effort"
 count = 1
 
 [[issues]]
@@ -965,6 +1043,12 @@ file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
 
 [[issues]]
 file = "app/Commands/Internal/WorkspaceAdapterUpdateCommand.php"
@@ -1783,12 +1867,6 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
-file = "app/Commands/Tool/ToolListCommand.php"
-code = "no-nested-ternary"
-message = "Nested ternary expressions are confusing due to PHP's operator associativity rules."
-count = 1
-
-[[issues]]
 file = "app/Commands/Tool/ToolShowCommand.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -1945,6 +2023,60 @@ message = "This closure does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
+file = "app/Services/Apps/LocalAppWorkerReadinessProbe.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "constant-name"
+message = "Constant name `Actions` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "constant-name"
+message = "Constant name `AllowedPathPrefixes` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "constant-name"
+message = "Constant name `ModePattern` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "literal-named-argument"
+message = 'Literal argument `" \t\n\r"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Convergence/LocalManagedFileAction.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
 file = "app/Services/Database/DatabaseQueryClassifier.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -2024,6 +2156,24 @@ count = 2
 
 [[issues]]
 file = "app/Services/Database/LocalDatabaseQueryAction.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Services/Database/LocalMysqlUserAction.php"
+code = "constant-name"
+message = "Constant name `IdentifierPattern` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Database/LocalMysqlUserAction.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 1
+
+[[issues]]
+file = "app/Services/Database/LocalMysqlUserAction.php"
 code = "too-many-methods"
 message = "Class has too many methods."
 count = 1
@@ -2213,6 +2363,42 @@ file = "app/Services/Doctor/InteractiveDoctorIssueSelector.php"
 code = "literal-named-argument"
 message = "Literal argument `'skip'` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "app/Services/EnvFiles/LocalEnvFileAction.php"
+code = "constant-name"
+message = "Constant name `Actions` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/EnvFiles/LocalEnvFileAction.php"
+code = "constant-name"
+message = "Constant name `AllowedRootPrefixes` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/EnvFiles/LocalEnvFileAction.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/EnvFiles/LocalEnvFileAction.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "app/Services/EnvFiles/LocalEnvFileAction.php"
+code = "literal-named-argument"
+message = "Literal argument `0755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/EnvFiles/LocalEnvFileAction.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
 
 [[issues]]
 file = "app/Services/Executor/OperationTokenGuard.php"
@@ -2467,6 +2653,48 @@ message = "This closure does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "constant-name"
+message = "Constant name `ConfigCandidates` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "constant-name"
+message = "Constant name `HostPattern` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "literal-named-argument"
+message = "Literal argument `'.conf'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "literal-named-argument"
+message = "Literal argument `':'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/Network/LocalWireGuardEndpointRotateAction.php"
+code = "readable-literal"
+message = "Numeric literal could use underscore separators for readability."
+count = 1
+
+[[issues]]
 file = "app/Services/Node/AuthorizedKeysInstaller.php"
 code = "explicit-octal"
 message = "Use explicit octal numeral notation."
@@ -2677,6 +2905,12 @@ message = "Literal argument `2` should be passed as a named argument for clarity
 count = 1
 
 [[issues]]
+file = "app/Services/Processes/LocalDockerContainerAction.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
 file = "app/Services/Profile/CurlProfileRequestProfiler.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -2800,6 +3034,60 @@ count = 1
 file = "app/Services/Profile/ProfileInputResolver.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
+count = 2
+
+[[issues]]
+file = "app/Services/S3/LocalS3RuntimeProbe.php"
+code = "constant-name"
+message = "Constant name `ApiPort` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/S3/LocalS3RuntimeProbe.php"
+code = "constant-name"
+message = "Constant name `ContainerName` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/S3/LocalS3RuntimeProbe.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/Secrets/LocalSecretFileAction.php"
+code = "constant-name"
+message = "Constant name `FilePrefix` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Secrets/LocalSecretFileAction.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/Secrets/LocalSecretFileAction.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "app/Services/Secrets/LocalSecretFileAction.php"
+code = "literal-named-argument"
+message = "Literal argument `0600` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Secrets/LocalSecretFileAction.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Secrets/LocalSecretFileAction.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
 count = 2
 
 [[issues]]
@@ -2960,6 +3248,12 @@ count = 6
 
 [[issues]]
 file = "app/Services/Updates/UpdateAllHumanProgressRenderer.php"
+code = "no-duplicate-match-arm"
+message = "This `match` arm has the same result as an earlier arm."
+count = 3
+
+[[issues]]
+file = "app/Services/Updates/UpdateAllHumanProgressRenderer.php"
 code = "no-error-control-operator"
 message = "Unsafe use of error control operator `@`."
 count = 1
@@ -2995,12 +3289,6 @@ message = "Class has too many properties."
 count = 1
 
 [[issues]]
-file = "app/Services/Updates/UpdateAllHumanProgressRenderer.php"
-code = "valid-docblock"
-message = "Unclosed inline code"
-count = 1
-
-[[issues]]
 file = "app/Services/Updates/UpdateHumanProgressRenderer.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -3016,12 +3304,6 @@ count = 1
 file = "app/Services/Updates/UpdateHumanProgressRenderer.php"
 code = "too-many-methods"
 message = "Class has too many methods."
-count = 1
-
-[[issues]]
-file = "app/Services/Updates/UpdateHumanProgressRenderer.php"
-code = "valid-docblock"
-message = "Unclosed inline code"
 count = 1
 
 [[issues]]
@@ -3091,6 +3373,120 @@ message = "Unsafe use of error control operator `@`."
 count = 5
 
 [[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "constant-name"
+message = "Constant name `AppsConfigPath` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "constant-name"
+message = "Constant name `RuntimeRoot` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "constant-name"
+message = "Constant name `SourceHostPath` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "halstead"
+message = "Method has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "no-else-clause"
+message = "Avoid `elseif` clauses."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeAction.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "constant-name"
+message = "Constant name `SpecHashLabel` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "literal-named-argument"
+message = "Literal argument `'-orbit-websocket-'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/LocalWebSocketRuntimeContainerSpec.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
 file = "app/Services/WireGuard/WireGuardGatewayAddressResolver.php"
 code = "literal-named-argument"
 message = "Literal argument `2` should be passed as a named argument for clarity."
@@ -3100,6 +3496,24 @@ count = 1
 file = "app/Services/WireGuard/WireGuardGatewayAddressResolver.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/LocalWorkspaceSourceCreateAction.php"
+code = "constant-name"
+message = "Constant name `MaxRefLength` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/LocalWorkspaceSourceCreateAction.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/LocalWorkspaceSourceCreateAction.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
 count = 1
 
 [[issues]]
@@ -3291,91 +3705,13 @@ count = 1
 [[issues]]
 file = "tests/Feature/CommandListVisibilityTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'app:build'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
 message = "Literal argument `'app:exec'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
 file = "tests/Feature/CommandListVisibilityTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'app:install'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app:rename'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'internal:database-query-local'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'internal:executor:verify'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'internal:wg-easy:state'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'internal:workspace-adapter:lookup'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'internal:workspace-adapter:update'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'make:command'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'make:test'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
 message = "Literal argument `'process:edit'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'stub:publish'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'test'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/CommandListVisibilityTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'vendor:publish'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -3412,7 +3748,7 @@ count = 1
 file = "tests/Feature/Commands/Activity/ActivityListCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'activity:list'` should be passed as a named argument for clarity."
-count = 7
+count = 8
 
 [[issues]]
 file = "tests/Feature/Commands/Activity/ActivityListCommandTest.php"
@@ -3963,18 +4299,6 @@ count = 1
 [[issues]]
 file = "tests/Feature/Commands/Cloudflare/CloudflareReadCommandsTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'cf-dns:list'` should be passed as a named argument for clarity."
-count = 6
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareReadCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-zone:list'` should be passed as a named argument for clarity."
-count = 4
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareReadCommandsTest.php"
-code = "literal-named-argument"
 message = "Literal argument `403` should be passed as a named argument for clarity."
 count = 1
 
@@ -3995,48 +4319,6 @@ file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'Cloudflare token is missing.'` should be passed as a named argument for clarity."
 count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-cache-rule:add'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-cache-rule:remove'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-cache:flush'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-dns:add'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-dns:remove'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-ssl:disable'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-ssl:enable'` should be passed as a named argument for clarity."
-count = 2
 
 [[issues]]
 file = "tests/Feature/Commands/Cloudflare/CloudflareRenderCommandsTest.php"
@@ -4065,25 +4347,13 @@ count = 1
 [[issues]]
 file = "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'cf-cache:flush'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-dns:add'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'cf-dns:remove'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/Cloudflare/CloudflareWriteCommandsTest.php"
-code = "literal-named-argument"
 message = "Literal argument `503` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Codex/CodexAppCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
 count = 1
 
 [[issues]]
@@ -5236,7 +5506,7 @@ count = 1
 file = "tests/Feature/Commands/Node/NodeWriteCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'node role:add'` should be passed as a named argument for clarity."
-count = 6
+count = 7
 
 [[issues]]
 file = "tests/Feature/Commands/Node/NodeWriteCommandTest.php"
@@ -5284,7 +5554,7 @@ count = 6
 file = "tests/Feature/Commands/Node/NodeWriteCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'node:update'` should be passed as a named argument for clarity."
-count = 6
+count = 8
 
 [[issues]]
 file = "tests/Feature/Commands/Node/NodeWriteCommandTest.php"
@@ -5314,7 +5584,7 @@ count = 8
 file = "tests/Feature/Commands/Node/NodeWriteCommandTest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
-count = 5
+count = 7
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
@@ -6884,6 +7154,18 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolListCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolListCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolListCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'This node is not authorized to manage tools.'` should be passed as a named argument for clarity."
 count = 1
@@ -6892,7 +7174,7 @@ count = 1
 file = "tests/Feature/Commands/Tool/ToolListCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'tool:list'` should be passed as a named argument for clarity."
-count = 4
+count = 7
 
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolListCommandTest.php"
@@ -6987,14 +7269,32 @@ count = 1
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
 code = "literal-named-argument"
+message = """Literal argument `"Invalid install user ''."` should be passed as a named argument for clarity."""
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+code = "literal-named-argument"
+message = """Literal argument `"Tool 'composer' does not support start."` should be passed as a named argument for clarity."""
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+code = "literal-named-argument"
 message = """Literal argument `"Tool 'docker' does not support install."` should be passed as a named argument for clarity."""
 count = 1
 
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'Install users are only supported for user-scoped CLI tools.'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+code = "literal-named-argument"
 message = "Literal argument `'tool:install'` should be passed as a named argument for clarity."
-count = 5
+count = 8
 
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
@@ -7011,14 +7311,26 @@ count = 2
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'tool:start'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+code = "literal-named-argument"
 message = "Literal argument `'tool:update'` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
 code = "literal-named-argument"
-message = "Literal argument `422` should be passed as a named argument for clarity."
+message = "Literal argument `400` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `422` should be passed as a named argument for clarity."
+count = 3
 
 [[issues]]
 file = "tests/Feature/Commands/Tool/ToolWriteCommandTest.php"
@@ -7465,6 +7777,168 @@ message = "Unsafe use of error control operator `@`."
 count = 2
 
 [[issues]]
+file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0o755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 3
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeContainersProbeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0o755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeContainersProbeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeContainersProbeCommandTest.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeContainersProbeCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeContainersProbeCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 3
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"redis\npdo\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppRuntimeExtensionsProbeCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppSourcePathProbeCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppWorkerReadinessProbeCommandTest.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/InternalAppWorkerReadinessProbeCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalAppWorkerReadinessProbeCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalDatabaseAddUserCommandTest.php"
+code = "function-name"
+message = "Function name `configureDatabaseAddUserOperationTokenGuard` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalDatabaseAddUserCommandTest.php"
+code = "function-name"
+message = "Function name `databaseAddUserSignedOperationToken` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalDatabaseAddUserCommandTest.php"
+code = "function-name"
+message = "Function name `runInternalDatabaseAddUserCommand` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalDatabaseAddUserCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'not-json'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalDatabaseAddUserCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'r+'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalDatabaseAddUserCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
 file = "tests/Feature/InternalDatabaseQueryLocalCommandTest.php"
 code = "function-name"
 message = "Function name `configureDatabaseQueryLocalOperationTokenGuard` should be in snake case."
@@ -7525,6 +7999,42 @@ message = "Numeric literal could use underscore separators for readability."
 count = 1
 
 [[issues]]
+file = "tests/Feature/InternalEnvFileCommandTest.php"
+code = "function-name"
+message = "Function name `configureEnvFileOperationTokenGuard` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalEnvFileCommandTest.php"
+code = "function-name"
+message = "Function name `envFileSignedOperationToken` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalEnvFileCommandTest.php"
+code = "function-name"
+message = "Function name `runInternalEnvFileCommand` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalEnvFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'not-json'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalEnvFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'r+'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalEnvFileCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
 file = "tests/Feature/InternalExecutorCommandTest.php"
 code = "function-name"
 message = "Function name `configureOperationTokenGuard` should be in snake case."
@@ -7565,6 +8075,132 @@ file = "tests/Feature/InternalExecutorCommandTest.php"
 code = "prefer-arrow-function"
 message = "This closure can be simplified to a more concise arrow function."
 count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "braced-string-interpolation"
+message = "Unbraced variable in string interpolation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'r+'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalManagedFileCommandTest.php"
+code = "use-dedicated-expectation"
+message = "Use `toBeArray()` instead of `is_array()` with `toBeTrue()`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalProcessSystemdServiceCommandTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalProcessSystemdServiceCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalProcessSystemdServiceCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSecretFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'orbit-secret.'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSecretFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'r+'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSecretFileCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'secret'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSecretFileCommandTest.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSecretFileCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSecretFileCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSoloUpstreamRequestCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWebSocketRuntimeCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWebSocketRuntimeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/InternalWebSocketRuntimeCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `64` should be passed as a named argument for clarity."
+count = 12
 
 [[issues]]
 file = "tests/Feature/InternalWgEasyStateCommandTest.php"
@@ -7783,6 +8419,84 @@ message = "Literal passwords or sensitive data should not be stored in code."
 count = 1
 
 [[issues]]
+file = "tests/Feature/InternalWireGuardEndpointRotateCommandTest.php"
+code = "braced-string-interpolation"
+message = "Unbraced variable in string interpolation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardEndpointRotateCommandTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardEndpointRotateCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardEndpointRotateCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardEndpointRotateCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardEndpointRotateCommandTest.php"
+code = "use-dedicated-expectation"
+message = "Use `toBeArray()` instead of `is_array()` with `toBeTrue()`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "braced-string-interpolation"
+message = "Unbraced variable in string interpolation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"local 10.6.0.4 dev lo src 10.6.0.4 uid 1000\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWireGuardSelfRouteCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
 file = "tests/Feature/InternalWorkspaceAdapterLookupCommandTest.php"
 code = "function-name"
 message = "Function name `configureWorkspaceAdapterOperationTokenGuard` should be in snake case."
@@ -7905,13 +8619,37 @@ count = 1
 [[issues]]
 file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
 code = "function-name"
+message = "Function name `workspaceAdapterUpdateRunProcess` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
+code = "function-name"
 message = "Function name `workspaceAdapterUpdateSignedOperationToken` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"base\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"created by opencode\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"test\n"` should be passed as a named argument for clarity.'
 count = 1
 
 [[issues]]
@@ -7936,6 +8674,24 @@ count = 2
 file = "tests/Feature/InternalWorkspaceAdapterUpdateCommandTest.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceSourceCreateCommandTest.php"
+code = "function-name"
+message = "Function name `removeWorkspaceSourceCreateTempDirectory` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceSourceCreateCommandTest.php"
+code = "function-name"
+message = "Function name `workspaceSourceCreateRunProcess` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalWorkspaceSourceCreateCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"test\n"` should be passed as a named argument for clarity.'
 count = 1
 
 [[issues]]
@@ -8001,12 +8757,6 @@ count = 1
 [[issues]]
 file = "tests/Feature/OrbitConfigStoreTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'orbit-config-test-'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreTest.php"
-code = "literal-named-argument"
 message = """Literal argument `'{"gateways":{}}'` should be passed as a named argument for clarity."""
 count = 1
 
@@ -8024,18 +8774,6 @@ count = 4
 
 [[issues]]
 file = "tests/Feature/OrbitConfigStoreTest.php"
-code = "no-error-control-operator"
-message = "Unsafe use of error control operator `@`."
-count = 16
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreTest.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreTest.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
 count = 4
@@ -8044,12 +8782,6 @@ count = 4
 file = "tests/Feature/OrbitConfigStoreTest.php"
 code = "use-dedicated-expectation"
 message = "Use `toBeFile()` instead of `is_file()` with `toBeTrue()`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/OrbitConfigStoreTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -8066,9 +8798,33 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/PublicCommandForwardingTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/PublicCommandForwardingTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/PublicCommandForwardingTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app:list'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/PublicCommandForwardingTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'gateway:status'` should be passed as a named argument for clarity."
 count = 6
+
+[[issues]]
+file = "tests/Feature/PublicCommandForwardingTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 1
 
 [[issues]]
 file = "tests/Feature/Services/CurlProfileRequestProfilerTest.php"

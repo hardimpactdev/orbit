@@ -147,10 +147,10 @@ describe('install-orbit always-cli launcher contract', function (): void {
             ->not->toContain('is_local_executor_command');
     });
 
-    it('keeps the CLI config gateway focused', function (): void {
+    it('keeps the CLI config focused on client-side gateway and executor settings', function (): void {
         $config = require repo_path('apps/cli/config/orbit.php');
 
-        expect(array_keys($config))->toBe(['gateway']);
+        expect(array_keys($config))->toBe(['gateway', 'local_executor_binary']);
     });
 });
 

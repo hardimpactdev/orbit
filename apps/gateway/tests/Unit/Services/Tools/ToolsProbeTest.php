@@ -10,7 +10,14 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolCatalog;
@@ -18,6 +25,8 @@ use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Tools\ToolsProbe;
 use App\Tools\BaseTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
@@ -50,6 +59,40 @@ function createToolsProbeAgentNode(): Node
     ]);
 
     return $node;
+}
+
+function toolsProbeWithRemoteShell(RemoteShell $remoteShell, ?ToolCatalog $catalog = null): ToolsProbe
+{
+    app()->instance(RemoteShell::class, $remoteShell);
+
+    return new ToolsProbe($remoteShell, $catalog);
+}
+
+function toolsProbeWithAgentPush(RemoteShell $remoteShell): ToolsProbe
+{
+    return new ToolsProbe(
+        remoteShell: $remoteShell,
+        localExecutor: toolsProbeLocalExecutor(NodeTransportPreference::Auto),
+    );
+}
+
+function toolsProbeLocalExecutor(NodeTransportPreference $defaultTransportPreference): RemoteLocalExecutor
+{
+    $secret = config('app.key');
+
+    if (! is_string($secret) || trim($secret) === '') {
+        throw new RuntimeException('Application key is not configured for operation token signing.');
+    }
+
+    return new RemoteLocalExecutor(
+        transport: app(RemoteExecutor::class),
+        commands: app(LocalExecutorCommandBuilder::class),
+        operationTokens: app(OperationTokenFactory::class),
+        activityLogger: app(ActivityLogger::class),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: $secret,
+        defaultTransportPreference: $defaultTransportPreference,
+    );
 }
 
 /**
@@ -107,10 +150,53 @@ function toolsProbeDockerProviderStdout(
 function toolsProbeManagedFileStdout(bool $exists, ?string $hash, ?string $mode): string
 {
     return json_encode([
-        'exists' => $exists,
-        'hash' => $hash,
-        'mode' => $mode,
+        'success' => [
+            'data' => [
+                'exists' => $exists,
+                'hash' => $hash,
+                'mode' => $mode,
+            ],
+        ],
     ], JSON_THROW_ON_ERROR)."\n";
+}
+
+function tools_probe_agent_runtime_response(array $data): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'tool-agent-runtime.probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
+}
+
+function tools_probe_agent_runtime_request_matches(Request $request, string $url): bool
+{
+    return (
+        $request->url() === $url
+        && $request['binary'] === 'orbit'
+        && $request['operation_id'] === 'tool-agent-runtime.probe'
+        && $request['timeout_seconds'] === 10
+        && $request['argv'][0] === 'internal:agent-runtime:probe'
+        && str_starts_with((string) $request['argv'][1], '--operation-token=')
+        && $request['argv'][2] === '--json'
+    );
 }
 
 describe('ToolsProbe', function (): void {
@@ -246,7 +332,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 1,
             stdout: '',
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $probe->introspect($tool);
 
@@ -278,7 +364,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: toolsProbeCapabilityStdout('/home/deploy/.local/bin/claude', version: '2.1.89'),
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -437,7 +523,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\t\t\t\t\t\t\t\n",
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
 
@@ -464,7 +550,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: toolsProbeDockerProviderStdout('/opt/homebrew/bin/docker'),
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -804,7 +890,7 @@ describe('ToolsProbe', function (): void {
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0644'), '', 1),
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -820,7 +906,7 @@ describe('ToolsProbe', function (): void {
             ->and($shell->scripts)
             ->toHaveCount(2)
             ->and($shell->scripts[1])
-            ->toContain('sudo test -f "$path"')
+            ->toContain('internal:managed-file')
             ->and($shell->options[1])
             ->toMatchArray(['throw' => false]);
     });
@@ -859,7 +945,7 @@ describe('ToolsProbe', function (): void {
             ),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0644'), '', 1),
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshots = $probe->introspectMany([$tool]);
 
@@ -872,7 +958,7 @@ describe('ToolsProbe', function (): void {
             ->and($shell->scripts)
             ->toHaveCount(2)
             ->and($shell->scripts[1])
-            ->toContain('sudo test -f "$path"');
+            ->toContain('internal:managed-file');
     });
 
     it('uses POSIX shell for batched tool probes while preserving line-delimited JSON parsing', function (): void {
@@ -1014,7 +1100,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(false, null, null), '', 1),
         ));
@@ -1046,7 +1132,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(true, str_repeat('b', 64), '0644'), '', 1),
         ));
@@ -1080,7 +1166,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0600'), '', 1),
         ));
@@ -1115,7 +1201,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
             new RemoteShellResult(255, '', 'ssh: connection refused', 1),
         ));
@@ -1176,7 +1262,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(false, null, null), '', 1),
         ));
@@ -1209,7 +1295,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(true, str_repeat('b', 64), '0644'), '', 1),
         ));
@@ -1243,7 +1329,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
             new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0644'), '', 1),
         ));
@@ -1278,7 +1364,7 @@ describe('ToolsProbe', function (): void {
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new QueuedToolsProbeRemoteShell(
             new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
             new RemoteShellResult(255, '', 'ssh: connection refused', 1),
         ));
@@ -1481,37 +1567,68 @@ describe('ToolsProbe', function (): void {
     });
 
     it('detects missing agent user for agent tools', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.83:9477/v1/commands' => tools_probe_agent_runtime_response([
+                'runtime_user' => false,
+                'orbit_cli' => false,
+            ]),
+        ]);
         $node = createToolsProbeAgentNode();
+        $node->forceFill([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.44.0.83',
+        ])->save();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
             'expected_state' => 'installed',
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 1));
+        $probe = toolsProbeWithAgentPush(new ToolsProbeRemoteShell(exitCode: 1));
 
         $drift = $probe->diff($tool, $probe->introspect($tool));
 
         expect(toolProbeIssue($drift, 'tool.agent_user_missing')?->kind)->toBe(DriftKind::Missing);
+        Http::assertSent(
+            fn (Request $request): bool => tools_probe_agent_runtime_request_matches(
+                request: $request,
+                url: 'http://10.44.0.83:9477/v1/commands',
+            ),
+        );
     });
 
     it('detects an agent user that cannot execute the Orbit CLI for agent tools', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.84:9477/v1/commands' => tools_probe_agent_runtime_response([
+                'runtime_user' => true,
+                'orbit_cli' => false,
+            ]),
+        ]);
         $node = createToolsProbeAgentNode();
+        $node->forceFill([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.44.0.84',
+        ])->save();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'openclaw',
             'expected_state' => 'installed',
             'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
         ]);
-        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 126, stdout: '', stderr: 'Permission denied', durationMs: 1),
-        ));
+        $probe = toolsProbeWithAgentPush(new QueuedToolsProbeRemoteShell);
 
         $drift = $probe->diff($tool, new ProbeSnapshot([
             'openclaw' => ['installed' => true],
         ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_orbit_cli_inaccessible')?->kind)->toBe(DriftKind::Divergent);
+        Http::assertSent(
+            fn (Request $request): bool => tools_probe_agent_runtime_request_matches(
+                request: $request,
+                url: 'http://10.44.0.84:9477/v1/commands',
+            ),
+        );
     });
 });
 

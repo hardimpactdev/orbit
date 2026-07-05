@@ -16,6 +16,7 @@ final class AnalyticsUpdateCommand extends GatewayCommand
     protected $signature = 'analytics:update
         {--requested-version= : Plausible CE version to apply}
         {--node= : Active analytics node name}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

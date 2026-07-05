@@ -10,6 +10,12 @@ use App\Enums\ActivityLogType;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeAgentPushClient;
+use App\Services\NodeCommandTransport\NodeAgentPushResult;
+use App\Services\NodeCommandTransport\NodeCommandEnvelope;
+use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
+use App\Services\NodeCommandTransport\NodeTransport;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -43,6 +49,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         private ActivityLogger $activityLogger,
         private OperationRunRecorder $operationRuns,
         private string $operationTokenSecret,
+        private NodeTransportPreference $defaultTransportPreference = NodeTransportPreference::Auto,
     ) {
         if (trim($this->operationTokenSecret) === '') {
             throw new RuntimeException('Operation token signing secret is required.');
@@ -60,6 +67,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $options
      */
     #[\Override]
@@ -87,6 +95,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     public function runInternal(
@@ -124,11 +133,20 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 transportOptions: $transportOptions,
             );
 
-            $result = $this->transport->run(
-                node: $node,
-                script: $dispatch['script'],
-                options: $this->transportDispatchOptions($transportOptions),
-            );
+            $preference = $this->transportPreference($transportOptions);
+            $result = $preference === NodeTransportPreference::TransitionalSshFallback
+                ? $this->transport->run(
+                    node: $node,
+                    script: $dispatch['script'],
+                    options: $this->transportDispatchOptions($transportOptions),
+                )
+                : $this->runAgentPush(
+                    node: $node,
+                    dispatch: $dispatch,
+                    operationId: $operationId,
+                    preference: $preference,
+                    transportOptions: $transportOptions,
+                );
         } catch (RemoteShellFailed $exception) {
             $sanitizedResult = $this->sanitizedResult($exception->result, $dispatch['operationToken']);
 
@@ -241,6 +259,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $options
      */
     #[\Override]
@@ -262,6 +281,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     public function startInternal(
@@ -277,7 +297,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
-     * @return array{operationToken: string, script: string, auditLine: string}
+     * @return array{operationToken: string, script: string, auditLine: string, argv: list<string>}
      */
     private function dispatchCommand(
         Node $node,
@@ -311,6 +331,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                 options: $commandOptions,
                 operationToken: $operationToken,
             ),
+            'argv' => $this->commands->buildArgv(
+                targetNode: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                options: $commandOptions,
+                operationToken: $operationToken,
+            ),
             'auditLine' => $this->commands->buildAuditLine(
                 targetNode: $node,
                 commandName: $commandName,
@@ -324,6 +351,18 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
+     * }  $transportOptions
      */
     private function logDispatching(
         Node $node,
@@ -461,6 +500,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     private function transportExceptionMessageSummary(
@@ -493,6 +533,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      * @return array<array-key, mixed>
      */
@@ -527,6 +568,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     private function shouldSuppressExceptionMessage(array $transportOptions): bool
@@ -584,6 +626,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     private function redactExceptionText(
@@ -610,6 +653,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     private function redactCommandOptionSecrets(string $value, array $transportOptions, array $commandOptions): string
@@ -642,6 +686,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      * @return array<array-key, mixed>
      */
@@ -684,6 +729,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     private function redactExceptionMetadataValue(
@@ -790,6 +836,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      * @return list<string>
      */
@@ -831,6 +878,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      */
     private function operationId(array $transportOptions): string
@@ -856,6 +904,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
      * }  $transportOptions
      * @return array{
      *     cwd?: string,
@@ -875,6 +924,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             $transportOptions['redact_command_options'],
         );
 
+        if (array_key_exists('transport', $transportOptions)) {
+            unset($transportOptions['transport']);
+        }
+
         $environment = $this->transportEnvironment($transportOptions);
         $environment['HOME'] = self::LOCAL_EXECUTOR_HOME;
         $environment['ORBIT_CONFIG_PATH'] = self::LOCAL_EXECUTOR_HOME.'/.config/orbit/config.json';
@@ -882,6 +935,139 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         $transportOptions['environment'] = $environment;
 
         return $transportOptions;
+    }
+
+    /**
+     * @param  array{operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function runAgentPush(
+        Node $node,
+        array $dispatch,
+        string $operationId,
+        NodeTransportPreference $preference,
+        array $transportOptions,
+    ): RemoteShellResult {
+        $envelope = NodeCommandEnvelope::agentPushBinary(
+            operationId: $operationId,
+            binary: 'orbit',
+            argv: $dispatch['argv'],
+            input: $this->input($transportOptions),
+            timeoutSeconds: $this->timeoutSeconds($transportOptions),
+        );
+        $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
+
+        if ($transport !== NodeTransport::AgentPush) {
+            throw new RuntimeException('agent-push transport is unavailable');
+        }
+
+        $result = app(NodeAgentPushClient::class)->execute($node, $envelope, $dispatch['operationToken']);
+
+        return $this->agentPushResult($result);
+    }
+
+    private function agentPushResult(NodeAgentPushResult $result): RemoteShellResult
+    {
+        $stdout = '';
+        $stderr = '';
+
+        foreach ($result->frames as $frame) {
+            $message = $frame['message'] ?? '';
+
+            if (! is_string($message)) {
+                continue;
+            }
+
+            $type = $frame['type'] ?? null;
+
+            if ($type === 'stderr') {
+                $stderr .= $message;
+
+                continue;
+            }
+
+            if ($type === 'stdout') {
+                $stdout .= $message;
+            }
+        }
+
+        return new RemoteShellResult(
+            exitCode: $result->exitCode ?? 1,
+            stdout: $stdout,
+            stderr: $stderr,
+            durationMs: 0,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function transportPreference(array $transportOptions): NodeTransportPreference
+    {
+        $transport = $transportOptions['transport'] ?? null;
+
+        if ($transport === null) {
+            return $this->requestTransportPreference() ?? $this->defaultTransportPreference;
+        }
+
+        if ($transport instanceof NodeTransportPreference) {
+            return $transport;
+        }
+
+        if (! is_string($transport)) {
+            throw new RuntimeException('transport must be a valid node transport preference.');
+        }
+
+        return (
+            NodeTransportPreference::tryFrom($transport) ?? throw new RuntimeException(
+                "Invalid node transport preference [{$transport}].",
+            )
+        );
+    }
+
+    private function requestTransportPreference(): ?NodeTransportPreference
+    {
+        $transport = request()->header('X-Orbit-Node-Transport-Preference');
+
+        if (! is_string($transport) || trim($transport) === '') {
+            return null;
+        }
+
+        return (
+            NodeTransportPreference::tryFrom($transport) ?? throw new RuntimeException(
+                "Invalid node transport preference [{$transport}].",
+            )
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function timeoutSeconds(array $transportOptions): int
+    {
+        $timeout = $transportOptions['timeout'] ?? 30;
+
+        if (is_int($timeout) && $timeout > 0) {
+            return $timeout;
+        }
+
+        throw new RuntimeException('timeout must be a positive integer.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function input(array $transportOptions): ?string
+    {
+        if (! array_key_exists('input', $transportOptions)) {
+            return null;
+        }
+
+        if (is_string($transportOptions['input'])) {
+            return $transportOptions['input'];
+        }
+
+        throw new RuntimeException('input must be a string.');
     }
 
     /**

@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
-use App\Contracts\RemoteShell;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 
 class FleetUpdateVerifier
 {
     public function __construct(
         private readonly GatewaySwarmManager $swarm,
         private readonly NodeRoleAssignments $roles,
-        private readonly RemoteShell $remoteShell,
         private readonly OperationRunRecorder $operationRuns,
         private readonly FleetUpdateTargetSelector $targets,
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -78,13 +78,18 @@ class FleetUpdateVerifier
     private function verifyWorkloadCli(OperationRun $operationRun): null
     {
         foreach ($this->targets->workloadNodes() as $node) {
-            $result = $this->remoteShell->run($node, 'orbit --version --local', [
-                'cwd' => $node->orbit_path,
-                'timeout' => 30,
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => $operationRun->id,
+            $result = $this->localExecutor()->runInternal(
+                node: $node,
+                commandName: 'internal:fleet-update:verify',
+                arguments: ['cli'],
+                transportOptions: [
+                    'cwd' => $node->orbit_path,
+                    'timeout' => 30,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operationRun->id,
+                    ],
                 ],
-            ]);
+            );
 
             if (! $result->successful()) {
                 throw new FleetUpdateVerificationFailed('cli_verification_failed', 'CLI verification failed.');
@@ -103,17 +108,19 @@ class FleetUpdateVerifier
                 continue;
             }
 
-            $script = collect($images)
-                ->map(fn (string $image): string => 'docker image inspect '.escapeshellarg($image).' >/dev/null')
-                ->implode("\n");
-
-            $result = $this->remoteShell->run($node, $script, [
-                'cwd' => $node->orbit_path,
-                'timeout' => 60,
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => $operationRun->id,
+            $result = $this->localExecutor()->runInternal(
+                node: $node,
+                commandName: 'internal:fleet-update:verify',
+                arguments: ['role-images'],
+                transportOptions: [
+                    'cwd' => $node->orbit_path,
+                    'input' => json_encode(['images' => $images], JSON_THROW_ON_ERROR),
+                    'timeout' => 60,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operationRun->id,
+                    ],
                 ],
-            ]);
+            );
 
             if (! $result->successful()) {
                 throw new FleetUpdateVerificationFailed(
@@ -124,6 +131,11 @@ class FleetUpdateVerifier
         }
 
         return null;
+    }
+
+    private function localExecutor(): RemoteLocalExecutor
+    {
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     private function runVerificationStep(

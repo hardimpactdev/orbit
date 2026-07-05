@@ -14,6 +14,7 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
     protected $signature = 'process:remove
         {name? : Existing process name}
         {--node= : Owning node name}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--force : Confirm destructive operation without prompting}

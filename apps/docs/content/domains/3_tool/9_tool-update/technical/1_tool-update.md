@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--expected-version=<version>] [--json|--stream-json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -25,6 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `tool` | `argument` | `Optional.` | `Never.` | `all update-capable managed tools on the node` | `Registered managed tool name.` |
 | `expected_version` | `--expected-version` | `Optional.` | `when tool is omitted.` | `latest supported version` | Supported version string for the selected tool definition. |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 | `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |

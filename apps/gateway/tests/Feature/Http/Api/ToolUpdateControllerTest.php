@@ -14,6 +14,15 @@ uses(RefreshDatabase::class);
 
 const TOOL_UPDATE_API_CALLER_WG_IP = '10.6.0.93';
 
+function tool_update_api_server_headers(array $overrides = []): array
+{
+    return [
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
+        'REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP,
+        ...$overrides,
+    ];
+}
+
 function createToolUpdateApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
@@ -65,7 +74,7 @@ it('updates host capability expected versions without service instance fields', 
         ],
         [],
         [],
-        ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP],
+        tool_update_api_server_headers(),
     );
 
     $response
@@ -82,6 +91,39 @@ it('updates host capability expected versions without service instance fields', 
         ->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
         ->and($shell->scripts)
         ->toHaveCount(1);
+});
+
+it('requires explicit transitional ssh fallback before running tool update scripts', function (): void {
+    $caller = createToolUpdateApiCallerNode();
+    $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
+    assignToolUpdateApiRole($node, 'app-dev');
+    grantToolUpdateApiAccess($caller, $node);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php-cli',
+        'expected_version' => '8.4',
+    ]);
+    $shell = new ToolUpdateApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/php-cli/update',
+        [
+            'node' => 'app-update-api-1',
+            'version' => '8.5',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node_transport_required')
+        ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+
+    expect($shell->scripts)->toBe([]);
 });
 
 it('does not update database and cache services through tool updates', function (string $tool): void {

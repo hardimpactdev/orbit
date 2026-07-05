@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
@@ -135,6 +136,7 @@ function coreAgentIdeWorkspacePathResolverExecutor(CoreAgentIdeWorkspacePathReso
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 

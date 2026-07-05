@@ -38,6 +38,7 @@ it('mirrors the existing remote shell public surface', function (): void {
 });
 
 it('defaults RemoteExecutor resolution to the host executor while keeping runtime explicit', function (): void {
+    app()->bind(RemoteExecutor::class, RemoteHostExecutor::class);
     app()->forgetInstance(RemoteShell::class);
     app()->forgetInstance(StartsRemoteShellProcesses::class);
 

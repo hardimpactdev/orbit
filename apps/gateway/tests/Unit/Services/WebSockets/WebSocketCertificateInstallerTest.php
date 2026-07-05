@@ -2,23 +2,36 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\WebSockets\WebSocketBackendName;
 use App\Services\WebSockets\WebSocketCertificateInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+
     $this->tempStorage = sys_get_temp_dir().'/orbit-websocket-cert-test-'.uniqid();
     mkdir($this->tempStorage.'/app/orbit', 0777, true);
     app()->useStoragePath($this->tempStorage);
+
+    createTestGatewayNode([
+        'name' => 'gateway',
+        'host' => '10.6.0.1',
+        'orbit_path' => '/home/orbit/orbit',
+    ]);
 });
 
 afterEach(function (): void {
@@ -28,17 +41,20 @@ afterEach(function (): void {
 });
 
 it('installs backend TLS material into the host Orbit cert directory', function (): void {
-    $node = Node::factory()->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.44',
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.44:9477/v1/commands' => websocket_certificate_install_agent_response(),
     ]);
+
+    $node = createTestAppHostNode([
+        'name' => 'app-dev-1',
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.6.0.44',
+    ], role: 'websocket');
     $issued = new ArrayObject;
     $ca = new WebSocketCertificateInstallerTestCa($issued);
-    $shell = new WebSocketCertificateInstallerTestShell;
 
-    $paths = new WebSocketCertificateInstaller($ca, $shell, new WebSocketBackendName)->ensureFor($node);
-
-    $script = $shell->scripts[0];
+    $paths = new WebSocketCertificateInstaller($ca, new WebSocketBackendName)->ensureFor($node);
 
     expect($paths)
         ->toBe([
@@ -48,26 +64,21 @@ it('installs backend TLS material into the host Orbit cert directory', function 
         ->and($issued->getArrayCopy())
         ->toBe([
             ['host' => '10.6.0.44', 'additional_sans' => ['10.6.0.44']],
-        ])
-        ->and($shell->nodes[0]->is($node))
-        ->toBeTrue()
-        ->and($shell->options[0])
-        ->toMatchArray([
-            'throw' => true,
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
+        ]);
+
+    Http::assertSent(
+        fn (Request $request): bool => websocket_certificate_install_request_matches(
+            request: $request,
+            url: 'http://10.6.0.44:9477/v1/commands',
+            expectedInput: [
+                'cert_path' => '/etc/orbit/certs/10.6.0.44.crt',
+                'key_path' => '/etc/orbit/certs/10.6.0.44.key',
+                'cert' => 'certificate for 10.6.0.44',
+                'key' => 'key for 10.6.0.44',
+                'owner' => null,
             ],
-        ])
-        ->and($script)
-        ->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
-        ->and($script)
-        ->toContain("sudo chmod 0644 '/etc/orbit/certs/10.6.0.44.crt'")
-        ->and($script)
-        ->toContain("sudo chmod 0600 '/etc/orbit/certs/10.6.0.44.key'")
-        ->and($script)
-        ->not->toContain('.config/orbit/certs')->and($script)
-        ->not->toContain('php artisan')->and($script)
-        ->not->toContain('docker exec');
+        ),
+    );
 });
 
 it('requires a WireGuard address before installing backend TLS material', function (): void {
@@ -79,7 +90,6 @@ it('requires a WireGuard address before installing backend TLS material', functi
     expect(
         fn () => new WebSocketCertificateInstaller(
             new WebSocketCertificateInstallerTestCa(new ArrayObject),
-            new WebSocketCertificateInstallerTestShell,
             new WebSocketBackendName,
         )->ensureFor($node),
     )
@@ -87,15 +97,13 @@ it('requires a WireGuard address before installing backend TLS material', functi
 });
 
 it('resolves expected backend certificate paths without installing material', function (): void {
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-dev-1',
         'wireguard_address' => '10.6.0.45',
-    ]);
-    $shell = new WebSocketCertificateInstallerTestShell;
+    ], role: 'websocket');
 
     $paths = new WebSocketCertificateInstaller(
         new WebSocketCertificateInstallerTestCa(new ArrayObject),
-        $shell,
         new WebSocketBackendName,
     )->expectedPathsFor($node);
 
@@ -103,18 +111,15 @@ it('resolves expected backend certificate paths without installing material', fu
         ->toBe([
             'cert' => '/etc/orbit/certs/10.6.0.45.crt',
             'key' => '/etc/orbit/certs/10.6.0.45.key',
-        ])
-        ->and($shell->scripts)
-        ->toBe([]);
+        ]);
 });
 
 it('rejects nodes without a backend WireGuard address', function (): void {
-    $node = Node::factory()->make(['wireguard_address' => '']);
+    $node = createTestAppHostNode(['wireguard_address' => ''], role: 'websocket');
 
     expect(
         fn () => new WebSocketCertificateInstaller(
             new WebSocketCertificateInstallerTestCa(new ArrayObject),
-            new WebSocketCertificateInstallerTestShell,
             new WebSocketBackendName,
         )->expectedPathsFor($node),
     )
@@ -151,29 +156,52 @@ readonly class WebSocketCertificateInstallerTestCa extends OrbitCaService
     }
 }
 
-final class WebSocketCertificateInstallerTestShell implements RemoteShell
+function websocket_certificate_install_agent_response(): mixed
 {
-    /**
-     * @var list<Node>
-     */
-    public array $nodes = [];
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'websocket-certificate.install',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'cert_path' => '/etc/orbit/certs/10.6.0.44.crt',
+                            'key_path' => '/etc/orbit/certs/10.6.0.44.key',
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
+}
 
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
+/**
+ * @param  array<string, mixed>  $expectedInput
+ */
+function websocket_certificate_install_request_matches(Request $request, string $url, array $expectedInput): bool
+{
+    /** @var mixed $argv */
+    $argv = $request['argv'];
+    /** @var mixed $input */
+    $input = json_decode((string) $request['input'], associative: true, flags: JSON_THROW_ON_ERROR);
 
-    /**
-     * @var list<array<string, mixed>>
-     */
-    public array $options = [];
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->nodes[] = $node;
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
+    return (
+        $request->url() === $url
+        && $request['binary'] === 'orbit'
+        && $request['operation_id'] === 'websocket-certificate.install'
+        && is_array($argv)
+        && ($argv[0] ?? null) === 'internal:site-certificate:install'
+        && str_starts_with((string) ($argv[1] ?? ''), '--operation-token=')
+        && ($argv[2] ?? null) === '--json'
+        && $input === $expectedInput
+    );
 }

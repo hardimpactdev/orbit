@@ -13,6 +13,7 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Firewall\FirewallRuleProbe;
+use App\Services\Firewall\RemoteFirewallRule;
 
 final readonly class UfwFirewallRule
 {
@@ -47,9 +48,9 @@ final readonly class UfwFirewallRule
         );
     }
 
-    public function probe(Node $node, RemoteShell $remoteShell): UfwFirewallRuleProbe
+    public function probe(Node $node, ?RemoteShell $remoteShell = null): UfwFirewallRuleProbe
     {
-        [$snapshot, $error] = new FirewallRuleProbe($remoteShell)->tryIntrospectNode($node, $remoteShell);
+        [$snapshot, $error] = new FirewallRuleProbe()->tryIntrospectNode($node);
 
         if (! $snapshot instanceof ProbeSnapshot) {
             return new UfwFirewallRuleProbe(
@@ -124,9 +125,10 @@ final readonly class UfwFirewallRule
         }
 
         $observed = is_array($plan->details['observed'] ?? null) ? $plan->details['observed'] : null;
+        $remoteFirewallRule = app(RemoteFirewallRule::class);
 
         if ($observed !== null) {
-            $deleteResult = $remoteShell->run($node, $this->deleteCommand($observed), ['throw' => false]);
+            $deleteResult = $remoteFirewallRule->delete($node, $this->stringKeyed($observed));
 
             if (! $deleteResult->successful()) {
                 return new ConvergenceApplyResult(
@@ -140,7 +142,7 @@ final readonly class UfwFirewallRule
             }
         }
 
-        $applyResult = $remoteShell->run($node, $this->applyCommand(), ['throw' => false]);
+        $applyResult = $remoteFirewallRule->apply($node, $this->mutationShape());
 
         if (! $applyResult->successful()) {
             return new ConvergenceApplyResult(
@@ -152,8 +154,6 @@ final readonly class UfwFirewallRule
                 ]),
             );
         }
-
-        $remoteShell->run($node, $this->reloadCommand(), ['throw' => false]);
 
         return new ConvergenceApplyResult(
             status: ConvergenceStatus::Changed,
@@ -237,6 +237,17 @@ final readonly class UfwFirewallRule
             'protocol' => $this->protocol,
             'address_family' => $this->addressFamily,
             'interface' => $this->interface,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function mutationShape(): array
+    {
+        return [
+            ...$this->expectedShape(),
+            'reason' => $this->reason,
         ];
     }
 
@@ -340,6 +351,22 @@ final readonly class UfwFirewallRule
             '0.0.0.0/0', '::/0' => 'any',
             default => $value,
         };
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private function stringKeyed(array $value): array
+    {
+        foreach (array_keys($value) as $key) {
+            if (! is_string($key)) {
+                return [];
+            }
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
     }
 
     /**

@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:scratchpad:find <query> [--node=<node>] [--json]
+orbit solo:scratchpad:find <query> [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

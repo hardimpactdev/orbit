@@ -75,6 +75,92 @@ describe('gateway API-backed public commands', function (): void {
         );
     });
 
+    it('forwards explicit node transport preference from node-targeted commands', function (): void {
+        configureGatewayStatusCommand();
+
+        Http::fake([
+            'https://gateway.test/api/apps*' => Http::response([
+                'success' => [
+                    'data' => [
+                        'apps' => [],
+                    ],
+                    'meta' => [],
+                ],
+            ], 200),
+        ]);
+
+        [$exitCode] = runPublicCommand($this, 'app:list', [
+            '--node' => 'beast',
+            '--node-transport' => 'transitional-ssh-fallback',
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_starts_with($request->url(), 'https://gateway.test/api/apps')
+                && str_contains($request->url(), 'node=beast')
+                && $request->header('X-Orbit-Node-Transport-Preference')[0] === 'transitional-ssh-fallback'
+            ),
+        );
+    });
+
+    it('rejects invalid node transport preferences before calling the gateway', function (): void {
+        configureGatewayStatusCommand();
+
+        Http::fake();
+
+        [$exitCode, $output] = runPublicCommand($this, 'app:list', [
+            '--node' => 'beast',
+            '--node-transport' => 'ssh',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node-transport');
+
+        Http::assertNothingSent();
+    });
+
+    it('keeps node transport preference available on public node-targeted command signatures', function (): void {
+        $commandFiles = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator(app_path('Commands'), FilesystemIterator::SKIP_DOTS),
+        );
+        $missing = [];
+
+        foreach ($commandFiles as $file) {
+            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $contents = file_get_contents($file->getPathname());
+
+            if (! is_string($contents) || ! str_contains($contents, 'protected $signature')) {
+                continue;
+            }
+
+            if (! preg_match('/\{--node(?:=|\s|})/', $contents)) {
+                continue;
+            }
+
+            if (str_contains($contents, '--node-transport')) {
+                continue;
+            }
+
+            $missing[] = str_replace(base_path().'/', '', $file->getPathname());
+        }
+
+        expect($missing)->toBe([]);
+    });
+
     it('renders only the gateway field for human success output', function (): void {
         configureGatewayStatusCommand();
 

@@ -118,6 +118,7 @@ describe('NodeStoreController', function (): void {
     it('rejects database callers before provisioning', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
+        assignStoreNodeRole($gatewayId, 'vpn');
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'database-caller',
@@ -748,6 +749,7 @@ describe('NodeStoreController', function (): void {
     it('materializes a compatible unknown app host for an authenticated control caller', function (): void {
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow());
         assignStoreNodeRole($gatewayId, 'gateway');
+        assignStoreNodeRole($gatewayId, 'vpn');
 
         $callerId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'control-1',
@@ -795,11 +797,51 @@ describe('NodeStoreController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
-        Process::fake([
-            'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
-            "docker service inspect 'orbit_orbit-dns'" => Process::result(exitCode: 1),
-            'docker restart orbit-dns' => Process::result(),
-        ]);
+        Process::fake(function ($process) {
+            $command = (string) $process->command;
+
+            if ($command === 'sudo wg show wg-orbit allowed-ips') {
+                return Process::result(output: "app-public-key\t10.6.0.8/32\n");
+            }
+
+            if ($command === 'wg genkey') {
+                return Process::result(output: "app-private-key\n");
+            }
+
+            if ($command === 'wg pubkey') {
+                return Process::result(output: "app-public-key\n");
+            }
+
+            if ($command === "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'") {
+                return Process::result(output: "vpn-container-id\n");
+            }
+
+            if ($command === "docker exec 'vpn-container-id' wg show wg0 allowed-ips") {
+                return Process::result(output: "app-public-key\t10.6.0.8/32\n");
+            }
+
+            if ($command === "docker exec 'vpn-container-id' wg show wg0 public-key") {
+                return Process::result(output: "wg-easy-public-key\n");
+            }
+
+            if ($command === "docker service inspect 'orbit_orbit-dns'") {
+                return Process::result(exitCode: 1);
+            }
+
+            if ($command === 'docker restart orbit-dns') {
+                return Process::result();
+            }
+
+            if (str_contains($command, 'ssh-keygen -y')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST gateway\n");
+            }
+
+            if (str_starts_with($command, 'tar ')) {
+                return Process::result();
+            }
+
+            return Process::result();
+        });
         Process::preventStrayProcesses();
 
         $response = $this
@@ -813,10 +855,10 @@ describe('NodeStoreController', function (): void {
 
         $response
             ->assertOk()
-            ->assertJsonPath('success.data.result.action', 'adopted')
-            ->assertJsonPath('success.data.provisioning.status', 'adopted')
-            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.8')
-            ->assertJsonPath('success.data.node.platform', 'ubuntu_24-04');
+            ->assertJsonPath('success.data.result.action', 'created')
+            ->assertJsonPath('success.data.provisioning.status', 'complete')
+            ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.4')
+            ->assertJsonPath('success.data.node.platform', 'unknown');
 
         $node = DB::table('nodes')->where('name', 'app-unknown-1')->first();
         $peer = $node === null ? null : DB::table('wireguard_peers')->where('node_id', $node->id)->first();
@@ -825,9 +867,9 @@ describe('NodeStoreController', function (): void {
             ->not->toBeNull()->and($node->host)->toBe(
                 '192.0.2.33',
             )->and($node->status)->toBe(NodeStatus::Active->value)->and($peer)
-            ->not->toBeNull()->and($peer->public_key)->toBe('app-public-key')->and($peer->private_key)->toBe(
-                '',
-            )->and($peer->allowed_ips)->toBe('10.6.0.8/32');
+            ->not->toBeNull()->and($peer->public_key)->toBeString()
+            ->not->toBe('')->and($peer->private_key)->toBeString()
+            ->not->toBe('')->and($peer->allowed_ips)->toBe('10.6.0.4/32');
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -836,8 +878,9 @@ describe('NodeStoreController', function (): void {
         expect($entry)->not->toBeNull();
         expect($entry->subject?->name)->toBe('app-unknown-1');
 
-        Process::assertRan(fn ($process): bool => $process->command === 'sudo wg show wg-orbit allowed-ips');
-        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh '), 0);
+        Process::assertRan(
+            fn ($process): bool => $process->command === "docker exec 'vpn-container-id' wg show wg0 allowed-ips",
+        );
     });
 });
 
@@ -852,6 +895,15 @@ final class NodeStoreSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'internal:wg-easy:state')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         if (str_contains($script, '# orbit-tool-probe:capability')) {
             return new NodeStoreConvergenceRemoteShell()->run($node, $script, $options);
         }
@@ -872,6 +924,15 @@ final class NodeStoreConvergenceRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'internal:wg-easy:state')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         if (! str_contains($script, '# orbit-tool-probe:capability')) {
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }

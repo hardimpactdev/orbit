@@ -13,10 +13,10 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
-use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Convergence\ManagedFile;
+use App\Services\Proxy\AppProxyRouteCaddyInstaller;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
-use App\Tools\CaddyTool;
 use RuntimeException;
 use Throwable;
 
@@ -26,7 +26,7 @@ final readonly class EnsureWorkspaceProxyRoute
         private RemoteShell $remoteShell,
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
-        private CaddyGlobalConfig $caddyGlobalConfig,
+        private AppProxyRouteCaddyInstaller $caddyInstaller,
         private IngressResolver $ingressResolver,
         private ProxyRouteRenderer $proxyRouteRenderer,
         private OrbitCaService $ca,
@@ -71,7 +71,7 @@ final readonly class EnsureWorkspaceProxyRoute
         try {
             $this->siteCertificateInstaller->ensureFor($servingNode, $domain);
             $this->ensureRuntimeTrustPool($servingNode, $config);
-            $this->ensureGlobalCaddyfile($servingNode);
+            $this->caddyInstaller->ensureGlobalCaddyfile($servingNode);
         } catch (Throwable) {
             return [[
                 'code' => 'proxy.enactment_failed',
@@ -81,7 +81,7 @@ final readonly class EnsureWorkspaceProxyRoute
             ]];
         }
 
-        $result = $this->remoteShell->run($servingNode, $this->renderInstallScript($domain, $content));
+        $result = $this->caddyInstaller->installRouteConfig($servingNode, $domain, $content);
 
         if (! $result->successful()) {
             return [[
@@ -116,8 +116,8 @@ final readonly class EnsureWorkspaceProxyRoute
                 'config' => $config,
             ]));
 
-            $this->ensureGlobalCaddyfile($routerNode);
-            $routerResult = $this->remoteShell->run($routerNode, $this->renderInstallScript($domain, $routerContent));
+            $this->caddyInstaller->ensureGlobalCaddyfile($routerNode);
+            $routerResult = $this->caddyInstaller->installRouteConfig($routerNode, $domain, $routerContent);
 
             if (! $routerResult->successful()) {
                 return [[
@@ -146,13 +146,14 @@ final readonly class EnsureWorkspaceProxyRoute
                 $backendArtifact,
             );
 
-            $this->ensureGlobalCaddyfile($node);
+            $this->caddyInstaller->ensureGlobalCaddyfile($node);
             $this->ensureRuntimeTrustPool($node, $config);
-            $backendResult = $this->remoteShell->run($node, $this->renderInstallScript(
+            $backendResult = $this->caddyInstaller->installRouteConfig(
+                $node,
                 $domain,
                 $backendContent,
                 backend: true,
-            ));
+            );
 
             if (! $backendResult->successful()) {
                 return [[
@@ -165,30 +166,6 @@ final readonly class EnsureWorkspaceProxyRoute
         }
 
         return [];
-    }
-
-    private function ensureGlobalCaddyfile(Node $node): void
-    {
-        $readResult = $this->remoteShell->run(
-            $node,
-            'sudo test -f /etc/caddy/Caddyfile && sudo cat /etc/caddy/Caddyfile || true',
-            ['throw' => true],
-        );
-
-        $updated = $this->caddyGlobalConfig->ensure($readResult->stdout);
-
-        if ($updated === $readResult->stdout) {
-            return;
-        }
-
-        $this->remoteShell->run(
-            $node,
-            sprintf(
-                'sudo install -d -m 0755 /etc/caddy && printf %%s %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null',
-                escapeshellarg(base64_encode($updated)),
-            ),
-            ['throw' => true],
-        );
     }
 
     /**
@@ -254,23 +231,6 @@ final readonly class EnsureWorkspaceProxyRoute
             CADDY;
     }
 
-    private function renderInstallScript(string $domain, string $content, bool $backend = false): string
-    {
-        $suffix = $backend ? '.backend' : '';
-        $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
-
-        return sprintf(
-            <<<'SH'
-                sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                %s
-                SH,
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg($sitePath),
-            CaddyTool::reloadCommand(),
-        );
-    }
-
     /**
      * @param  array<string, mixed>  $config
      */
@@ -286,11 +246,18 @@ final readonly class EnsureWorkspaceProxyRoute
             ? $runtimeUpstreamTls['ca_path']
             : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
 
-        $this->remoteShell->run(
-            $node,
-            $this->innerTlsPolicy->trustPoolInstallScript($caPath, $this->ca->rootCert()),
-            ['throw' => true],
+        $file = new ManagedFile(
+            path: $caPath,
+            content: $this->ca->rootCert(),
+            mode: '0644',
+            directoryMode: '0755',
         );
+        $plan = $file->plan($file->probe($node, $this->remoteShell));
+        $result = $file->apply($node, $this->remoteShell, $plan);
+
+        if (! $result->successful()) {
+            throw new RuntimeException($result->summary);
+        }
     }
 
     private function domain(Workspace $workspace, App $app, Node $node): string

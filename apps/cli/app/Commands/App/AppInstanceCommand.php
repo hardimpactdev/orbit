@@ -21,6 +21,7 @@ final class AppInstanceCommand extends AppGatewayCommand
         {--instance= : App instance name}
         {--driver=orbit : Instance driver (orbit|laravel-cloud)}
         {--node= : Orbit node for orbit driver}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--path= : Orbit app path for orbit driver}
         {--root= : Orbit document root for orbit driver}
         {--domain= : Primary domain}

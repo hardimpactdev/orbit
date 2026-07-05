@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\GatewayExtension;
 use App\Models\Node;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -37,7 +38,18 @@ describe('AppCodexController', function (): void {
         );
     });
 
-    it('adds an app project to Codex App config on a macOS non-gateway target', function (): void {
+    /**
+     * @return array<string, string>
+     */
+    function app_codex_agent_push_server(): array
+    {
+        return [
+            'REMOTE_ADDR' => APP_CODEX_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => NodeTransportPreference::AgentPush->value,
+        ];
+    }
+
+    it('adds an app project to Codex App config on a macOS non-gateway target through agent-push', function (): void {
         $caller = Node::factory()
             ->operator()
             ->create([
@@ -48,6 +60,8 @@ describe('AppCodexController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
         $target = Node::factory()
             ->operator()
+            ->agent()
+            ->orbitAgentCapable()
             ->create([
                 'name' => 'mini',
                 'platform' => 'macos_15-5',
@@ -61,8 +75,13 @@ describe('AppCodexController', function (): void {
         ]);
         grantAppCodexAccess($caller, $appNode);
         grantAppCodexAccess($caller, $target);
-        $shell = new AppCodexRecordingShell('{}');
-        app()->instance(RemoteShell::class, $shell);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.24:9477/v1/commands' => Http::sequence()
+                ->push(app_codex_agent_response('codex-app-config.read', ['contents' => '{}']))
+                ->push(app_codex_agent_response('codex-app-config.write', ['bytes' => 42]))
+                ->push(app_codex_agent_response('codex-app-config.apply', ['exit_code' => 0])),
+        ]);
 
         $response = $this->call(
             'POST',
@@ -72,7 +91,7 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_CODEX_CALLER_WG_IP],
+            app_codex_agent_push_server(),
         );
 
         $response
@@ -83,7 +102,17 @@ describe('AppCodexController', function (): void {
             ->assertJsonPath('success.data.codex_project.ssh_alias', 'app-node')
             ->assertJsonPath('success.data.codex_project.added', true);
 
-        $writtenConfig = json_decode($shell->writes[0] ?? '', associative: true, flags: JSON_THROW_ON_ERROR);
+        $requests = app_codex_agent_requests();
+        $writtenPayload = json_decode(
+            (string) ($requests[1]['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $writtenConfig = json_decode(
+            (string) ($writtenPayload['contents'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
         expect($writtenConfig['remoteConnections'])
             ->toBe([
@@ -97,15 +126,29 @@ describe('AppCodexController', function (): void {
                     ],
                 ],
             ])
-            ->and($shell->scripts)
-            ->sequence(
-                fn ($script) => $script->toContain('cat ~/.codex/codex-app/config.json'),
-                fn ($script) => $script->toContain('config="$HOME/.codex/codex-app/config.json"'),
-                fn ($script) => $script->toContain('codex://codex-app/apply-config'),
-            );
+            ->and($requests)
+            ->toHaveCount(3)
+            ->and($requests[0]['argv'][0] ?? null)
+            ->toBe('internal:codex-app-config')
+            ->and($requests[0]['operation_id'] ?? null)
+            ->toBe('codex-app-config.read')
+            ->and(json_decode((string) $requests[0]['input'], associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toMatchArray(['action' => 'read'])
+            ->and($requests[1]['argv'][0] ?? null)
+            ->toBe('internal:codex-app-config')
+            ->and($requests[1]['operation_id'] ?? null)
+            ->toBe('codex-app-config.write')
+            ->and($writtenPayload)
+            ->toMatchArray(['action' => 'write'])
+            ->and($requests[2]['argv'][0] ?? null)
+            ->toBe('internal:codex-app-config')
+            ->and($requests[2]['operation_id'] ?? null)
+            ->toBe('codex-app-config.apply')
+            ->and(json_decode((string) $requests[2]['input'], associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toMatchArray(['action' => 'apply']);
     });
 
-    it('rejects non-macOS Codex App targets before remote shell work', function (): void {
+    it('rejects non-macOS Codex App targets before agent-push work', function (): void {
         $caller = Node::factory()
             ->operator()
             ->create([
@@ -123,8 +166,8 @@ describe('AppCodexController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         grantAppCodexAccess($caller, $appNode);
         grantAppCodexAccess($caller, $target);
-        $shell = new AppCodexRecordingShell('{}');
-        app()->instance(RemoteShell::class, $shell);
+        Http::preventStrayRequests();
+        Http::fake();
 
         $response = $this->call(
             'POST',
@@ -134,13 +177,13 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_CODEX_CALLER_WG_IP],
+            app_codex_agent_push_server(),
         );
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'tool.unsupported_on_node');
 
-        expect($shell->scripts)->toBe([]);
+        expect(app_codex_agent_requests())->toBe([]);
     });
 
     it('rejects malformed Codex App config before writing', function (): void {
@@ -154,6 +197,8 @@ describe('AppCodexController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
         $target = Node::factory()
             ->operator()
+            ->agent()
+            ->orbitAgentCapable()
             ->create([
                 'name' => 'mini',
                 'platform' => 'macos_15-5',
@@ -167,8 +212,11 @@ describe('AppCodexController', function (): void {
         ]);
         grantAppCodexAccess($caller, $appNode);
         grantAppCodexAccess($caller, $target);
-        $shell = new AppCodexRecordingShell('{not-json');
-        app()->instance(RemoteShell::class, $shell);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.24:9477/v1/commands' => Http::sequence()
+                ->push(app_codex_agent_response('codex-app-config.read', ['contents' => '{not-json'])),
+        ]);
 
         $response = $this->call(
             'POST',
@@ -178,7 +226,7 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_CODEX_CALLER_WG_IP],
+            app_codex_agent_push_server(),
         );
 
         $response
@@ -186,7 +234,7 @@ describe('AppCodexController', function (): void {
             ->assertJsonPath('error.code', 'codex_app.config_read_failed')
             ->assertJsonPath('error.meta.path', '~/.codex/codex-app/config.json');
 
-        expect($shell->writes)->toBe([]);
+        expect(app_codex_agent_requests())->toHaveCount(1);
     });
 
     it('returns a warning when the Codex App apply callback fails after writing config', function (): void {
@@ -200,6 +248,8 @@ describe('AppCodexController', function (): void {
         $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
         $target = Node::factory()
             ->operator()
+            ->agent()
+            ->orbitAgentCapable()
             ->create([
                 'name' => 'mini',
                 'platform' => 'macos_15-5',
@@ -213,8 +263,18 @@ describe('AppCodexController', function (): void {
         ]);
         grantAppCodexAccess($caller, $appNode);
         grantAppCodexAccess($caller, $target);
-        $shell = new AppCodexRecordingShell('{}', failApply: true);
-        app()->instance(RemoteShell::class, $shell);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.24:9477/v1/commands' => Http::sequence()
+                ->push(app_codex_agent_response('codex-app-config.read', ['contents' => '{}']))
+                ->push(app_codex_agent_response('codex-app-config.write', ['bytes' => 42]))
+                ->push(app_codex_agent_response(
+                    operationId: 'codex-app-config.apply',
+                    data: [],
+                    exitCode: 1,
+                    stderr: 'callback unavailable',
+                )),
+        ]);
 
         $response = $this->call(
             'POST',
@@ -224,7 +284,7 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_CODEX_CALLER_WG_IP],
+            app_codex_agent_push_server(),
         );
 
         $response
@@ -233,39 +293,60 @@ describe('AppCodexController', function (): void {
             ->assertJsonPath('success.meta.warnings.0.code', 'codex_app.apply_failed')
             ->assertJsonPath('success.meta.warnings.0.meta.node', 'mini');
 
-        expect($shell->writes)->toHaveCount(1);
+        expect(app_codex_agent_requests())->toHaveCount(3);
     });
 });
 
-final class AppCodexRecordingShell implements RemoteShell
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function app_codex_agent_response(string $operationId, array $data, int $exitCode = 0, string $stderr = ''): array
 {
-    /** @var list<string> */
-    public array $scripts = [];
+    $frames = [];
 
-    /** @var list<string> */
-    public array $writes = [];
-
-    public function __construct(
-        private readonly string $config,
-        private readonly bool $failApply = false,
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
-
-        if (is_string($options['input'] ?? null)) {
-            $this->writes[] = $options['input'];
-        }
-
-        if (str_contains($script, 'cat ~/.codex/codex-app/config.json')) {
-            return new RemoteShellResult(exitCode: 0, stdout: $this->config, stderr: '', durationMs: 1);
-        }
-
-        if ($this->failApply && str_contains($script, 'codex://codex-app/apply-config')) {
-            return new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'callback unavailable', durationMs: 1);
-        }
-
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    if ($data !== []) {
+        $frames[] = [
+            'type' => 'stdout',
+            'message' => json_encode([
+                'success' => [
+                    'data' => $data,
+                ],
+            ], JSON_THROW_ON_ERROR),
+        ];
     }
+
+    if ($stderr !== '') {
+        $frames[] = [
+            'type' => 'stderr',
+            'message' => $stderr,
+        ];
+    }
+
+    $frames[] = [
+        'type' => 'exit',
+        'message' => (string) $exitCode,
+    ];
+
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => $frames,
+    ];
+}
+
+/**
+ * @return list<Request>
+ */
+function app_codex_agent_requests(): array
+{
+    return Http::recorded(
+        fn (Request $request): bool => $request->url() === 'http://10.44.0.24:9477/v1/commands',
+    )
+        ->map(fn (array $record): Request => $record[0])
+        ->values()
+        ->all();
 }

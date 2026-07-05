@@ -2,52 +2,122 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Models\WireGuardPeer;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeIdentityArtifactProbe;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
+
+function node_identity_public_key_agent_response(string $publicKey): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node-identity.wireguard-public-key',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'public_key' => $publicKey,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
+}
+
+function node_identity_public_key_agent_failure(string $stderr): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node-identity.wireguard-public-key',
+        'binary' => 'orbit',
+        'status' => 'failed',
+        'exit_code' => 1,
+        'frames' => [
+            [
+                'type' => 'stderr',
+                'message' => $stderr,
+            ],
+            [
+                'type' => 'exit',
+                'message' => '1',
+            ],
+        ],
+    ]);
+}
+
+function node_identity_public_key_request_matches(Request $request, string $url): bool
+{
+    $argv = $request['argv'] ?? null;
+
+    if (! is_array($argv)) {
+        return false;
+    }
+
+    return (
+        $request->url() === $url
+        && $request['binary'] === 'orbit'
+        && $request['operation_id'] === 'node-identity.wireguard-public-key'
+        && $request['timeout_seconds'] === 15
+        && ($argv[0] ?? null) === 'internal:wireguard-interface-public-key:read'
+        && is_string($argv[1] ?? null)
+        && str_starts_with($argv[1], '--operation-token=')
+        && ($argv[2] ?? null) === '--json'
+    );
+}
+
 it('reads non-secret node identity facts from the selected host', function (): void {
-    $gatewayNode = Node::factory()
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.88:9477/v1/commands' => node_identity_public_key_agent_response('interface-public-key'),
+    ]);
+    Node::factory()
         ->gateway()
         ->create([
             'name' => 'gateway',
             'orbit_path' => '/home/orbit/orbit',
         ]);
-    $node = new Node([
-        'name' => 'app-1',
-        'orbit_path' => '/home/orbit/orbit',
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-1',
+            'orbit_path' => '/home/orbit/orbit',
+            'wireguard_address' => '10.44.0.88',
+        ]);
+    assert($node instanceof Node);
+
+    WireGuardPeer::factory()->create([
+        'node_id' => $node->id,
+        'public_key' => 'interface-public-key',
+        'private_key' => 'private-key',
     ]);
 
-    $remoteShell = new NodeIdentityArtifactProbeRemoteShell(
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "interface-public-key\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'name' => 'app-1',
-                'role' => 'app-dev',
-                'local_role' => 'app-dev',
-                'status' => 'active',
-                'platform' => 'ubuntu_24-04',
-                'wireguard_address' => '10.6.0.8',
-                'registry_public_key' => 'registry-public-key',
-                'interface_public_key' => 'interface-public-key',
-            ], JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 1,
-        ),
-    );
-
-    $artifact = new NodeIdentityArtifactProbe($remoteShell)->read($node);
+    $artifact = new NodeIdentityArtifactProbe()->read($node);
 
     expect($artifact->name)
         ->toBe('app-1')
@@ -60,152 +130,58 @@ it('reads non-secret node identity facts from the selected host', function (): v
         ->and($artifact->platform)
         ->toBe('ubuntu_24-04')
         ->and($artifact->wireguardAddress)
-        ->toBe('10.6.0.8')
+        ->toBe('10.44.0.88')
         ->and($artifact->registryPublicKey)
-        ->toBe('registry-public-key')
-        ->and($artifact->interfacePublicKey)
         ->toBe('interface-public-key')
-        ->and($remoteShell->nodes)
-        ->toHaveCount(2)
-        ->and($remoteShell->nodes[0])
-        ->toBe($node)
-        ->and($remoteShell->nodes[1]->is($gatewayNode))
-        ->toBeTrue()
-        ->and($remoteShell->options)
-        ->toBe([
-            [
-                'timeout' => 15,
-            ],
-            [
-                'timeout' => 15,
-                'cwd' => '/home/orbit/orbit',
-            ],
-        ])
-        ->and($remoteShell->scripts[0])
-        ->toContain('sudo wg show wg-orbit public-key')
-        ->and($remoteShell->scripts[0])
-        ->not->toContain('php')->and($remoteShell->scripts[0])
-        ->not->toContain('apps/gateway/bootstrap/app.php')->and($remoteShell->scripts[0])
-        ->not->toContain('WireGuardPeer')->and($remoteShell->scripts[1])->toContain(
-            'php apps/gateway/artisan tinker --execute=',
-        )->and($remoteShell->scripts[1])->toContain('WireGuardPeer')->and($remoteShell->scripts[1])->toContain(
-            'JSON_THROW_ON_ERROR',
-        )->and($remoteShell->scripts[1])
-        ->not->toContain('php -r')->and($remoteShell->scripts[0])
-        ->not->toContain('private_key');
+        ->and($artifact->interfacePublicKey)
+        ->toBe('interface-public-key');
+    Http::assertSent(
+        fn (Request $request): bool => node_identity_public_key_request_matches(
+            request: $request,
+            url: 'http://10.44.0.88:9477/v1/commands',
+        ),
+    );
 });
 
 it('throws when host identity artifact reading fails', function (): void {
-    $node = new Node(['name' => 'app-1']);
-    $remoteShell = new NodeIdentityArtifactProbeRemoteShell(new RemoteShellResult(
-        exitCode: 1,
-        stdout: '',
-        stderr: 'missing app',
-        durationMs: 1,
-    ));
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.89:9477/v1/commands' => node_identity_public_key_agent_failure('missing app'),
+    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-1',
+            'wireguard_address' => '10.44.0.89',
+        ]);
+    assert($node instanceof Node);
 
-    expect(fn () => new NodeIdentityArtifactProbe($remoteShell)->read($node))
+    expect(fn () => new NodeIdentityArtifactProbe()->read($node))
         ->toThrow(RuntimeException::class, 'Failed to read node WireGuard interface public key: missing app');
 });
 
-it('throws when gateway runtime identity artifact lookup fails', function (): void {
-    Node::factory()
-        ->gateway()
+it('returns the target public key when no active registry peer matches', function (): void {
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
         ->create([
-            'name' => 'gateway',
-            'orbit_path' => '/home/orbit/orbit',
+            'name' => 'app-1',
+            'wireguard_address' => '10.44.0.90',
         ]);
-    $node = new Node(['name' => 'app-1']);
-    $remoteShell = new NodeIdentityArtifactProbeRemoteShell(
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "interface-public-key\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: 'registry unavailable',
-            durationMs: 1,
-        ),
-    );
+    assert($node instanceof Node);
 
-    expect(fn () => new NodeIdentityArtifactProbe($remoteShell)->read($node))
-        ->toThrow(
-            RuntimeException::class,
-            'Failed to resolve node identity artifact through gateway runtime: registry unavailable',
-        );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.90:9477/v1/commands' => node_identity_public_key_agent_response('interface-public-key'),
+    ]);
+
+    $artifact = new NodeIdentityArtifactProbe()->read($node);
+
+    expect($artifact->name)
+        ->toBe('app-1')
+        ->and($artifact->registryPublicKey)
+        ->toBeNull()
+        ->and($artifact->interfacePublicKey)
+        ->toBe('interface-public-key');
 });
-
-it('throws when identity artifact output is invalid JSON', function (): void {
-    Node::factory()
-        ->gateway()
-        ->create([
-            'name' => 'gateway',
-            'orbit_path' => '/home/orbit/orbit',
-        ]);
-    $node = new Node(['name' => 'app-1']);
-    $remoteShell = new NodeIdentityArtifactProbeRemoteShell(
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "interface-public-key\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: 'not-json',
-            stderr: '',
-            durationMs: 1,
-        ),
-    );
-
-    expect(fn () => new NodeIdentityArtifactProbe($remoteShell)->read($node))
-        ->toThrow(RuntimeException::class, 'Failed to parse node identity artifact JSON.');
-});
-
-final class NodeIdentityArtifactProbeRemoteShell implements RemoteShell
-{
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
-
-    /**
-     * @var list<Node>
-     */
-    public array $nodes = [];
-
-    /**
-     * @var list<array<string, mixed>>
-     */
-    public array $options = [];
-
-    /**
-     * @var list<RemoteShellResult>
-     */
-    private array $results;
-
-    public function __construct(
-        RemoteShellResult ...$results,
-    ) {
-        $this->results = $results;
-    }
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->nodes[] = $node;
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return (
-            array_shift($this->results) ?? new RemoteShellResult(
-                exitCode: 1,
-                stdout: '',
-                stderr: 'unexpected remote shell call',
-                durationMs: 1,
-            )
-        );
-    }
-}

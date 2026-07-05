@@ -132,7 +132,7 @@ describe('security installers', function (): void {
     });
 
     it('installs unattended security upgrades without enabling automatic reboots', function (): void {
-        $node = Node::factory()->create();
+        $node = Node::factory()->appDev()->create();
         $shell = new RecordingSecurityInstallerShell(results: [
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             securityManagedFileProbeResult(exists: false),
@@ -140,6 +140,7 @@ describe('security installers', function (): void {
             securityManagedFileProbeResult(exists: false),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
+        app()->instance(RemoteShell::class, $shell);
 
         $report = app(UnattendedUpgradesInstaller::class)->installFor($node, $shell);
 
@@ -147,10 +148,15 @@ describe('security installers', function (): void {
             ->toBeTrue()
             ->and($shell->runs[0]['script'])
             ->toContain('install -y -qq unattended-upgrades')
-            ->and($shell->runs[2]['script'])
-            ->toContain('/etc/apt/apt.conf.d/20auto-upgrades')
-            ->and($shell->runs[4]['script'])
-            ->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
+            ->and(
+                collect($shell->runs)
+                    ->pluck('script')
+                    ->filter(
+                        fn (string $script): bool => str_contains($script, 'internal:managed-file'),
+                    )
+                    ->count(),
+            )
+            ->toBe(4)
             ->and($report->details['managed_files'])
             ->toHaveCount(2);
     });
@@ -193,9 +199,13 @@ function securityManagedFileProbeResult(bool $exists, ?string $hash = null, ?str
     return new RemoteShellResult(
         exitCode: 0,
         stdout: json_encode([
-            'exists' => $exists,
-            'hash' => $hash,
-            'mode' => $mode,
+            'success' => [
+                'data' => [
+                    'exists' => $exists,
+                    'hash' => $hash,
+                    'mode' => $mode,
+                ],
+            ],
         ], JSON_THROW_ON_ERROR),
         stderr: '',
         durationMs: 1,

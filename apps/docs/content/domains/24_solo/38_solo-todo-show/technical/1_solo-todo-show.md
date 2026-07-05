@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:todo:show <todo> [--node=<node>] [--project=<project>] [--json]
+orbit solo:todo:show <todo> [--node=<node>] [--node-transport=<transport>] [--project=<project>] [--json]
 ```
 
 ## Input Contract

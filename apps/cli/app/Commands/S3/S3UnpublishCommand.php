@@ -23,6 +23,7 @@ final class S3UnpublishCommand extends GatewayCommand
     protected $signature = 's3:unpublish
         {host? : Public S3 hostname to remove (e.g. s3.example.com)}
         {--node= : Active s3 node to unpublish from}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--force : Confirm destructive removal without prompting}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';

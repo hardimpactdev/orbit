@@ -297,9 +297,10 @@ a node-side control plane: for reachable agent-capable nodes, the gateway opens
 an authenticated HTTP connection to the node's Agent listener over the
 Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
 operation token, receives stdout/stderr/status/exit frames back, and keeps SSH
-as bootstrap, recovery, and transitional fallback during migration. Polling is
-only a fallback or deferred compatibility path, not the primary target
-architecture. V1 has no WebSocket requirement.
+as bootstrap, recovery, and explicit transitional fallback during migration.
+The default `auto` selection path does not silently choose SSH when agent-push
+is unavailable. Polling is only a fallback or deferred compatibility path, not
+the primary target architecture. V1 has no WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -314,8 +315,9 @@ the Orbit/WireGuard network to the node-local Orbit Agent. This is a narrow
 Agent listener endpoint, not general inbound Orbit RPC: the gateway sends
 structured `binary + argv` requests and the Agent executes only allowlisted
 node-local binaries with scoped operation tokens. During migration, some
-existing command families still use `RemoteShell` over SSH as a transitional
-fallback. That SSH path is not the long-term managed execution model.
+existing command families can still use `RemoteShell` over SSH only through an
+explicit `transitional-ssh-fallback` preference. That SSH path is not the
+long-term managed execution model and is not selected by default.
 
 Break-glass SSH is outside normal Orbit command execution. It is operator-owned
 recovery performed by a super admin who has an SSH key installed on all nodes;
@@ -342,8 +344,8 @@ this service binary.
 
 The bootstrap is not production packaged, autostarted, signed, notarized, or
 self-updating. V1 agent-push requests are structured Orbit CLI invocations
-submitted by the gateway, with transitional SSH fallback only while command
-families migrate. The `app-dev-convergence` job executes
+submitted by the gateway, with transitional SSH fallback only when explicitly
+selected for migration or break-glass use. The `app-dev-convergence` job executes
 only fixed local installer steps for Orbit's approved app-dev tool catalog and
 may rely on the operating system's sudo prompt. It is not an arbitrary shell
 transport and does not add a separate Orbit approval queue.
@@ -361,9 +363,10 @@ authority path is:
 
 `CLI caller -> gateway API -> gateway authorization -> operation record -> agent-push to node -> token-gated local executor -> result recorded`
 
-During migration, the dispatch step may still be transitional `RemoteShell` SSH
-fallback where no Agent envelope exists. The authority path still starts and
-ends at the gateway.
+During migration, the dispatch step may still be explicit transitional
+`RemoteShell` SSH fallback where no Agent envelope exists. The default
+agent-push path fails clearly instead of falling back silently. The authority
+path still starts and ends at the gateway.
 
 Node-local CLI execution is never an authority bypass. Internal local executor
 commands are hidden from normal CLI help, require a gateway-issued operation

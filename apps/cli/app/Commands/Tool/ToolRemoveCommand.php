@@ -13,6 +13,7 @@ final class ToolRemoveCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to remove}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--force : Confirm destructive removal}
         {--json : Output JSON}';
 

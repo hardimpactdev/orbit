@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]`
+# Technical Contract: `orbit tool:show <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--live] [--json]`
 
 [Back to public `tool-show` documentation.](../tool-show.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:show <tool> [--app=<app>] [--node=<node>] [--live] [--json]
+orbit tool:show <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--live] [--json]
 ```
 
 ## Input Contract
@@ -24,6 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Tool name from Orbit's tool catalog.` |
 | `node` | `--node` | `Required when no `--app`, local `node:default`, or interactive target selection resolves a target.` | `Never.` | `node:default if set.` | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `live` | `--live` | `Optional.` | `Never.` | `false` | `Request gateway live inspection.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |

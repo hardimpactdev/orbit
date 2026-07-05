@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\Node;
@@ -31,7 +30,6 @@ final readonly class PolyscopeWorkspaceBranchAligner
     ];
 
     public function __construct(
-        private RemoteShell $remoteShell,
         private RemoteLocalExecutor $localExecutor,
     ) {}
 
@@ -44,13 +42,23 @@ final readonly class PolyscopeWorkspaceBranchAligner
     private function renameHostGitBranch(Node $node, string $workspaceId, string $path, string $name): void
     {
         try {
-            $result = $this->remoteShell->run($node, $this->script(), [
-                'metadata' => [
-                    'ORBIT_POLYSCOPE_WORKSPACE_PATH' => $path,
-                    'ORBIT_WORKSPACE_NAME' => $name,
+            $result = $this->localExecutor->runInternal(
+                node: $node,
+                commandName: self::WorkspaceAdapterUpdateCommand,
+                arguments: [],
+                commandOptions: [
+                    'adapter' => 'polyscope',
+                    'update' => 'host-branch',
+                    'workspace-path' => $path,
+                    'branch' => $name,
                 ],
-                'timeout' => 30,
-            ]);
+                transportOptions: [
+                    'redact_stdout' => true,
+                    'redact_stderr' => true,
+                    'strict' => false,
+                    'timeout' => 30,
+                ],
+            );
         } catch (Throwable) {
             throw $this->alignmentFailed($node, $workspaceId, $path, $name, 'branch_rename_failed');
         }
@@ -75,7 +83,12 @@ final readonly class PolyscopeWorkspaceBranchAligner
                     'workspace-id' => $workspaceId,
                     'branch' => $name,
                 ],
-                transportOptions: ['timeout' => 30],
+                transportOptions: [
+                    'redact_stdout' => true,
+                    'redact_stderr' => true,
+                    'strict' => false,
+                    'timeout' => 30,
+                ],
             );
         } catch (Throwable) {
             throw $this->alignmentFailed($node, $workspaceId, $path, $name, 'workspace_adapter_update_failed');
@@ -97,39 +110,6 @@ final readonly class PolyscopeWorkspaceBranchAligner
             'Polyscope workspace was created but could not be renamed.',
             $meta,
         );
-    }
-
-    private function script(): string
-    {
-        return <<<'SH'
-            set -eu
-
-            workspace_path="${ORBIT_POLYSCOPE_WORKSPACE_PATH:-}"
-            workspace_name="${ORBIT_WORKSPACE_NAME:-}"
-
-            if [ -z "$workspace_path" ] || [ -z "$workspace_name" ]; then
-                echo "Polyscope workspace path and target name are required." >&2
-                exit 2
-            fi
-
-            if [ ! -d "$workspace_path" ]; then
-                echo "Polyscope workspace path is missing." >&2
-                exit 2
-            fi
-
-            current_branch="$(git -C "$workspace_path" branch --show-current)"
-
-            if [ "$current_branch" != "$workspace_name" ]; then
-                if git -C "$workspace_path" rev-parse --verify --quiet "$workspace_name" >/dev/null 2>&1; then
-                    echo "Git branch already exists." >&2
-                    exit 2
-                fi
-
-                git -C "$workspace_path" branch -m "$workspace_name"
-            fi
-
-            printf '%s\n' '{"branch_renamed":true}'
-            SH;
     }
 
     private function alignmentFailed(

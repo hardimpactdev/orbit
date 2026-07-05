@@ -13,6 +13,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "effect",
                 "correlation",
                 "include-internal",
@@ -231,6 +232,7 @@
             "options": [
                 "requested-version",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -784,6 +786,7 @@
                 "instance",
                 "driver",
                 "node",
+                "node-transport",
                 "path",
                 "root",
                 "domain",
@@ -860,6 +863,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -1025,6 +1029,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "repo",
                 "root",
                 "php-version",
@@ -1200,6 +1205,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "path",
                 "root",
                 "php-version",
@@ -2379,6 +2385,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -2449,6 +2456,7 @@
             "options": [
                 "driver",
                 "node",
+                "node-transport",
                 "host",
                 "port",
                 "database",
@@ -2528,6 +2536,7 @@
             "options": [
                 "service",
                 "node",
+                "node-transport",
                 "database",
                 "username",
                 "password",
@@ -2810,6 +2819,7 @@
                 "app",
                 "workspace",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -3248,6 +3258,7 @@
                 "slug",
                 "driver",
                 "node",
+                "node-transport",
                 "host",
                 "port",
                 "database",
@@ -3905,6 +3916,7 @@
                 "app",
                 "workspace",
                 "node",
+                "node-transport",
                 "self",
                 "all",
                 "family",
@@ -3995,6 +4007,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -4052,6 +4065,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "gateway",
                 "json"
             ],
@@ -4174,6 +4188,7 @@
             "options": [
                 "port",
                 "node",
+                "node-transport",
                 "direction",
                 "from",
                 "to",
@@ -4245,6 +4260,7 @@
             "options": [
                 "port",
                 "node",
+                "node-transport",
                 "direction",
                 "from",
                 "to",
@@ -4313,6 +4329,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -4383,6 +4400,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -4849,6 +4867,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "reset",
                 "json"
             ],
@@ -4913,6 +4932,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "purge-data",
                 "json"
@@ -4970,6 +4990,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -5033,6 +5054,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -6095,6 +6117,7 @@
                 "app",
                 "workspace",
                 "node",
+                "node-transport",
                 "live",
                 "json"
             ],
@@ -6176,6 +6199,7 @@
                 "app",
                 "workspace",
                 "node",
+                "node-transport",
                 "inherit",
                 "cli",
                 "json"
@@ -6257,6 +6281,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "tool",
@@ -6348,6 +6373,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6420,6 +6446,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "follow",
@@ -6504,6 +6531,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "force",
@@ -6564,6 +6592,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6623,6 +6652,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6682,6 +6712,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "json"
@@ -6742,6 +6773,7 @@
             "options": [
                 "name",
                 "node",
+                "node-transport",
                 "app",
                 "workspace",
                 "command",
@@ -6807,6 +6839,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "uri",
                 "as-first-user",
                 "user",
@@ -6883,6 +6916,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "upstream",
                 "redirect",
                 "code",
@@ -6971,6 +7005,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "filter",
                 "json"
             ],
@@ -7128,6 +7163,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7194,6 +7230,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -7269,6 +7306,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json",
                 "stream-json"
@@ -7349,6 +7387,7 @@
                 "interval",
                 "app",
                 "node",
+                "node-transport",
                 "timezone",
                 "json"
             ],
@@ -7411,6 +7450,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7474,6 +7514,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "run",
                 "lines",
                 "json"
@@ -7541,6 +7582,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -7592,6 +7634,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7642,6 +7685,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7754,6 +7798,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7823,6 +7868,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7892,6 +7938,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7959,6 +8006,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8028,6 +8076,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -8098,6 +8147,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -8168,6 +8218,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "input",
                 "json"
             ],
@@ -8236,6 +8287,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8305,6 +8357,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "lines",
                 "json"
             ],
@@ -8375,6 +8428,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "name",
                 "json"
             ],
@@ -8445,6 +8499,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -8515,6 +8570,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8584,6 +8640,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "json"
             ],
@@ -8654,6 +8711,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -8724,6 +8782,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -8794,6 +8853,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -8863,6 +8923,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -8931,6 +8992,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9000,6 +9062,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "name",
                 "json"
             ],
@@ -9070,6 +9133,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9139,6 +9203,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9208,6 +9273,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9277,6 +9343,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9346,6 +9413,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9422,6 +9490,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9498,6 +9567,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9574,6 +9644,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9650,6 +9721,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "json"
             ],
@@ -9720,6 +9792,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9796,6 +9869,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -9872,6 +9946,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -9939,6 +10014,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10008,6 +10084,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -10084,6 +10161,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10153,6 +10231,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "content",
                 "heading",
                 "search",
@@ -10227,6 +10306,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10296,6 +10376,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10363,6 +10444,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10432,6 +10514,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10501,6 +10584,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -10570,6 +10654,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "seconds",
                 "json"
             ],
@@ -10640,6 +10725,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "body",
                 "json"
             ],
@@ -10710,6 +10796,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -10780,6 +10867,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "body",
                 "json"
             ],
@@ -10850,6 +10938,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -10923,6 +11012,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "body",
                 "json"
@@ -10994,6 +11084,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11065,6 +11156,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "json"
             ],
@@ -11135,6 +11227,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11208,6 +11301,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11281,6 +11375,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "json"
             ],
@@ -11351,6 +11446,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11424,6 +11520,7 @@
             ],
             "options": [
                 "node",
+                "node-transport",
                 "project",
                 "title",
                 "body",
@@ -11495,6 +11592,7 @@
             "arguments": [],
             "options": [
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -11565,6 +11663,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -11631,6 +11730,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "tool-version",
                 "user",
                 "status",
@@ -11740,6 +11840,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "all",
                 "json"
             ],
@@ -11807,6 +11908,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "password",
                 "json",
                 "stream-json"
@@ -11890,6 +11992,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "force",
                 "json"
             ],
@@ -11972,6 +12075,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -12039,6 +12143,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "live",
                 "json"
             ],
@@ -12121,6 +12226,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -12196,6 +12302,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -12263,6 +12370,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "expected-version",
                 "json",
                 "stream-json"
@@ -13468,6 +13576,7 @@
             "options": [
                 "app",
                 "node",
+                "node-transport",
                 "json"
             ],
             "renderers": {

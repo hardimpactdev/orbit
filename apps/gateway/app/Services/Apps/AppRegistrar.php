@@ -6,7 +6,6 @@ namespace App\Services\Apps;
 
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
-use App\Contracts\RemoteShell;
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
 use App\Data\Apps\AppRuntimeConfig;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
@@ -36,6 +35,10 @@ final class AppRegistrar
     private array $arguments = [];
 
     private ?string $output = null;
+
+    public function __construct(
+        private readonly RemoteAppSourcePathProbe $sourcePathProbe,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $arguments
@@ -92,9 +95,7 @@ final class AppRegistrar
             return $this->failValidation('path', 'App path adoption was cancelled.');
         }
 
-        $pathProbe = app(RemoteShell::class)->run($node, sprintf('test -d %s', escapeshellarg($path)));
-
-        if (! $pathProbe->successful()) {
+        if (! $this->sourcePathProbe->exists($node, $path)) {
             return $this->failValidation('path', "Path '{$path}' does not exist on node '{$node->name}'.");
         }
 

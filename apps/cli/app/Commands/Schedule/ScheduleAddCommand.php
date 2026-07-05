@@ -25,6 +25,7 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         {--interval= : Portable interval expression}
         {--app= : Target app scope}
         {--node= : Target node scope}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--timezone=UTC : IANA timezone}
         {--json : Output JSON}';
 

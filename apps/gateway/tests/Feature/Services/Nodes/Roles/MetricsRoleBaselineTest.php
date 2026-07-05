@@ -14,20 +14,32 @@ use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\SystemdUnitRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+
     $this->metricsShell = new MetricsRoleBaselineRecordingShell;
     $this->metricsDnsmasqReconciler = new MetricsRoleBaselineRecordingDnsmasqReconciler;
 
     app()->instance(RemoteShell::class, $this->metricsShell);
     app()->instance(DnsmasqReconciler::class, $this->metricsDnsmasqReconciler);
+
+    Http::fake(fn (Request $request): mixed => Http::response(metricsRoleBaselineAgentPayload($request)));
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 });
 
 it('converges metrics role intent as process-owned Prometheus Grafana and host exporter services', function (): void {
@@ -36,6 +48,7 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         'platform' => 'ubuntu',
         'wireguard_address' => '10.6.0.1',
         'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
     ]);
     NodeRoleAssignment::factory()->for($router)->create([
         'role' => 'router',
@@ -47,6 +60,7 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         'platform' => 'ubuntu',
         'wireguard_address' => '10.6.0.55',
         'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
     ]);
     $assignment = NodeRoleAssignment::factory()->for($node)->create([
         'role' => 'metrics',
@@ -186,17 +200,12 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             'sum by (node) (rate(node_network_receive_bytes_total{job="orbit-node-exporter",node="$node",device!~"lo|docker.*|br-.*|veth.*"}[5m]))',
         );
 
-    $scripts = $this->metricsShell->scripts();
-
-    expect($scripts)
-        ->toContain('node_exporter_url=')
-        ->toContain('/var/lib/orbit/processes/prometheus/prometheus.yml')
-        ->toContain('/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml')
-        ->toContain('/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml')
-        ->toContain('/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json')
-        ->toContain("docker service update --detach --replicas 1 'orbit-prometheus'")
-        ->toContain("docker service update --detach --replicas 1 'orbit-grafana'")
-        ->toContain("sudo systemctl start 'node-exporter.service'");
+    expect(metricsRoleBaselineAgentCommandNames())
+        ->toContain(
+            'internal:managed-file',
+            'internal:process-docker-swarm-service',
+            'internal:process-systemd-service',
+        );
 
     $route = ProxyRoute::query()->where('domain', 'metrics.orbit')->sole();
 
@@ -228,6 +237,7 @@ it('rewrites stale metrics service route intent when the metrics baseline reconv
         'platform' => 'debian_12',
         'wireguard_address' => '10.6.0.1',
         'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
     ]);
     NodeRoleAssignment::factory()->for($node)->create([
         'role' => 'router',
@@ -276,6 +286,7 @@ it('adds the metrics role through the role assignment service', function (): voi
         'platform' => 'ubuntu',
         'wireguard_address' => '10.6.0.44',
         'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
     ]);
 
     $assignment = app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
@@ -299,6 +310,7 @@ it('adds the metrics role to the debian gateway node', function (): void {
             'platform' => 'debian_12',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
 
     $assignment = app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
@@ -322,6 +334,7 @@ it('renders metrics node processes after syncing role-derived node fields', func
             'platform' => 'debian_12',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
             'tld' => 'gateway',
         ]);
 
@@ -340,9 +353,8 @@ it('renders metrics node processes after syncing role-derived node fields', func
 
     expect($node->refresh()->tld)
         ->toBe('gateway')
-        ->and($this->metricsShell->scriptsForNode('gateway'))
-        ->toContain(base64_encode($unitContent))
-        ->not->toContain('https://gateway.gateway');
+        ->and(metricsRoleBaselineAgentCommandNames())
+        ->toContain('internal:process-systemd-service');
 });
 
 it('converges node exporter process intent for active workload nodes', function (): void {
@@ -353,6 +365,7 @@ it('converges node exporter process intent for active workload nodes', function 
             'platform' => 'debian_12',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
         'role' => 'metrics',
@@ -366,6 +379,7 @@ it('converges node exporter process intent for active workload nodes', function 
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.10',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     Node::factory()
         ->appDev()
@@ -374,6 +388,7 @@ it('converges node exporter process intent for active workload nodes', function 
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.11',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     Node::factory()
         ->appProd()
@@ -382,6 +397,7 @@ it('converges node exporter process intent for active workload nodes', function 
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.12',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     Node::factory()
         ->database()
@@ -390,6 +406,7 @@ it('converges node exporter process intent for active workload nodes', function 
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.13',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     Node::factory()
         ->ingress()
@@ -398,6 +415,7 @@ it('converges node exporter process intent for active workload nodes', function 
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.14',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     Node::factory()
         ->database()
@@ -412,6 +430,7 @@ it('converges node exporter process intent for active workload nodes', function 
         'platform' => 'darwin',
         'wireguard_address' => '10.6.0.16',
         'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
     ]);
 
     app(NodeRoleBaselineConverger::class)->converge($gateway, $assignment);
@@ -500,10 +519,8 @@ it('converges node exporter process intent for active workload nodes', function 
         ->not->toContain('10.6.0.15:9100')
         ->not->toContain('10.6.0.16:9100');
 
-    expect($this->metricsShell->scriptsForNode('agent-1'))
-        ->toContain("sudo systemctl start 'node-exporter.service'")
-        ->toContain('sudo ufw allow in on $(ip -o link show type wireguard')
-        ->toContain("from '10.6.0.1' to 0.0.0.0/0 port '9100' proto 'tcp'");
+    expect(metricsRoleBaselineAgentCommandNames())
+        ->toContain('internal:process-systemd-service', 'internal:firewall-rule');
 });
 
 it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
@@ -514,6 +531,7 @@ it('removes workload node exporter process intent when the last metrics role is 
             'platform' => 'debian_12',
             'wireguard_address' => '10.6.0.1',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
     $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
         'role' => 'metrics',
@@ -526,6 +544,7 @@ it('removes workload node exporter process intent when the last metrics role is 
             'platform' => 'ubuntu',
             'wireguard_address' => '10.6.0.11',
             'status' => NodeStatus::Active,
+            'orbit_agent_capable' => true,
         ]);
 
     app(NodeRoleBaselineConverger::class)->converge($gateway, $assignment);
@@ -626,6 +645,75 @@ final class MetricsRoleBaselineRecordingShell implements RemoteShell
             array_filter($this->runs, fn (array $run): bool => $run['node'] === $node),
         ));
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function metricsRoleBaselineAgentPayload(Request $request): array
+{
+    $operationId = is_string($request['operation_id'] ?? null) ? $request['operation_id'] : 'metrics.test';
+    $argv = is_array($request['argv'] ?? null) ? $request['argv'] : [];
+    $commandName = is_string($argv[0] ?? null) ? $argv[0] : '';
+    $action = is_string($argv[1] ?? null) ? $argv[1] : 'apply';
+
+    $data = match ($commandName) {
+        'internal:managed-file' => $action === 'probe'
+            ? ['exists' => false, 'hash' => null, 'mode' => null]
+            : ['action' => 'write', 'changed' => true],
+        'internal:firewall-rule:probe' => [
+            'output' => "Status: active\n\nTo                         Action      From\n--                         ------      ----\n",
+        ],
+        default => ['action' => $action, 'changed' => true],
+    };
+
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function metricsRoleBaselineAgentCommandNames(): array
+{
+    $commands = [];
+
+    foreach (Http::recorded() as $record) {
+        $candidate = is_array($record) ? $record[0] ?? null : null;
+
+        if (! $candidate instanceof Request) {
+            continue;
+        }
+
+        $argv = $candidate['argv'];
+        $commandName = is_array($argv) && is_string($argv[0] ?? null) ? $argv[0] : null;
+
+        if ($commandName !== null) {
+            $commands[] = $commandName;
+        }
+    }
+
+    return array_values(array_unique($commands));
 }
 
 final class MetricsRoleBaselineRecordingDnsmasqReconciler extends DnsmasqReconciler

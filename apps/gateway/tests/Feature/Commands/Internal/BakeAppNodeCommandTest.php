@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,9 +43,12 @@ describe('orbit:internal:bake-app-node', function (): void {
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
         app()->instance(RemoteShell::class, new BakeAppNodeRemoteShell);
         bindDevelopmentDnsMappingTestDoubles('bake-app-node-dns');
+        request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     });
 
     afterEach(function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
         File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
     });
 

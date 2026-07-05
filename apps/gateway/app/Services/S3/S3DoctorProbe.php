@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\S3;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Nodes\RoleSettings\S3RoleSettings;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -12,6 +11,8 @@ use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use InvalidArgumentException;
 use Throwable;
 
@@ -36,7 +37,7 @@ use Throwable;
 final readonly class S3DoctorProbe
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     /**
@@ -108,7 +109,7 @@ final readonly class S3DoctorProbe
             return $drift;
         }
 
-        $state = $this->parseKeyValueOutput($probe->stdout);
+        $state = $this->probeState($probe);
 
         if (($state['exists'] ?? null) !== '1' || ($state['running'] ?? null) !== 'true') {
             $exists = ($state['exists'] ?? null) === '1';
@@ -265,53 +266,21 @@ final readonly class S3DoctorProbe
         return is_string($accessKeyId) && $accessKeyId !== '' && is_string($secretAccessKey) && $secretAccessKey !== '';
     }
 
-    /**
-     * Run a remote probe against the orbit-seaweedfs container via docker inspect.
-     *
-     * Lane: RemoteHostExecutor — SSH host substrate + Docker container inspection.
-     * See apps/docs/content/execution-lanes.md.
-     *
-     * The host-side published port is extracted to determine the bind posture
-     * of the container. A bind to the WireGuard address is correct; a bind to
-     * 0.0.0.0 or any non-WireGuard address is drift.
-     */
     private function containerProbe(Node $node): RemoteShellResult
     {
-        $container = S3RuntimeContainer::ContainerName;
-
-        return $this->runProbe(
-            $node,
-            sprintf(
-                <<<'SH'
-                    # orbit-s3-doctor:runtime-probe
-                    set -eu
-                    container=%s
-
-                    if ! docker container inspect "$container" >/dev/null 2>&1; then
-                        printf 'exists=0\nrunning=false\npublished_address=\n'
-                        exit 0
-                    fi
-
-                    running="$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')"
-                    published_address="$(docker container inspect --format '{{range $p, $bindings := .NetworkSettings.Ports}}{{if eq $p "8333/tcp"}}{{range $bindings}}{{printf "%%s:%%s\n" .HostIp .HostPort}}{{end}}{{end}}{{end}}' "$container" 2>/dev/null | head -n 1)"
-
-                    printf 'exists=1\nrunning=%%s\npublished_address=%%s\n' "$running" "$published_address"
-                    SH,
-                escapeshellarg($container),
-            ),
-            's3-runtime-doctor-probe',
-        );
-    }
-
-    private function runProbe(Node $node, string $script, string $operation): RemoteShellResult
-    {
         try {
-            return $this->remoteShell->run($node, $script, [
-                'throw' => false,
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => $operation,
+            return $this->localExecutor->runInternal(
+                node: $node,
+                commandName: 'internal:s3-runtime:probe',
+                transportOptions: [
+                    'throw' => false,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => 's3-runtime-doctor-probe',
+                    ],
+                    'strict' => false,
+                    'timeout' => 30,
                 ],
-            ]);
+            );
         } catch (Throwable $exception) {
             return new RemoteShellResult(
                 exitCode: 1,
@@ -320,6 +289,32 @@ final readonly class S3DoctorProbe
                 durationMs: 0,
             );
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function probeState(RemoteShellResult $probe): array
+    {
+        $data = RemoteShellSuccessData::fromJsonEnvelope($probe);
+
+        if (array_key_exists('stdout', $data) && is_string($data['stdout']) && $data['stdout'] !== '') {
+            return $this->parseKeyValueOutput($data['stdout']);
+        }
+
+        $state = [];
+
+        foreach (['exists', 'running', 'published_address'] as $key) {
+            if (array_key_exists($key, $data) && is_string($data[$key])) {
+                $state[$key] = $data[$key];
+            }
+        }
+
+        if ($state !== []) {
+            return $state;
+        }
+
+        return $this->parseKeyValueOutput($probe->stdout);
     }
 
     /**

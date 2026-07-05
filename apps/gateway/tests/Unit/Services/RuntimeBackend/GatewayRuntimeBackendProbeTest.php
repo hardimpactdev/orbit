@@ -2,19 +2,40 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\ProbeSnapshot;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RuntimeBackend\GatewayRuntimeBackendProbe;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+uses(TestCase::class);
+uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
 
 it('reports available when the orbit-gateway container exists and is running', function (): void {
-    $node = new Node(['name' => 'gateway-1']);
-    $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1),
-    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.61:9477/v1/commands' => gateway_runtime_backend_agent_response([
+            'runtime_status' => 'available',
+            'container_exists' => true,
+            'container_running' => true,
+            'exit_code' => 0,
+            'output' => "available\ttrue\ttrue",
+        ]),
+    ]);
+    $node = gateway_runtime_backend_node('10.44.0.61');
 
-    $result = new GatewayRuntimeBackendProbe($remoteShell)->check($node);
+    $result = new GatewayRuntimeBackendProbe()->check($node);
 
     expect($result->runtimeStatus)
         ->toBe('available')
@@ -23,30 +44,27 @@ it('reports available when the orbit-gateway container exists and is running', f
         ->and($result->containerRunning)
         ->toBeTrue()
         ->and($result->exitCode)
-        ->toBe(0)
-        ->and($result->output)
-        ->toBe("available\ttrue\ttrue")
-        ->and($remoteShell->scripts)
-        ->toHaveCount(1)
-        ->and($remoteShell->options[0]['timeout'])
-        ->toBe(15);
+        ->toBe(0);
 
-    expect($remoteShell->scripts[0])
-        ->toContain('orbit-gateway-container-probe:container-inspect')
-        ->toContain("container='orbit-gateway'")
-        ->toContain('docker container inspect')
-        ->toContain('docker info')
-        ->toContain('printf')
-        ->not->toContain('supervisorctl');
+    Http::assertSent(fn (Request $request): bool => gateway_runtime_backend_request_matches(
+        request: $request,
+        url: 'http://10.44.0.61:9477/v1/commands',
+    ));
 });
 
 it('reports no_docker when Docker CLI is missing', function (): void {
-    $node = new Node(['name' => 'gateway-1']);
-    $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "no_docker\tfalse\tfalse\n", stderr: '', durationMs: 1),
-    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.62:9477/v1/commands' => gateway_runtime_backend_agent_response([
+            'runtime_status' => 'no_docker',
+            'container_exists' => false,
+            'container_running' => false,
+            'exit_code' => 127,
+            'output' => 'docker missing',
+        ]),
+    ]);
 
-    $result = new GatewayRuntimeBackendProbe($remoteShell)->check($node);
+    $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.62'));
 
     expect($result->runtimeStatus)
         ->toBe('no_docker')
@@ -57,12 +75,18 @@ it('reports no_docker when Docker CLI is missing', function (): void {
 });
 
 it('reports daemon_unavailable when Docker daemon is unreachable', function (): void {
-    $node = new Node(['name' => 'gateway-1']);
-    $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "daemon_unavailable\tfalse\tfalse\n", stderr: '', durationMs: 1),
-    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.63:9477/v1/commands' => gateway_runtime_backend_agent_response([
+            'runtime_status' => 'daemon_unavailable',
+            'container_exists' => false,
+            'container_running' => false,
+            'exit_code' => 1,
+            'output' => 'daemon unavailable',
+        ]),
+    ]);
 
-    $result = new GatewayRuntimeBackendProbe($remoteShell)->check($node);
+    $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.63'));
 
     expect($result->runtimeStatus)
         ->toBe('daemon_unavailable')
@@ -73,12 +97,18 @@ it('reports daemon_unavailable when Docker daemon is unreachable', function (): 
 });
 
 it('reports available with exists=false when the container is missing', function (): void {
-    $node = new Node(['name' => 'gateway-1']);
-    $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "available\tfalse\tfalse\n", stderr: '', durationMs: 1),
-    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.64:9477/v1/commands' => gateway_runtime_backend_agent_response([
+            'runtime_status' => 'available',
+            'container_exists' => false,
+            'container_running' => false,
+            'exit_code' => 1,
+            'output' => "available\tfalse\tfalse",
+        ]),
+    ]);
 
-    $result = new GatewayRuntimeBackendProbe($remoteShell)->check($node);
+    $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.64'));
 
     expect($result->runtimeStatus)
         ->toBe('available')
@@ -89,12 +119,18 @@ it('reports available with exists=false when the container is missing', function
 });
 
 it('reports available with running=false when the container is stopped', function (): void {
-    $node = new Node(['name' => 'gateway-1']);
-    $remoteShell = new GatewayRuntimeProbeRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\tfalse\n", stderr: '', durationMs: 1),
-    );
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.65:9477/v1/commands' => gateway_runtime_backend_agent_response([
+            'runtime_status' => 'available',
+            'container_exists' => true,
+            'container_running' => false,
+            'exit_code' => 0,
+            'output' => "available\ttrue\tfalse",
+        ]),
+    ]);
 
-    $result = new GatewayRuntimeBackendProbe($remoteShell)->check($node);
+    $result = new GatewayRuntimeBackendProbe()->check(gateway_runtime_backend_node('10.44.0.65'));
 
     expect($result->runtimeStatus)
         ->toBe('available')
@@ -106,11 +142,7 @@ it('reports available with running=false when the container is stopped', functio
 
 it('produces distinct drift entries per failure mode', function (): void {
     $node = new Node(['name' => 'gateway-1']);
-    $probe = new GatewayRuntimeBackendProbe(
-        new GatewayRuntimeProbeRecordingRemoteShell(
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ),
-    );
+    $probe = new GatewayRuntimeBackendProbe;
 
     $noDocker = $probe->diff($node, new ProbeSnapshot([
         'orbit-gateway' => ['runtime_status' => 'no_docker', 'container_exists' => false, 'container_running' => false],
@@ -146,27 +178,58 @@ it('produces distinct drift entries per failure mode', function (): void {
         ->toBe('divergent');
 });
 
-final class GatewayRuntimeProbeRecordingRemoteShell implements RemoteShell
+function gateway_runtime_backend_node(string $wireguardAddress): Node
 {
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
+    return createTestGatewayNode([
+        'name' => 'gateway-1',
+        'orbit_agent_capable' => true,
+        'wireguard_address' => $wireguardAddress,
+    ]);
+}
 
-    /**
-     * @var list<array<string, mixed>>
-     */
-    public array $options = [];
+/**
+ * @param  array<string, mixed>  $data
+ */
+function gateway_runtime_backend_agent_response(array $data): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'gateway-runtime-backend.probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
+}
 
-    public function __construct(
-        private readonly RemoteShellResult $result,
-    ) {}
+function gateway_runtime_backend_request_matches(Request $request, string $url): bool
+{
+    /** @var mixed $argv */
+    $argv = $request['argv'];
 
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return $this->result;
-    }
+    return (
+        is_array($argv)
+        && $request->url() === $url
+        && $request['binary'] === 'orbit'
+        && ($argv[0] ?? null) === 'internal:gateway-runtime-backend:probe'
+        && ($argv[1] ?? null) === 'orbit-gateway'
+        && is_string($argv[2] ?? null)
+        && str_starts_with($argv[2], '--operation-token=')
+        && ($argv[3] ?? null) === '--json'
+        && $request['operation_id'] === 'gateway-runtime-backend.probe'
+    );
 }

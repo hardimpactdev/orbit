@@ -20,7 +20,7 @@ the app-family registration pipeline.
 ## Signature
 
 ```bash
-orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json|--stream-json]
+orbit app:new [name] [--node=<name>] [--node-transport=<transport>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json|--stream-json]
 ```
 
 ## Input Contract

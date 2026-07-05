@@ -10,12 +10,21 @@ use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
 
 final class DeployManagerRecordingShell implements RemoteShell
 {
@@ -68,6 +77,36 @@ function createDeployManagerTestStep(App $app, string $command, string $title = 
         'timeout_seconds' => 120,
     ]);
 }
+
+it('requires explicit transitional fallback before running deployment shell commands', function (): void {
+    $app = createDeployManagerTestApp();
+    createDeployManagerTestStep($app, 'git pull origin main');
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
+    $shell = new DeployManagerRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    try {
+        app(DeployManager::class)->run('docs');
+    } catch (GatewayApiException $exception) {
+        expect($exception->errorCode())
+            ->toBe('node_transport_required')
+            ->and($exception->getMessage())
+            ->toBe(
+                'deploy:run still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+            )
+            ->and($exception->errorMeta())
+            ->toMatchArray([
+                'field' => 'node-transport',
+                'required' => 'transitional-ssh-fallback',
+            ]);
+    }
+
+    expect($shell->runs)
+        ->toBe([])
+        ->and(DeploymentRun::query()->count())
+        ->toBe(0);
+});
 
 it('routes php commands through the host php toolchain for php apps', function (): void {
     $app = createDeployManagerTestApp();

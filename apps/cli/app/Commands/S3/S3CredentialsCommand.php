@@ -17,6 +17,7 @@ final class S3CredentialsCommand extends GatewayCommand
     #[\Override]
     protected $signature = 's3:credentials
         {--node= : Active s3 node to read credentials for}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

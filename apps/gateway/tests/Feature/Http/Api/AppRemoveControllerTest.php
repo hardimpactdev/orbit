@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -38,6 +39,14 @@ function grantAppRemoveAccess(Node $caller, Node $appNode, array $permissions = 
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+}
+
+function appRemoveRemoteShellFallbackHeader(): array
+{
+    return [
+        'REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP,
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+    ];
 }
 
 describe('AppRemoveController', function (): void {
@@ -104,7 +113,7 @@ describe('AppRemoveController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP],
+            appRemoveRemoteShellFallbackHeader(),
         );
 
         $response
@@ -128,6 +137,64 @@ describe('AppRemoveController', function (): void {
             ->and(collect($shell->scripts)
                 ->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))
             ->toBeTrue();
+    });
+
+    it('removes app intent but skips legacy cleanup when transitional fallback is not explicit', function (): void {
+        $caller = createAppRemoveCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        grantAppRemoveAccess($caller, $targetNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $targetNode->id,
+            'path' => '/home/orbit/apps/docs',
+            'runtime' => 'static',
+        ]);
+
+        ProxyRoute::query()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'docs.test',
+            'app_id' => $app->id,
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'source_hash' => str_repeat('a', 64),
+        ]);
+
+        $shell = new AppRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            [
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.app.name', 'docs')
+            ->assertJsonPath('success.data.result.action', 'removed')
+            ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1)
+            ->assertJsonPath('success.meta.warnings.0.code', 'node_transport_required')
+            ->assertJsonPath(
+                'success.meta.warnings.0.message',
+                'app:remove cleanup still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+            );
+
+        expect(App::query()->whereKey($app->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toBe([]);
     });
 
     it('requires destructive consent before removing app intent', function (): void {

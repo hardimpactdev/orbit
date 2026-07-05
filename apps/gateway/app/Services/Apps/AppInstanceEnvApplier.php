@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\DatabaseConnections\EnvFileEditor;
+use App\Services\RemoteShell\RemoteEnvFile;
 use RuntimeException;
 
 final readonly class AppInstanceEnvApplier
 {
     public function __construct(
         private EnvFileEditor $envFileEditor,
-        private RemoteShell $remoteShell,
-        private AppCommandRouter $commandRouter,
         private AppRuntimeContainerRenderer $containerRenderer,
         private AppRuntimeContainerManager $containerManager,
+        private RemoteAppCacheClear $cacheClear,
     ) {}
 
     public function apply(App $app, string $key, string $value): AppInstanceEnvApplyResult
@@ -60,13 +59,7 @@ final readonly class AppInstanceEnvApplier
             return (string) file_get_contents($path);
         }
 
-        $result = $this->remoteShell->run(
-            $node,
-            sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)),
-            ['throw' => false],
-        );
-
-        return $result->successful() ? $result->stdout : '';
+        return app(RemoteEnvFile::class)->read($node, $path) ?? '';
     }
 
     private function writeContents(Node $node, App $app, string $path, string $contents): void
@@ -81,27 +74,12 @@ final readonly class AppInstanceEnvApplier
             return;
         }
 
-        $script = sprintf(
-            'mkdir -p %s && printf %%s %s | base64 -d > %s',
-            escapeshellarg(dirname($path)),
-            escapeshellarg(base64_encode($contents)),
-            escapeshellarg($path),
-        );
-        $result = $this->remoteShell->run($node, $script, ['throw' => false]);
-
-        if (! $result->successful()) {
-            throw new RuntimeException($result->output());
-        }
+        app(RemoteEnvFile::class)->write($node, $path, $contents);
     }
 
     private function clearCaches(Node $node, App $app): void
     {
-        $command = implode(' && ', [
-            $this->commandRouter->route($app, 'php artisan config:clear --no-interaction'),
-            $this->commandRouter->route($app, 'find bootstrap/cache -maxdepth 1 -type f ! -name .gitignore -delete'),
-        ]);
-
-        $result = $this->remoteShell->run($node, $command, ['throw' => false]);
+        $result = $this->cacheClear->clear($node, $app);
 
         if (! $result->successful()) {
             throw new RuntimeException($result->output());

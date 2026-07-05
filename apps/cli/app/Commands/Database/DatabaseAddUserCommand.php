@@ -13,6 +13,7 @@ final class DatabaseAddUserCommand extends DatabaseGatewayCommand
         {connection? : Database connection slug to create or update}
         {--service= : Managed MySQL process name}
         {--node= : Node owning the managed MySQL process}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--database= : MySQL database name}
         {--username= : MySQL username}
         {--password= : MySQL password}

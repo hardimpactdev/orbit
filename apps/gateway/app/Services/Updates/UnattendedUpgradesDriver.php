@@ -6,6 +6,7 @@ namespace App\Services\Updates;
 
 use App\Contracts\RemoteShell;
 use App\Enums\DriftKind;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Security\UnattendedUpgradesInstaller;
 use JsonException;
 use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
@@ -21,6 +22,7 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
         private RemoteShell $remoteShell,
         ?UnattendedUpgradesAptConfig $config = null,
         ?UnattendedUpgradesInstaller $installer = null,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {
         $this->config = $config ?? new UnattendedUpgradesAptConfig;
         $this->installer = $installer ?? new UnattendedUpgradesInstaller;
@@ -51,10 +53,21 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
     public function probe(UpdateTarget $target): UpdatePostureSnapshot
     {
         try {
-            $result = $this->remoteShell->run($target->node, $this->probeScript(), [
-                'timeout' => 120,
-                'throw' => false,
-            ]);
+            $result = $this->localExecutor()->runInternal(
+                node: $target->node,
+                commandName: 'internal:unattended-upgrades:probe',
+                arguments: [
+                    $this->config->autoUpgradesSha256(),
+                    $this->config->unattendedUpgradesSha256(),
+                ],
+                transportOptions: [
+                    'timeout' => 120,
+                    'throw' => false,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => 'unattended-upgrades.probe',
+                    ],
+                ],
+            );
         } catch (Throwable $throwable) {
             return new UpdatePostureSnapshot($this->key(), [
                 $this->unverifiableIssue([
@@ -72,20 +85,14 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
             ]);
         }
 
-        try {
-            $facts = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
+        $facts = $this->successData($result->stdout);
+
+        if ($facts === []) {
             return new UpdatePostureSnapshot($this->key(), [
                 $this->unverifiableIssue([
                     'stdout' => trim($result->stdout),
                     'stderr' => trim($result->stderr),
                 ]),
-            ]);
-        }
-
-        if (! is_array($facts)) {
-            return new UpdatePostureSnapshot($this->key(), [
-                $this->unverifiableIssue(),
             ]);
         }
 
@@ -105,10 +112,17 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
             );
         }
 
-        $result = $this->remoteShell->run($target->node, 'sudo unattended-upgrade', [
-            'timeout' => 900,
-            'throw' => false,
-        ]);
+        $result = $this->localExecutor()->runInternal(
+            node: $target->node,
+            commandName: 'internal:unattended-upgrades:apply',
+            transportOptions: [
+                'timeout' => 900,
+                'throw' => false,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'unattended-upgrades.apply',
+                ],
+            ],
+        );
 
         if (! $result->successful()) {
             return new UpdateApplyResult(
@@ -266,66 +280,47 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
         return array_values(array_filter($value, is_string(...)));
     }
 
-    private function probeScript(): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return strtr(
-            <<<'SH_WRAP'
-                set -euo pipefail
-                php <<'PHP'
-                <?php
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+    }
 
-                $autoPath = '/etc/apt/apt.conf.d/20auto-upgrades';
-                $unattendedPath = '/etc/apt/apt.conf.d/50unattended-upgrades';
-                $logPath = '/var/log/unattended-upgrades/unattended-upgrades.log';
+    /**
+     * @return array<string, mixed>
+     */
+    private function successData(string $output): array
+    {
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
 
-                $installed = trim(shell_exec('command -v unattended-upgrade 2>/dev/null') ?? '') !== '';
-                $autoExists = is_file($autoPath);
-                $unattendedExists = is_file($unattendedPath);
-                $autoHashOk = $autoExists && hash_file('sha256', $autoPath) === '__AUTO_SHA256__';
-                $unattendedHashOk = $unattendedExists && hash_file('sha256', $unattendedPath) === '__UNATTENDED_SHA256__';
-                $configReady = $autoExists && $unattendedExists && $autoHashOk && $unattendedHashOk;
-                $dryRunExit = null;
+        if (! is_array($payload)) {
+            return [];
+        }
 
-                if ($installed && $configReady) {
-                    exec('sudo unattended-upgrade --dry-run >/tmp/orbit-unattended-upgrade-dry-run.log 2>&1', result_code: $dryRunExit);
-                }
+        $success = $payload['success'] ?? null;
 
-                $lastRunStatus = 'unknown';
+        if (! is_array($success)) {
+            return [];
+        }
 
-                if (is_file($logPath)) {
-                    $logTail = shell_exec('tail -n 80 ' . escapeshellarg($logPath) . ' 2>/dev/null') ?? '';
+        /** @var mixed $data */
+        $data = $success['data'] ?? null;
 
-                    if (preg_match('/error|failed|traceback|exception/i', $logTail) === 1) {
-                        $lastRunStatus = 'failed';
-                    } elseif (trim($logTail) !== '') {
-                        $lastRunStatus = 'completed';
-                    }
-                }
+        if (! is_array($data)) {
+            return [];
+        }
 
-                $packages = [];
-                $packagePath = '/var/run/reboot-required.pkgs';
+        foreach (array_keys($data) as $key) {
+            if (! is_string($key)) {
+                return [];
+            }
+        }
 
-                if (is_file($packagePath)) {
-                    $packages = array_values(array_filter(array_map('trim', file($packagePath) ?: [])));
-                }
-
-                echo json_encode([
-                    'installed' => $installed,
-                    'auto_exists' => $autoExists,
-                    'unattended_exists' => $unattendedExists,
-                    'auto_hash_ok' => $autoHashOk,
-                    'unattended_hash_ok' => $unattendedHashOk,
-                    'dry_run_exit' => $dryRunExit,
-                    'last_run_status' => $lastRunStatus,
-                    'reboot_required' => is_file('/var/run/reboot-required'),
-                    'reboot_required_packages' => $packages,
-                ], JSON_THROW_ON_ERROR);
-                PHP
-                SH_WRAP,
-            [
-                '__AUTO_SHA256__' => $this->config->autoUpgradesSha256(),
-                '__UNATTENDED_SHA256__' => $this->config->unattendedUpgradesSha256(),
-            ],
-        );
+        /** @var array<string, mixed> $data */
+        return $data;
     }
 }

@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node> [--node-transport=<transport>]|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -30,6 +30,7 @@ This command follows the shared
 | `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's role-assignment category set. |
 | `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Single exact doctor issue-key filter. Filters reported drift after probes and before action planning. Does not imply or select a family. |
 | `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted with `self=true` so the caller node is selected. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `self` | `--self` | Never. | `--node` or `--all` is present. | `false`. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `all` | `--all` | Never. | `--node`, `--self`, `--app`, `--workspace`, `--fix`, `--restore`, or `--adopt` is present. | `false`. | Selects verify-only fleet mode across eligible active role-bearing nodes. This is the only fleet mode. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
@@ -78,7 +79,7 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
      single-node, app, and workspace scope.
    - `--self` is forwarded to the gateway; the gateway resolves it to the calling peer's identified node.
    - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
-   - `--node=all` is rejected with `validation_failed` before probes.
+   - `--node [--node-transport=<transport>]=all` is rejected with `validation_failed` before probes.
    - Omitted node scope first uses the locally configured default node when one
      is selected. When no default node is configured, the CLI sends `self=true`
      so the caller's identified node is selected.
@@ -198,7 +199,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Scope not found | A requested family, node, app, or workspace scope cannot be resolved. | Failure before probes |
-| Reserved fleet node value | `--node=all` or API `node=all` is supplied. | `validation_failed` before probes with `field=node` and `value=all` metadata |
+| Reserved fleet node value | `--node [--node-transport=<transport>]=all` or API `node=all` is supplied. | `validation_failed` before probes with `field=node` and `value=all` metadata |
 | Fleet scope conflict | `--all` is combined with single-node, app/workspace, or resolution-mode scope. | `validation_failed` before probes |
 | Mode not supported | A selected family or issue does not support the requested `--restore` or `--adopt` action. | Failure with diagnostic payload when available |
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
@@ -242,7 +243,7 @@ Required contract tests:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API input contract, `--key`, `--dry-run`, scope resolution, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
-| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI default-node payload resolution, caller fallback payload, `--all` payload, `--node=all` validation, renderer compatibility for `--json`, `--stream-json`, ambiguous renderer rejection, and `--fix --stream-json` rejection. |
+| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI default-node payload resolution, caller fallback payload, `--all` payload, `--node [--node-transport=<transport>]=all` validation, renderer compatibility for `--json`, `--stream-json`, ambiguous renderer rejection, and `--fix --stream-json` rejection. |
 | `apps/cli/tests/Feature/Commands/Operation/DoctorFixCommandTest.php` | CLI interactive `--fix` prompt flow, cancellation, selected issue forwarding, and `--json --fix` rejection. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for app/workspace/proxy families. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |

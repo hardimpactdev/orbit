@@ -21,6 +21,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 #[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
 final class ProcessLogController implements Loggable
 {
+    private const string NODE_TRANSPORT_HEADER = 'X-Orbit-Node-Transport-Preference';
+
     private ?Model $activitySubject = null;
 
     public function __construct(
@@ -62,6 +64,18 @@ final class ProcessLogController implements Loggable
         }
 
         if ($request->boolean('follow')) {
+            if ($request->header(self::NODE_TRANSPORT_HEADER) !== 'transitional-ssh-fallback') {
+                return $this->error(
+                    'agent_push_streaming_unavailable',
+                    'process:logs --follow requires explicit --node-transport=transitional-ssh-fallback until agent-push streaming is available.',
+                    [
+                        'field' => 'node-transport',
+                        'required' => 'transitional-ssh-fallback',
+                    ],
+                    422,
+                );
+            }
+
             try {
                 $target = $showProcessLogs->streamTarget($context, $name, $this->lines($request));
             } catch (GatewayApiException $e) {

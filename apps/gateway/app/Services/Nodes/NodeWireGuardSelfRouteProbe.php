@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
-use App\Contracts\RemoteShell;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 
 final readonly class NodeWireGuardSelfRouteProbe
 {
     public const string UnsupportedMessage = 'WireGuard self-route diagnostics are only supported on Linux.';
 
     public function __construct(
-        private RemoteShell $remoteShell,
+        private RemoteLocalExecutor $localExecutor,
+        private WireGuardSelfRouteOutput $routeOutput,
     ) {}
 
     /**
@@ -56,10 +57,23 @@ final readonly class NodeWireGuardSelfRouteProbe
         }
 
         $command = 'ip route get '.escapeshellarg($address);
-        $result = $this->remoteShell->run($node, $command, ['throw' => false]);
-        $output = trim($result->output());
+        $result = $this->localExecutor->runInternal(
+            node: $node,
+            commandName: 'internal:wireguard-self-route',
+            arguments: [$address],
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'wireguard-self-route.probe',
+                ],
+                'strict' => true,
+                'timeout' => 15,
+            ],
+        );
+        $data = $this->routeOutput->data($result);
+        $exitCode = $data['exit_code'] ?? null;
+        $output = is_string($data['output'] ?? null) ? trim($data['output']) : trim($result->output());
 
-        if (! $result->successful()) {
+        if (! $result->successful() || ! is_int($exitCode)) {
             return $this->result(
                 ok: false,
                 supported: true,
@@ -73,7 +87,21 @@ final readonly class NodeWireGuardSelfRouteProbe
             );
         }
 
-        if ($this->hasLocalRoute($output, $address)) {
+        if ($exitCode !== 0) {
+            return $this->result(
+                ok: false,
+                supported: true,
+                reason: 'route_unverifiable',
+                message: 'WireGuard self-route could not be inspected with ip route get.',
+                platform: $platform,
+                address: $address,
+                command: $command,
+                exitCode: $exitCode,
+                output: $output,
+            );
+        }
+
+        if ($this->routeOutput->hasLocalRoute($output, $address)) {
             return $this->result(
                 ok: true,
                 supported: true,
@@ -82,7 +110,7 @@ final readonly class NodeWireGuardSelfRouteProbe
                 platform: $platform,
                 address: $address,
                 command: $command,
-                exitCode: $result->exitCode,
+                exitCode: $exitCode,
                 output: $output,
             );
         }
@@ -95,7 +123,7 @@ final readonly class NodeWireGuardSelfRouteProbe
             platform: $platform,
             address: $address,
             command: $command,
-            exitCode: $result->exitCode,
+            exitCode: $exitCode,
             output: $output,
         );
     }
@@ -119,21 +147,6 @@ final readonly class NodeWireGuardSelfRouteProbe
             || str_starts_with($platform, 'macos_')
             || str_starts_with($platform, 'darwin_')
         );
-    }
-
-    private function hasLocalRoute(string $output, string $address): bool
-    {
-        $quotedAddress = preg_quote($address, '/');
-
-        foreach (preg_split('/\R/', $output) ?: [] as $line) {
-            $line = trim((string) preg_replace('/\s+/', ' ', $line));
-
-            if (preg_match("/^local {$quotedAddress}\\b.*\\bdev\\s+\\S+/", $line) === 1) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

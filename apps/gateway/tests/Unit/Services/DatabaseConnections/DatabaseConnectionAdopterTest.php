@@ -12,9 +12,12 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -55,22 +58,32 @@ describe('DatabaseConnectionAdopter', function (): void {
     });
 
     it('materializes a workspace connection with the workspace-app slug', function (): void {
-        $node = Node::factory()->appDev()->create(['status' => 'active']);
+        request()->headers->set(
+            ExplicitRemoteShellFallback::HEADER,
+            NodeTransportPreference::AgentPush->value,
+        );
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.76:9477/v1/commands' => Http::sequence()
+                ->push(databaseConnectionAdopterEnvReadResponse(
+                    "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=feature_docs\nDB_USERNAME=feature\nDB_PASSWORD=secret\n",
+                ))
+                ->push(databaseConnectionAdopterEnvReadFailureResponse()),
+        ]);
+        $node = Node::factory()
+            ->appDev()
+            ->orbitAgentCapable()
+            ->create([
+                'status' => 'active',
+                'wireguard_address' => '10.44.0.76',
+            ]);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
             'path' => '/srv/docs/.worktrees/feature',
         ]);
-
-        app()->instance(RemoteShell::class, new DatabaseConnectionAdopterRemoteShell([
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: "DB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=feature_docs\nDB_USERNAME=feature\nDB_PASSWORD=secret\n",
-                stderr: '',
-                durationMs: 1,
-            ),
-        ]));
 
         $results = app(DatabaseConnectionAdopter::class)->adopt($node);
 
@@ -512,4 +525,51 @@ final class DatabaseConnectionAdopterRemoteShell implements RemoteShell
     {
         return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected remote shell call', 1);
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function databaseConnectionAdopterEnvReadResponse(string $contents): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'env-file.read',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'contents' => $contents,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function databaseConnectionAdopterEnvReadFailureResponse(): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'env-file.read',
+        'binary' => 'orbit',
+        'status' => 'failed',
+        'exit_code' => 1,
+        'frames' => [
+            [
+                'type' => 'stderr',
+                'message' => 'Env file was not found.',
+            ],
+        ],
+    ];
 }

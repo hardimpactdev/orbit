@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:timer:list [--node=<node>] [--json]
+orbit solo:timer:list [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

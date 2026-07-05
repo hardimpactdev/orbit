@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--follow] [--lines=<count>] [--json]
+orbit process:logs [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--follow] [--lines=<count>] [--json]
 ```
 
 ## Input Contract
@@ -25,6 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owning scope. |
 | `node` | `--node` | Required when reading logs for a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:logs`. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:logs`. |
 | `workspace` | `--workspace` or workspace context | Optional. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:logs`; pass `--app` when the workspace name is ambiguous. |
 | `follow` | `--follow` | Optional. | Never. | `false`. | Boolean flag. Keeps the human log stream open when true. |

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 
 final readonly class WorkspaceSetupStepRunner
 {
@@ -50,11 +52,19 @@ final readonly class WorkspaceSetupStepRunner
                 ? $this->containerCommand($step->command, $containerName, $env)
                 : $step->command;
 
-            $result = $this->remoteShell->run($node, $command, [
-                'cwd' => $isContainerized ? null : $path,
-                'timeout' => $step->timeoutSeconds(),
-                'metadata' => $env,
-            ]);
+            $transport = app(ExplicitRemoteShellFallback::class);
+            $result = $transport->allowed()
+                ? $this->remoteShell->run($node, $command, [
+                    'cwd' => $isContainerized ? null : $path,
+                    'timeout' => $step->timeoutSeconds(),
+                    'metadata' => $env,
+                ])
+                : new RemoteShellResult(
+                    exitCode: 1,
+                    stdout: '',
+                    stderr: $transport->message('workspace:setup-step'),
+                    durationMs: 0,
+                );
 
             $runStep->update([
                 'exit_code' => $result->exitCode,

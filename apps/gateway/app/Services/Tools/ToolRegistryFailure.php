@@ -109,6 +109,18 @@ final readonly class ToolRegistryFailure
         );
     }
 
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    public static function nodeTransportRequired(string $message, array $meta = []): self
+    {
+        return new self(
+            code: 'node_transport_required',
+            message: $message,
+            meta: $meta,
+        );
+    }
+
     public static function authorization(string $message): self
     {
         return new self(

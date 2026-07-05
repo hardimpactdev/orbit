@@ -25,6 +25,8 @@ final readonly class AppsProbe
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
         private ?AppAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
+        private ?RemoteAppRuntimeConfigsProbe $runtimeConfigsProbe = null,
+        private ?RemoteAppRuntimeContainersProbe $runtimeContainersProbe = null,
     ) {}
 
     public function key(): string
@@ -270,59 +272,9 @@ final readonly class AppsProbe
      */
     public function introspectNodeRuntimeConfigs(Node $node): NodeRuntimeConfigsProbe
     {
-        // Probe must distinguish proven-absent (exit 1, no stderr from
-        // `sudo test -d`) from unknown sudo/SSH/permission failures AND from
-        // a successful `sudo test -d` followed by a failing `sudo find`
-        // (e.g., a permission glitch on the directory contents). All three
-        // listing paths report through the `orbit-config-dir:` sentinel so
-        // the orchestrator never silently treats a probe failure as a clean
-        // empty snapshot — that would hide stale runtime_config_extra
-        // artifacts.
-        $script = <<<'BASH'
-            set -u
-            dir='/etc/orbit/apps'
-
-            dir_err="$(sudo test -d "$dir" 2>&1)"
-            dir_ec=$?
-            if [ "$dir_ec" = "1" ] && [ -z "$dir_err" ]; then
-                printf 'orbit-config-dir:absent\n'
-                exit 0
-            fi
-            if [ "$dir_ec" != "0" ]; then
-                printf 'orbit-config-dir:error %s\n' "$dir_err"
-                exit 0
-            fi
-
-            err_file="$(mktemp 2>/dev/null || printf '/tmp/orbit-config-dir.%d' $$)"
-            set +e
-            list_out="$(sudo find "$dir" -maxdepth 1 -type f -name '*.ini' -print 2>"$err_file")"
-            list_ec=$?
-            set -e
-            list_err="$(cat "$err_file" 2>/dev/null)"
-            rm -f "$err_file"
-
-            if [ "$list_ec" = "0" ]; then
-                printf 'orbit-config-dir:present\n'
-                if [ -n "$list_out" ]; then
-                    printf '%s\n' "$list_out"
-                fi
-            else
-                if [ -z "$list_err" ]; then
-                    list_err="sudo find failed (ec=$list_ec)"
-                fi
-                printf 'orbit-config-dir:error %s\n' "$list_err"
-            fi
-            BASH;
-
         try {
-            $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script);
+            $stdout = $this->runtimeConfigsProbe()->stdout($node);
         } catch (\Throwable $exception) {
-            // SSH / transport / remote shell construction failure: must NOT
-            // abort the doctor run and must NOT be reported as a clean empty
-            // snapshot — stale runtime_config_extra artifacts could be
-            // hidden. Surface as Error status with the underlying error so
-            // DoctorReportRunner can emit the documented
-            // `app.runtime_config_probe_failed` drift.
             return new NodeRuntimeConfigsProbe(
                 status: NodeRuntimeConfigsProbeStatus::Error,
                 configs: new ProbeSnapshot([]),
@@ -330,21 +282,7 @@ final readonly class AppsProbe
             );
         }
 
-        if (! $result->successful()) {
-            // Non-zero exit without a sentinel — same contract as throw:
-            // do not pretend the directory is clean/empty.
-            $remoteError = trim($result->errorOutput().' '.$result->stdout);
-
-            return new NodeRuntimeConfigsProbe(
-                status: NodeRuntimeConfigsProbeStatus::Error,
-                configs: new ProbeSnapshot([]),
-                error: $remoteError !== ''
-                    ? $remoteError
-                    : 'remote shell call failed during managed runtime config scan',
-            );
-        }
-
-        $lines = explode("\n", rtrim($result->stdout, "\n\r"));
+        $lines = explode("\n", rtrim($stdout, "\n\r"));
         $status = NodeRuntimeConfigsProbeStatus::Error;
         $error = 'orbit-config-dir probe returned no status sentinel';
         $items = [];
@@ -405,6 +343,16 @@ final readonly class AppsProbe
         );
     }
 
+    private function runtimeConfigsProbe(): RemoteAppRuntimeConfigsProbe
+    {
+        return $this->runtimeConfigsProbe ?? app(RemoteAppRuntimeConfigsProbe::class);
+    }
+
+    private function runtimeContainersProbe(): RemoteAppRuntimeContainersProbe
+    {
+        return $this->runtimeContainersProbe ?? app(RemoteAppRuntimeContainersProbe::class);
+    }
+
     /**
      * Probe the node for Orbit-managed app runtime containers regardless of
      * gateway app records. Returns a tri-state probe result so the
@@ -425,39 +373,8 @@ final readonly class AppsProbe
      */
     public function introspectNode(Node $node): NodeRuntimeContainersProbe
     {
-        $script = <<<'BASH'
-            set -u
-            if ! command -v docker >/dev/null 2>&1; then
-                printf 'orbit-container-scan:absent\n'
-                exit 0
-            fi
-
-            err_file="$(mktemp 2>/dev/null || printf '/tmp/orbit-container-scan.%d' $$)"
-            set +e
-            scan_out="$(docker container ls --all \
-                --filter 'label=orbit.managed=true' \
-                --filter 'label=orbit.container.kind=app-runtime' \
-                --format '{{.Names}}\t{{.Label "orbit.app"}}' 2>"$err_file")"
-            scan_ec=$?
-            set -e
-            scan_err="$(cat "$err_file" 2>/dev/null)"
-            rm -f "$err_file"
-
-            if [ "$scan_ec" = "0" ]; then
-                printf 'orbit-container-scan:present\n'
-                if [ -n "$scan_out" ]; then
-                    printf '%s\n' "$scan_out"
-                fi
-            else
-                if [ -z "$scan_err" ]; then
-                    scan_err="docker container ls failed (ec=$scan_ec)"
-                fi
-                printf 'orbit-container-scan:error %s\n' "$scan_err"
-            fi
-            BASH;
-
         try {
-            $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script);
+            $stdout = $this->runtimeContainersProbe()->stdout($node);
         } catch (\Throwable $exception) {
             return new NodeRuntimeContainersProbe(
                 status: NodeRuntimeContainersProbeStatus::Error,
@@ -466,23 +383,11 @@ final readonly class AppsProbe
             );
         }
 
-        if (! $result->successful()) {
-            $remoteError = trim($result->errorOutput().' '.$result->stdout);
-
-            return new NodeRuntimeContainersProbe(
-                status: NodeRuntimeContainersProbeStatus::Error,
-                containers: new ProbeSnapshot([]),
-                error: $remoteError !== ''
-                    ? $remoteError
-                    : 'remote shell call failed during app runtime container scan',
-            );
-        }
-
         $status = NodeRuntimeContainersProbeStatus::Error;
         $error = 'orbit-container-scan probe returned no status sentinel';
         $items = [];
 
-        foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $rawLine) {
+        foreach (explode("\n", rtrim($stdout, "\n\r")) as $rawLine) {
             $line = trim($rawLine);
 
             if ($line === '') {

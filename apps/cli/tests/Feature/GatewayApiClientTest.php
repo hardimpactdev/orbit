@@ -442,6 +442,22 @@ describe('GatewayApiClient', function (): void {
         Http::assertSent(fn (Request $request): bool => ! $request->hasHeader('Authorization'));
     });
 
+    it('sends the explicit node transport preference header when configured', function (): void {
+        Http::fake([
+            'https://gateway.test/api/me' => Http::response(['success' => ['data' => [], 'meta' => []]], 200),
+        ]);
+
+        new GatewayApiClient('https://gateway.test', 30)
+            ->withNodeTransportPreference('transitional-ssh-fallback')
+            ->get('/api/me');
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->header('X-Orbit-Node-Transport-Preference')[0] === 'transitional-ssh-fallback'
+            ),
+        );
+    });
+
     it('resolves baseUrl + timeout from the provider binding (env-only config + JSON fallback in provider closure)', function (): void {
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 12);

@@ -18,7 +18,6 @@ interface ProcessRuntimeDriver
         App $app,
         Process $process,
         ?Workspace $workspace = null,
-        ?string $preApplyScript = null,
     ): bool;
 
     public function remove(Node $node, string $runtimeUnit): bool;

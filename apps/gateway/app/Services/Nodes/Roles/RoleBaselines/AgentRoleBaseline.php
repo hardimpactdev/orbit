@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
-use App\Contracts\RemoteShell;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Tools\ToolCatalog;
 use RuntimeException;
 
@@ -20,7 +20,7 @@ class AgentRoleBaseline implements RoleBaseline
         private readonly DevelopmentDnsMappingEnactor $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
-        private readonly ?RemoteShell $remoteShell = null,
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -71,25 +71,42 @@ class AgentRoleBaseline implements RoleBaseline
 
     private function convergeAgentUser(Node $node): void
     {
-        $shell = $this->remoteShell ?? app(RemoteShell::class);
-
-        $shell->run($node, 'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent', [
-            'throw' => true,
-        ]);
-        $shell->run($node, 'sudo passwd -l agent >/dev/null 2>&1 || true', ['throw' => true]);
-        $shell->run(
-            $node,
-            <<<'SH'
-                if ! command -v setfacl >/dev/null 2>&1; then
-                    sudo apt-get update >/dev/null
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y acl >/dev/null
-                fi
-
-                sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin
-                sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary
-                SH,
-            ['throw' => true],
+        $userResult = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:agent-user:ensure',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'agent-user.ensure',
+                ],
+                'timeout' => 60,
+                'throw' => false,
+            ],
         );
+
+        if (! $userResult->successful()) {
+            throw new RuntimeException('Could not ensure the Orbit agent runtime user.');
+        }
+
+        $aclResult = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:agent-acl:ensure',
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'agent-acl.ensure',
+                ],
+                'timeout' => 180,
+                'throw' => false,
+            ],
+        );
+
+        if (! $aclResult->successful()) {
+            throw new RuntimeException('Could not ensure Orbit agent runtime ACLs.');
+        }
+    }
+
+    private function localExecutor(): RemoteLocalExecutor
+    {
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     private function isValidTld(string $tld): bool

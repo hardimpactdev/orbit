@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
-use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessDockerRuntimeManager;
 use Throwable;
@@ -17,7 +15,6 @@ use Throwable;
 final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private ProcessDockerContainerRenderer $renderer,
         private ProcessDockerRuntimeManager $manager,
     ) {}
@@ -32,30 +29,15 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         App $app,
         Process $process,
         ?Workspace $workspace = null,
-        ?string $preApplyScript = null,
     ): bool {
         try {
-            if ($preApplyScript !== null && trim($preApplyScript) !== '') {
-                $preApply = $this->remoteShell->run($node, $this->strictScript($preApplyScript));
-
-                if (! $preApply->successful()) {
-                    return false;
-                }
-            }
-
             $container = $this->renderer->render($app, $process, $workspace);
 
-            if ($process->owner instanceof Node) {
-                if (! $this->pullImage($node, $container->image())) {
-                    return false;
-                }
-
-                if (! $this->prepareMountSources($node, $container)) {
-                    return false;
-                }
-            }
-
-            $this->manager->apply($node, $container);
+            $this->manager->apply(
+                node: $node,
+                container: $container,
+                preparePrerequisites: $process->owner instanceof Node,
+            );
 
             return true;
         } catch (Throwable) {
@@ -86,32 +68,6 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
     public function restart(Node $node, string $runtimeUnit): bool
     {
         return $this->manager->restart($node, $runtimeUnit);
-    }
-
-    private function pullImage(Node $node, string $image): bool
-    {
-        return $this->remoteShell->run($node, 'docker pull '.escapeshellarg($image))->successful();
-    }
-
-    private function prepareMountSources(Node $node, ProcessDockerContainer $container): bool
-    {
-        $sources = array_values(array_unique(array_map(
-            static fn (array $mount): string => $mount['source'],
-            $container->mounts(),
-        )));
-
-        if ($sources === []) {
-            return true;
-        }
-
-        $script = 'sudo mkdir -p '.implode(' ', array_map(escapeshellarg(...), $sources));
-
-        return $this->remoteShell->run($node, $script)->successful();
-    }
-
-    private function strictScript(string $script): string
-    {
-        return 'set -euo pipefail'.PHP_EOL.$script;
     }
 
     public function logScript(

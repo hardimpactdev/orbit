@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeConverger;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -19,6 +20,8 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+
     bindDevelopmentDnsMappingTestDoubles('node-converger-dns');
 });
 

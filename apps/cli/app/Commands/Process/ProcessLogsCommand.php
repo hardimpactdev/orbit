@@ -17,6 +17,7 @@ final class ProcessLogsCommand extends GatewayCommand
     protected $signature = 'process:logs
         {name? : Process name}
         {--node= : Owning node name}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--follow : Follow log output}
@@ -97,19 +98,21 @@ final class ProcessLogsCommand extends GatewayCommand
         $workspace = $this->stringOption('workspace');
 
         try {
-            return app(GatewayLogStreamClient::class)->streamText(
-                '/api/processes/'.rawurlencode($name).'/log',
-                $this->filledQuery([
-                    'node' => $node,
-                    'app' => $app,
-                    'workspace' => $workspace,
-                    'lines' => $lines,
-                    'follow' => 1,
-                ]),
-                function (string $chunk): void {
-                    $this->output->write($chunk);
-                },
-            );
+            return app(GatewayLogStreamClient::class)
+                ->withNodeTransportPreference($this->nodeTransportPreference())
+                ->streamText(
+                    '/api/processes/'.rawurlencode($name).'/log',
+                    $this->filledQuery([
+                        'node' => $node,
+                        'app' => $app,
+                        'workspace' => $workspace,
+                        'lines' => $lines,
+                        'follow' => 1,
+                    ]),
+                    function (string $chunk): void {
+                        $this->output->write($chunk);
+                    },
+                );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

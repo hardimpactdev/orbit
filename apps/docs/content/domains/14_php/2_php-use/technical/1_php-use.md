@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]`
+# Technical Contract: `orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--inherit] [--cli] [--json]`
 
 [Back to public `php:use` documentation.](../php-use.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--inherit] [--cli] [--json]
+orbit php:use [version] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--inherit] [--cli] [--json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `inherit` | `--inherit` | Optional. | `version` present. | `false`. | Clears a workspace override only. |
 | `cli` | `--cli` | Optional. | `app`, `workspace`, or `inherit` present. | `false`. | Selects the node CLI PHP default; only PHP 8.5 is supported. |
 | `node` | `--node` | Optional. | Never. | App/workspace owning node for runtime scope; default node for CLI scope. | Visible node slug. For app and workspace targets, may only confirm the owning node; mismatches fail with `error.meta.reason=target_mismatch` before any writes. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
 
 ## Input Resolution

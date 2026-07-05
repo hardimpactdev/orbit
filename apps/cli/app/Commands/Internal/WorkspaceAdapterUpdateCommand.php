@@ -7,23 +7,32 @@ namespace App\Commands\Internal;
 use PDO;
 use PDOException;
 use PDOStatement;
+use Symfony\Component\Process\Process;
 
 final class WorkspaceAdapterUpdateCommand extends InternalExecutorCommand
 {
     private const string AdapterPolyscope = 'polyscope';
 
+    private const string AdapterOpenCode = 'opencode';
+
     private const string UpdateWorkspaceBranch = 'workspace-branch';
+
+    private const string UpdateHostBranch = 'host-branch';
 
     private const int MaxWorkspaceIdLength = 255;
 
     private const int MaxBranchLength = 255;
+
+    private const int MaxWorkspacePathLength = 4096;
 
     #[\Override]
     protected $signature = 'internal:workspace-adapter:update
         {--adapter=}
         {--update=}
         {--workspace-id=}
+        {--workspace-path=}
         {--branch=}
+        {--base-ref=}
         {--operation-token=}
         {--json}';
 
@@ -41,21 +50,33 @@ final class WorkspaceAdapterUpdateCommand extends InternalExecutorCommand
 
         $adapter = $this->stringValue($this->option('adapter'));
 
-        if ($adapter !== self::AdapterPolyscope) {
+        if (! in_array($adapter, [self::AdapterPolyscope, self::AdapterOpenCode], true)) {
             return $this->renderFailure(
                 'validation_failed',
-                'Workspace adapter update supports only the polyscope adapter.',
+                'Workspace adapter update supports only the polyscope or opencode adapter.',
                 ['field' => 'adapter', 'adapter' => $adapter],
             );
         }
 
         $update = $this->stringValue($this->option('update'));
 
-        if ($update !== self::UpdateWorkspaceBranch) {
+        if (! in_array($update, [self::UpdateWorkspaceBranch, self::UpdateHostBranch], true)) {
             return $this->renderFailure(
                 'validation_failed',
-                'Workspace adapter update must be workspace-branch.',
+                'Workspace adapter update must be workspace-branch or host-branch.',
                 ['field' => 'update', 'update' => $update],
+            );
+        }
+
+        if ($update === self::UpdateHostBranch) {
+            return $this->renameHostBranch($adapter);
+        }
+
+        if ($adapter !== self::AdapterPolyscope) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Workspace adapter workspace-branch update supports only the polyscope adapter.',
+                ['field' => 'adapter', 'adapter' => $adapter],
             );
         }
 
@@ -114,6 +135,99 @@ final class WorkspaceAdapterUpdateCommand extends InternalExecutorCommand
             'workspace_id' => $workspaceId,
             'branch' => $branch,
             'updated' => true,
+        ]);
+    }
+
+    private function renameHostBranch(string $adapter): int
+    {
+        $workspacePath = $this->workspacePathValue($this->option('workspace-path'));
+
+        if ($workspacePath === null) {
+            return $this->invalidOption('workspace-path');
+        }
+
+        if (! is_dir($workspacePath)) {
+            return $this->renderFailure(
+                'workspace_path_missing',
+                'Workspace path is missing.',
+                ['adapter' => $adapter],
+            );
+        }
+
+        $branch = $this->branchValue($this->option('branch'));
+
+        if ($branch === null) {
+            return $this->invalidOption('branch');
+        }
+
+        $currentBranch = trim($this->runGit($workspacePath, ['branch', '--show-current'])->getOutput());
+
+        if ($currentBranch === $branch) {
+            $baseRef = $this->baseRefValue($this->option('base-ref'));
+
+            if ($baseRef !== null) {
+                $reset = $this->runGit($workspacePath, ['reset', '--hard', $baseRef]);
+
+                if (! $reset->isSuccessful()) {
+                    return $this->renderFailure(
+                        'branch_reset_failed',
+                        'Workspace branch could not be reset.',
+                        ['adapter' => $adapter],
+                    );
+                }
+            }
+
+            return $this->emitInternalSuccess([
+                'adapter' => $adapter,
+                'update' => self::UpdateHostBranch,
+                'workspace_path' => $workspacePath,
+                'branch' => $branch,
+                'base_ref' => $baseRef,
+                'renamed' => false,
+            ]);
+        }
+
+        $existingBranch = $this->runGit($workspacePath, ['rev-parse', '--verify', '--quiet', $branch]);
+
+        if ($existingBranch->isSuccessful()) {
+            return $this->renderFailure(
+                'branch_already_exists',
+                'Workspace target branch already exists.',
+                ['adapter' => $adapter],
+            );
+        }
+
+        $rename = $this->runGit($workspacePath, ['branch', '-m', $branch]);
+
+        if (! $rename->isSuccessful()) {
+            return $this->renderFailure(
+                'branch_rename_failed',
+                'Workspace branch could not be renamed.',
+                ['adapter' => $adapter],
+            );
+        }
+
+        $baseRef = $this->baseRefValue($this->option('base-ref'));
+
+        if ($baseRef !== null) {
+            $reset = $this->runGit($workspacePath, ['reset', '--hard', $baseRef]);
+
+            if (! $reset->isSuccessful()) {
+                return $this->renderFailure(
+                    'branch_reset_failed',
+                    'Workspace branch could not be reset.',
+                    ['adapter' => $adapter],
+                );
+            }
+        }
+
+        return $this->emitInternalSuccess([
+            'adapter' => $adapter,
+            'update' => self::UpdateHostBranch,
+            'workspace_path' => $workspacePath,
+            'branch' => $branch,
+            'base_ref' => $baseRef,
+            'renamed' => true,
         ]);
     }
 
@@ -234,6 +348,46 @@ final class WorkspaceAdapterUpdateCommand extends InternalExecutorCommand
         }
 
         return $value;
+    }
+
+    private function baseRefValue(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return $this->branchValue($value);
+    }
+
+    private function workspacePathValue(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        if (str_contains($value, "\0") || str_contains($value, "\n") || str_contains($value, "\r")) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if ($value === '' || strlen($value) > self::MaxWorkspacePathLength) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  list<string>  $arguments
+     */
+    private function runGit(string $workspacePath, array $arguments): Process
+    {
+        $process = new Process(['git', '-C', $workspacePath, ...$arguments]);
+        $process->setTimeout(30);
+        $process->run();
+
+        return $process;
     }
 
     private function stringValue(mixed $value): ?string

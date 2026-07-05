@@ -7,6 +7,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,8 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
     DB::table('nodes')->insert([
         'name' => 'app-1',
         'host' => 'app-1',
@@ -26,7 +29,17 @@ beforeEach(function (): void {
     ]);
 });
 
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
+
+function allow_workspace_setup_remote_shell_fallback(): void
+{
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+}
+
 it('executes setup steps sequentially on the host by default', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerTestShell;
@@ -66,6 +79,7 @@ it('executes setup steps sequentially on the host by default', function (): void
 });
 
 it('routes php and composer commands through the workspace container when given a container name', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerTestShell;
@@ -121,6 +135,7 @@ it('routes php and composer commands through the workspace container when given 
 });
 
 it('passes lifecycle environment into containerized commands via docker exec -e', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerTestShell;
@@ -144,6 +159,7 @@ it('passes lifecycle environment into containerized commands via docker exec -e'
 });
 
 it('fails fast on first non-zero exit and records the failed step', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerFailingShell(failAfter: 0);
@@ -179,6 +195,7 @@ it('fails fast on first non-zero exit and records the failed step', function ():
 });
 
 it('reports progress events for each step', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerTestShell;
@@ -210,6 +227,7 @@ it('reports progress events for each step', function (): void {
 });
 
 it('reports failed progress event when a step fails', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerFailingShell(failAfter: 0);
@@ -238,6 +256,38 @@ it('reports failed progress event when a step fails', function (): void {
         ['running', 'exit 1', 1, 1],
         ['failed',  'exit 1', 1, 1],
     ]);
+});
+
+it('requires explicit transitional ssh fallback before running workspace setup commands', function (): void {
+    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
+    $node = Node::query()->firstOrFail();
+    $shell = new WorkspaceSetupStepRunnerTestShell;
+
+    $runner = new WorkspaceSetupStepRunner($shell);
+
+    $steps = [
+        new WorkspaceStep([
+            'id' => 1,
+            'command' => 'echo first',
+            'timeout_seconds' => 60,
+        ]),
+    ];
+
+    $result = $runner->run($run, $steps, '/app/path', ['ORBIT_APP' => 'demo'], $node);
+
+    $run->refresh();
+    $runStep = $run->runSteps()->first();
+
+    expect($result)
+        ->toBeFalse()
+        ->and($shell->runs)
+        ->toBe([])
+        ->and($run->status)
+        ->toBe('failed')
+        ->and($runStep?->exit_code)
+        ->toBe(1)
+        ->and($runStep?->output)
+        ->toContain('requires explicit --node-transport=transitional-ssh-fallback');
 });
 
 final class WorkspaceSetupStepRunnerTestShell implements RemoteShell

@@ -14,8 +14,8 @@ The node family owns these facts:
 - local caller identity: presented WireGuard identity, local gateway
   endpoint/trust config, and gateway-client endpoint and trust artifacts
   that the gateway manages on the node;
-- node connectivity: gateway API reachability for CLI callers and
-  gateway-owned SSH reachability for nodes;
+- node connectivity: CLI callers reach the gateway API, and the gateway
+  reaches nodes through node command transport;
 - node bootstrap artifacts: gateway service readiness, node minimum Orbit
   runtime, gateway-client endpoint and trust artifacts on the node, node identity
   artifacts, role bootstrap network policy, and WireGuard peers managed by the gateway;
@@ -71,8 +71,9 @@ The node probe reads gateway node records and checks these layers:
    identifiers through SSH. The local client reports a supported macOS or
    Ubuntu platform identifier when `--self` can inspect it. Remote client
    machines are verified through identity and gateway API reachability, not SSH.
-7. **SSH reachability:** the gateway can SSH to nodes. Clients are
-   not SSH targets for node doctor checks.
+7. **Node transport reachability:** the gateway can reach nodes through the
+   node command transport. Clients are not node-transport targets for node
+   doctor checks.
 8. **Gateway service readiness:** the gateway node exposes the Orbit API and
    the gateway service required by CLI callers.
 9. **Node-side bootstrap readiness:** nodes have the minimum Orbit runtime
@@ -216,7 +217,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 | `node.wireguard_address_mismatch` | A gateway-managed WireGuard peer address differs from the node record's WireGuard address. |
 | `node.platform_unsupported` | A gateway or node reports an unsupported platform-version identifier. |
 | `node.platform_record_mismatch` | Live platform detection differs from the node record's platform-version identifier. |
-| `node.ssh_unreachable` | The gateway cannot SSH to a node. |
+| `node.transport_unreachable` | The gateway cannot reach a node through node command transport. |
 | `node.gateway_runtime_unready` | The gateway node does not expose the Orbit API or required gateway service. |
 | `node.runtime_missing` | A node lacks the minimum Orbit runtime required for gateway applying. |
 | `node.vpn_runtime_missing` | The active gateway-coupled `vpn` assignment is missing WireGuard server or VPN-facing DNS runtime artifacts. |
@@ -267,7 +268,7 @@ This table describes what `doctor --restore --family=node` does for each resolva
 `node.role_assignment_missing`, `node.role_assignment_invalid`, `node.role_conflict`,
 `node.role_settings_invalid`,
 `node.identity_unresolved`, `node.platform_unsupported`,
-`node.platform_record_mismatch`, `node.ssh_unreachable`,
+`node.platform_record_mismatch`, `node.transport_unreachable`,
 `node.security.host_key.<node>`, `node.security.runtime_user`,
 `node.security.home_perms`, `node.local_default_invalid`, or
 `node.agent_ide_default_invalid`.

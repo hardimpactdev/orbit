@@ -2,14 +2,23 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\S3\S3DoctorProbe;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -68,37 +77,70 @@ function s3ProbeTool(Node $node, array $overrides = []): NodeTool
 /**
  * @param  list<RemoteShellResult|Throwable>  $results
  */
-function s3ProbeShell(array $results = []): RemoteShell
+function s3ProbeShell(array $results = []): S3DoctorProbeTestTransport
 {
-    return new class($results) implements RemoteShell {
-        /** @var list<string> */
-        public array $scripts = [];
-
-        /** @param list<RemoteShellResult|Throwable> $results */
-        public function __construct(
-            private array $results,
-        ) {}
-
-        /** @param array<string, mixed> $options */
-        public function run(Node $node, string $script, array $options = []): RemoteShellResult
-        {
-            $this->scripts[] = $script;
-            $result = array_shift($this->results);
-
-            if ($result instanceof Throwable) {
-                throw $result;
-            }
-
-            return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-        }
-    };
+    return new S3DoctorProbeTestTransport($results);
 }
 
-function s3Probe(RemoteShell $shell): S3DoctorProbe
+function s3Probe(S3DoctorProbeTestTransport $shell): S3DoctorProbe
 {
     return new S3DoctorProbe(
-        remoteShell: $shell,
+        localExecutor: s3ProbeExecutor($shell),
     );
+}
+
+function s3ProbeExecutor(S3DoctorProbeTestTransport $transport): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
+}
+
+final class S3DoctorProbeTestTransport implements RemoteExecutor
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
+
+    /**
+     * @param  list<RemoteShellResult|Throwable>  $results
+     */
+    public function __construct(
+        private array $results,
+    ) {}
+
+    #[Override]
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->calls[] = [
+            'node' => $node,
+            'script' => $script,
+            'options' => $options,
+        ];
+        $result = array_shift($this->results);
+
+        if ($result instanceof Throwable) {
+            throw $result;
+        }
+
+        return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    #[Override]
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new \RuntimeException('S3 doctor probe test transport does not start processes.');
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -394,6 +436,29 @@ describe('s3 tool drift — tool.seaweedfs.credentials_missing', function (): vo
 // ---------------------------------------------------------------------------
 
 describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function (): void {
+    it('dispatches the runtime probe through the internal local executor command', function (): void {
+        $node = s3ProbeNode();
+        $assignment = s3ProbeAssignment($node);
+        s3ProbeTool($node);
+        $shell = s3ProbeShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+        ]);
+
+        s3Probe($shell)->toolDrift($node, $assignment);
+
+        expect($shell->calls)
+            ->toHaveCount(1)
+            ->and($shell->calls[0]['script'])
+            ->toContain('internal:s3-runtime:probe')
+            ->not->toContain('orbit-s3-doctor:runtime-probe')->and($shell->calls[0]['script'])
+            ->not->toContain('docker container inspect "$container"');
+    });
+
     it('emits tool.seaweedfs.runtime_container_missing when the orbit-seaweedfs container does not exist', function (): void {
         $node = s3ProbeNode();
         $assignment = s3ProbeAssignment($node);

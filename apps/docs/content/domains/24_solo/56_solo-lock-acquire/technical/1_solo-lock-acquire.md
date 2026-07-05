@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:lock:acquire <name> [--node=<node>] [--json]
+orbit solo:lock:acquire <name> [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

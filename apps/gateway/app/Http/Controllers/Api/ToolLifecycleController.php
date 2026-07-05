@@ -126,7 +126,7 @@ final class ToolLifecycleController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'validation_failed', 'node_target_required', 'tool.unsupported_on_node' => 422,
+            'node_transport_required', 'validation_failed', 'node_target_required', 'tool.unsupported_on_node' => 422,
             'tool.unsupported_action' => 400,
             default => 400,
         };

@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:agent-tool:list [--node=<node>] [--json]
+orbit solo:agent-tool:list [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

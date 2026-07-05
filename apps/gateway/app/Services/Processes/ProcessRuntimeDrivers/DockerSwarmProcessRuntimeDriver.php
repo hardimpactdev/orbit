@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
-use App\Contracts\RemoteShell;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Processes\RemoteDockerSwarmService;
 use Throwable;
 
 final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDriver
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private RemoteDockerSwarmService $services,
     ) {}
 
     public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
@@ -31,19 +31,11 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         App $app,
         Process $process,
         ?Workspace $workspace = null,
-        ?string $preApplyScript = null,
     ): bool {
         try {
             $runtimeUnit = $this->runtimeUnitName($app, $process, $workspace);
-            $script = collect([
-                'set -euo pipefail',
-                $preApplyScript,
-                $this->applyScript($process, $runtimeUnit),
-            ])
-                ->filter(fn (?string $script): bool => $script !== null && trim($script) !== '')
-                ->implode(PHP_EOL);
 
-            return $this->remoteShell->run($node, $script)->successful();
+            return $this->services->apply($node, $runtimeUnit, $this->serviceSpec($process, $runtimeUnit));
         } catch (Throwable) {
             return false;
         }
@@ -51,10 +43,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function remove(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'docker service rm '.escapeshellarg($this->assertServiceName($runtimeUnit)),
-        )->successful();
+        return $this->services->remove($node, $this->assertServiceName($runtimeUnit));
     }
 
     public function cleanupScript(string $runtimeUnit): string
@@ -64,26 +53,17 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function start(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'docker service update --detach --replicas 1 '.escapeshellarg($this->assertServiceName($runtimeUnit)),
-        )->successful();
+        return $this->services->start($node, $this->assertServiceName($runtimeUnit));
     }
 
     public function stop(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'docker service update --detach --replicas 0 '.escapeshellarg($this->assertServiceName($runtimeUnit)),
-        )->successful();
+        return $this->services->stop($node, $this->assertServiceName($runtimeUnit));
     }
 
     public function restart(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'docker service update --detach --force '.escapeshellarg($this->assertServiceName($runtimeUnit)),
-        )->successful();
+        return $this->services->restart($node, $this->assertServiceName($runtimeUnit));
     }
 
     public function logScript(
@@ -105,7 +85,10 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
             ->implode(' ');
     }
 
-    private function applyScript(Process $process, string $runtimeUnit): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function serviceSpec(Process $process, string $runtimeUnit): array
     {
         $config = $this->runtimeConfig($process);
         $specHash =
@@ -114,90 +97,24 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
                 'orbit.process.spec_hash',
             ) ?? '';
 
-        return sprintf(
-            <<<'SH'
-                needs_create=1
-                if docker service inspect %1$s >/dev/null 2>&1; then
-                  current_spec_hash="$(docker service inspect --format '{{ index .Spec.Labels "orbit.process.spec_hash" }}' %1$s 2>/dev/null || true)"
-                  if [ "$current_spec_hash" = %2$s ]; then
-                    needs_create=0
-                  else
-                    docker service rm %1$s
-                  fi
-                fi
-                if [ "$needs_create" = 1 ]; then
-                  %3$s
-                fi
-                SH,
-            escapeshellarg($runtimeUnit),
-            escapeshellarg($specHash),
-            $this->createCommand($process, $runtimeUnit, $config),
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $config
-     */
-    private function createCommand(Process $process, string $runtimeUnit, array $config): string
-    {
         $usesImageEntrypoint = $this->usesImageEntrypoint($config);
-        $parts = [
-            'docker service create',
-            '--name',
-            escapeshellarg($runtimeUnit),
-            '--replicas',
-            '0',
-            '--restart-condition',
-            escapeshellarg($this->restartCondition($process)),
+
+        return [
+            'image' => $this->requiredString($config, 'image', $process),
+            'command' => $process->command,
+            'command_mode' => $usesImageEntrypoint ? 'image_entrypoint' : 'shell',
+            'restart_condition' => $this->restartCondition($process),
+            'labels' => $this->stringMap($config['labels'] ?? []),
+            'ports' => $this->ports($config['ports'] ?? []),
+            'mounts' => [
+                ...$this->volumes($config['volumes'] ?? []),
+                ...$this->bindMounts($config['bind_mounts'] ?? []),
+            ],
+            'environment' => $this->stringMap($config['environment'] ?? []),
+            'update_order' => $this->updateOrder($config),
+            'update_parallelism' => $this->updateParallelism($config),
+            'expected_hash' => $specHash,
         ];
-
-        foreach ($this->stringMap($config['labels'] ?? []) as $key => $value) {
-            $parts[] = '--label';
-            $parts[] = escapeshellarg("{$key}={$value}");
-        }
-
-        foreach ($this->ports($config['ports'] ?? []) as $port) {
-            $parts[] = '--publish';
-            $parts[] = escapeshellarg($port);
-        }
-
-        foreach ($this->volumes($config['volumes'] ?? []) as $volume) {
-            $parts[] = '--mount';
-            $parts[] = escapeshellarg($volume);
-        }
-
-        foreach ($this->bindMounts($config['bind_mounts'] ?? []) as $mount) {
-            $parts[] = '--mount';
-            $parts[] = escapeshellarg($mount);
-        }
-
-        foreach ($this->stringMap($config['environment'] ?? []) as $key => $value) {
-            $parts[] = '--env';
-            $parts[] = escapeshellarg("{$key}={$value}");
-        }
-
-        $updateStrategy = is_array($config['update_strategy'] ?? null) ? $config['update_strategy'] : [];
-        $updateOrder = $this->optionalString($updateStrategy, 'order') ?? 'stop-first';
-        $updateParallelism = (string) max(1, (int) ($updateStrategy['parallelism'] ?? 1));
-
-        $parts[] = '--update-order';
-        $parts[] = escapeshellarg($updateOrder);
-        $parts[] = '--update-parallelism';
-        $parts[] = escapeshellarg($updateParallelism);
-
-        if (! $usesImageEntrypoint) {
-            $parts[] = '--entrypoint';
-            $parts[] = escapeshellarg('sh');
-        }
-
-        $parts[] = escapeshellarg($this->requiredString($config, 'image', $process));
-
-        if (! $usesImageEntrypoint) {
-            $parts[] = escapeshellarg('-lc');
-            $parts[] = escapeshellarg($process->command);
-        }
-
-        return implode(' ', $parts);
     }
 
     /**
@@ -221,6 +138,26 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
             ProcessRestartPolicy::OnFailure => 'on-failure',
             ProcessRestartPolicy::Always => 'any',
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function updateOrder(array $config): string
+    {
+        $updateStrategy = is_array($config['update_strategy'] ?? null) ? $config['update_strategy'] : [];
+
+        return $this->optionalString($updateStrategy, 'order') ?? 'stop-first';
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function updateParallelism(array $config): string
+    {
+        $updateStrategy = is_array($config['update_strategy'] ?? null) ? $config['update_strategy'] : [];
+
+        return (string) max(1, (int) ($updateStrategy['parallelism'] ?? 1));
     }
 
     /**

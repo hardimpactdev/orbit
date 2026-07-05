@@ -1,0 +1,849 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\WebSockets;
+
+use Symfony\Component\Process\Process;
+
+final readonly class LocalWebSocketRuntimeAction
+{
+    private const string RuntimeRoot = '/opt/orbit/websocket';
+
+    private const string AppsConfigPath = '/etc/orbit/websocket/apps.php';
+
+    private const string SourceHostPath = '/opt/orbit/websocket/current';
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function run(mixed $action, array $payload = []): array
+    {
+        return match ($action) {
+            'image:is-self-contained' => $this->imageIsSelfContained(),
+            'app-key:ensure' => $this->ensureAppKey(),
+            'source:install' => $this->installSource($payload),
+            'container:apply' => $this->applyContainer($payload),
+            'container:remove' => $this->removeContainer($payload),
+            'app-config:sync' => $this->syncAppConfig($payload),
+            'doctor:backend-cert-probe' => $this->backendCertificateProbe($payload),
+            'doctor:redis-probe' => $this->redisProbe($payload),
+            'doctor:runtime-probe' => $this->runtimeProbe($payload),
+            default => throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'validation_failed',
+                message: 'Websocket runtime action is invalid.',
+                meta: ['field' => 'action'],
+            ),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{action: string, source_hash: string, stdout: string}
+     */
+    private function installSource(array $payload): array
+    {
+        $sourceHash = $this->sourceHash($payload['source_hash'] ?? null);
+        $archive = $this->sourceArchive($payload['archive_base64'] ?? null);
+        $releaseDir = self::RuntimeRoot."/releases/{$sourceHash}";
+        $sharedDir = self::RuntimeRoot.'/shared';
+        $sharedEnv = "{$sharedDir}/.env";
+        $timings = [];
+
+        $this->timed($timings, 'setup', function () use ($sharedDir): void {
+            $this->mustRun([
+                'sudo',
+                'install',
+                '-d',
+                '-m',
+                '0755',
+                self::RuntimeRoot,
+                self::RuntimeRoot.'/releases',
+                $sharedDir,
+                dirname(self::AppsConfigPath),
+            ]);
+
+            if ($this->runProcess(['sudo', 'test', '-f', self::AppsConfigPath])->isSuccessful()) {
+                return;
+            }
+
+            $this->writeSudoFile(self::AppsConfigPath, "<?php return [];\n");
+            $this->mustRun(['sudo', 'chmod', '0644', self::AppsConfigPath]);
+        });
+
+        $currentHash = trim(
+            $this->runProcess(['sudo', 'cat', "{$releaseDir}/.orbit-websocket-source-hash"])->getOutput(),
+        );
+
+        $this->timed($timings, 'extract', function () use ($archive, $currentHash, $releaseDir, $sourceHash): void {
+            if (hash_equals($sourceHash, $currentHash)) {
+                return;
+            }
+
+            $this->mustRun(['sudo', 'rm', '-rf', $releaseDir]);
+            $this->mustRun(['sudo', 'install', '-d', '-m', '0755', $releaseDir]);
+            $this->mustRunWithInput(['sudo', 'tar', '-xf', '-', '-C', $releaseDir], $archive, 60);
+            $this->mustRun(['sudo', 'find', $releaseDir, '-type', 'd', '-exec', 'chmod', '0755', '{}', '+']);
+            $this->mustRun(['sudo', 'find', $releaseDir, '-type', 'f', '-exec', 'chmod', '0644', '{}', '+']);
+            $this->mustRun(['sudo', 'chmod', '0755', "{$releaseDir}/artisan"]);
+        });
+
+        $this->timed($timings, 'env', function () use ($releaseDir, $sharedEnv): void {
+            if (! $this->runProcess(['sudo', 'test', '-f', $sharedEnv])->isSuccessful()) {
+                $this->writeSudoFile($sharedEnv, 'APP_KEY='.$this->generateAppKey()."\n");
+                $this->mustRun(['sudo', 'chmod', '0600', $sharedEnv]);
+            } elseif (! $this->runProcess(['sudo', 'grep', '-q', '^APP_KEY=', $sharedEnv])->isSuccessful()) {
+                $this->appendSudoFile($sharedEnv, 'APP_KEY='.$this->generateAppKey()."\n");
+            }
+
+            $this->mustRun(['sudo', 'ln', '-sfn', $sharedEnv, "{$releaseDir}/.env"]);
+        });
+
+        $this->timed($timings, 'composer', function () use ($releaseDir): void {
+            if ($this->runProcess(['sudo', 'test', '-f', "{$releaseDir}/vendor/autoload.php"])->isSuccessful()) {
+                return;
+            }
+
+            if (! $this->runProcess(['composer', '--version'])->isSuccessful()) {
+                throw new LocalWebSocketRuntimeFailure(
+                    errorCode: 'websocket_runtime_composer_missing',
+                    message: 'WebSocket runtime dependencies require host composer.',
+                );
+            }
+
+            $this->mustRun([
+                'sudo',
+                'env',
+                'COMPOSER_ALLOW_SUPERUSER=1',
+                'composer',
+                '--working-dir',
+                $releaseDir,
+                'install',
+                '--no-dev',
+                '--no-interaction',
+                '--prefer-dist',
+                '--optimize-autoloader',
+                '--no-progress',
+            ]);
+        });
+
+        $this->timed($timings, 'activate', function () use ($releaseDir, $sourceHash): void {
+            $this->writeSudoFile("{$releaseDir}/.orbit-websocket-source-hash", "{$sourceHash}\n");
+            $this->mustRun(['sudo', 'ln', '-sfn', "releases/{$sourceHash}", self::SourceHostPath]);
+        });
+
+        return [
+            'action' => 'source:install',
+            'source_hash' => $sourceHash,
+            'stdout' => $this->timingOutput($timings),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function applyContainer(array $payload): array
+    {
+        $spec = LocalWebSocketRuntimeContainerSpec::from($payload['spec'] ?? null);
+
+        $this->ensureNetwork($spec->network);
+        $inspection = $this->inspectContainer($spec->name);
+        $hadExistingContainer = $inspection !== null;
+        $observedHash = $this->observedSpecHash($inspection);
+
+        if (
+            $hadExistingContainer
+            && hash_equals($spec->expectedHash, $observedHash ?? '')
+            && $this->isRunning($inspection)
+        ) {
+            return $this->containerApplyResult($spec->name, 'unchanged', true, false);
+        }
+
+        if ($hadExistingContainer && ! hash_equals($spec->expectedHash, $observedHash ?? '')) {
+            $remove = $this->runProcess(['docker', 'rm', '-f', $spec->name]);
+
+            if (! $remove->isSuccessful()) {
+                throw $this->containerFailure('remove drifted', $spec->name, $remove);
+            }
+
+            $create = $this->runProcess($spec->runCommand());
+
+            if (! $create->isSuccessful()) {
+                throw $this->containerFailure('create', $spec->name, $create);
+            }
+
+            return $this->containerApplyResult($spec->name, 'recreated', true, true);
+        }
+
+        if (! $hadExistingContainer) {
+            $create = $this->runProcess($spec->runCommand());
+
+            if (! $create->isSuccessful()) {
+                throw $this->containerFailure('create', $spec->name, $create);
+            }
+
+            return $this->containerApplyResult($spec->name, 'created', false, true);
+        }
+
+        $start = $this->runProcess(['docker', 'start', $spec->name]);
+
+        if (! $start->isSuccessful()) {
+            throw $this->containerFailure('start', $spec->name, $start);
+        }
+
+        return $this->containerApplyResult($spec->name, 'started', true, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{action: string, container: string, changed: bool}
+     */
+    private function removeContainer(array $payload): array
+    {
+        $container = $this->container($payload['container'] ?? null);
+        $inspect = $this->runProcess(['docker', 'container', 'inspect', $container]);
+
+        if (! $inspect->isSuccessful()) {
+            if ($this->isDockerNoSuchContainer($inspect)) {
+                return [
+                    'action' => 'container:remove',
+                    'container' => $container,
+                    'changed' => false,
+                ];
+            }
+
+            throw $this->containerFailure('inspect', $container, $inspect);
+        }
+
+        $remove = $this->runProcess(['docker', 'rm', '-f', $container]);
+
+        if (! $remove->isSuccessful()) {
+            throw $this->containerFailure('remove', $container, $remove);
+        }
+
+        return [
+            'action' => 'container:remove',
+            'container' => $container,
+            'changed' => true,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{exists: string, running: string, env_host: string, cmd_host: string, stdout: string}
+     */
+    private function runtimeProbe(array $payload): array
+    {
+        $container = $this->container($payload['container'] ?? null);
+        $inspect = $this->runProcess(['docker', 'container', 'inspect', $container]);
+
+        if (! $inspect->isSuccessful()) {
+            return $this->runtimeProbePayload('0', 'false', '', '');
+        }
+
+        $running = $this->inspectValue($container, '{{.State.Running}}');
+        $env = $this->inspectValue($container, '{{range .Config.Env}}{{println .}}{{end}}');
+        $command = $this->inspectValue($container, '{{range .Config.Cmd}}{{print . " "}}{{end}}');
+
+        return $this->runtimeProbePayload(
+            exists: '1',
+            running: $running !== '' ? $running : 'false',
+            envHost: $this->envValue($env, 'REVERB_SERVER_HOST'),
+            cmdHost: $this->commandHost($command),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{cert_exists: string, key_exists: string, cert_matches: string, stdout: string}
+     */
+    private function backendCertificateProbe(array $payload): array
+    {
+        $backend = $this->backend($payload['backend'] ?? null);
+        $cert = $this->absolutePath($payload['cert'] ?? null, 'cert');
+        $key = $this->absolutePath($payload['key'] ?? null, 'key');
+        $certExists = $this->runProcess(['sudo', 'test', '-f', $cert])->isSuccessful() ? '1' : '0';
+        $keyExists = $this->runProcess(['sudo', 'test', '-f', $key])->isSuccessful() ? '1' : '0';
+        $certMatches = '';
+
+        if ($certExists === '1') {
+            $result = $this->runProcess([
+                'sudo',
+                'openssl',
+                'x509',
+                '-in',
+                $cert,
+                '-noout',
+                '-subject',
+                '-ext',
+                'subjectAltName',
+            ]);
+            $certMatches = $result->isSuccessful() && str_contains($result->getOutput(), $backend) ? '1' : '0';
+        }
+
+        return [
+            'cert_exists' => $certExists,
+            'key_exists' => $keyExists,
+            'cert_matches' => $certMatches,
+            'stdout' => "cert_exists={$certExists}\nkey_exists={$keyExists}\ncert_matches={$certMatches}\n",
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{ok: true}
+     */
+    private function redisProbe(array $payload): array
+    {
+        $container = $this->container($payload['container'] ?? null);
+        $process = new Process(['docker', 'exec', '-i', $container, 'php']);
+        $process->setInput(<<<'PHP'
+            <?php
+
+            $host = getenv('REDIS_HOST') ?: 'redis.orbit';
+            $port = (int) (getenv('REDIS_PORT') ?: 6379);
+            $errno = 0;
+            $errstr = '';
+            $socket = @fsockopen($host, $port, $errno, $errstr, 2);
+
+            if (! $socket) {
+                fwrite(STDERR, $errstr !== '' ? $errstr : 'redis unavailable');
+                exit(1);
+            }
+
+            fclose($socket);
+            PHP);
+        $process->setTimeout(15);
+        $process->run();
+
+        if ($process->isSuccessful()) {
+            return ['ok' => true];
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_redis_unavailable',
+            message: 'Websocket runtime Redis probe failed.',
+            meta: [
+                'exit_code' => $process->getExitCode(),
+                'output' => $this->output($process),
+            ],
+        );
+    }
+
+    /**
+     * @return array{self_contained: bool, output: string}
+     */
+    private function imageIsSelfContained(): array
+    {
+        $result = $this->runProcess([
+            'docker',
+            'image',
+            'inspect',
+            '--format',
+            '{{ index .Config.Labels "orbit.websocket.self_contained" }}',
+            'orbit-reverb:current',
+        ]);
+
+        return [
+            'self_contained' => $result->isSuccessful() && trim($result->getOutput()) === 'true',
+            'output' => $this->output($result),
+        ];
+    }
+
+    /**
+     * @return array{app_key: string}
+     */
+    private function ensureAppKey(): array
+    {
+        $this->mustRun(['sudo', 'install', '-d', '-m', '0755', '/etc/orbit/websocket']);
+
+        $test = $this->runProcess(['sudo', 'test', '-f', '/etc/orbit/websocket/app.key']);
+
+        if (! $test->isSuccessful()) {
+            $appKey = $this->generateAppKey();
+            $this->writeAppKey($appKey);
+            $this->mustRun(['sudo', 'chmod', '0600', '/etc/orbit/websocket/app.key']);
+        }
+
+        $cat = $this->mustRun(['sudo', 'cat', '/etc/orbit/websocket/app.key']);
+        $appKey = trim($cat->getOutput());
+
+        if ($appKey === '') {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_app_key_empty',
+                message: 'Websocket runtime app key is empty.',
+            );
+        }
+
+        return ['app_key' => $appKey];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{path: string, bytes: int, restarted: bool}
+     */
+    private function syncAppConfig(array $payload): array
+    {
+        $content = $this->content($payload['content'] ?? null);
+        $container = $this->container($payload['container'] ?? null);
+
+        $this->mustRun(['sudo', 'install', '-d', '-m', '0755', '/etc/orbit/websocket']);
+        $this->writeAppsConfig($content);
+        $this->mustRun(['sudo', 'chmod', '0644', self::AppsConfigPath]);
+
+        $inspect = $this->runProcess(['docker', 'container', 'inspect', $container]);
+
+        if (! $inspect->isSuccessful()) {
+            return [
+                'path' => self::AppsConfigPath,
+                'bytes' => strlen($content),
+                'restarted' => false,
+            ];
+        }
+
+        $this->mustRun(['docker', 'restart', $container]);
+
+        return [
+            'path' => self::AppsConfigPath,
+            'bytes' => strlen($content),
+            'restarted' => true,
+        ];
+    }
+
+    private function inspectValue(string $container, string $format): string
+    {
+        $result = $this->runProcess(['docker', 'container', 'inspect', '--format', $format, $container]);
+
+        if (! $result->isSuccessful()) {
+            return '';
+        }
+
+        return trim($result->getOutput());
+    }
+
+    private function ensureNetwork(string $network): void
+    {
+        $inspect = $this->runProcess(['docker', 'network', 'inspect', $network]);
+
+        if ($inspect->isSuccessful()) {
+            return;
+        }
+
+        $create = $this->runProcess([
+            'docker',
+            'network',
+            'create',
+            '--label',
+            'orbit.managed=true',
+            '--label',
+            'orbit.network.kind=runtime',
+            $network,
+        ]);
+
+        if ($create->isSuccessful()) {
+            return;
+        }
+
+        throw $this->containerFailure('create network', $network, $create);
+    }
+
+    /**
+     * @return array<array-key, mixed>|null
+     */
+    private function inspectContainer(string $container): ?array
+    {
+        $inspect = $this->runProcess(['docker', 'container', 'inspect', '--format', '{{json .}}', $container]);
+
+        if (! $inspect->isSuccessful()) {
+            if ($this->isDockerNoSuchContainer($inspect)) {
+                return null;
+            }
+
+            throw $this->containerFailure('inspect', $container, $inspect);
+        }
+
+        $output = trim($inspect->getOutput());
+
+        if ($output === '') {
+            return null;
+        }
+
+        /** @var mixed $decoded */
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (is_array($decoded)) {
+            return $decoded;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_container_inspect_failed',
+            message: "Docker returned an invalid inspect payload for '{$container}'.",
+            meta: [
+                'action' => 'container:apply',
+                'container' => $container,
+            ],
+        );
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $inspection
+     */
+    private function observedSpecHash(?array $inspection): ?string
+    {
+        if (
+            ! isset($inspection['Config'])
+            || ! is_array($inspection['Config'])
+            || ! isset($inspection['Config']['Labels'])
+            || ! is_array($inspection['Config']['Labels'])
+        ) {
+            return null;
+        }
+
+        return is_string($inspection['Config']['Labels'][LocalWebSocketRuntimeContainerSpec::SpecHashLabel] ?? null)
+            ? $inspection['Config']['Labels'][LocalWebSocketRuntimeContainerSpec::SpecHashLabel]
+            : null;
+    }
+
+    /**
+     * @param  array<array-key, mixed>|null  $inspection
+     */
+    private function isRunning(?array $inspection): bool
+    {
+        if (! is_array($inspection)) {
+            return false;
+        }
+
+        return ($inspection['State']['Running'] ?? false) === true;
+    }
+
+    /**
+     * @return array{action: string, container: string, outcome: string, had_existing_container: bool, changed: bool}
+     */
+    private function containerApplyResult(
+        string $container,
+        string $outcome,
+        bool $hadExistingContainer,
+        bool $changed,
+    ): array {
+        return [
+            'action' => 'container:apply',
+            'container' => $container,
+            'outcome' => $outcome,
+            'had_existing_container' => $hadExistingContainer,
+            'changed' => $changed,
+        ];
+    }
+
+    private function containerFailure(string $action, string $container, Process $result): LocalWebSocketRuntimeFailure
+    {
+        $output = trim($result->getErrorOutput().' '.$result->getOutput());
+        $message = $output !== '' ? $output : 'unknown error';
+
+        return new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_container_failed',
+            message: "Failed to {$action} websocket runtime container '{$container}': {$message}",
+            meta: [
+                'action' => $action,
+                'container' => $container,
+                'exit_code' => $result->getExitCode(),
+                'stderr' => trim($result->getErrorOutput()),
+            ],
+        );
+    }
+
+    private function isDockerNoSuchContainer(Process $result): bool
+    {
+        return preg_match('/No such (object|container)/i', $result->getErrorOutput().' '.$result->getOutput()) === 1;
+    }
+
+    /**
+     * @return array{exists: string, running: string, env_host: string, cmd_host: string, stdout: string}
+     */
+    private function runtimeProbePayload(string $exists, string $running, string $envHost, string $cmdHost): array
+    {
+        return [
+            'exists' => $exists,
+            'running' => $running,
+            'env_host' => $envHost,
+            'cmd_host' => $cmdHost,
+            'stdout' => "exists={$exists}\nrunning={$running}\nenv_host={$envHost}\ncmd_host={$cmdHost}\n",
+        ];
+    }
+
+    private function envValue(string $env, string $name): string
+    {
+        foreach (preg_split('/\R/', $env) ?: [] as $line) {
+            [$key, $value] = array_pad(explode('=', $line, 2), 2, '');
+
+            if ($key === $name) {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function commandHost(string $command): string
+    {
+        $matches = [];
+
+        if (preg_match('/(?:^|\s)--host=([^\s]+)/', $command, $matches) !== 1) {
+            return '';
+        }
+
+        return $matches[1];
+    }
+
+    private function generateAppKey(): string
+    {
+        try {
+            return 'base64:'.base64_encode(random_bytes(32));
+        } catch (\Random\RandomException $exception) {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'websocket_runtime_app_key_failed',
+                message: 'Could not generate websocket runtime app key.',
+                previous: $exception,
+            );
+        }
+    }
+
+    private function writeAppsConfig(string $content): void
+    {
+        $this->writeSudoFile(self::AppsConfigPath, $content);
+    }
+
+    private function writeAppKey(string $appKey): void
+    {
+        $this->writeSudoFile('/etc/orbit/websocket/app.key', "{$appKey}\n");
+    }
+
+    private function writeSudoFile(string $path, string $content): void
+    {
+        $process = new Process(['sudo', 'tee', $path]);
+        $process->setInput($content);
+        $process->setTimeout(10);
+        $process->run();
+
+        if ($process->isSuccessful()) {
+            return;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_file_failed',
+            message: 'Could not write websocket runtime file.',
+            meta: [
+                'path' => $path,
+                'exit_code' => $process->getExitCode(),
+                'output' => $this->output($process),
+            ],
+        );
+    }
+
+    private function appendSudoFile(string $path, string $content): void
+    {
+        $process = new Process(['sudo', 'tee', '-a', $path]);
+        $process->setInput($content);
+        $process->setTimeout(10);
+        $process->run();
+
+        if ($process->isSuccessful()) {
+            return;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_file_failed',
+            message: 'Could not append websocket runtime file.',
+            meta: [
+                'path' => $path,
+                'exit_code' => $process->getExitCode(),
+                'output' => $this->output($process),
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function mustRun(array $command): Process
+    {
+        $result = $this->runProcess($command);
+
+        if ($result->isSuccessful()) {
+            return $result;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_command_failed',
+            message: 'Websocket runtime command failed.',
+            meta: [
+                'command' => $command[0],
+                'exit_code' => $result->getExitCode(),
+                'output' => $this->output($result),
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function mustRunWithInput(array $command, string $input, int $timeout): Process
+    {
+        $process = new Process($command);
+        $process->setInput($input);
+        $process->setTimeout($timeout);
+        $process->run();
+
+        if ($process->isSuccessful()) {
+            return $process;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'websocket_runtime_command_failed',
+            message: 'Websocket runtime command failed.',
+            meta: [
+                'command' => $command[0],
+                'exit_code' => $process->getExitCode(),
+                'output' => $this->output($process),
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function runProcess(array $command): Process
+    {
+        $process = new Process($command);
+        $process->setTimeout(15);
+        $process->run();
+
+        return $process;
+    }
+
+    private function content(mixed $value): string
+    {
+        if (is_string($value) && $value !== '') {
+            return $value;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'validation_failed',
+            message: 'Websocket runtime app config content is invalid.',
+            meta: ['field' => 'content'],
+        );
+    }
+
+    private function sourceHash(mixed $value): string
+    {
+        if (is_string($value) && preg_match('/\A[a-f0-9]{64}\z/', $value) === 1) {
+            return $value;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'validation_failed',
+            message: 'Websocket runtime source hash is invalid.',
+            meta: ['field' => 'source_hash'],
+        );
+    }
+
+    private function sourceArchive(mixed $value): string
+    {
+        if (! is_string($value) || $value === '') {
+            throw new LocalWebSocketRuntimeFailure(
+                errorCode: 'validation_failed',
+                message: 'Websocket runtime source archive is invalid.',
+                meta: ['field' => 'archive_base64'],
+            );
+        }
+
+        $archive = base64_decode($value, strict: true);
+
+        if (is_string($archive) && $archive !== '') {
+            return $archive;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'validation_failed',
+            message: 'Websocket runtime source archive is invalid.',
+            meta: ['field' => 'archive_base64'],
+        );
+    }
+
+    /**
+     * @param  array<string, int>  $timings
+     */
+    private function timed(array &$timings, string $step, callable $callback): void
+    {
+        $start = hrtime(true);
+
+        $callback();
+
+        $timings[$step] = (int) round((hrtime(true) - $start) / 1_000_000);
+    }
+
+    /**
+     * @param  array<string, int>  $timings
+     */
+    private function timingOutput(array $timings): string
+    {
+        $lines = [];
+
+        foreach ($timings as $step => $duration) {
+            $lines[] = "__orbit_websocket_source_timing {$step} {$duration}";
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    private function container(mixed $value): string
+    {
+        if (is_string($value) && preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]*\z/', $value) === 1) {
+            return $value;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'validation_failed',
+            message: 'Websocket runtime container is invalid.',
+            meta: ['field' => 'container'],
+        );
+    }
+
+    private function backend(mixed $value): string
+    {
+        if (is_string($value) && preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]*\z/', $value) === 1) {
+            return $value;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'validation_failed',
+            message: 'Websocket backend name is invalid.',
+            meta: ['field' => 'backend'],
+        );
+    }
+
+    private function absolutePath(mixed $value, string $field): string
+    {
+        if (is_string($value) && str_starts_with($value, '/') && ! str_contains($value, "\0")) {
+            return $value;
+        }
+
+        throw new LocalWebSocketRuntimeFailure(
+            errorCode: 'validation_failed',
+            message: 'Websocket runtime path is invalid.',
+            meta: ['field' => $field],
+        );
+    }
+
+    private function output(Process $process): string
+    {
+        $output = trim($process->getErrorOutput());
+
+        if ($output !== '') {
+            return $output;
+        }
+
+        return trim($process->getOutput());
+    }
+}

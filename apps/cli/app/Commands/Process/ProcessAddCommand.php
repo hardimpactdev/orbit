@@ -15,6 +15,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {name? : Process name}
         {process_command? : Command to run}
         {--node= : Owning node name}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--tool= : Tool capability this process uses}

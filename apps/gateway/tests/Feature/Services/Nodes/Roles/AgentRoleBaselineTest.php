@@ -2,59 +2,104 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+
     $this->configDir = storage_path('framework/testing/agent-dns');
     File::deleteDirectory($this->configDir);
-
-    $this->agentRemoteShell = fakeAgentRemoteShell();
-    app()->instance(RemoteShell::class, $this->agentRemoteShell);
 });
 
 afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
     File::deleteDirectory($this->configDir);
 });
 
-function fakeAgentRemoteShell(): RemoteShell
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function agent_role_agent_response(string $operationId, array $data, int $exitCode = 0): array
 {
-    return new class implements RemoteShell {
-        /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
-        public array $calls = [];
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ];
+}
 
-        public function run(Node $node, string $script, array $options = []): RemoteShellResult
-        {
-            $this->calls[] = ['node' => $node, 'script' => $script, 'options' => $options];
+/**
+ * @return list<Request>
+ */
+function agent_role_agent_requests(string $wireguardAddress): array
+{
+    return Http::recorded(
+        fn (Request $request): bool => $request->url() === "http://{$wireguardAddress}:9477/v1/commands",
+    )
+        ->map(fn (array $record): Request => $record[0])
+        ->values()
+        ->all();
+}
 
-            return new RemoteShellResult(
-                exitCode: 0,
-                stdout: '',
-                stderr: '',
-                durationMs: 0,
-            );
-        }
-    };
+function fake_agent_role_agent_convergence(string $wireguardAddress): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        "http://{$wireguardAddress}:9477/v1/commands" => Http::sequence()
+            ->push(agent_role_agent_response('agent-user.ensure', [
+                'user' => 'agent',
+                'created' => false,
+                'locked' => true,
+            ]))
+            ->push(agent_role_agent_response('agent-acl.ensure', [
+                'installed_acl' => false,
+                'directory_acl_exit_code' => 0,
+                'binary_acl_exit_code' => 0,
+            ])),
+    ]);
 }
 
 describe('agent role baseline', function (): void {
     it('converges caddy as a desired tool', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
+            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.50',
         ]);
+        fake_agent_role_agent_convergence('10.6.0.50');
 
         $assignment = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -93,8 +138,10 @@ describe('agent role baseline', function (): void {
     it('materializes a gateway-owned agent dns mapping for the tld', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
+            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.50',
         ]);
+        fake_agent_role_agent_convergence('10.6.0.50');
 
         $assignment = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,
@@ -115,9 +162,10 @@ describe('agent role baseline', function (): void {
             ->toContain('address=/agent/10.6.0.50');
     });
 
-    it('converges the shared unprivileged agent user via remote shell', function (): void {
+    it('converges the shared unprivileged agent user through agent-push local executor', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
+            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.50',
         ]);
 
@@ -128,31 +176,20 @@ describe('agent role baseline', function (): void {
             'settings' => ['tld' => 'agent'],
         ]);
 
-        $shell = fakeAgentRemoteShell();
+        fake_agent_role_agent_convergence('10.6.0.50');
 
         $baseline = new AgentRoleBaseline(
             new DevelopmentDnsMappingEnactor($this->configDir),
-            remoteShell: $shell,
         );
 
         $baseline->converge($node, $assignment);
 
-        expect($shell->calls)
-            ->toHaveCount(3)
-            ->and($shell->calls[0]['script'])
-            ->toBe('id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent')
-            ->and($shell->calls[0]['options'])
-            ->toBe(['throw' => true])
-            ->and($shell->calls[1]['script'])
-            ->toBe('sudo passwd -l agent >/dev/null 2>&1 || true')
-            ->and($shell->calls[1]['options'])
-            ->toBe(['throw' => true])
-            ->and($shell->calls[2]['script'])
-            ->toContain('sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin')
-            ->and($shell->calls[2]['script'])
-            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary')
-            ->and($shell->calls[2]['options'])
-            ->toBe(['throw' => true]);
+        expect(agent_role_agent_requests('10.6.0.50'))
+            ->toHaveCount(2)
+            ->and(agent_role_agent_requests('10.6.0.50')[0]['argv'] ?? [])
+            ->toContain('internal:agent-user:ensure')
+            ->and(agent_role_agent_requests('10.6.0.50')[1]['argv'] ?? [])
+            ->toContain('internal:agent-acl:ensure');
     });
 
     it('rejects agent convergence without a wireguard address', function (): void {
@@ -230,8 +267,10 @@ describe('agent role baseline', function (): void {
     it('removes agent baseline including dns mapping and tools', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
+            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.50',
         ]);
+        fake_agent_role_agent_convergence('10.6.0.50');
 
         $assignment = NodeRoleAssignment::factory()->create([
             'node_id' => $node->id,

@@ -15,6 +15,7 @@ use App\Models\ScheduleRun;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
 use Throwable;
@@ -28,7 +29,8 @@ final readonly class SchedulesProbe
     private const string Stack = 'orbit';
 
     public function __construct(
-        private RuntimeBackendProbe $runtimeBackendProbe,
+        private RuntimeBackendProbe $_runtimeBackendProbe,
+        private ?RemoteLocalExecutor $localExecutor = null,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private GatewaySwarmManager $swarm = new GatewaySwarmManager,
     ) {}
@@ -95,10 +97,16 @@ final readonly class SchedulesProbe
 
         if (! $this->isGatewayNode($node)) {
             try {
-                $result = $this->runtimeBackendProbe->remoteShell()->run(
-                    $node,
-                    'true',
-                    ['timeout' => 15, 'throw' => false],
+                $result = $this->localExecutor()->runInternal(
+                    node: $node,
+                    commandName: 'internal:executor:verify',
+                    transportOptions: [
+                        'metadata' => [
+                            'ORBIT_OPERATION_ID' => 'schedule.target.reachable',
+                        ],
+                        'timeout' => 15,
+                        'throw' => false,
+                    ],
                 );
                 $targetReachable = $result->successful();
                 $targetError = $result->successful() ? null : trim($result->output());
@@ -115,6 +123,11 @@ final readonly class SchedulesProbe
                 'target_error' => $targetError,
             ],
         ]);
+    }
+
+    private function localExecutor(): RemoteLocalExecutor
+    {
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     /**

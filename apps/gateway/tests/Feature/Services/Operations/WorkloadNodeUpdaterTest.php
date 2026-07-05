@@ -18,10 +18,12 @@ use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
+use App\Services\Operations\RemoteNodeDoctor;
 use App\Services\Operations\UpdateLeaseManager;
 use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\WorkloadNodeUpdateFailed;
 use App\Services\Operations\WorkloadNodeUpdater;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -30,7 +32,13 @@ use Orbit\Core\Enums\OperationStatus;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     app()->instance(GatewayCliArtifactRelay::class, new WorkloadUpdaterFakeArtifactRelay);
+    app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 });
 
 it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
@@ -125,7 +133,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and($shell->scriptsFor('agent-1'))
-        ->toBe([$shell->scriptFor('agent-1'), 'orbit doctor --self --stream-json'])
+        ->toBe([$shell->scriptFor('agent-1')])
         ->and($shell->activeLeases)
         ->toBe([
             'agent-1' => ['node:agent-1'],
@@ -237,6 +245,40 @@ it('skips a workload node already on the target version and runs no remote updat
         ->toBe(0);
 });
 
+it('requires explicit transitional ssh fallback before running workload update scripts', function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'failed',
+                'failed_step' => 'remote_update',
+                'output' => 'update:workload-node still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+            ],
+        ])
+        ->and($shell->updatedNodes())
+        ->toBe([])
+        ->and($node->fresh()->installed_cli?->version)
+        ->toBe('1.0.0');
+});
+
 it('updates topology candidate artifacts with the same version when the CLI hash differs', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
@@ -278,7 +320,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->and($shell->updatedNodes())
         ->toBe(['app-dev-1'])
         ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --stream-json'])
+        ->toBe([$shell->scriptFor('app-dev-1')])
         ->and($shell->scriptFor('app-dev-1'))
         ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
         ->and(workloadUpdaterStepMessages($run))
@@ -358,6 +400,9 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         doctorIssues: ['app-dev-1' => 2, 'app-prod-1' => 0],
     );
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor(
+        issues: ['app-dev-1' => 2, 'app-prod-1' => 0],
+    ));
 
     $run = workloadUpdaterRun();
     Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
@@ -373,7 +418,7 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         ->and($results[1]['doctor_issues'])
         ->toBe(0)
         ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --stream-json'])
+        ->toBe([$shell->scriptFor('app-dev-1')])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
@@ -386,6 +431,9 @@ it('keeps a workload update completed when advisory node doctor fails', function
         doctorFailures: ['app-dev-1' => new RuntimeException('doctor timed out')],
     );
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor(
+        failures: ['app-dev-1' => new RuntimeException('doctor timed out')],
+    ));
 
     $run = workloadUpdaterRun();
     Node::factory()
@@ -410,7 +458,7 @@ it('keeps a workload update completed when advisory node doctor fails', function
             ],
         ])
         ->and($shell->scriptsFor('app-dev-1'))
-        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --stream-json'])
+        ->toBe([$shell->scriptFor('app-dev-1')])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
@@ -490,6 +538,9 @@ it('emits skipped sub-step (no download/replace/doctor) for a node already on th
 it('keeps a non-zero doctor issue count from failing the node update', function (): void {
     $shell = new WorkloadUpdaterFakeShell(doctorIssues: ['app-dev-1' => 5]);
     app()->instance(RemoteShell::class, $shell);
+    app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor(
+        issues: ['app-dev-1' => 5],
+    ));
 
     $run = workloadUpdaterRun();
     Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
@@ -536,7 +587,7 @@ it('continues updating later workload nodes when one remote update fails', funct
         ->and($shell->scriptsFor('app-dev-1'))
         ->toHaveCount(1)
         ->and($shell->scriptsFor('app-prod-1'))
-        ->toBe([$shell->scriptFor('app-prod-1'), 'orbit doctor --self --stream-json'])
+        ->toBe([$shell->scriptFor('app-prod-1')])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
 });
@@ -913,6 +964,38 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
     public function cleanup(OperationRun $operationRun): void
     {
         //
+    }
+}
+
+final class WorkloadUpdaterFakeNodeDoctor extends RemoteNodeDoctor
+{
+    /**
+     * @var list<array{node: string, operation_run_id: int|string}>
+     */
+    public array $calls = [];
+
+    /**
+     * @param  array<string, int>  $issues
+     * @param  array<string, Throwable>  $failures
+     */
+    public function __construct(
+        private array $issues = [],
+        private array $failures = [],
+    ) {}
+
+    #[Override]
+    public function issues(Node $node, OperationRun $operationRun): ?int
+    {
+        $this->calls[] = [
+            'node' => $node->name,
+            'operation_run_id' => $operationRun->id,
+        ];
+
+        if (isset($this->failures[$node->name])) {
+            return null;
+        }
+
+        return $this->issues[$node->name] ?? 0;
     }
 }
 

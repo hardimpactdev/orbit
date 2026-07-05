@@ -32,4 +32,5 @@ return [
             ? (int) env('ORBIT_GATEWAY_OPERATION_FOLLOW_MAX_TRANSIENT_FAILURES')
             : null,
     ],
+    'local_executor_binary' => env('ORBIT_LOCAL_EXECUTOR_BINARY', default: '/usr/local/bin/orbit'),
 ];

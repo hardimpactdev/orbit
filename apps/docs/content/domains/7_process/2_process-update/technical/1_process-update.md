@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:update [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--restart] [--json]
+orbit process:update [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -27,6 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. |
 | `node` | `--node` | Required when updating a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants process-configuration mutation. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants process-configuration mutation. |
 | `workspace` | `--workspace` or workspace context | Required when updating a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants process-configuration mutation; pass `--app` when the workspace name is ambiguous. |
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |

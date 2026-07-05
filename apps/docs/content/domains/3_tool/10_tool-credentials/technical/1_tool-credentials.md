@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]`
+# Technical Contract: `orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json]`
 
 [Back to public `tool-credentials` documentation.](../tool-credentials.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--json]
+orbit tool:credentials [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -24,6 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Required in non-interactive input mode.` | `Never.` | `interactive selection from credential-bearing tools` | `Registered credential-bearing tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 

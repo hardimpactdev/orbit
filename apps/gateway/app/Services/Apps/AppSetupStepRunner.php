@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupRunStep;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 
 final readonly class AppSetupStepRunner
 {
@@ -47,12 +49,20 @@ final readonly class AppSetupStepRunner
             }
 
             $command = $this->commandRouter->route($app, $step->command, $environment);
-            $result = $this->remoteShell->run($node, $command, [
-                'cwd' => $app->path,
-                'timeout' => $step->timeoutSeconds(),
-                'strict' => true,
-                'metadata' => $environment,
-            ]);
+            $transport = app(ExplicitRemoteShellFallback::class);
+            $result = $transport->allowed()
+                ? $this->remoteShell->run($node, $command, [
+                    'cwd' => $app->path,
+                    'timeout' => $step->timeoutSeconds(),
+                    'strict' => true,
+                    'metadata' => $environment,
+                ])
+                : new RemoteShellResult(
+                    exitCode: 1,
+                    stdout: '',
+                    stderr: $transport->message('app:setup-step'),
+                    durationMs: 0,
+                );
 
             $runStep->update([
                 'exit_code' => $result->exitCode,

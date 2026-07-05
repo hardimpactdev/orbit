@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Security\PinnedHostKey;
 use App\Models\Node;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
@@ -15,6 +16,10 @@ uses(RefreshDatabase::class);
 const NODE_MANAGE_CALLER_WG_IP = '10.44.0.24';
 
 describe('node self management API', function (): void {
+    afterEach(function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+    });
+
     it('returns the gateway management SSH public key for active roleless callers', function (): void {
         Node::factory()
             ->operator()
@@ -70,7 +75,10 @@ describe('node self management API', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+            [
+                'REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP,
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+            ],
         );
 
         $response
@@ -88,6 +96,48 @@ describe('node self management API', function (): void {
             ->host_key_fingerprint->toBe('SHA256:test')->and($pinner->hosts)->toBe([
                 NODE_MANAGE_CALLER_WG_IP,
             ])->and($shell->nodes)->toBe(['mini'])->and($shell->scripts[0] ?? '')->toContain('true');
+    });
+
+    it('requires explicit transitional SSH fallback before self-management verification', function (): void {
+        $node = Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'mini',
+                'user' => null,
+                'platform' => null,
+                'host' => NODE_MANAGE_CALLER_WG_IP,
+                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
+                'status' => 'active',
+            ]);
+        $shell = new NodeManageRecordingShell;
+        $pinner = new NodeManageRecordingHostKeyPinner;
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SshHostKeyPinner::class, $pinner);
+
+        $response = $this->call(
+            'POST',
+            '/api/nodes/self/manage',
+            [
+                'user' => 'nicky',
+                'platform' => 'macos_15-5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node_transport_required')
+            ->assertJsonPath(
+                'error.message',
+                'node self-management SSH verification still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+            );
+
+        expect($node->fresh())
+            ->user->toBeNull()
+            ->platform->toBeNull()
+            ->host_key_fingerprint->toBeNull()->and($pinner->hosts)->toBe([])->and($shell->scripts)->toBe([]);
     });
 
     it('rejects role-bearing callers before management side effects', function (): void {

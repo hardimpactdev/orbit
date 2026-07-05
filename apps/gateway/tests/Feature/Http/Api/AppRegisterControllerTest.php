@@ -9,8 +9,11 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Ca\OrbitCaService;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
@@ -64,6 +67,17 @@ function grantAppRegisterAccess(Node $caller, Node $appNode, array $permissions 
     ]);
 }
 
+/**
+ * @return array<string, string>
+ */
+function app_register_fallback_server(): array
+{
+    return [
+        'REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP,
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+    ];
+}
+
 describe('AppRegisterController', function (): void {
     it('registers an existing app path for authorized callers', function (): void {
         createTestGatewayNode([
@@ -75,11 +89,13 @@ describe('AppRegisterController', function (): void {
             'name' => 'app-1',
             'tld' => 'test',
             'status' => 'active',
+            'wireguard_address' => '10.6.0.41',
+            'orbit_agent_capable' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.41');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -96,7 +112,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -112,9 +128,10 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())
-            ->toBeTrue()
-            ->and($remoteShell->scripts[0])
-            ->toContain("test -d '/home/orbit/apps/docs'");
+            ->toBeTrue();
+
+        expect($remoteShell->scripts)
+            ->toContainAppRegisterSourcePathProbe('/home/orbit/apps/docs');
     });
 
     it('stores the opt-in HTTPS runtime proxy transport when registering an app', function (): void {
@@ -127,11 +144,13 @@ describe('AppRegisterController', function (): void {
             'name' => 'app-1',
             'tld' => 'test',
             'status' => 'active',
+            'wireguard_address' => '10.6.0.42',
+            'orbit_agent_capable' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.42');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -149,7 +168,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -171,8 +190,11 @@ describe('AppRegisterController', function (): void {
             'name' => 'app-1',
             'tld' => 'test',
             'status' => 'active',
+            'wireguard_address' => '10.6.0.43',
+            'orbit_agent_capable' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.43');
 
         App::factory()->for($targetNode, 'node')->create([
             'name' => 'docs',
@@ -183,7 +205,6 @@ describe('AppRegisterController', function (): void {
         ]);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -201,7 +222,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -239,7 +260,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -265,8 +286,11 @@ describe('AppRegisterController', function (): void {
             'name' => 'new-app',
             'tld' => 'test',
             'status' => 'active',
+            'wireguard_address' => '10.6.0.44',
+            'orbit_agent_capable' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.44', '/srv/docs');
         App::factory()->create([
             'name' => 'docs',
             'node_id' => $oldNode->id,
@@ -276,7 +300,6 @@ describe('AppRegisterController', function (): void {
         ]);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -293,7 +316,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -311,9 +334,10 @@ describe('AppRegisterController', function (): void {
             ->and($app->adopted)
             ->toBeTrue()
             ->and($remoteShell->nodeNames[0])
-            ->toBe('new-app')
-            ->and($remoteShell->scripts[0])
-            ->toContain("test -d '/srv/docs'");
+            ->toBe('new-app');
+
+        expect($remoteShell->scripts)
+            ->toContainAppRegisterSourcePathProbe('/srv/docs');
     });
 
     it('rejects registration when the caller lacks app:register on the target app node', function (): void {
@@ -341,7 +365,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -377,7 +401,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -416,7 +440,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -441,11 +465,13 @@ describe('AppRegisterController', function (): void {
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'status' => 'active',
+            'wireguard_address' => '10.6.0.45',
+            'orbit_agent_capable' => true,
         ]);
         grantAppRegisterAccess($caller, $targetNode);
+        fake_app_register_source_path_probe('10.6.0.45');
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -462,7 +488,7 @@ describe('AppRegisterController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+            app_register_fallback_server(),
         );
 
         $response
@@ -471,11 +497,53 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.data.app.name', 'docs');
 
         expect(App::query()->where('name', 'docs')->exists())
-            ->toBeTrue()
-            ->and($remoteShell->scripts[0])
-            ->toContain("test -d '/home/orbit/apps/docs'");
+            ->toBeTrue();
+
+        expect($remoteShell->scripts)
+            ->toContainAppRegisterSourcePathProbe('/home/orbit/apps/docs');
     });
 });
+
+function fake_app_register_source_path_probe(
+    string $address,
+    string $path = '/home/orbit/apps/docs',
+    bool $exists = true,
+): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        "http://{$address}:9477/v1/commands" => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'app-source-path.probe',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'path' => $path,
+                                'exists' => $exists,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+            ],
+        ]),
+    ]);
+}
+
+function app_register_source_path_probe_was_sent(Request $request, string $address, string $path): bool
+{
+    return (
+        $request->url() === "http://{$address}:9477/v1/commands"
+        && $request['binary'] === 'orbit'
+        && $request['argv'][0] === 'internal:app-source-path:probe'
+        && $request['argv'][1] === $path
+    );
+}
 
 final class AppRegisterApiSequencedRemoteShell implements RemoteShell
 {
@@ -501,6 +569,40 @@ final class AppRegisterApiSequencedRemoteShell implements RemoteShell
         $this->scripts[] = $script;
         $this->nodeNames[] = $node->name;
 
+        if (
+            str_contains($script, "internal:app-source-path:probe '/home/orbit/apps/docs'")
+            || str_contains($script, "internal:app-source-path:probe '/srv/docs'")
+        ) {
+            $path = str_contains($script, "'/srv/docs'") ? '/srv/docs' : '/home/orbit/apps/docs';
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => [
+                        'data' => [
+                            'path' => $path,
+                            'exists' => true,
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if (str_contains($script, "internal:caddy-config 'read-global'")) {
+            return app_register_shell_success(['content' => '']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'write-site'")) {
+            return app_register_shell_success(['path' => '/etc/caddy/sites/docs.test.caddy']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'reload'")) {
+            return app_register_shell_success(['container' => 'orbit-caddy']);
+        }
+
         return (
             array_shift($this->results) ?? new RemoteShellResult(
                 exitCode: 0,
@@ -510,4 +612,29 @@ final class AppRegisterApiSequencedRemoteShell implements RemoteShell
             )
         );
     }
+}
+
+expect()->extend('toContainAppRegisterSourcePathProbe', function (string $path): void {
+    expect(collect($this->value)
+        ->contains(
+            fn (string $script): bool => str_contains($script, "internal:app-source-path:probe '{$path}'"),
+        ))->toBeTrue();
+});
+
+/**
+ * @param  array<string, mixed>  $data
+ */
+function app_register_shell_success(array $data): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => $data,
+            ],
+        ], JSON_THROW_ON_ERROR)
+            ."\n",
+        stderr: '',
+        durationMs: 1,
+    );
 }

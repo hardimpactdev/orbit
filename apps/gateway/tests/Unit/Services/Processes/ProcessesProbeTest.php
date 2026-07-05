@@ -22,6 +22,7 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
@@ -33,8 +34,29 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        ExplicitRemoteShellFallback::REQUIRED,
+    );
+
     $this->probe = new ProcessesProbe;
 });
+
+function processesProbeWithShell(ProcessesProbeRecordingRemoteShell $shell): ProcessesProbe
+{
+    app()->instance(RemoteShell::class, $shell);
+
+    return new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell));
+}
+
+function processesProbeSuccessData(array $data): string
+{
+    return json_encode([
+        'success' => [
+            'data' => $data,
+        ],
+    ], JSON_THROW_ON_ERROR);
+}
 
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
@@ -60,7 +82,16 @@ describe('runtime backend availability', function (): void {
         $app = processableApp();
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'available' => true,
+                    'exit_code' => 0,
+                    'output' => 'systemd OK',
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_old_queue\n",
@@ -69,14 +100,14 @@ describe('runtime backend availability', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processesProbeWithShell($shell)->introspect($process);
 
         expect($snapshot->get('vite'))->toMatchArray([
             'runtime_backend_available' => true,
             'runtime_backend_exit_code' => 0,
             'runtime_backend_output' => 'systemd OK',
         ]);
-        expect($shell->scripts[0])->toBe('command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1');
+        expect($shell->scripts[0])->toContain("internal:runtime-backend:probe 'systemd'");
         expect($shell->scripts[1])
             ->toStartWith('set -eu')
             ->not
@@ -158,7 +189,10 @@ describe('WireGuard self-route diagnostics', function (): void {
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                stdout: processesProbeSuccessData([
+                    'exit_code' => 0,
+                    'output' => "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                ]),
                 stderr: '',
                 durationMs: 1,
             ),
@@ -183,7 +217,9 @@ describe('WireGuard self-route diagnostics', function (): void {
                 'message' => 'Linux node does not route its own WireGuard address locally.',
             ])
             ->and($shell->scripts)
-            ->toBe(["ip route get '10.6.0.7'"]);
+            ->toHaveCount(1)
+            ->and($shell->scripts[0])
+            ->toContain("internal:wireguard-self-route '10.6.0.7'");
     });
 
     it('does not report process self-route drift when Linux routes its own WireGuard address locally', function (): void {
@@ -212,7 +248,10 @@ describe('WireGuard self-route diagnostics', function (): void {
         app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "local 10.6.0.7 dev lo src 10.6.0.7\n",
+                stdout: processesProbeSuccessData([
+                    'exit_code' => 0,
+                    'output' => "local 10.6.0.7 dev lo src 10.6.0.7\n",
+                ]),
                 stderr: '',
                 durationMs: 1,
             ),
@@ -272,7 +311,16 @@ describe('lifecycle event notifier reality', function (): void {
             'crash_notification' => ProcessCrashNotification::AgentIde,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: processesProbeSuccessData([
+                    'available' => true,
+                    'exit_code' => 0,
+                    'output' => 'systemd OK',
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
@@ -281,7 +329,7 @@ describe('lifecycle event notifier reality', function (): void {
             ),
         ]);
 
-        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
+        $snapshot = processesProbeWithShell($shell)->introspect($process);
 
         expect($snapshot->get('vite')['event_notifier'])->toMatchArray([
             'script_exists' => true,

@@ -6,37 +6,47 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Convergence\SystemdService;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
+
 it('plans ok when the remote systemd service already matches intent', function (): void {
-    $node = Node::factory()->create();
     $content = "[Unit]\nDescription=Orbit process node-exporter\n";
     $service = new SystemdService(
         unitName: 'node-exporter',
         content: $content,
     );
-    $shell = new SystemdServiceRecordingShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
+    $node = systemd_service_node('10.48.0.21');
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.48.0.21:9477/v1/commands' => systemd_service_agent_response(
+            operationId: 'systemd-service.probe',
+            data: [
                 'exists' => true,
                 'hash' => hash('sha256', $content),
                 'enabled' => true,
-            ], JSON_THROW_ON_ERROR)
-                ."\n",
-            stderr: '',
-            durationMs: 1,
+            ],
         ),
     ]);
 
-    $probe = $service->probe($node, $shell);
+    $probe = $service->probe($node, new SystemdServiceUnexpectedShell);
     $plan = $service->plan($probe);
-    $result = $service->apply($node, $shell, $plan);
+    $result = $service->apply($node, new SystemdServiceUnexpectedShell, $plan);
 
     expect($probe->exists)
         ->toBeTrue()
@@ -49,40 +59,46 @@ it('plans ok when the remote systemd service already matches intent', function (
         ->and($result->status)
         ->toBe(ConvergenceStatus::Ok)
         ->and($result->changed())
-        ->toBeFalse()
-        ->and($shell->scripts[0])
-        ->toContain('sudo test -f "$path"')
-        ->and($shell->scripts[0])
-        ->toContain('sudo systemctl is-enabled "$service"')
-        ->and($shell->scripts)
-        ->toHaveCount(1);
+        ->toBeFalse();
+
+    Http::assertSent(fn (Request $request): bool => systemd_service_request_matches(
+        request: $request,
+        action: 'probe',
+        operationId: 'systemd-service.probe',
+        service: 'node-exporter.service',
+    ));
 });
 
 it('applies a missing systemd service unit and enables it', function (): void {
-    $node = Node::factory()->create();
     $content = "[Unit]\nDescription=Orbit process opencode-server\n";
     $service = new SystemdService(
         unitName: 'opencode-server',
         content: $content,
     );
-    $shell = new SystemdServiceRecordingShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
+    $node = systemd_service_node('10.48.0.22');
+    Http::preventStrayRequests();
+    Http::fakeSequence()
+        ->push(systemd_service_agent_payload(
+            operationId: 'systemd-service.probe',
+            data: [
                 'exists' => false,
                 'hash' => null,
                 'enabled' => false,
-            ], JSON_THROW_ON_ERROR)
-                ."\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
+            ],
+        ))
+        ->push(systemd_service_agent_payload(
+            operationId: 'systemd-service.apply',
+            data: [
+                'action' => 'apply',
+                'service' => 'opencode-server.service',
+                'status' => 'changed',
+                'changed' => true,
+            ],
+        ));
 
-    $probe = $service->probe($node, $shell);
+    $probe = $service->probe($node, new SystemdServiceUnexpectedShell);
     $plan = $service->plan($probe);
-    $result = $service->apply($node, $shell, $plan);
+    $result = $service->apply($node, new SystemdServiceUnexpectedShell, $plan);
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -98,45 +114,38 @@ it('applies a missing systemd service unit and enables it', function (): void {
         ->and($result->status)
         ->toBe(ConvergenceStatus::Changed)
         ->and($result->changed())
-        ->toBeTrue()
-        ->and($shell->scripts[1])
-        ->toContain('sudo install -d -m 0755 /etc/systemd/system')
-        ->and($shell->scripts[1])
-        ->toContain("sudo tee '/etc/systemd/system/opencode-server.service' >/dev/null")
-        ->and($shell->scripts[1])
-        ->toContain("sudo chmod 0644 '/etc/systemd/system/opencode-server.service'")
-        ->and($shell->scripts[1])
-        ->toContain('sudo systemctl daemon-reload')
-        ->and($shell->scripts[1])
-        ->toContain("sudo systemctl enable 'opencode-server.service' >/dev/null")
-        ->and($shell->scripts[1])
-        ->toContain(base64_encode($content))
-        ->and($shell->scripts[1])
-        ->not->toContain($content);
+        ->toBeTrue();
+
+    Http::assertSent(fn (Request $request): bool => systemd_service_request_matches(
+        request: $request,
+        action: 'apply',
+        operationId: 'systemd-service.apply',
+        service: 'opencode-server.service',
+        content: $content,
+        enabled: true,
+    ));
 });
 
 it('plans a changed systemd service when it is disabled', function (): void {
-    $node = Node::factory()->create();
     $content = "[Unit]\nDescription=Orbit process queue\n";
     $service = new SystemdService(
         unitName: 'orbit_docs_main_queue',
         content: $content,
     );
-    $shell = new SystemdServiceRecordingShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
+    $node = systemd_service_node('10.48.0.23');
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.48.0.23:9477/v1/commands' => systemd_service_agent_response(
+            operationId: 'systemd-service.probe',
+            data: [
                 'exists' => true,
                 'hash' => hash('sha256', $content),
                 'enabled' => false,
-            ], JSON_THROW_ON_ERROR)
-                ."\n",
-            stderr: '',
-            durationMs: 1,
+            ],
         ),
     ]);
 
-    $plan = $service->plan($service->probe($node, $shell));
+    $plan = $service->plan($service->probe($node, new SystemdServiceUnexpectedShell));
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -150,48 +159,135 @@ it('plans a changed systemd service when it is disabled', function (): void {
 });
 
 it('reports unreachable when probing the systemd service cannot reach the node', function (): void {
-    $node = Node::factory()->create();
+    $node = systemd_service_node('10.48.0.24');
     $service = new SystemdService(
         unitName: 'node-exporter',
         content: "[Unit]\nDescription=Orbit process node-exporter\n",
     );
-    $shell = new SystemdServiceRecordingShell([
-        new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'ssh: connection refused', durationMs: 1),
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.48.0.24:9477/v1/commands' => systemd_service_agent_response(
+            operationId: 'systemd-service.probe',
+            data: [],
+            exitCode: 1,
+            frameType: 'stderr',
+            message: 'agent unavailable',
+        ),
     ]);
 
-    $probe = $service->probe($node, $shell);
+    $probe = $service->probe($node, new SystemdServiceUnexpectedShell);
     $plan = $service->plan($probe);
 
     expect($probe->reachable)
         ->toBeFalse()
         ->and($probe->error)
-        ->toBe('ssh: connection refused')
+        ->toBe('agent unavailable')
         ->and($plan->status)
         ->toBe(ConvergenceStatus::Unreachable)
         ->and($plan->summary)
         ->toBe('Could not inspect systemd service node-exporter.service.');
 });
 
-final class SystemdServiceRecordingShell implements RemoteShell
+function systemd_service_node(string $wireguardAddress): Node
 {
-    /** @var list<string> */
-    public array $scripts = [];
+    /** @var Node $node */
+    $node = Node::factory()->create([
+        'wireguard_address' => $wireguardAddress,
+        'orbit_agent_capable' => true,
+    ]);
 
-    /** @var list<array<string, mixed>> */
-    public array $options = [];
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
 
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results,
-    ) {}
+    return $node;
+}
 
+/**
+ * @param  array<string, mixed>  $data
+ */
+function systemd_service_agent_response(
+    string $operationId,
+    array $data,
+    int $exitCode = 0,
+    string $frameType = 'stdout',
+    ?string $message = null,
+): mixed {
+    return Http::response(systemd_service_agent_payload($operationId, $data, $exitCode, $frameType, $message));
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function systemd_service_agent_payload(
+    string $operationId,
+    array $data,
+    int $exitCode = 0,
+    string $frameType = 'stdout',
+    ?string $message = null,
+): array {
+    $message ??= json_encode([
+        'success' => [
+            'data' => $data,
+            'meta' => [],
+        ],
+    ], JSON_THROW_ON_ERROR);
+
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => $frameType,
+                'message' => $message,
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ];
+}
+
+function systemd_service_request_matches(
+    Request $request,
+    string $action,
+    string $operationId,
+    string $service,
+    ?string $content = null,
+    ?bool $enabled = null,
+): bool {
+    /** @var mixed $argv */
+    $argv = $request['argv'];
+    /** @var mixed $input */
+    $input = $request['input'] ?? null;
+    $normalizedInput = is_string($input) ? str_replace('\/', '/', $input) : '';
+
+    return (
+        is_array($argv)
+        && $request['binary'] === 'orbit'
+        && $request['operation_id'] === $operationId
+        && ($argv[0] ?? null) === 'internal:process-systemd-service'
+        && ($argv[1] ?? null) === $action
+        && ($argv[2] ?? null) === $service
+        && is_string($argv[3] ?? null)
+        && str_starts_with($argv[3], '--operation-token=')
+        && ($argv[4] ?? null) === '--json'
+        && ($content === null || str_contains($normalizedInput, 'Orbit process'))
+        && ($enabled === null || str_contains($normalizedInput, '"enabled":'.($enabled ? 'true' : 'false')))
+    );
+}
+
+final class SystemdServiceUnexpectedShell implements RemoteShell
+{
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected call', 1);
+        return new RemoteShellResult(1, '', 'legacy shell should not be used', 1);
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\WorkspaceSourceDrivers;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
@@ -14,6 +13,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Workspaces\WorkspaceNodeReachability;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 
@@ -22,10 +22,10 @@ final readonly class CreateWorkspace
     public const array SUPPORTED_PHP_VERSIONS = PhpRuntimeCatalog::SUPPORTED;
 
     public function __construct(
-        private RemoteShell $remoteShell,
         private SetupWorkspace $setupWorkspace,
         private WorkspaceSourceDrivers $sourceDrivers,
         private WorkspaceRoleGuard $roleGuard,
+        private WorkspaceNodeReachability $nodeReachability,
     ) {}
 
     /**
@@ -111,20 +111,7 @@ final readonly class CreateWorkspace
 
     public function ensureNodeReachable(Node $node): void
     {
-        $preflight = $this->remoteShell->run($node, 'true', ['timeout' => 30]);
-
-        if ($preflight->successful()) {
-            return;
-        }
-
-        throw new WorkspaceCreateFailed(
-            'workspace.ssh_failure',
-            "Gateway could not reach app node '{$node->name}' before creating workspace intent.",
-            [
-                'node' => $node->name,
-                'reason' => trim($preflight->output()) ?: 'ssh preflight failed',
-            ],
-        );
+        $this->nodeReachability->ensureReachable($node);
     }
 
     public function createIntent(App $app, ?string $phpVersion, WorkspaceProvisionResult $provisionResult): Workspace

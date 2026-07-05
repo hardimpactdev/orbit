@@ -2,18 +2,20 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Nodes\NodeRoleName;
 use App\Models\GatewayExtension;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Solo\HttpSoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamResponse;
 use App\Services\Solo\SoloUpstreamTarget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\Fakes\FakeSoloUpstreamClient;
 
@@ -93,11 +95,16 @@ function create_solo_operator_node(array $toolConfig = [], string $name = 'NMBP'
         'wireguard_address' => '10.6.0.3',
         'platform' => 'macos',
         'status' => 'active',
+        'orbit_agent_capable' => true,
     ]);
 
     if (! $node instanceof Node) {
         throw new RuntimeException('Expected Solo operator node.');
     }
+
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => NodeRoleName::Agent->value,
+    ]);
 
     NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -255,50 +262,42 @@ describe('Solo proxy API', function (): void {
     });
 
     it('executes non-gateway Solo upstream requests on the target node loopback', function (): void {
+        request()->headers->set('X-Orbit-Node-Transport-Preference', 'agent-push');
         $target = create_solo_operator_node(name: 'NMBP');
-        $remoteShell = new class(new RemoteShellResult(
-            exitCode: 0,
-            stdout: "200\n"
-                .json_encode([
-                    'ok' => true,
-                    'data' => [
-                        'projects' => [
-                            ['name' => 'orbit'],
-                        ],
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.6.0.3:9477/v1/commands' => Http::response([
+                'transport' => 'agent-push',
+                'operation_id' => 'solo-upstream-request',
+                'binary' => 'orbit',
+                'status' => 'succeeded',
+                'exit_code' => 0,
+                'frames' => [
+                    [
+                        'type' => 'stdout',
+                        'message' => json_encode([
+                            'success' => [
+                                'data' => [
+                                    'status' => 200,
+                                    'body_base64' => base64_encode(json_encode([
+                                        'ok' => true,
+                                        'data' => [
+                                            'projects' => [
+                                                ['name' => 'orbit'],
+                                            ],
+                                        ],
+                                    ], JSON_THROW_ON_ERROR)),
+                                ],
+                            ],
+                        ], JSON_THROW_ON_ERROR),
                     ],
-                ], JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 1,
-        )) implements RemoteShell {
-            /**
-             * @var list<Node>
-             */
-            public array $nodes = [];
-
-            /**
-             * @var list<string>
-             */
-            public array $scripts = [];
-
-            /**
-             * @var list<array<string, mixed>>
-             */
-            public array $options = [];
-
-            public function __construct(
-                private readonly RemoteShellResult $result,
-            ) {}
-
-            public function run(Node $node, string $script, array $options = []): RemoteShellResult
-            {
-                $this->nodes[] = $node;
-                $this->scripts[] = $script;
-                $this->options[] = $options;
-
-                return $this->result;
-            }
-        };
-        app()->instance(RemoteShell::class, $remoteShell);
+                    [
+                        'type' => 'exit',
+                        'message' => '0',
+                    ],
+                ],
+            ]),
+        ]);
 
         $response = app(HttpSoloUpstreamClient::class)->get(
             new SoloUpstreamTarget($target, 'http://127.0.0.1:24678', 'NMBP', 'secret-token'),
@@ -308,16 +307,26 @@ describe('Solo proxy API', function (): void {
         expect($response->ok)
             ->toBeTrue()
             ->and($response->data['projects'][0]['name'] ?? null)
-            ->toBe('orbit')
-            ->and($remoteShell->nodes[0]->is($target))
-            ->toBeTrue()
-            ->and($remoteShell->scripts[0])
-            ->toContain('curl')
-            ->toContain('status="$(\'curl\'')
-            ->toContain('http://127.0.0.1:24678/projects')
-            ->toContain('Authorization: Bearer secret-token')
-            ->and($remoteShell->options[0])
-            ->not->toHaveKey('metadata');
+            ->toBe('orbit');
+        request()->headers->remove('X-Orbit-Node-Transport-Preference');
+
+        Http::assertSent(function (Request $request): bool {
+            $input = json_decode((string) $request['input'], associative: true);
+
+            return (
+                $request->url() === 'http://10.6.0.3:9477/v1/commands'
+                && $request['binary'] === 'orbit'
+                && $request['operation_id'] === 'solo-upstream-request'
+                && $request['argv'][0] === 'internal:solo-upstream-request'
+                && str_starts_with((string) $request['argv'][1], '--operation-token=')
+                && $request['argv'][2] === '--json'
+                && is_array($input)
+                && $input['method'] === 'GET'
+                && $input['url'] === 'http://127.0.0.1:24678/projects'
+                && data_get($input, 'headers.Authorization') === 'Bearer secret-token'
+                && data_get($input, 'headers.X-Orbit-Node') === 'NMBP'
+            );
+        });
     });
 
     it('proxies projects and maps upstream unavailable responses', function (): void {

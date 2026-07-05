@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--password=<password>] [--json|--stream-json]`
 
 [Back to public `tool-reconfigure` documentation.](../tool-reconfigure.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json|--stream-json]
+orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--password=<password>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -24,6 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Required in non-interactive input mode.` | `Never.` | `interactive selection from reconfigurable tools` | `Registered reconfigurable tool name.` |
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `password` | `--password` | `Optional.` | `when the tool definition does not support password reconfiguration.` | `None.` | `Tool-definition-specific password value.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |

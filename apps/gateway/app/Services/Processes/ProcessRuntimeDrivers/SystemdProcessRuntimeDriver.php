@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 namespace App\Services\Processes\ProcessRuntimeDrivers;
 
-use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\Convergence\SystemdService;
+use App\Services\Processes\RemoteSystemdService;
 use App\Services\Processes\SystemdUnitRenderer;
 use Throwable;
 
 final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private SystemdUnitRenderer $renderer,
+        private RemoteSystemdService $systemd,
     ) {}
 
     public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string
@@ -30,28 +29,15 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
         App $app,
         Process $process,
         ?Workspace $workspace = null,
-        ?string $preApplyScript = null,
     ): bool {
         try {
-            if ($preApplyScript !== null && trim($preApplyScript) !== '') {
-                $preApplyResult = $this->remoteShell->run($node, $this->strictScript($preApplyScript), [
-                    'throw' => false,
-                ]);
-
-                if (! $preApplyResult->successful()) {
-                    return false;
-                }
-            }
-
-            $runtimeUnit = $this->runtimeUnitName($app, $process, $workspace);
-            $service = new SystemdService(
-                unitName: $runtimeUnit,
-                content: $this->renderer->render($node, $app, $process, $workspace),
-            );
-            $probe = $service->probe($node, $this->remoteShell);
-            $plan = $service->plan($probe);
-
-            return $service->apply($node, $this->remoteShell, $plan)->successful();
+            return $this->systemd
+                ->apply(
+                    node: $node,
+                    service: $this->renderer->serviceName($this->runtimeUnitName($app, $process, $workspace)),
+                    content: $this->renderer->render($node, $app, $process, $workspace),
+                )
+                ->successful();
         } catch (Throwable) {
             return false;
         }
@@ -59,7 +45,11 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
 
     public function remove(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, $this->removeScript($runtimeUnit))->successful();
+        return $this->systemd->remove(
+            node: $node,
+            service: $this->renderer->serviceName($runtimeUnit),
+            unitPath: $this->renderer->unitPath($runtimeUnit),
+        );
     }
 
     public function cleanupScript(string $runtimeUnit): string
@@ -75,26 +65,17 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
 
     public function start(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'sudo systemctl start '.escapeshellarg($this->renderer->serviceName($runtimeUnit)),
-        )->successful();
+        return $this->systemd->start($node, $this->renderer->serviceName($runtimeUnit));
     }
 
     public function stop(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'sudo systemctl stop '.escapeshellarg($this->renderer->serviceName($runtimeUnit)),
-        )->successful();
+        return $this->systemd->stop($node, $this->renderer->serviceName($runtimeUnit));
     }
 
     public function restart(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run(
-            $node,
-            'sudo systemctl restart '.escapeshellarg($this->renderer->serviceName($runtimeUnit)),
-        )->successful();
+        return $this->systemd->restart($node, $this->renderer->serviceName($runtimeUnit));
     }
 
     public function logScript(
@@ -117,28 +98,5 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
         ])
             ->filter()
             ->implode(' ');
-    }
-
-    private function removeScript(string $runtimeUnit): string
-    {
-        $serviceName = $this->renderer->serviceName($runtimeUnit);
-        $unitPath = $this->renderer->unitPath($runtimeUnit);
-
-        return sprintf(
-            <<<'SH'
-                sudo systemctl stop %1$s >/dev/null 2>&1 || true
-                sudo systemctl disable %1$s >/dev/null 2>&1 || true
-                sudo rm -f %2$s
-                sudo systemctl daemon-reload
-                sudo systemctl reset-failed %1$s >/dev/null 2>&1 || true
-                SH,
-            escapeshellarg($serviceName),
-            escapeshellarg($unitPath),
-        );
-    }
-
-    private function strictScript(string $script): string
-    {
-        return "set -euo pipefail\n{$script}";
     }
 }

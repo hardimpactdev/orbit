@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit activity:list [--app=<app>] [--node=<node>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
+orbit activity:list [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--effect=<effect>] [--correlation=<uuid>] [--include-internal] [--limit=<count>] [--json]
 ```
 
 ## Input Contract
@@ -27,6 +27,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `app` | `--app` | Optional. | Never. | `null`. | Non-empty app key matched against recorded activity relationships. |
 | `node` | `--node` | Optional. | Never. | `null`. | Non-empty node name matched against recorded activity relationships. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `effect` | `--effect` | Optional. | Never. | `null`. | One of `read`, `write`, `destructive`. |
 | `correlation` | `--correlation` | Optional. | Never. | `null`. | UUID string. |
 | `include_internal` | `--include-internal` | Optional. | Never. | `false`. | Boolean. When `false`, internal backend transport activity such as remote shell audit rows is excluded. |

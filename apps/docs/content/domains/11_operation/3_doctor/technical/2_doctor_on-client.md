@@ -33,7 +33,7 @@ verification is explicit `--all` only.
 
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
 - Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's active roles to derive the rendered category set.
-- Reject `--node=all`; fleet verification uses `--all`.
+- Reject `--node [--node-transport=<transport>]=all`; fleet verification uses `--all`.
 - Reject `--self` combined with `--node` before forwarding.
 - The CLI may forward its configured local default node for omitted scope.
 - The CLI forwards `self=true` for omitted scope when no default node exists.

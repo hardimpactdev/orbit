@@ -13,6 +13,9 @@ use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -22,8 +25,15 @@ use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -1028,7 +1038,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => '10.6.0.50',
         ]);
 
-        app()->instance(RemoteShell::class, new class implements RemoteShell {
+        $remoteShell = new class implements RemoteShell {
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
                 return new RemoteShellResult(
@@ -1038,7 +1048,13 @@ describe('node role assignment service', function (): void {
                     durationMs: 0,
                 );
             }
-        });
+        };
+        app()->instance(RemoteShell::class, $remoteShell);
+        app()->instance(RemoteLocalExecutor::class, nodeRoleAssignmentLocalExecutor($remoteShell));
+        app()->instance(AgentRoleBaseline::class, new AgentRoleBaseline(
+            developmentDnsMappingEnactor: app(DevelopmentDnsMappingEnactor::class),
+            localExecutor: app(RemoteLocalExecutor::class),
+        ));
 
         $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'agent']);
 
@@ -1477,3 +1493,38 @@ describe('node role assignment service', function (): void {
             ->toBeTrue();
     });
 });
+
+function nodeRoleAssignmentLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: new NodeRoleAssignmentRemoteExecutor($remoteShell),
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
+}
+
+final readonly class NodeRoleAssignmentRemoteExecutor implements RemoteExecutor
+{
+    public function __construct(
+        private RemoteShell $remoteShell,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return $this->remoteShell->run($node, $script, $options);
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('NodeRoleAssignmentRemoteExecutor does not support start().');
+    }
+}

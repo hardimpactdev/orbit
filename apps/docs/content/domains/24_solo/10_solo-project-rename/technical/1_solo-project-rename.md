@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:project:rename <project> [--node=<node>] [--name=<name>] [--json]
+orbit solo:project:rename <project> [--node=<node>] [--node-transport=<transport>] [--name=<name>] [--json]
 ```
 
 ## Input Contract

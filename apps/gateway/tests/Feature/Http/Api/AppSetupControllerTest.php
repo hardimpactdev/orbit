@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -94,6 +95,7 @@ describe('AppSetupController', function (): void {
             [
                 'REMOTE_ADDR' => APP_SETUP_CALLER_WG_IP,
                 'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
             ],
         );
 

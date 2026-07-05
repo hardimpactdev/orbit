@@ -24,11 +24,17 @@ beforeEach(function (): void {
         'wireguard_address' => WORKSPACE_STORE_CALLER_WG_IP,
     ]);
 
-    App::factory()->create([
+    $appNode = createTestAppHostNode([
+        'name' => 'demo-node',
+        'wireguard_address' => '10.6.0.7',
+    ]);
+
+    App::factory()->for($appNode, 'node')->create([
         'name' => 'demo',
         'domain' => 'demo.beast',
         'path' => '/home/nckrtl/apps/demo',
         'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     app()->instance(RemoteShell::class, new WorkspaceStoreTestShell);
@@ -225,7 +231,7 @@ it('rejects unsupported php version', function (): void {
     $response->assertJsonPath('error.meta.field', 'php_version');
 });
 
-it('converges both FPM pool and FrankenPHP runtime container when creating a php workspace (runtime)', function (): void {
+it('creates php workspace source without converging runtime containers during create (runtime)', function (): void {
     $shell = new WorkspaceStoreRuntimeContainerShell;
     app()->instance(RemoteShell::class, $shell);
 
@@ -250,12 +256,9 @@ it('converges both FPM pool and FrankenPHP runtime container when creating a php
     // FrankenPHP runtime container converges; FPM pool is not rendered in
     // the steady-state path after ORBIT-RUNTIME-06C (todo 336).
     expect($combined)
-        ->toContain("'orbit-ws-demo-feature-runtime'")
+        ->toContain('internal:workspace-source:create')
         ->and($combined)
-        ->toContain('docker run -d')
-        ->and($combined)
-        ->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
-        ->and($combined)
+        ->not->toContain('internal:process-docker-container')->and($combined)
         ->not->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
 });
 
@@ -323,6 +326,15 @@ final class WorkspaceStoreTestShell implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'internal:workspace-source:create')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
@@ -335,6 +347,30 @@ final class WorkspaceStoreRuntimeContainerShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->calls[] = ['node' => $node, 'script' => $script, 'options' => $options];
+
+        if (str_contains($script, 'internal:workspace-source:create')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if (str_contains($script, 'internal:process-docker-container')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => [
+                        'data' => ['outcome' => 'created'],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
 
         if (str_contains($script, 'docker image inspect')) {
             return new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1);

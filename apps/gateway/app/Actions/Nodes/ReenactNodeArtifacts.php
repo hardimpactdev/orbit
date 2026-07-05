@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
-use App\Contracts\RemoteShell;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 
 class ReenactNodeArtifacts
 {
@@ -29,13 +29,14 @@ class ReenactNodeArtifacts
             return [$this->warning()];
         }
 
-        $result = app(RemoteShell::class)->run(
+        $result = app(RemoteLocalExecutor::class)->runInternal(
             node: $node,
-            script: $this->wireGuardEndpointRotationScript("{$endpoint}:51820"),
-            options: [
+            commandName: 'internal:wireguard-endpoint:rotate',
+            arguments: ["{$endpoint}:51820"],
+            transportOptions: [
                 'timeout' => 30,
                 'metadata' => [
-                    'operation' => 'node.gateway_endpoint.rotate',
+                    'ORBIT_OPERATION_ID' => 'node.gateway_endpoint.rotate',
                     'node' => $node->name,
                 ],
             ],
@@ -46,51 +47,6 @@ class ReenactNodeArtifacts
         }
 
         return [];
-    }
-
-    private function wireGuardEndpointRotationScript(string $endpoint): string
-    {
-        $quotedEndpoint = escapeshellarg($endpoint);
-
-        return <<<SH
-            set -euo pipefail
-            endpoint={$quotedEndpoint}
-            timestamp="\$(date -u +%Y%m%d%H%M%S)"
-            peers_file="\$(mktemp)"
-            trap 'rm -f "\$peers_file"' EXIT
-
-            conf=""
-            for candidate in /etc/wireguard/wg-orbit.conf /etc/wireguard/wg0.conf; do
-                if [ ! -f "\$candidate" ]; then
-                    continue
-                fi
-
-                conf="\$candidate"
-                break
-            done
-
-            if [ -z "\$conf" ]; then
-                echo "No WireGuard config file found for endpoint rotation." >&2
-                exit 1
-            fi
-
-            if ! sudo grep -qE '^Endpoint[[:space:]]*=' "\$conf"; then
-                echo "WireGuard config does not contain an Endpoint line: \$conf" >&2
-                exit 1
-            fi
-
-            sudo cp -a "\$conf" "\${conf}.before-gateway-endpoint-\${timestamp}"
-            sudo sed -i -E "s#^Endpoint[[:space:]]*=.*#Endpoint = \${endpoint}#" "\$conf"
-
-            iface="\$(basename "\$conf" .conf)"
-            if sudo wg show "\$iface" peers > "\$peers_file" 2>/dev/null; then
-                while IFS= read -r peer; do
-                    if [ -n "\$peer" ]; then
-                        sudo wg set "\$iface" peer "\$peer" endpoint "\$endpoint"
-                    fi
-                done < "\$peers_file"
-            fi
-            SH;
     }
 
     /**

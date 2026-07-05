@@ -17,6 +17,7 @@ final class MetricsStatusCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'metrics:status
         {--node= : Metrics node to inspect}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

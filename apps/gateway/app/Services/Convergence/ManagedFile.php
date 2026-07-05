@@ -10,6 +10,8 @@ use App\Data\Convergence\ManagedFilePlan;
 use App\Data\Convergence\ManagedFileProbe;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use InvalidArgumentException;
 use JsonException;
 
@@ -85,7 +87,21 @@ final readonly class ManagedFile
 
     public function probe(Node $node, RemoteShell $remoteShell): ManagedFileProbe
     {
-        $result = $remoteShell->run($node, $this->probeScript(), ['throw' => false]);
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:managed-file',
+            arguments: ['probe'],
+            transportOptions: [
+                'input' => json_encode(['path' => $this->path], JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'managed-file.probe',
+                ],
+                'redact_stdout' => $this->sensitive,
+                'redact_stderr' => $this->sensitive,
+                'timeout' => 30,
+                'throw' => false,
+            ],
+        );
 
         if (! $result->successful()) {
             return new ManagedFileProbe(
@@ -98,20 +114,12 @@ final readonly class ManagedFile
         }
 
         try {
-            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
+            $payload = RemoteShellSuccessData::fromJsonEnvelope($result);
         } catch (JsonException $exception) {
             return new ManagedFileProbe(
                 reachable: false,
                 exists: false,
                 error: "Probe returned invalid JSON: {$exception->getMessage()}",
-            );
-        }
-
-        if (! is_array($payload)) {
-            return new ManagedFileProbe(
-                reachable: false,
-                exists: false,
-                error: 'Probe returned an invalid payload.',
             );
         }
 
@@ -177,7 +185,26 @@ final readonly class ManagedFile
             );
         }
 
-        $result = $remoteShell->run($node, $this->writeScript(), ['throw' => false]);
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:managed-file',
+            arguments: ['write'],
+            transportOptions: [
+                'input' => json_encode([
+                    'path' => $this->path,
+                    'content' => $this->content,
+                    'mode' => $this->mode,
+                    'directory_mode' => $this->directoryMode,
+                ], JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'managed-file.write',
+                ],
+                'redact_stdout' => $this->sensitive,
+                'redact_stderr' => $this->sensitive,
+                'timeout' => 30,
+                'throw' => false,
+            ],
+        );
 
         if (! $result->successful()) {
             return new ConvergenceApplyResult(
@@ -215,32 +242,9 @@ final readonly class ManagedFile
         );
     }
 
-    private function probeScript(): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return sprintf(
-            <<<'SH'
-                path=%s
-
-                if ! sudo test -f "$path"; then
-                    printf '{"exists":false,"hash":null,"mode":null}\n'
-                    exit 0
-                fi
-
-                hash=""
-                mode=""
-
-                if command -v sha256sum >/dev/null 2>&1; then
-                    hash="$(sudo sha256sum "$path" | awk '{print $1}')"
-                elif command -v shasum >/dev/null 2>&1; then
-                    hash="$(sudo shasum -a 256 "$path" | awk '{print $1}')"
-                fi
-
-                mode="$(sudo stat -c '%%a' "$path" 2>/dev/null || sudo stat -f '%%Lp' "$path" 2>/dev/null || true)"
-
-                printf '{"exists":true,"hash":"%%s","mode":"%%s"}\n' "$hash" "$mode"
-                SH,
-            escapeshellarg($this->path),
-        );
+        return app(RemoteLocalExecutor::class);
     }
 
     public function hash(): string

@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit process-event:stream [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--process=<name>] [--after-id=<id>] [--json]
+orbit process-event:stream [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--process=<name>] [--after-id=<id>] [--json]
 ```
 
 ## Input Contract
@@ -25,6 +25,7 @@ This command follows the shared [Invocation Model](../../../../README.md#invocat
 | `app` | `--app` | Optional. | Never. | None. | Must resolve to an app the caller may inspect. |
 | `workspace` | `--workspace` | Optional. | Never. | None. | Must resolve to a workspace the caller may inspect. |
 | `node` | `--node` | Optional. | Never. | None. | Must resolve to a node whose process events are visible to the caller. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `process` | `--process` | Optional. | Never. | None. | Process slug filter. |
 | `after_id` | `--after-id` | Optional. | Never. | None. | Positive event id used to resume a stream. |
 | `json` | `--json` | Optional. | Never. | `false`. | Streams structured event objects. |

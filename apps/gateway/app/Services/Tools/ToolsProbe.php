@@ -21,10 +21,12 @@ use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
 use InvalidArgumentException;
+use JsonException;
 use Throwable;
 
 final readonly class ToolsProbe
@@ -34,6 +36,7 @@ final readonly class ToolsProbe
     public function __construct(
         private ?RemoteShell $remoteShell = null,
         private ?ToolCatalog $catalog = null,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     public function key(): string
@@ -1473,17 +1476,21 @@ final readonly class ToolsProbe
             return [];
         }
 
-        if (! $this->remoteShell instanceof RemoteShell) {
-            return [];
-        }
-
         try {
-            $result = $this->remoteShell->run($tool->node, 'id -u agent >/dev/null 2>&1', [
-                'timeout' => 10,
-                'throw' => false,
-            ]);
+            $result = $this->localExecutor()->runInternal(
+                node: $tool->node,
+                commandName: 'internal:agent-runtime:probe',
+                transportOptions: [
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => 'tool-agent-runtime.probe',
+                    ],
+                    'timeout' => 10,
+                    'throw' => false,
+                ],
+            );
+            $data = $this->successData($result->stdout);
 
-            if (! $result->successful()) {
+            if (($data['runtime_user'] ?? null) !== true) {
                 return [
                     new DriftEntry(
                         family: $this->key(),
@@ -1492,18 +1499,13 @@ final readonly class ToolsProbe
                         summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
                         detail: [
                             'tool' => $tool->name,
-                            'node' => $tool->node?->name,
+                            'node' => $tool->node->name,
                         ],
                     ),
                 ];
             }
 
-            $cliResult = $this->remoteShell->run($tool->node, $this->agentOrbitCliCommand(), [
-                'timeout' => 10,
-                'throw' => false,
-            ]);
-
-            if (! $cliResult->successful()) {
+            if (($data['orbit_cli'] ?? null) !== true) {
                 return [
                     new DriftEntry(
                         family: $this->key(),
@@ -1512,7 +1514,7 @@ final readonly class ToolsProbe
                         summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
                         detail: [
                             'tool' => $tool->name,
-                            'node' => $tool->node?->name,
+                            'node' => $tool->node->name,
                         ],
                     ),
                 ];
@@ -1524,9 +1526,49 @@ final readonly class ToolsProbe
         return [];
     }
 
-    private function agentOrbitCliCommand(): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return 'sudo -u agent -H /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version --local >/dev/null 2>&1';
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function successData(string $output): array
+    {
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
+
+        if (! is_array($payload)) {
+            return [];
+        }
+
+        /** @var mixed $success */
+        $success = $payload['success'] ?? null;
+
+        if (! is_array($success)) {
+            return [];
+        }
+
+        /** @var mixed $data */
+        $data = $success['data'] ?? null;
+
+        if (! is_array($data)) {
+            return [];
+        }
+
+        foreach (array_keys($data) as $key) {
+            if (! is_string($key)) {
+                return [];
+            }
+        }
+
+        /** @var array<string, mixed> $data */
+        return $data;
     }
 
     private function agentTldForNode(Node $node): ?string

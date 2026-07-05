@@ -48,9 +48,9 @@ it('does not start a process runtime unit after apply fails', function (): void 
         ->and($shell->scripts)
         ->toHaveCount(1)
         ->and($shell->scripts[0])
-        ->toContain('docker service create')
+        ->toContain("internal:process-docker-swarm-service 'apply'")
         ->and(implode("\n", $shell->scripts))
-        ->not->toContain('docker service update --detach --replicas 1');
+        ->not->toContain("internal:process-docker-swarm-service 'scale'");
 });
 
 it('does not restart a process runtime unit after apply fails', function (): void {
@@ -97,9 +97,9 @@ it('does not restart a process runtime unit after apply fails', function (): voi
         ->and($shell->scripts)
         ->toHaveCount(1)
         ->and($shell->scripts[0])
-        ->toContain('docker service create')
+        ->toContain("internal:process-docker-swarm-service 'apply'")
         ->and(implode("\n", $shell->scripts))
-        ->not->toContain('docker service update --detach --force');
+        ->not->toContain("internal:process-docker-swarm-service 'restart'");
 });
 
 final class ProcessRuntimeLifecycleRecordingShell implements RemoteShell

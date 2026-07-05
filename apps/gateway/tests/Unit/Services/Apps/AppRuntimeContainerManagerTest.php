@@ -19,6 +19,7 @@ use App\Services\Apps\AppRuntimeUserUnavailableException;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,6 +27,14 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
 
 function appAndNodeForManagerTest(): array
 {
@@ -117,6 +126,22 @@ final class AppRuntimeRecordingShell implements RemoteShell
         );
     }
 }
+
+it('requires explicit transitional SSH fallback before app runtime container convergence', function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
+    [$app, $node] = appAndNodeForManagerTest();
+    $container = renderTestAppContainer($app);
+    $shell = new AppRuntimeRecordingShell;
+
+    expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
+        ->toThrow(
+            RuntimeException::class,
+            'app runtime container convergence still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+        );
+
+    expect($shell->calls)->toBe([]);
+});
 
 it('creates the orbit network, writes php.ini, and runs the app runtime container when none exists', function (): void {
     [$app, $node] = appAndNodeForManagerTest();

@@ -72,6 +72,7 @@ The gateway owns the family dispatch loop for the single-node target. Each selec
 | Family | Gateway-owned probing behavior |
 | --- | --- |
 | `node` | Check the target node's gateway record, identity, WireGuard peer configuration, reachability, bootstrap reality, and current DNS/TLD facts. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | Check app configuration and app-role runtime facts on the target node, including paths, document roots, runtime configuration, and app health probes declared by the app family. |
 | `workspace` | Check workspace configuration and the target node's workspace reality, using app-suffixed workspace identifiers in human output. |
 | `process` | Check process configuration and process runtime reality on the target node. |

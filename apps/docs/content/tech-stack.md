@@ -78,7 +78,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
-| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` prefers `agent-push` when the node is active + capable + the envelope supports it. V1 may return `transitional-ssh-fallback` while command families migrate, but SSH/RemoteShell is recovery/migration infrastructure, not the strategic Orbit transport. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Polling is fallback or deferred compatibility, not the primary target architecture. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
+| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` selects `agent-push` when the node is active + capable + the envelope supports it and fails clearly otherwise; it does not silently fall back to SSH. `transitional-ssh-fallback` is an explicit operator-selected break-glass or migration preference. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Polling is fallback or deferred compatibility, not the primary target architecture. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
@@ -226,9 +226,10 @@ The long-term gateway-to-node model has two normal managed paths:
 `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local
 execution on nodes explicitly marked `orbit_agent_capable`, including
 Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes. Existing
-SSH/RemoteShell dispatch remains transitional migration and recovery
-infrastructure in v1. Break-glass SSH belongs to operator-owned super-admin
-recovery outside normal Orbit command execution.
+SSH/RemoteShell dispatch remains an explicit transitional migration and
+recovery preference in v1. The default `auto` preference does not silently
+select SSH when agent-push is unavailable. Break-glass SSH belongs to
+operator-owned super-admin recovery outside normal Orbit command execution.
 
 Gateway-to-node work is split into `RemoteHostExecutor` for host substrate
 work, gateway-container execution for gateway Laravel/artisan/PDO work inside
@@ -711,7 +712,15 @@ gateway entries and use `gateway:use <name>` to switch the active one.
 
 The Orbit CLI binary targets macOS arm64 and Ubuntu x86_64. The `gateway`, `vpn`, `router`, `app-prod`, `agent`, `ingress`, `websocket`, and `s3` role drivers currently support Ubuntu only; `metrics` supports Ubuntu and Debian hosts; `app-dev` and `database` support Ubuntu and macOS. macOS role support applies to adopted/self-managed workload nodes and requires a reachable Docker-compatible container provider: Orbit uses an already-working Docker provider first and recommends Colima (`brew install docker colima`, `colima start --runtime docker`) when none is reachable, while OrbStack and Docker Desktop remain compatible when already installed and licensed/allowed for the user's context. Hosted provisioning through `node:new` templates remains Ubuntu-only. See [Architecture: Node roles](architecture.md#node-roles) for the driver concept and [Node Concepts: Role Platform Support](domains/1_node/node-concepts.md#role-platform-support) for the full matrix.
 
-The CLI is always a thin gateway client. It has no client-side role awareness. On any machine, the CLI gathers local context (current app, workspace, paths), calls the gateway over the VPN, and renders the result. The gateway authenticates the WireGuard peer, derives grants from its own node records, and decides what to do. Gateway-owned reads/writes stay gateway-only. Node-local execution should use `agent-push` when the command family has an Agent envelope; SSH/RemoteShell remains a transitional v1 fallback while command families migrate.
+The CLI is always a thin gateway client. It has no client-side role awareness.
+On any machine, the CLI gathers local context (current app, workspace, paths),
+calls the gateway over the VPN, and renders the result. The gateway
+authenticates the WireGuard peer, derives grants from its own node records, and
+decides what to do. Gateway-owned reads/writes stay gateway-only. Node-local
+execution uses `agent-push` by default when the command family has an Agent
+envelope. SSH/RemoteShell requires the explicit
+`transitional-ssh-fallback` preference for migration or break-glass access; it
+is not selected implicitly by the default `auto` path.
 
 One machine in the network carries the gateway service. Gateway code runs only
 in that runtime and assumes it is the gateway; it does not require a role flag

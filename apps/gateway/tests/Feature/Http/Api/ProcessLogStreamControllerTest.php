@@ -13,7 +13,7 @@ uses(RefreshDatabase::class);
 const PROCESS_LOG_STREAM_CALLER_WG_IP = '10.6.0.96';
 
 describe('ProcessLogController follow stream', function (): void {
-    it('streams followed process log output through the gateway API', function (): void {
+    it('rejects followed process logs unless RemoteShell fallback is explicit', function (): void {
         createTestGatewayNode([
             'name' => 'caller',
             'host' => PROCESS_LOG_STREAM_CALLER_WG_IP,
@@ -32,6 +32,38 @@ describe('ProcessLogController follow stream', function (): void {
             [],
             [],
             ['REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'agent_push_streaming_unavailable')
+            ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+
+        expect($stream->scripts)->toBeEmpty();
+    });
+
+    it('streams followed process log output only through explicit RemoteShell fallback', function (): void {
+        createTestGatewayNode([
+            'name' => 'caller',
+            'host' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+            'wireguard_address' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+        ]);
+        $appNode = createTestAppHostNode(['name' => 'app-1']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        $stream = new ProcessLogApiRecordingRemoteStream;
+        app()->instance(RemoteShellStream::class, $stream);
+
+        $response = $this->call(
+            'GET',
+            '/api/processes/vite/log?app=docs&lines=5&follow=1',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
+            ],
         );
 
         $response

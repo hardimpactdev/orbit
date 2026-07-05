@@ -22,6 +22,7 @@ use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 
@@ -52,6 +53,17 @@ function createDoctorRunCallerNode(array $overrides = [], string $role = 'gatewa
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
+}
+
+/**
+ * @return array<string, string>
+ */
+function doctor_run_explicit_fallback_server(): array
+{
+    return [
+        'REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP,
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+    ];
 }
 
 describe('DoctorRunController', function (): void {
@@ -166,7 +178,7 @@ describe('DoctorRunController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            doctor_run_explicit_fallback_server(),
         );
 
         $response
@@ -190,7 +202,7 @@ describe('DoctorRunController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            doctor_run_explicit_fallback_server(),
         );
 
         $response
@@ -306,7 +318,7 @@ describe('DoctorRunController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            doctor_run_explicit_fallback_server(),
         );
 
         $response
@@ -663,7 +675,7 @@ describe('DoctorRunController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            doctor_run_explicit_fallback_server(),
         );
 
         $response
@@ -1128,6 +1140,30 @@ final class DoctorRunDatabaseScopeRemoteShell implements RemoteShell
     {
         if (str_contains($script, 'docker container ls')) {
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'internal:env-file')) {
+            $payload = json_decode((string) ($options['input'] ?? ''), associative: true);
+            $path = is_array($payload) && is_string($payload['path'] ?? null) ? $payload['path'] : '';
+            $env = $this->envByPath[$path] ?? null;
+
+            if (! is_string($env)) {
+                return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+            }
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => [
+                        'data' => [
+                            'contents' => $env,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         if (preg_match("/test -f '([^']+)' && cat '([^']+)'/", $script, $matches) === 1) {

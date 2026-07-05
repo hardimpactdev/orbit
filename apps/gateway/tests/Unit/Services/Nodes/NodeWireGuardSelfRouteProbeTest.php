@@ -2,71 +2,82 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
+
 it('recognizes a Linux local WireGuard self route through loopback', function (): void {
-    $node = Node::factory()->make([
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.4:9477/v1/commands' => Http::response(wireguard_self_route_response(
+            exitCode: 0,
+            output: "local 10.6.0.4 dev lo src 10.6.0.4 uid 1000\n",
+        )),
+    ]);
+    $node = wireguard_self_route_node([
         'name' => 'app-1',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.4',
     ]);
-    $shell = new NodeWireGuardSelfRouteProbeRemoteShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "local 10.6.0.4 dev lo src 10.6.0.4 uid 1000\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-    ]);
 
-    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
+    $result = app(NodeWireGuardSelfRouteProbe::class)->probe($node);
 
-    expect($result['ok'])->toBeTrue()->and($shell->scripts)->toBe(["ip route get '10.6.0.4'"]);
+    expect($result['ok'])
+        ->toBeTrue()
+        ->and($result['command'])
+        ->toBe("ip route get '10.6.0.4'");
+
+    Http::assertSent(fn (Request $request): bool => wireguard_self_route_request_matches($request, '10.6.0.4'));
 });
 
 it('recognizes an equivalent Linux local WireGuard self route', function (): void {
-    $node = Node::factory()->make([
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.4:9477/v1/commands' => Http::response(wireguard_self_route_response(
+            exitCode: 0,
+            output: "local 10.6.0.4 dev wg-orbit table local src 10.6.0.4\n",
+        )),
+    ]);
+    $node = wireguard_self_route_node([
         'name' => 'app-1',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.4',
     ]);
-    $shell = new NodeWireGuardSelfRouteProbeRemoteShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "local 10.6.0.4 dev wg-orbit table local src 10.6.0.4\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-    ]);
 
-    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
+    $result = app(NodeWireGuardSelfRouteProbe::class)->probe($node);
 
     expect($result['ok'])->toBeTrue();
 });
 
 it('inspects unknown node platforms instead of treating retained Linux topologies as unsupported', function (): void {
-    $node = Node::factory()->make([
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.2:9477/v1/commands' => Http::response(wireguard_self_route_response(
+            exitCode: 0,
+            output: "local 10.6.0.2 dev lo src 10.6.0.2 uid 1000\n",
+        )),
+    ]);
+    $node = wireguard_self_route_node([
         'name' => 'gateway',
         'platform' => 'unknown',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $shell = new NodeWireGuardSelfRouteProbeRemoteShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "local 10.6.0.2 dev lo src 10.6.0.2 uid 1000\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-    ]);
 
-    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
+    $result = app(NodeWireGuardSelfRouteProbe::class)->probe($node);
 
     expect($result)
         ->toMatchArray([
@@ -74,26 +85,25 @@ it('inspects unknown node platforms instead of treating retained Linux topologie
             'supported' => true,
             'platform' => 'unknown',
         ])
-        ->and($shell->scripts)
-        ->toBe(["ip route get '10.6.0.2'"]);
+        ->and($result['command'])
+        ->toBe("ip route get '10.6.0.2'");
 });
 
 it('reports Linux WireGuard self route misses without mutating routes', function (): void {
-    $node = Node::factory()->make([
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.4:9477/v1/commands' => Http::response(wireguard_self_route_response(
+            exitCode: 0,
+            output: "10.6.0.4 dev wg-orbit src 10.6.0.2 uid 1000\n",
+        )),
+    ]);
+    $node = wireguard_self_route_node([
         'name' => 'app-1',
         'platform' => 'ubuntu_24-04',
         'wireguard_address' => '10.6.0.4',
     ]);
-    $shell = new NodeWireGuardSelfRouteProbeRemoteShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: "10.6.0.4 dev wg-orbit src 10.6.0.2 uid 1000\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-    ]);
 
-    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
+    $result = app(NodeWireGuardSelfRouteProbe::class)->probe($node);
 
     expect($result)
         ->toMatchArray([
@@ -102,10 +112,10 @@ it('reports Linux WireGuard self route misses without mutating routes', function
             'reason' => 'self_route_missing',
             'message' => 'Linux node does not route its own WireGuard address locally.',
         ])
-        ->and($shell->scripts)
-        ->toBe(["ip route get '10.6.0.4'"])
-        ->and($shell->scripts[0])
-        ->not->toContain(' route add ')->and($shell->scripts[0])
+        ->and($result['command'])
+        ->toBe("ip route get '10.6.0.4'")
+        ->and($result['command'])
+        ->not->toContain(' route add ')->and($result['command'])
         ->not->toContain(' route replace ');
 });
 
@@ -115,9 +125,8 @@ it('reports macOS as unsupported without running route commands', function (): v
         'platform' => 'macos_15-4',
         'wireguard_address' => '10.6.0.9',
     ]);
-    $shell = new NodeWireGuardSelfRouteProbeRemoteShell([]);
 
-    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
+    $result = app(NodeWireGuardSelfRouteProbe::class)->probe($node);
 
     expect($result)
         ->toMatchArray([
@@ -125,29 +134,59 @@ it('reports macOS as unsupported without running route commands', function (): v
             'supported' => false,
             'reason' => 'unsupported_platform',
             'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
-        ])
-        ->and($shell->scripts)
-        ->toBe([]);
+        ]);
+
+    Http::assertNothingSent();
 });
 
-final class NodeWireGuardSelfRouteProbeRemoteShell implements RemoteShell
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function wireguard_self_route_node(array $attributes): Node
 {
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
+    return Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create(array_merge($attributes, [
+            'status' => 'active',
+            'wireguard_address' => $attributes['wireguard_address'] ?? '10.6.0.4',
+        ]));
+}
 
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results,
-    ) {}
+/**
+ * @return array<string, mixed>
+ */
+function wireguard_self_route_response(int $exitCode, string $output): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => 'wireguard-self-route.probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'exit_code' => $exitCode,
+                            'output' => $output,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+        ],
+    ];
+}
 
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
-
-        return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected remote shell call', 1);
-    }
+function wireguard_self_route_request_matches(Request $request, string $address): bool
+{
+    return (
+        $request->url() === "http://{$address}:9477/v1/commands"
+        && $request['binary'] === 'orbit'
+        && $request['argv'][0] === 'internal:wireguard-self-route'
+        && $request['argv'][1] === $address
+    );
 }

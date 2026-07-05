@@ -2,91 +2,215 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessDockerContainerApplyOutcome;
 use App\Exceptions\ProcessDockerContainerApplyException;
 use App\Models\Node;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\Processes\ProcessDockerContainer;
 use App\Services\Processes\ProcessDockerRuntimeManager;
-use App\Services\Runtime\DockerCommandBuilder;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-it('converges a missing docker process container through the convergence resource path', function (): void {
-    $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $container = processDockerRuntimeManagerContainer();
-    $shell = new ProcessDockerRuntimeManagerShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+it('converges a missing docker process container through the agent-push local executor', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.72:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'process.docker.apply',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'action' => 'apply',
+                                'container' => 'orbit_docs_main_queue',
+                                'outcome' => 'created',
+                                'had_existing_container' => false,
+                                'changed' => true,
+                                'summary' => 'Applied Docker process container orbit_docs_main_queue.',
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]),
     ]);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'beast',
+            'wireguard_address' => '10.44.0.72',
+        ]);
+    $container = processDockerRuntimeManagerContainer();
 
-    $outcome = new ProcessDockerRuntimeManager($shell, new DockerCommandBuilder)
+    $outcome = new ProcessDockerRuntimeManager(process_docker_runtime_manager_executor())
         ->apply($node, $container);
 
-    expect($outcome)
-        ->toBe(ProcessDockerContainerApplyOutcome::Created)
-        ->and($shell->scripts[0])
-        ->toBe("docker network inspect 'orbit-network'")
-        ->and($shell->scripts[1])
-        ->toBe(
-            "docker network create --label 'orbit.managed=true' --label 'orbit.network.kind=runtime' 'orbit-network'",
-        )
-        ->and($shell->scripts[2])
-        ->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'")
-        ->and($shell->scripts[3])
-        ->toStartWith('docker create')
-        ->and($shell->scripts[3])
-        ->not
-        ->toContain('docker start')
-        ->and($shell->options)
-        ->toBe([
-            ['throw' => false],
-            ['throw' => false],
-            ['throw' => false],
-            ['throw' => false],
-        ]);
+    expect($outcome)->toBe(ProcessDockerContainerApplyOutcome::Created);
+
+    Http::assertSent(function (Request $request) use ($container): bool {
+        $input = json_decode((string) $request['input'], associative: true);
+        $spec = is_array($input) ? $input['spec'] ?? null : null;
+
+        return (
+            $request->url() === 'http://10.44.0.72:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['argv'][0] === 'internal:process-docker-container'
+            && str_starts_with((string) $request['argv'][1], '--operation-token=')
+            && $request['argv'][2] === '--json'
+            && $request['timeout_seconds'] === 120
+            && $request['stream'] === true
+            && $request['operation_id'] === 'process.docker.apply'
+            && is_array($spec)
+            && $input['action'] === 'apply'
+            && $spec['name'] === 'orbit_docs_main_queue'
+            && $spec['network'] === 'orbit-network'
+            && $spec['expected_hash'] === $container->specHash()
+        );
+    });
 });
 
-it('wraps docker process container apply failures with the existing had-existing flag', function (): void {
-    $node = Node::factory()->create(['name' => 'app-dev-1']);
-    $container = processDockerRuntimeManagerContainer();
-    $shell = new ProcessDockerRuntimeManagerShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'Config' => [
-                    'Labels' => [
-                        ProcessDockerContainer::SpecHashLabel => 'old-hash',
-                    ],
+it('wraps docker process container agent apply failures with the existing had-existing flag', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.72:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'process.docker.apply',
+            'binary' => 'orbit',
+            'status' => 'failed',
+            'exit_code' => 1,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'error' => [
+                            'code' => 'docker_container.apply_failed',
+                            'message' => 'Failed to remove drifted orbit_docs_main_queue container: permission denied',
+                            'meta' => [
+                                'action' => 'apply',
+                                'container' => 'orbit_docs_main_queue',
+                                'had_existing_container' => true,
+                                'exit_code' => 1,
+                                'stderr' => 'permission denied',
+                            ],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
                 ],
-            ], JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+                [
+                    'type' => 'exit',
+                    'message' => '1',
+                ],
+            ],
+        ]),
     ]);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'beast',
+            'wireguard_address' => '10.44.0.72',
+        ]);
+    $container = processDockerRuntimeManagerContainer();
 
     try {
-        new ProcessDockerRuntimeManager($shell, new DockerCommandBuilder)
+        new ProcessDockerRuntimeManager(process_docker_runtime_manager_executor())
             ->apply($node, $container);
     } catch (ProcessDockerContainerApplyException $exception) {
         expect($exception->hadExistingContainer)
             ->toBeTrue()
             ->and($exception->getMessage())
-            ->toBe('Failed to remove drifted orbit_docs_main_queue container on app-dev-1: permission denied');
+            ->toBe('Failed to remove drifted orbit_docs_main_queue container: permission denied');
 
         return;
     }
 
     $this->fail('Expected process Docker container apply exception was not thrown.');
 });
+
+it('runs docker container lifecycle actions through the agent-push local executor', function (string $action): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.72:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => "process.docker.{$action}",
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => "{\"success\":{\"data\":{\"ok\":true},\"meta\":[]}}\n",
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]),
+    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'beast',
+            'wireguard_address' => '10.44.0.72',
+        ]);
+    $manager = new ProcessDockerRuntimeManager(
+        process_docker_runtime_manager_executor(),
+    );
+
+    $result = match ($action) {
+        'remove' => $manager->remove($node, 'orbit_docs_main_queue'),
+        'restart' => $manager->restart($node, 'orbit_docs_main_queue'),
+        'start' => $manager->start($node, 'orbit_docs_main_queue'),
+        'stop' => $manager->stop($node, 'orbit_docs_main_queue'),
+    };
+
+    expect($result)->toBeTrue();
+
+    Http::assertSent(function (Request $request) use ($action): bool {
+        $input = json_decode((string) $request['input'], associative: true);
+
+        return (
+            $request->url() === 'http://10.44.0.72:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['argv'][0] === 'internal:process-docker-container'
+            && str_starts_with((string) $request['argv'][1], '--operation-token=')
+            && $request['argv'][2] === '--json'
+            && $request['timeout_seconds'] === 120
+            && $request['stream'] === true
+            && $request['operation_id'] === "process.docker.{$action}"
+            && $input === [
+                'action' => $action,
+                'container' => 'orbit_docs_main_queue',
+            ]
+        );
+    });
+})->with(['remove', 'restart', 'start', 'stop']);
 
 function processDockerRuntimeManagerContainer(): ProcessDockerContainer
 {
@@ -115,26 +239,37 @@ function processDockerRuntimeManagerContainer(): ProcessDockerContainer
     );
 }
 
-final class ProcessDockerRuntimeManagerShell implements RemoteShell
+function process_docker_runtime_manager_executor(): RemoteLocalExecutor
 {
-    /** @var list<string> */
-    public array $scripts = [];
+    return new RemoteLocalExecutor(
+        transport: new ProcessDockerRuntimeManagerUnusedTransport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: process_docker_runtime_manager_operation_secret(),
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: process_docker_runtime_manager_operation_secret(),
+    );
+}
 
-    /** @var list<array<string, mixed>> */
-    public array $options = [];
+function process_docker_runtime_manager_operation_secret(): string
+{
+    return implode('-', ['gateway', 'secret']);
+}
 
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results,
-    ) {}
-
+final class ProcessDockerRuntimeManagerUnusedTransport implements RemoteExecutor
+{
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $this->scripts[] = $script;
-        $this->options[] = $options;
+        throw new RuntimeException('SSH transport should not be called for process Docker runtime manager actions.');
+    }
 
-        return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected call', 1);
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('Process Docker lifecycle tests do not start long-running transports.');
     }
 }

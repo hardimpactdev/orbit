@@ -1,0 +1,233 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Commands\Internal\SiteCertificateInstallCommand;
+use Illuminate\Support\Facades\Artisan;
+use LaravelZero\Framework\Application as LaravelZeroApplication;
+use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationTokenSigner;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+
+describe('internal site certificate install command', function (): void {
+    beforeEach(function (): void {
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+        $path = getenv('PATH');
+        putenv('ORBIT_SITE_CERTIFICATE_ORIGINAL_PATH='.($path === false ? '' : $path));
+    });
+
+    afterEach(function (): void {
+        $path = getenv('ORBIT_SITE_CERTIFICATE_ORIGINAL_PATH');
+        putenv('PATH='.($path === false ? '' : $path));
+        putenv('ORBIT_SITE_CERTIFICATE_ORIGINAL_PATH');
+
+        $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-site-certificate-bin-*');
+
+        if ($fakeBinPaths === false) {
+            return;
+        }
+
+        foreach ($fakeBinPaths as $dir) {
+            delete_site_certificate_fake_bin($dir);
+        }
+    });
+
+    it('rejects a missing operation token before installing certificate material', function (): void {
+        Artisan::call('internal:site-certificate:install', [
+            '--json' => true,
+        ]);
+
+        expect(Artisan::output())
+            ->json()
+            ->toBe(JsonEnvelope::failure(
+                'missing_token',
+                'Operation token is required.',
+            ));
+    });
+
+    it('installs certificate material through fixed argv and stdin writes', function (): void {
+        $bin = install_site_certificate_fake_bin();
+        $payload = [
+            'cert_path' => '/home/deploy/.config/orbit/certs/cta.example.test.crt',
+            'key_path' => '/home/deploy/.config/orbit/certs/cta.example.test.key',
+            'cert' => 'test-cert',
+            'key' => 'test-key',
+            'owner' => 'deploy',
+        ];
+
+        [$exitCode, $output] = run_site_certificate_install_command($payload);
+        expect($exitCode)
+            ->toBe(0)
+            ->and(site_certificate_success_data($output))
+            ->toMatchArray([
+                'cert_path' => '/home/deploy/.config/orbit/certs/cta.example.test.crt',
+                'key_path' => '/home/deploy/.config/orbit/certs/cta.example.test.key',
+                'owner' => 'deploy',
+                'cert_bytes' => 9,
+                'key_bytes' => 8,
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('sudo install -d -m 0755 /home/deploy/.config/orbit/certs')
+            ->toContain('sudo tee /home/deploy/.config/orbit/certs/cta.example.test.crt')
+            ->toContain('sudo tee /home/deploy/.config/orbit/certs/cta.example.test.key')
+            ->toContain('sudo chmod 0644 /home/deploy/.config/orbit/certs/cta.example.test.crt')
+            ->toContain('sudo chmod 0600 /home/deploy/.config/orbit/certs/cta.example.test.key')
+            ->toContain('sudo chown deploy:deploy /home/deploy/.config/orbit/certs/cta.example.test.crt')
+            ->and(file_get_contents("{$bin}/writes.log"))
+            ->toContain('/home/deploy/.config/orbit/certs/cta.example.test.crt=test-cert')
+            ->toContain('/home/deploy/.config/orbit/certs/cta.example.test.key=test-key');
+    });
+
+    it('installs websocket backend certificate material into the host Orbit cert directory', function (): void {
+        $bin = install_site_certificate_fake_bin();
+        $payload = [
+            'cert_path' => '/etc/orbit/certs/10.6.0.44.crt',
+            'key_path' => '/etc/orbit/certs/10.6.0.44.key',
+            'cert' => 'websocket-cert',
+            'key' => 'websocket-key',
+            'owner' => null,
+        ];
+
+        [$exitCode, $output] = run_site_certificate_install_command($payload);
+        expect($exitCode)
+            ->toBe(0)
+            ->and(site_certificate_success_data($output))
+            ->toMatchArray([
+                'cert_path' => '/etc/orbit/certs/10.6.0.44.crt',
+                'key_path' => '/etc/orbit/certs/10.6.0.44.key',
+                'owner' => null,
+                'cert_bytes' => 14,
+                'key_bytes' => 13,
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('sudo install -d -m 0755 /etc/orbit/certs')
+            ->toContain('sudo tee /etc/orbit/certs/10.6.0.44.crt')
+            ->toContain('sudo tee /etc/orbit/certs/10.6.0.44.key')
+            ->toContain('sudo chmod 0644 /etc/orbit/certs/10.6.0.44.crt')
+            ->toContain('sudo chmod 0600 /etc/orbit/certs/10.6.0.44.key')
+            ->not
+            ->toContain('sudo chown')
+            ->and(file_get_contents("{$bin}/writes.log"))
+            ->toContain('/etc/orbit/certs/10.6.0.44.crt=websocket-cert')
+            ->toContain('/etc/orbit/certs/10.6.0.44.key=websocket-key');
+    });
+});
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array{int, string}
+ */
+function run_site_certificate_install_command(array $payload): array
+{
+    $command = app(SiteCertificateInstallCommand::class);
+    $application = app();
+
+    if (! $application instanceof LaravelZeroApplication) {
+        throw new RuntimeException('The internal command test must run inside the Laravel Zero application.');
+    }
+
+    $command->setLaravel($application);
+    $output = new BufferedOutput;
+    $input = new ArrayInput([
+        '--operation-token' => site_certificate_signed_operation_token(),
+        '--json' => true,
+    ]);
+    $input->setStream(fopen(
+        filename: 'data://text/plain,'.rawurlencode(json_encode($payload, JSON_THROW_ON_ERROR)),
+        mode: 'r',
+    ));
+
+    return [$command->run($input, $output), $output->fetch()];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function site_certificate_success_data(string $output): array
+{
+    /** @var mixed $payload */
+    $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($payload)) {
+        return [];
+    }
+
+    /** @var mixed $data */
+    $data = data_get(target: $payload, key: 'success.data');
+
+    if (! is_array($data)) {
+        return [];
+    }
+
+    /** @var array<string, mixed> $data */
+    return $data;
+}
+
+function site_certificate_signed_operation_token(
+    string $id = 'site-certificate-install',
+    string $node = 'app-dev',
+    string $command = 'internal:site-certificate:install',
+    ?int $issuedAt = null,
+    ?int $expiresAt = null,
+): string {
+    $issuedAt ??= time() - 10;
+    $expiresAt ??= time() + 120;
+
+    return new OperationTokenSigner()
+        ->sign(
+            secret: site_certificate_operation_secret(),
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
+}
+
+function site_certificate_operation_secret(): string
+{
+    return implode('-', ['gateway', 'secret']);
+}
+
+function install_site_certificate_fake_bin(): string
+{
+    $dir = sys_get_temp_dir().'/orbit-site-certificate-bin-'.bin2hex(random_bytes(8));
+    mkdir($dir);
+
+    file_put_contents("{$dir}/sudo", <<<'PHP'
+        #!/usr/bin/env php
+        <?php
+        file_put_contents(__DIR__.'/calls.log', basename($argv[0]).' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
+        $args = array_slice($argv, 1);
+        if (($args[0] ?? null) === 'tee') {
+            file_put_contents(__DIR__.'/writes.log', ($args[1] ?? '').'='.stream_get_contents(STDIN).PHP_EOL, FILE_APPEND);
+        }
+        exit(0);
+        PHP);
+    chmod(filename: "{$dir}/sudo", permissions: 0o755);
+
+    $path = getenv('PATH');
+    putenv("PATH={$dir}:".($path === false ? '' : $path));
+
+    return $dir;
+}
+
+function delete_site_certificate_fake_bin(string $path): void
+{
+    foreach (['sudo', 'calls.log', 'writes.log'] as $file) {
+        $filePath = "{$path}/{$file}";
+
+        if (is_file($filePath)) {
+            unlink($filePath);
+        }
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
+}

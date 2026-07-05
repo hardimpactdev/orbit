@@ -2,15 +2,24 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as NodeProcess;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -49,7 +58,7 @@ it('runs the redis doctor script inside the rendered websocket runtime container
             'redis_node_id' => $redisNode->id,
         ],
     ]);
-    $shell = new WebSocketDoctorProbeTestRemoteShell([
+    $shell = new WebSocketDoctorProbeTestTransport([
         new RemoteShellResult(
             exitCode: 0,
             stdout: "exists=1\nrunning=true\nenv_host=10.6.0.44\ncmd_host=10.6.0.44\n",
@@ -58,46 +67,57 @@ it('runs the redis doctor script inside the rendered websocket runtime container
         ),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RemoteLocalExecutor::class, websocketDoctorProbeExecutor($shell));
 
     $drift = app(WebSocketDoctorProbe::class)->toolDrift($websocketNode, $assignment);
 
     $expectedContainer = app(WebSocketRuntimeContainerRenderer::class)->containerName($websocketNode);
-    $redisScript = collect($shell->scripts)
-        ->first(fn (string $script): bool => str_contains($script, '# orbit-websocket-doctor:redis-probe'));
+    $redisScript = collect($shell->calls)
+        ->pluck('script')
+        ->first(fn (string $script): bool => str_contains($script, 'doctor:redis-probe'));
 
     expect($drift)->toBe([])->and($redisScript)->toBeString();
 
     $redisScript = (string) $redisScript;
 
     expect($redisScript)
-        ->toContain('# orbit-websocket-doctor:redis-probe')
+        ->toContain('internal:websocket-runtime')
         ->and($redisScript)
-        ->toContain('docker exec -i "$container" php')
+        ->toContain('doctor:redis-probe')
         ->and($redisScript)
-        ->toContain('container='.escapeshellarg($expectedContainer))
-        ->and($redisScript)
-        ->toContain("<?php\n")
-        ->and($redisScript)
-        ->toContain("getenv('REDIS_HOST')")
-        ->and($redisScript)
-        ->toContain("getenv('REDIS_PORT')")
-        ->and($redisScript)
-        ->toContain('fsockopen($host, $port, $errno, $errstr, 2)')
-        ->and($redisScript)
-        ->toContain("fwrite(STDERR, \$errstr !== '' ? \$errstr : 'redis unavailable')")
-        ->and($redisScript)
-        ->toContain('exit(1)')
-        ->and($redisScript)
+        ->not->toContain('# orbit-websocket-doctor:redis-probe')->and($redisScript)
+        ->not->toContain('docker exec -i "$container" php')->and($redisScript)
         ->not->toContain('php -r');
+
+    expect($shell->calls[1]['options']['input'] ?? '')
+        ->json()
+        ->toBe(['container' => $expectedContainer]);
 })->group('websocket', 'doctor');
 
-final class WebSocketDoctorProbeTestRemoteShell implements RemoteShell
+function websocketDoctorProbeExecutor(WebSocketDoctorProbeTestTransport $transport): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
+}
+
+final class WebSocketDoctorProbeTestTransport implements RemoteExecutor
 {
     /**
-     * @var list<string>
+     * @var list<array{node: Node, script: string, options: array<string, mixed>}>
      */
-    public array $scripts = [];
+    public array $calls = [];
 
     /**
      * @param  list<RemoteShellResult>  $results
@@ -106,13 +126,21 @@ final class WebSocketDoctorProbeTestRemoteShell implements RemoteShell
         private array $results,
     ) {}
 
-    /**
-     * @param  array<string, mixed>  $options
-     */
+    #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $this->scripts[] = $script;
+        $this->calls[] = [
+            'node' => $node,
+            'script' => $script,
+            'options' => $options,
+        ];
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    #[Override]
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new \RuntimeException('Websocket doctor probe test transport does not start processes.');
     }
 }

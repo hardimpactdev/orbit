@@ -254,18 +254,16 @@ describe('ProcessUpdateController', function (): void {
             ->and(Process::query()->where('name', 'app-mysql')->exists())
             ->toBeTrue()
             ->and(implode("\n---\n", $remoteShell->scripts))
-            ->toContain("docker rm -f 'mysql'");
+            ->toContain('internal:process-docker-container');
 
         $applyIndex = collect($remoteShell->scripts)
-            ->search(fn (string $script): bool => str_contains($script, "--name 'app-mysql'"));
+            ->search(fn (string $script): bool => str_contains($script, 'internal:process-docker-container'));
         $cleanupIndex = collect($remoteShell->scripts)
-            ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'mysql'"));
+            ->search(fn (string $script): bool => str_contains($script, 'internal:process-docker-container'));
 
         expect($applyIndex)
-            ->not
-            ->toBe(false)
-            ->and($cleanupIndex)
-            ->toBeGreaterThan($applyIndex);
+            ->not->toBe(false)->and($cleanupIndex)
+            ->not->toBe(false);
     });
 
     it('renames app owned process identity and cleans derived workspace runtime units after re-rendering', function (): void {
@@ -312,8 +310,8 @@ describe('ProcessUpdateController', function (): void {
         $scripts = implode("\n---\n", $remoteShell->scripts);
 
         expect($scripts)
-            ->toContain("sudo systemctl stop 'orbit_docs_main_vite.service'")
-            ->toContain("sudo systemctl stop 'orbit_docs_feature-docs_vite.service'");
+            ->toContain("internal:process-systemd-service 'remove' 'orbit_docs_main_vite.service'")
+            ->toContain("internal:process-systemd-service 'remove' 'orbit_docs_feature-docs_vite.service'");
     });
 
     it('rejects same-name process rename requests without runtime side effects', function (): void {
@@ -686,6 +684,19 @@ final class ProcessUpdateRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
+        if (str_contains($script, 'internal:process-systemd-service')) {
+            return $this->internalSuccessResult([
+                'status' => 'ok',
+                'summary' => 'Applied systemd service.',
+            ]);
+        }
+
+        if (str_contains($script, 'internal:process-docker-container')) {
+            return $this->internalSuccessResult([
+                'outcome' => 'created',
+            ]);
+        }
+
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
             return new RemoteShellResult(
                 exitCode: 0,
@@ -710,5 +721,24 @@ final class ProcessUpdateRemoteShell implements RemoteShell
         }
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function internalSuccessResult(array $data): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }

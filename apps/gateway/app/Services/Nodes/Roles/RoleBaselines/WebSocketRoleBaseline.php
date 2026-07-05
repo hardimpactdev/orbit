@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
-use App\Contracts\RemoteShell;
 use App\Data\Nodes\RoleSettings\WebSocketRoleSettings;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Tools\ToolCatalog;
 use App\Services\WebSockets\WebSocketCertificateInstaller;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
@@ -27,7 +29,7 @@ class WebSocketRoleBaseline implements RoleBaseline
         private readonly WebSocketRuntimeContainerManager $runtimeManager,
         private readonly WebSocketCertificateInstaller $certificateInstaller,
         private readonly WebSocketRuntimeSourceInstaller $sourceInstaller,
-        private readonly RemoteShell $remoteShell,
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?WebSocketRoleBaselineTiming $timing = null,
@@ -101,48 +103,55 @@ class WebSocketRoleBaseline implements RoleBaseline
 
     private function runtimeImageIsSelfContained(Node $node): bool
     {
-        $result = $this->remoteShell->run(
-            $node,
-            "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'",
-            [
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'websocket-runtime-image-inspect',
-                ],
-            ],
+        $result = $this->runWebSocketRuntimeAction(
+            node: $node,
+            action: 'image:is-self-contained',
         );
 
-        return $result->successful() && trim($result->stdout) === 'true';
+        if (! $result->successful()) {
+            return false;
+        }
+
+        return RemoteShellSuccessData::fromJsonEnvelope($result)['self_contained'] === true;
     }
 
     private function ensureSelfContainedAppKey(Node $node): string
     {
-        $result = $this->remoteShell->run(
-            $node,
-            <<<'SH'
-                set -euo pipefail
-                key_file=/etc/orbit/websocket/app.key
-                sudo install -d -m 0755 /etc/orbit/websocket
-                if ! sudo test -f "$key_file"; then
-                    app_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
-                    printf '%s\n' "$app_key" | sudo tee "$key_file" >/dev/null
-                    sudo chmod 0600 "$key_file"
-                fi
-                sudo cat "$key_file"
-                SH,
-            [
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'websocket-runtime-app-key',
-                ],
-            ],
+        $result = $this->runWebSocketRuntimeAction(
+            node: $node,
+            action: 'app-key:ensure',
         );
 
-        $appKey = trim($result->stdout);
+        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        /** @var mixed $appKey */
+        $appKey = $data['app_key'] ?? null;
 
-        if (! $result->successful() || $appKey === '') {
+        if (! $result->successful() || ! is_string($appKey) || trim($appKey) === '') {
             throw new RuntimeException("Could not prepare websocket runtime app key on {$node->name}.");
         }
 
-        return $appKey;
+        return trim($appKey);
+    }
+
+    private function runWebSocketRuntimeAction(Node $node, string $action): RemoteShellResult
+    {
+        return $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:websocket-runtime',
+            arguments: [$action],
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => "websocket-runtime.{$action}",
+                ],
+                'timeout' => 30,
+                'throw' => false,
+            ],
+        );
+    }
+
+    private function localExecutor(): RemoteLocalExecutor
+    {
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     private function nodeRoleAssignments(): NodeRoleAssignments

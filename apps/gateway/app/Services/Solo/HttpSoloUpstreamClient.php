@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Solo;
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use JsonException;
@@ -19,8 +19,7 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
 {
     public function __construct(
         private NodeRoleAssignments $roles,
-        private RemoteShell $remoteShell,
-        private SoloRemoteCurlScript $remoteCurlScript,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     public function get(SoloUpstreamTarget $target, string $path): SoloUpstreamResponse
@@ -104,18 +103,34 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
         string $path,
         array $payload,
     ): SoloUpstreamResponse {
-        $input = $payload === [] ? null : json_encode($payload, JSON_THROW_ON_ERROR);
-        $result = $this->remoteShell->run(
-            $target->node,
-            $this->remoteCurlScript->forRequest($target, $method, $this->url($target, $path), $payload),
-            array_filter(
-                [
-                    'timeout' => 10,
-                    'throw' => false,
-                    'input' => $input,
+        $headers = [
+            'Accept' => 'application/json',
+            'X-Orbit-Node' => $target->identity,
+        ];
+
+        if ($target->bearerToken !== null && $target->bearerToken !== '') {
+            $headers['Authorization'] = "Bearer {$target->bearerToken}";
+        }
+
+        $result = $this->localExecutor->runInternal(
+            node: $target->node,
+            commandName: 'internal:solo-upstream-request',
+            transportOptions: [
+                'timeout' => 10,
+                'throw' => false,
+                'input' => json_encode([
+                    'method' => $method,
+                    'url' => $this->url($target, $path),
+                    'headers' => $headers,
+                    'body' => $payload,
+                ], JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'solo-upstream-request',
                 ],
-                static fn (mixed $value): bool => $value !== null,
-            ),
+                'strict' => false,
+                'redact_stdout' => true,
+                'redact_command_options' => ['operation-token'],
+            ],
         );
 
         if (! $result->successful()) {
@@ -127,7 +142,7 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
             );
         }
 
-        $remoteResponse = $this->remoteResponse($result);
+        $remoteResponse = $this->remoteResponse(RemoteShellSuccessData::fromJsonEnvelope($result));
 
         if ($remoteResponse === null) {
             return SoloUpstreamResponse::failure(
@@ -155,25 +170,37 @@ final readonly class HttpSoloUpstreamClient implements SoloUpstreamClient
     /**
      * @return array{int, array<string, mixed>}|null
      */
-    private function remoteResponse(RemoteShellResult $result): ?array
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{int, array<string, mixed>}|null
+     */
+    private function remoteResponse(array $data): ?array
     {
-        [$status, $body] = array_pad(
-            array: explode(separator: "\n", string: $result->stdout, limit: 2),
-            length: 2,
-            value: '',
-        );
+        if (
+            ! array_key_exists('status', $data)
+            || ! array_key_exists('body_base64', $data)
+            || ! is_int($data['status'])
+            || ! is_string($data['body_base64'])
+        ) {
+            return null;
+        }
 
-        if (! ctype_digit($status)) {
+        $status = $data['status'];
+        $body = $data['body_base64'];
+        $decodedBody = base64_decode($body, strict: true);
+
+        if (! is_string($decodedBody)) {
             return null;
         }
 
         try {
-            $payload = json_decode($body, associative: true, flags: JSON_THROW_ON_ERROR);
+            /** @var mixed $payload */
+            $payload = json_decode($decodedBody, associative: true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             return null;
         }
 
-        return [(int) $status, $this->stringKeyedArray($payload)];
+        return [$status, $this->stringKeyedArray($payload)];
     }
 
     /**

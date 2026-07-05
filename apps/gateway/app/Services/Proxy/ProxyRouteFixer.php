@@ -12,6 +12,8 @@ use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Convergence\ManagedFile;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Tools\CaddyTool;
 
@@ -22,7 +24,7 @@ final readonly class ProxyRouteFixer
         private ProxyRouteRenderer $renderer,
         private OrbitCaService $ca,
         private SiteCertificateInstaller $siteCertificateInstaller,
-        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
     ) {}
 
     /**
@@ -89,6 +91,7 @@ final readonly class ProxyRouteFixer
         $this->ensureRouteTlsMaterial($route);
         $this->ensureRuntimeTrustPool($route->node, $route);
 
+        $this->requireExplicitFallback('proxy route repair');
         $this->remoteShell->run($route->node, $this->installScript($route->node, $route->domain, $content), [
             'throw' => true,
         ]);
@@ -127,6 +130,7 @@ final readonly class ProxyRouteFixer
 
         $content = $this->renderer->renderRouterRoute($route);
         $this->ensureRouterTrustPool($routerNode, $route);
+        $this->requireExplicitFallback('proxy router route repair');
         $this->remoteShell->run($routerNode, $this->installScript($routerNode, $route->domain, $content), [
             'throw' => true,
         ]);
@@ -168,6 +172,7 @@ final readonly class ProxyRouteFixer
 
         $content = $this->renderer->renderPrivateBackend($route, $artifact);
         $this->ensureRuntimeTrustPool($backendNode, $route);
+        $this->requireExplicitFallback('proxy backend route repair');
         $this->remoteShell->run(
             $backendNode,
             $this->installScript($backendNode, $route->domain, $content, backend: true),
@@ -200,6 +205,7 @@ final readonly class ProxyRouteFixer
         $leaf = $this->ca->issueLeaf($route->domain);
         $paths = $this->tlsPaths($route);
 
+        $this->requireExplicitFallback('proxy TLS repair');
         $this->remoteShell->run(
             $route->node,
             $this->tlsInstallScript(
@@ -294,7 +300,7 @@ final readonly class ProxyRouteFixer
             ? $backendTls['ca_path']
             : '/etc/orbit/ca/root.crt';
 
-        $this->remoteShell->run($node, $this->trustPoolInstallScript($route, $caPath), ['throw' => true]);
+        $this->installTrustPool($node, $route, $caPath);
     }
 
     private function ensureRuntimeTrustPool(Node $node, ProxyRoute $route): void
@@ -310,28 +316,25 @@ final readonly class ProxyRouteFixer
             ? $runtimeUpstreamTls['ca_path']
             : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
 
-        $this->remoteShell->run(
-            $node,
-            $this->innerTlsPolicy->trustPoolInstallScript($caPath, $this->ca->rootCert()),
-            ['throw' => true],
-        );
+        $this->installTrustPool($node, $route, $caPath);
     }
 
-    private function trustPoolInstallScript(ProxyRoute $route, string $caPath): string
+    private function installTrustPool(Node $node, ProxyRoute $route, string $caPath): void
     {
         $caPath = $this->validatedAbsolutePath($route, $caPath, 'has an invalid router backend CA path.');
 
-        return sprintf(
-            <<<'SH'
-                sudo install -d -m 0755 %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
-                SH,
-            escapeshellarg(dirname($caPath)),
-            escapeshellarg(base64_encode($this->ca->rootCert())),
-            escapeshellarg($caPath),
-            escapeshellarg($caPath),
+        $file = new ManagedFile(
+            path: $caPath,
+            content: $this->ca->rootCert(),
+            mode: '0644',
+            directoryMode: '0755',
         );
+        $plan = $file->plan($file->probe($node, $this->remoteShell));
+        $result = $file->apply($node, $this->remoteShell, $plan);
+
+        if (! $result->successful()) {
+            throw new \RuntimeException($result->summary);
+        }
     }
 
     private function publicRouteSummary(ProxyRoute $route, DriftEntry $entry): string
@@ -494,6 +497,7 @@ final readonly class ProxyRouteFixer
         if ($entry->key === 'proxy.caddy_container_down') {
             $script = $this->caddyStartCommand($node);
 
+            $this->requireExplicitFallback('proxy caddy container start');
             $this->remoteShell->run($node, $script, ['throw' => true]);
 
             return [
@@ -531,6 +535,7 @@ final readonly class ProxyRouteFixer
 
             $script = new CaddyTool()->updateScript(['container' => $spec]);
 
+            $this->requireExplicitFallback('proxy caddy container reconcile');
             $this->remoteShell->run($node, $script, ['throw' => true]);
 
             return [
@@ -601,6 +606,7 @@ final readonly class ProxyRouteFixer
             $this->caddyReloadCommand($node),
         );
 
+        $this->requireExplicitFallback('proxy route removal');
         $this->remoteShell->run($node, $script, ['throw' => true]);
 
         return [
@@ -657,6 +663,15 @@ final readonly class ProxyRouteFixer
         }
 
         return new OrbitContainerNames()->caddy();
+    }
+
+    private function requireExplicitFallback(string $surface): void
+    {
+        if ($this->explicitFallback->allowed()) {
+            return;
+        }
+
+        throw new \RuntimeException($this->explicitFallback->message($surface));
     }
 
     private function validatedAbsolutePath(ProxyRoute $route, string $value, string $suffix): string

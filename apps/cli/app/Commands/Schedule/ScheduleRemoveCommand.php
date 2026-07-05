@@ -21,6 +21,7 @@ final class ScheduleRemoveCommand extends ScheduleGatewayCommand
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 

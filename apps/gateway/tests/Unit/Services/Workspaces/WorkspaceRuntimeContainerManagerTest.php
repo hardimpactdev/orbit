@@ -14,6 +14,7 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
@@ -26,6 +27,14 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
 
 function workspaceAndNodeForManagerTest(): array
 {
@@ -112,6 +121,22 @@ final class WorkspaceRuntimeRecordingShell implements RemoteShell
         );
     }
 }
+
+it('requires explicit transitional SSH fallback before workspace runtime container convergence', function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
+    [$workspace, $node] = workspaceAndNodeForManagerTest();
+    $container = renderTestWorkspaceContainer($workspace);
+    $shell = new WorkspaceRuntimeRecordingShell;
+
+    expect(fn () => workspace_runtime_manager_for_test($shell)->apply($node, $container))
+        ->toThrow(
+            RuntimeException::class,
+            'workspace runtime container convergence still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+        );
+
+    expect($shell->calls)->toBe([]);
+});
 
 it('creates the orbit network, writes php.ini, and runs the workspace runtime container when none exists', function (): void {
     [$workspace, $node] = workspaceAndNodeForManagerTest();

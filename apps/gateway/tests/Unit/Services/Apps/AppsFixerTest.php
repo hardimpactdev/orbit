@@ -17,13 +17,17 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppsFixer;
 use App\Services\Ca\OrbitCaService;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
@@ -55,13 +59,19 @@ final class AppsFixerRecordingRemoteShell implements RemoteShell
 
 function buildAppsFixer(RemoteShell $shell): AppsFixer
 {
+    if (! is_string(request()->header(ExplicitRemoteShellFallback::HEADER))) {
+        request()->headers->set(
+            ExplicitRemoteShellFallback::HEADER,
+            ExplicitRemoteShellFallback::REQUIRED,
+        );
+    }
+
     $appRuntimeContainerRenderer = new AppRuntimeContainerRenderer(
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
     );
 
     return new AppsFixer(
-        $shell,
         $appRuntimeContainerRenderer,
         new AppRuntimeContainerManager(
             $shell,
@@ -85,6 +95,57 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
 function appsFixerNode(): Node
 {
     return createTestAppHostNode(['name' => 'app-1', 'user' => 'orbit']);
+}
+
+function fake_apps_fixer_security_repair(): void
+{
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.64:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'app-security.repair',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'user' => 'docs',
+                                'home' => '/home/docs',
+                                'path' => '/home/orbit/apps/docs',
+                                'commands' => [],
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+            ],
+        ]),
+    ]);
+}
+
+function apps_fixer_security_repair_was_sent(string $user, string $home, string $path): bool
+{
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->url() === 'http://10.6.0.64:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['argv'][0] === 'internal:app-security:repair'
+            && $request['argv'][1] === $user
+            && $request['argv'][2] === $home
+            && $request['argv'][3] === $path
+        ),
+    );
+
+    return true;
 }
 
 it('re-applies a missing FrankenPHP runtime container via the manager', function (): void {
@@ -456,17 +517,22 @@ it('rewrites the managed runtime config when handed app.runtime_config_mismatch'
 });
 
 it('repairs the production runtime user when handed app.security.system_user', function (): void {
-    $node = createTestAppHostNode(['name' => 'app-1'], 'app-prod');
+    $node = createTestAppHostNode([
+        'name' => 'app-1',
+        'wireguard_address' => '10.6.0.64',
+        'orbit_agent_capable' => true,
+    ], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    fake_apps_fixer_security_repair();
+    $runtimeUser = app(AppRuntimeUser::class)->forApp($app);
+    $runtimeHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
 
-    $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
+    $shell = new AppsFixerRecordingRemoteShell;
 
     $result = buildAppsFixer($shell)->fix($app, new DriftEntry(
         family: 'app',
@@ -479,32 +545,31 @@ it('repairs the production runtime user when handed app.security.system_user', f
         ->toBe('completed')
         ->and($result['key'])
         ->toBe('app.security.system_user')
-        ->and($shell->scripts[0])
-        ->toContain('useradd')
-        ->and($shell->scripts[0])
-        ->toContain('--system')
-        ->and($shell->scripts[0])
-        ->toContain('chown -R')
-        ->and($shell->scripts[0])
-        ->toContain("'/home/orbit/apps/docs'")
-        ->and($shell->scripts[0])
-        ->not->toContain('usermod')->and($shell->scripts[0])
-        ->not->toContain('docker')->and($shell->scripts[0])
-        ->not->toContain('/var/run/docker.sock');
+        ->and(apps_fixer_security_repair_was_sent(
+            user: $runtimeUser,
+            home: $runtimeHome,
+            path: '/home/orbit/apps/docs',
+        ))
+        ->toBeTrue();
 });
 
 it('reapplies filesystem ownership when handed app.security.fs_permissions', function (): void {
-    $node = createTestAppHostNode(['name' => 'app-1'], 'app-prod');
+    $node = createTestAppHostNode([
+        'name' => 'app-1',
+        'wireguard_address' => '10.6.0.64',
+        'orbit_agent_capable' => true,
+    ], 'app-prod');
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
+    fake_apps_fixer_security_repair();
+    $runtimeUser = app(AppRuntimeUser::class)->forApp($app);
+    $runtimeHome = $runtimeUser === 'root' ? '/root' : "/home/{$runtimeUser}";
 
-    $shell = new AppsFixerRecordingRemoteShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
+    $shell = new AppsFixerRecordingRemoteShell;
 
     $result = buildAppsFixer($shell)->fix($app, new DriftEntry(
         family: 'app',
@@ -517,10 +582,12 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         ->toBe('completed')
         ->and($result['key'])
         ->toBe('app.security.fs_permissions')
-        ->and($shell->scripts[0])
-        ->toContain('chown -R')
-        ->and($shell->scripts[0])
-        ->toContain('chmod -R go-w');
+        ->and(apps_fixer_security_repair_was_sent(
+            user: $runtimeUser,
+            home: $runtimeHome,
+            path: '/home/orbit/apps/docs',
+        ))
+        ->toBeTrue();
 });
 
 it('repairs production runtime container isolation by re-applying the container', function (): void {

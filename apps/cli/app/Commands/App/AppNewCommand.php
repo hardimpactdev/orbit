@@ -19,6 +19,7 @@ final class AppNewCommand extends AppGatewayCommand
     protected $signature = 'app:new
         {name? : App name}
         {--node= : Target app node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--repo= : Repository to clone}
         {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}

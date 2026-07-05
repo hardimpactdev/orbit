@@ -3,11 +3,19 @@
 declare(strict_types=1);
 
 use App\Contracts\OpenCodeClientFactory;
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Workspaces\OpenCodeWorkspaceDriver;
 use HardImpact\OpenCode\Data\Project as OpenCodeProject;
 use HardImpact\OpenCode\Data\Session as OpenCodeSession;
@@ -16,9 +24,12 @@ use HardImpact\OpenCode\OpenCode;
 use HardImpact\OpenCode\Resources\ProjectResource;
 use HardImpact\OpenCode\Resources\SessionResource;
 use HardImpact\OpenCode\Resources\WorktreeResource;
+use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
-uses(TestCase::class);
+uses(TestCase::class, RefreshDatabase::class);
 
 it('creates an OpenCode workspace and aligns it to the requested branch', function (): void {
     $client = new OpenCodeWorkspaceDriverTestClient(
@@ -28,7 +39,7 @@ it('creates an OpenCode workspace and aligns it to the requested branch', functi
         sessionCreateQueue: [openCodeSessionPayload()],
     );
 
-    $driver = openCodeWorkspaceDriver($client, $shell = new OpenCodeWorkspaceDriverTestShell);
+    $driver = openCodeWorkspaceDriver($client, $transport = new OpenCodeWorkspaceDriverTestTransport);
 
     $result = $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main');
 
@@ -40,18 +51,17 @@ it('creates an OpenCode workspace and aligns it to the requested branch', functi
         ->toBe('opencode')
         ->and($result->agentIdeWorkspaceId)
         ->toBe('sess_feature_a')
-        ->and($shell->scripts)
+        ->and($transport->calls)
         ->toHaveCount(1)
-        ->and($shell->options[0]['metadata'])
-        ->toMatchArray([
-            'ORBIT_WORKSPACE_PATH' => '/srv/demo/.worktrees/feature-a',
-            'ORBIT_WORKSPACE_NAME' => 'feature-a',
-            'ORBIT_WORKSPACE_BASE' => 'main',
-        ])
-        ->and($shell->scripts[0])
-        ->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
-        ->and($shell->scripts[0])
-        ->toContain('git -C "$workspace_path" reset --hard "$base_ref"');
+        ->and($transport->calls[0]['script'])
+        ->toContain('internal:workspace-adapter:update')
+        ->toContain("--adapter='opencode'")
+        ->toContain("--update='host-branch'")
+        ->toContain("--workspace-path='/srv/demo/.worktrees/feature-a'")
+        ->toContain("--branch='feature-a'")
+        ->toContain("--base-ref='main'")
+        ->toContain('--operation-token=')
+        ->not->toContain('git -C "$workspace_path"');
 
     expect($client->projectCurrentCalls)
         ->toBe(1)
@@ -70,7 +80,7 @@ it('cleans up the OpenCode workspace when branch alignment fails', function (): 
 
     $driver = openCodeWorkspaceDriver(
         $client,
-        $shell = new OpenCodeWorkspaceDriverTestShell([
+        $transport = new OpenCodeWorkspaceDriverTestTransport([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'reset failed', durationMs: 1),
         ]),
     );
@@ -78,7 +88,7 @@ it('cleans up the OpenCode workspace when branch alignment fails', function (): 
     expect(fn () => $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main'))
         ->toThrow(WorkspaceCreateFailed::class, 'OpenCode could not create the workspace.');
 
-    expect($shell->scripts)->toHaveCount(1);
+    expect($transport->calls)->toHaveCount(1);
 
     expect($client->projectCurrentCalls)
         ->toBe(1)
@@ -98,7 +108,7 @@ it('recovers when OpenCode creates a workspace but returns a timeout response', 
         sessionCreateQueue: [openCodeSessionPayload()],
     );
 
-    $driver = openCodeWorkspaceDriver($client, $shell = new OpenCodeWorkspaceDriverTestShell);
+    $driver = openCodeWorkspaceDriver($client, $transport = new OpenCodeWorkspaceDriverTestTransport);
 
     $result = $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main');
 
@@ -106,7 +116,7 @@ it('recovers when OpenCode creates a workspace but returns a timeout response', 
         ->toBe('feature-a')
         ->and($result->path)
         ->toBe('/srv/demo/.worktrees/feature-a')
-        ->and($shell->scripts)
+        ->and($transport->calls)
         ->toHaveCount(1);
 
     expect($client->projectCurrentCalls)
@@ -119,11 +129,11 @@ it('recovers when OpenCode creates a workspace but returns a timeout response', 
 
 function openCodeWorkspaceDriver(
     OpenCodeWorkspaceDriverTestClient $client,
-    OpenCodeWorkspaceDriverTestShell $shell,
+    OpenCodeWorkspaceDriverTestTransport $transport,
 ): OpenCodeWorkspaceDriver {
     return new OpenCodeWorkspaceDriver(
         clientFactory: new OpenCodeWorkspaceDriverTestClientFactory($client),
-        remoteShell: $shell,
+        localExecutor: openCodeWorkspaceDriverExecutor($transport),
     );
 }
 
@@ -137,10 +147,18 @@ function openCodeWorkspaceApp(): App
 
 function openCodeWorkspaceNode(): Node
 {
-    return new Node()->forceFill([
+    $node = Node::factory()->create([
         'name' => 'app-1',
         'host' => '10.6.0.7',
     ]);
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
+
+    return $node;
 }
 
 /**
@@ -182,13 +200,28 @@ function openCodeSessionPayload(): array
     ];
 }
 
-final class OpenCodeWorkspaceDriverTestShell implements RemoteShell
+function openCodeWorkspaceDriverExecutor(OpenCodeWorkspaceDriverTestTransport $transport): RemoteLocalExecutor
 {
-    /** @var list<string> */
-    public array $scripts = [];
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
+}
 
-    /** @var list<array<string, mixed>> */
-    public array $options = [];
+final class OpenCodeWorkspaceDriverTestTransport implements RemoteExecutor
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
 
     /**
      * @param  list<RemoteShellResult>  $results
@@ -197,12 +230,22 @@ final class OpenCodeWorkspaceDriverTestShell implements RemoteShell
         private array $results = [],
     ) {}
 
+    #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $this->scripts[] = $script;
-        $this->options[] = $options;
+        $this->calls[] = [
+            'node' => $node,
+            'script' => $script,
+            'options' => $options,
+        ];
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    #[Override]
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('OpenCode workspace driver test transport does not start processes.');
     }
 }
 

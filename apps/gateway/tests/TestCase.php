@@ -5,11 +5,20 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\Contracts\RemoteShell;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use RuntimeException;
 use Tests\Fakes\NullRemoteShell;
+use Tests\Fakes\RemoteShellBackedRemoteExecutor;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -35,6 +44,25 @@ abstract class TestCase extends BaseTestCase
         $this->isolateStoragePathPerWorker();
 
         $this->app->instance(RemoteShell::class, new NullRemoteShell);
+        $this->app->bind(RemoteExecutor::class, RemoteShellBackedRemoteExecutor::class);
+        $this->app->bind(RemoteLocalExecutor::class, function (Application $app): RemoteLocalExecutor {
+            $secret = config('app.key');
+
+            if (! is_string($secret) || trim($secret) === '') {
+                throw new RuntimeException('Application key is not configured for operation token signing.');
+            }
+
+            return new RemoteLocalExecutor(
+                transport: $app->make(RemoteExecutor::class),
+                commands: $app->make(LocalExecutorCommandBuilder::class),
+                operationTokens: $app->make(OperationTokenFactory::class),
+                activityLogger: $app->make(ActivityLogger::class),
+                operationRuns: $app->make(OperationRunRecorder::class),
+                operationTokenSecret: $secret,
+                defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+            );
+        });
+
         // `maxAttempts: 0` makes `probe()` skip its HTTP loop entirely and
         // return the initial `not_run` snapshot. Setup-related tests still
         // exercise the rest of the workflow; tests that exercise the probe

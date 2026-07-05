@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class);
+uses(RefreshDatabase::class);
 
 describe(LocalExecutorCommandBuilder::class, function (): void {
     it('builds the verify command with an operation token and json output', function (): void {
@@ -22,6 +25,64 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         );
 
         expect($command)->toBe("/usr/local/bin/orbit internal:executor:verify --operation-token='token-abc' --json");
+    });
+
+    it('builds argv for agent-push without binary or shell escaping', function (): void {
+        $argv = localExecutorCommandBuilder()->buildArgv(
+            targetNode: localExecutorTargetNode(['app-dev']),
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: ['lookup', 'two words', "quote'arg", 7, 1.5, true, false],
+            options: [
+                'state-path' => "/home/orbit/.polyscope/state's.db",
+                'enabled' => true,
+                'locked' => false,
+            ],
+            operationToken: 'token-abc',
+        );
+
+        expect($argv)->toBe([
+            'internal:workspace-adapter:lookup',
+            'lookup',
+            'two words',
+            "quote'arg",
+            '7',
+            '1.5',
+            '1',
+            '0',
+            "--state-path=/home/orbit/.polyscope/state's.db",
+            '--enabled=1',
+            '--locked=0',
+            '--operation-token=token-abc',
+            '--json',
+        ]);
+    });
+
+    it('uses the same role allow list for argv building', function (): void {
+        expect(fn (): array => localExecutorCommandBuilder()->buildArgv(
+            targetNode: localExecutorTargetNode(['vpn']),
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: [],
+            options: [],
+            operationToken: 'token-abc',
+        ))
+            ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
+    });
+
+    it('allows internal commands for pending role convergence', function (): void {
+        $node = Node::factory()->create(['name' => 'target']);
+
+        NodeRoleAssignment::factory()->for($node)->create([
+            'role' => 'metrics',
+            'status' => NodeRoleStatus::Pending,
+        ]);
+
+        expect(localExecutorCommandBuilder()->buildArgv(
+            targetNode: $node,
+            commandName: 'internal:managed-file',
+            arguments: ['probe'],
+            options: [],
+            operationToken: 'token-abc',
+        ))->toContain('internal:managed-file');
     });
 
     it('uses the configured local executor binary path when provided', function (): void {
@@ -171,10 +232,223 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'agent',
                 'ingress',
             ],
+            'internal:agent-acl:ensure' => ['agent'],
+            'internal:agent-runtime:probe' => ['agent'],
+            'internal:agent-user:ensure' => ['agent'],
+            'internal:app-cache:clear' => ['app-dev', 'app-prod'],
+            'internal:app-runtime-configs:probe' => ['app-dev', 'app-prod'],
+            'internal:app-runtime-containers:probe' => ['app-dev', 'app-prod'],
+            'internal:app-runtime-extensions:probe' => ['app-dev', 'app-prod'],
+            'internal:app-source:create' => ['app-dev', 'app-prod'],
+            'internal:app-source-path:probe' => ['app-dev', 'app-prod'],
+            'internal:app-security:repair' => ['app-dev', 'app-prod'],
+            'internal:app-worker-readiness:probe' => ['app-dev', 'app-prod'],
+            'internal:caddy-config' => ['gateway', 'router', 'app-dev', 'app-prod', 'agent', 'ingress'],
+            'internal:codex-app-config' => ['agent'],
+            'internal:doctor-self' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:env-file' => ['app-dev', 'app-prod', 'database'],
+            'internal:firewall-rule' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:firewall-rule:probe' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:fleet-update:verify' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:gateway-runtime-backend:probe' => ['gateway'],
+            'internal:managed-file' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:node-security-posture:probe' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
             'internal:wg-easy:state' => ['vpn'],
+            'internal:database-add-user' => ['app-dev', 'app-prod', 'database'],
             'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
+            'internal:process-docker-container' => ['app-dev', 'app-prod', 'database'],
+            'internal:process-docker-swarm-service' => ['app-dev', 'app-prod', 'database', 'metrics'],
+            'internal:process-logs' => ['app-dev', 'app-prod', 'database', 'agent'],
+            'internal:process-systemd-service' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent'],
+            'internal:s3-runtime:probe' => ['s3'],
+            'internal:secret-file' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:site-certificate:install' => ['app-dev', 'app-prod', 'websocket'],
+            'internal:solo-upstream-request' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:websocket-runtime' => ['websocket'],
+            'internal:unattended-upgrades:apply' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:unattended-upgrades:probe' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:wireguard-endpoint:rotate' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:wireguard-interface-public-key:read' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
+            'internal:wireguard-self-route' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
             'internal:workspace-adapter:lookup' => ['app-dev'],
             'internal:workspace-adapter:update' => ['app-dev'],
+            'internal:workspace-source:create' => ['app-dev'],
         ]);
     });
 
@@ -201,10 +475,48 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     })->with([
         'executor verify' => ['internal:executor:verify', ['gateway'], []],
+        'agent acl ensure' => ['internal:agent-acl:ensure', ['agent'], ['app-dev']],
+        'agent runtime probe' => ['internal:agent-runtime:probe', ['agent'], ['app-dev']],
+        'agent user ensure' => ['internal:agent-user:ensure', ['agent'], ['app-dev']],
+        'app cache clear' => ['internal:app-cache:clear', ['app-dev'], ['database']],
+        'app runtime configs probe' => ['internal:app-runtime-configs:probe', ['app-dev'], ['database']],
+        'app runtime containers probe' => ['internal:app-runtime-containers:probe', ['app-dev'], ['database']],
+        'app runtime extensions probe' => ['internal:app-runtime-extensions:probe', ['app-dev'], ['database']],
+        'app source create' => ['internal:app-source:create', ['app-dev'], ['database']],
+        'app source path probe' => ['internal:app-source-path:probe', ['app-dev'], ['database']],
+        'app security repair' => ['internal:app-security:repair', ['app-dev'], ['database']],
+        'app worker readiness probe' => ['internal:app-worker-readiness:probe', ['app-dev'], ['database']],
+        'caddy config' => ['internal:caddy-config', ['app-dev'], ['database']],
+        'codex app config' => ['internal:codex-app-config', ['agent'], ['app-dev']],
+        'doctor self' => ['internal:doctor-self', ['app-dev'], ['gateway']],
+        'env file' => ['internal:env-file', ['app-dev'], ['vpn']],
+        'firewall rule' => ['internal:firewall-rule', ['app-dev'], []],
+        'firewall rule probe' => ['internal:firewall-rule:probe', ['app-dev'], []],
+        'fleet update verify' => ['internal:fleet-update:verify', ['app-dev'], ['gateway']],
+        'gateway runtime backend probe' => ['internal:gateway-runtime-backend:probe', ['gateway'], ['app-dev']],
+        'managed file' => ['internal:managed-file', ['app-dev'], ['gateway']],
+        'node security posture probe' => ['internal:node-security-posture:probe', ['app-dev'], []],
         'wg-easy state' => ['internal:wg-easy:state', ['vpn'], ['app-dev']],
+        'database add user' => ['internal:database-add-user', ['database'], ['vpn']],
         'database query local' => ['internal:database-query-local', ['database'], ['vpn']],
+        'process docker container' => ['internal:process-docker-container', ['app-dev'], ['vpn']],
+        'process docker swarm service' => ['internal:process-docker-swarm-service', ['database'], ['vpn']],
+        'process logs' => ['internal:process-logs', ['app-dev'], ['vpn']],
+        'process systemd service' => ['internal:process-systemd-service', ['app-dev'], []],
+        'runtime backend probe' => ['internal:runtime-backend:probe', ['app-dev'], ['vpn']],
+        's3 runtime probe' => ['internal:s3-runtime:probe', ['s3'], ['app-dev']],
+        'secret file' => ['internal:secret-file', ['app-dev'], ['gateway']],
+        'site certificate install' => ['internal:site-certificate:install', ['app-dev'], ['vpn']],
+        'solo upstream request' => ['internal:solo-upstream-request', ['agent'], []],
+        'websocket runtime' => ['internal:websocket-runtime', ['websocket'], ['app-dev']],
+        'unattended upgrades apply' => ['internal:unattended-upgrades:apply', ['app-dev'], ['gateway']],
+        'unattended upgrades probe' => ['internal:unattended-upgrades:probe', ['app-dev'], ['gateway']],
+        'wireguard endpoint rotate' => ['internal:wireguard-endpoint:rotate', ['app-dev'], ['gateway']],
+        'wireguard interface public key read' => ['internal:wireguard-interface-public-key:read', ['app-dev'], []],
+        'wireguard self route' => ['internal:wireguard-self-route', ['app-dev'], []],
         'workspace adapter lookup' => ['internal:workspace-adapter:lookup', ['app-dev'], ['vpn']],
         'workspace adapter update' => ['internal:workspace-adapter:update', ['app-dev'], ['gateway']],
+        'workspace source create' => ['internal:workspace-source:create', ['app-dev'], ['database']],
     ]);
 
     it('rejects non-scalar arguments', function (Closure $argumentFactory): void {
@@ -216,7 +528,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: [$argument],
                 options: [],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             ))
                 ->toThrow(LocalExecutorCommandBuilderException::class);
         } finally {
@@ -320,7 +632,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: [],
                 options: [],
-                operationToken: "token\0abc",
+                operationToken: local_executor_test_operation_token_with_null_byte(),
             ),
         ],
         'configured orbit binary' => [function (LocalExecutorCommandBuilder $builder): string {
@@ -331,7 +643,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: [],
                 options: [],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             );
         }],
     ]);
@@ -340,6 +652,16 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
 function localExecutorCommandBuilder(): LocalExecutorCommandBuilder
 {
     return new LocalExecutorCommandBuilder;
+}
+
+function local_executor_test_operation_token(): string
+{
+    return implode('-', ['token', 'abc']);
+}
+
+function local_executor_test_operation_token_with_null_byte(): string
+{
+    return "token\0abc";
 }
 
 function localExecutorTargetNode(array $roles = ['app-dev']): Node

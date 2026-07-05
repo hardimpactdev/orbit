@@ -2,25 +2,44 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
-use App\Services\WebSockets\WebSocketRuntimeSourceInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
+
 it('syncs enabled binding credentials to each active websocket node runtime config', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway',
+        'host' => '10.6.0.1',
+        'orbit_path' => '/home/orbit/orbit',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.44:9477/v1/commands' => websocket_runtime_app_config_agent_response(),
+    ]);
+
     $websocketNode = Node::factory()
         ->withActiveRole('websocket')
         ->create([
             'name' => 'app-dev-1',
             'host' => 'app-dev-1.example.com',
+            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.44',
         ]);
 
@@ -54,27 +73,15 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
         'reverb_app_secret' => 'disabled-secret',
     ]);
 
-    $shell = new WebSocketRuntimeAppConfigSyncerTestShell;
-    app()->instance(RemoteShell::class, $shell);
-
     app(WebSocketRuntimeAppConfigSyncer::class)->sync();
 
-    expect($shell->nodes)
-        ->toHaveCount(1)
-        ->and($shell->nodes[0]->is($websocketNode))
-        ->toBeTrue()
-        ->and($shell->scripts[0])
-        ->toContain(WebSocketRuntimeSourceInstaller::AppsConfigPath)
-        ->and($shell->scripts[0])
-        ->toContain("docker container inspect 'orbit-websocket-app-dev-1'")
-        ->and($shell->scripts[0])
-        ->toContain("docker restart 'orbit-websocket-app-dev-1'")
-        ->and($shell->options[0]['metadata'])
-        ->toBe([
-            'ORBIT_OPERATION_ID' => 'websocket-runtime-app-config-sync',
-        ]);
+    Http::assertSent(fn (Request $request): bool => websocketRuntimeAppConfigRequestMatches(
+        request: $request,
+        url: 'http://10.6.0.44:9477/v1/commands',
+        node: $websocketNode,
+    ));
 
-    $config = websocketRuntimeAppConfigFromScript($shell->scripts[0]);
+    $config = websocketRuntimeAppConfigFromRequest();
 
     expect($config)
         ->toHaveCount(1)
@@ -97,10 +104,21 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
 });
 
 it('writes an empty runtime app list when no bindings are enabled', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway',
+        'host' => '10.6.0.1',
+        'orbit_path' => '/home/orbit/orbit',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.44:9477/v1/commands' => websocket_runtime_app_config_agent_response(),
+    ]);
+
     Node::factory()
         ->withActiveRole('websocket')
         ->create([
             'name' => 'app-dev-1',
+            'orbit_agent_capable' => true,
             'wireguard_address' => '10.6.0.44',
         ]);
 
@@ -109,25 +127,33 @@ it('writes an empty runtime app list when no bindings are enabled', function ():
         'reverb_app_id' => 'disabled',
     ]);
 
-    $shell = new WebSocketRuntimeAppConfigSyncerTestShell;
-    app()->instance(RemoteShell::class, $shell);
-
     app(WebSocketRuntimeAppConfigSyncer::class)->sync();
 
-    expect(websocketRuntimeAppConfigFromScript($shell->scripts[0]))->toBe([]);
+    expect(websocketRuntimeAppConfigFromRequest())->toBe([]);
 });
 
 /**
  * @return list<array<string, mixed>>
  */
-function websocketRuntimeAppConfigFromScript(string $script): array
+function websocketRuntimeAppConfigFromRequest(): array
 {
-    preg_match("/printf %s\\s+'([^']+)' \\| base64 -d/", $script, $matches);
+    $requests = Http::recorded(
+        fn (Request $request): bool => ($request['operation_id'] ?? null) === 'websocket-runtime.app-config:sync',
+    );
 
-    expect($matches[1] ?? null)->toBeString();
+    expect($requests)->toHaveCount(1);
 
-    $content = base64_decode($matches[1], true);
+    /** @var Request $request */
+    [$request] = $requests[0];
+    /** @var mixed $input */
+    $input = json_decode((string) $request['input'], associative: true, flags: JSON_THROW_ON_ERROR);
 
+    expect($input)
+        ->toBeArray()
+        ->and($input['container'] ?? null)
+        ->toBe('orbit-websocket-app-dev-1');
+
+    $content = $input['content'] ?? null;
     expect($content)->toBeString();
 
     preg_match('/return (.*);\\n/s', $content, $returnMatches);
@@ -140,26 +166,48 @@ function websocketRuntimeAppConfigFromScript(string $script): array
     return $config;
 }
 
-final class WebSocketRuntimeAppConfigSyncerTestShell implements RemoteShell
+function websocketRuntimeAppConfigRequestMatches(Request $request, string $url, Node $node): bool
 {
-    /** @var list<Node> */
-    public array $nodes = [];
+    $argv = $request['argv'] ?? null;
 
-    /** @var list<string> */
-    public array $scripts = [];
+    return (
+        $request->url() === $url
+        && $node->wireguard_address === '10.6.0.44'
+        && $request['binary'] === 'orbit'
+        && $request['operation_id'] === 'websocket-runtime.app-config:sync'
+        && is_array($argv)
+        && ($argv[0] ?? null) === 'internal:websocket-runtime'
+        && ($argv[1] ?? null) === 'app-config:sync'
+        && str_starts_with((string) ($argv[2] ?? ''), '--operation-token=')
+        && ($argv[3] ?? null) === '--json'
+    );
+}
 
-    /** @var list<array<string, mixed>> */
-    public array $options = [];
-
-    /**
-     * @param  array<string, mixed>  $options
-     */
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->nodes[] = $node;
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
+function websocket_runtime_app_config_agent_response(): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'websocket-runtime.app-config:sync',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'path' => '/etc/orbit/websocket/apps.php',
+                            'bytes' => 20,
+                            'restarted' => true,
+                        ],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
 }

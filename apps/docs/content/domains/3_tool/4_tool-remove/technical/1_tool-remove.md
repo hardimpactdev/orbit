@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--force] [--json]`
 
 [Back to public `tool-remove` documentation.](../tool-remove.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--force] [--json]
+orbit tool:remove <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -24,6 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
 | `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `force` | `--force` | Required for non-JSON non-interactive destructive consent. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and implies destructive consent. |

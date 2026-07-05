@@ -12,17 +12,23 @@ use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SshdHardenedInstaller;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Security\SysctlBaselineInstaller;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 final readonly class NodeSecurityPostureProbe
 {
     public function __construct(
         private ?RemoteShell $remoteShell = null,
+        private ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     /**
@@ -40,9 +46,9 @@ final readonly class NodeSecurityPostureProbe
         ];
 
         if (
-            $this->remoteShell instanceof RemoteShell
-            && is_string($node->wireguard_address)
+            is_string($node->wireguard_address)
             && $node->wireguard_address !== ''
+            && $this->managedUser($node) !== ''
         ) {
             $drift = [
                 ...$drift,
@@ -210,21 +216,29 @@ final readonly class NodeSecurityPostureProbe
     private function remoteDrift(Node $node): array
     {
         try {
-            $result = $this->remoteShell?->run($node, $this->postureScript($node), [
-                'timeout' => 30,
-                'throw' => false,
-            ]);
+            $result = $this->localExecutor()->runInternal(
+                node: $node,
+                commandName: 'internal:node-security-posture:probe',
+                arguments: [$this->managedUser($node)],
+                transportOptions: [
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => 'node-security-posture.probe',
+                    ],
+                    'timeout' => 30,
+                    'throw' => false,
+                ],
+            );
         } catch (Throwable) {
             return [];
         }
 
-        if ($result === null || ! $result->successful()) {
+        if (! $result->successful()) {
             return [];
         }
 
-        $posture = json_decode(trim($result->stdout), associative: true);
+        $posture = $this->successData($result->stdout);
 
-        if (! is_array($posture)) {
+        if ($posture === []) {
             return [];
         }
 
@@ -258,55 +272,47 @@ final readonly class NodeSecurityPostureProbe
         return $drift;
     }
 
-    private function postureScript(Node $node): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        $managedUser = $this->managedUser($node);
-        $managedHome = "/home/{$managedUser}";
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+    }
 
-        return sprintf(<<<'SH_WRAP'
-            set -eu
+    /**
+     * @return array<string, mixed>
+     */
+    private function successData(string $output): array
+    {
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
 
-            MANAGED_USER=%s
-            MANAGED_HOME=%s
-            SSHD_CONFIG='/etc/ssh/sshd_config.d/99-orbit-hardening.conf'
+        if (! is_array($payload)) {
+            return [];
+        }
 
-            runtime_user=false
-            sshd_config=false
-            sshd_listen=true
-            sysctl=false
-            home_perms=false
+        if (! array_key_exists('success', $payload) || ! is_array($payload['success'])) {
+            return [];
+        }
 
-            if [ "$MANAGED_USER" != "" ] && id -u "$MANAGED_USER" >/dev/null 2>&1; then
-                runtime_user=true
-            fi
+        $success = $payload['success'];
 
-            if [ -f "$SSHD_CONFIG" ] \
-                && grep -Fq 'PasswordAuthentication no' "$SSHD_CONFIG" \
-                && grep -Fq "AllowUsers $MANAGED_USER" "$SSHD_CONFIG"; then
-                sshd_config=true
-            fi
+        if (! array_key_exists('data', $success) || ! is_array($success['data'])) {
+            return [];
+        }
 
-            if [ -f '/etc/sysctl.d/60-orbit.conf' ]; then
-                sysctl=true
-            fi
+        $data = $success['data'];
 
-            if [ -d "$MANAGED_HOME" ]; then
-                home_mode=$(stat -c '%%a' "$MANAGED_HOME" 2>/dev/null || stat -f '%%Lp' "$MANAGED_HOME" 2>/dev/null || printf '')
+        foreach (array_keys($data) as $key) {
+            if (! is_string($key)) {
+                return [];
+            }
+        }
 
-                case "$home_mode" in
-                    700|0700)
-                        home_perms=true
-                        ;;
-                esac
-            fi
-
-            printf '{"runtime_user":%%s,"sshd_config":%%s,"sshd_listen":%%s,"sysctl":%%s,"home_perms":%%s}' \
-                "$runtime_user" \
-                "$sshd_config" \
-                "$sshd_listen" \
-                "$sysctl" \
-                "$home_perms"
-            SH_WRAP, escapeshellarg($managedUser), escapeshellarg($managedHome));
+        /** @var array<string, mixed> $data */
+        return $data;
     }
 
     private function managedUser(Node $node): string

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]`
+# Technical Contract: `orbit proxy:list [--node=<node>] [--node-transport=<transport>] [--filter=<filter>] [--json]`
 
 [Back to public `proxy:list` documentation.](../proxy-list.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit proxy:list [--node=<node>] [--filter=<filter>] [--json]
+orbit proxy:list [--node=<node>] [--node-transport=<transport>] [--filter=<filter>] [--json]
 ```
 
 ## Input Contract
@@ -24,6 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `filter` | `--filter` | `Optional.` | `Never.` | `all` | `all`, `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, `tool`, `custom`, or `redirect`. |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | Visible node slug used as serving-node filter. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract

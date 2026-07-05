@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -42,6 +43,14 @@ function grantWorkspaceRemoveAccess(Node $caller, Node $appNode): void
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+}
+
+function workspaceRemoveRemoteShellFallbackHeader(): array
+{
+    return [
+        'REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP,
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+    ];
 }
 
 describe('WorkspaceRemoveController', function (): void {
@@ -113,7 +122,7 @@ describe('WorkspaceRemoveController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP],
+            workspaceRemoveRemoteShellFallbackHeader(),
         );
 
         $response
@@ -142,6 +151,68 @@ describe('WorkspaceRemoveController', function (): void {
                     ),
                 ))
             ->toBeTrue();
+    });
+
+    it('removes workspace intent but skips legacy cleanup when transitional fallback is not explicit', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'status' => 'active',
+        ]);
+        grantWorkspaceRemoveAccess($caller, $targetNode);
+
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $targetNode->id,
+            'runtime' => 'static',
+        ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature-api',
+        ]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $targetNode->id,
+            'domain' => 'feature-api.docs.test',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/workspaces/feature-api?app=docs',
+            [
+                'keep_files' => false,
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.name', 'feature-api')
+            ->assertJsonPath('success.data.action', 'removed')
+            ->assertJsonPath('success.data.proxy_routes_removed', 1)
+            ->assertJsonPath('success.data.worktree_removed', false)
+            ->assertJsonPath('success.meta.warnings.0.code', 'node_transport_required')
+            ->assertJsonPath(
+                'success.meta.warnings.0.message',
+                'workspace:remove cleanup still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+            );
+
+        expect(Workspace::query()->whereKey($workspace->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toBe([]);
     });
 
     it('requires destructive consent before removing workspace intent', function (): void {

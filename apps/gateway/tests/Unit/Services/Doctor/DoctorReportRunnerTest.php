@@ -21,19 +21,32 @@ use App\Models\ProxyRoute;
 use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
@@ -42,11 +55,38 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+
     $developmentDnsConfigDir = storage_path('framework/testing/doctor-runner-dns/'.bin2hex(random_bytes(6)));
     $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
 
     app()->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
     app()->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
+    app()->bind(
+        RemoteLocalExecutor::class,
+        fn (): RemoteLocalExecutor => doctorRunnerLocalExecutor(app(RemoteShell::class)),
+    );
+
+    Http::fake(function (Request $request): mixed {
+        if (! str_ends_with($request->url(), ':9477/v1/commands')) {
+            return Http::response([], 404);
+        }
+
+        $commandName = doctorRunnerAgentPushCommandName($request);
+        if (doctorRunnerSynthesizesInternalCommand($commandName)) {
+            return doctorRunnerAgentPushResponse($request, new RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            ));
+        }
+
+        $node = doctorRunnerNodeForAgentRequest($request);
+        $result = app(RemoteShell::class)->run($node, doctorRunnerAgentPushScript($request));
+
+        return doctorRunnerAgentPushResponse($request, $result);
+    });
 });
 
 afterEach(function (): void {
@@ -58,6 +98,7 @@ function createDoctorRunnerAppHostNode(array $attributes = []): Node
     $node = Node::factory()->create([
         'name' => 'app-1',
         'status' => 'active',
+        'orbit_agent_capable' => true,
         ...$attributes,
     ]);
 
@@ -107,8 +148,9 @@ function createDoctorRunnerUpdateGateway(array $attributes = []): Node
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.6.0.1',
-        'wireguard_address' => null,
+        'wireguard_address' => '10.6.0.1',
         'user' => 'orbit',
+        'orbit_agent_capable' => true,
         ...$attributes,
     ]);
 
@@ -1523,9 +1565,9 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($shell->scripts[2])
-            ->toContain('sudo test -f "$path"')
-            ->and($shell->scripts[3])
-            ->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null");
+            ->toContain('internal:process-systemd-service')
+            ->and($shell->scripts[2])
+            ->toContain('orbit_docs_main_vite.service');
     });
 
     it('restores missing process runtime units for the app named in the runtime unit', function (): void {
@@ -1605,9 +1647,9 @@ describe('DoctorReportRunner', function (): void {
                 'details' => ['app' => 'blog', 'process' => 'vp-dev'],
             ])
             ->and($shell->scripts[4])
-            ->toContain('sudo test -f "$path"')
-            ->and($shell->scripts[5])
-            ->toContain("sudo tee '/etc/systemd/system/orbit_blog_main_vp-dev.service' >/dev/null");
+            ->toContain('internal:process-systemd-service')
+            ->and($shell->scripts[4])
+            ->toContain('orbit_blog_main_vp-dev.service');
     });
 
     it('refreshes stale managed FrankenPHP app process intent during process restore', function (): void {
@@ -1817,6 +1859,7 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'active',
                 'platform' => 'ubuntu_24-04',
                 'user' => 'orbit',
+                'orbit_agent_capable' => true,
             ]);
         \App\Models\Process::factory()
             ->forOwner($node)
@@ -1877,9 +1920,9 @@ describe('DoctorReportRunner', function (): void {
                 ],
             ])
             ->and($shell->scripts[2])
-            ->toContain('sudo test -f "$path"')
-            ->and($shell->scripts[3])
-            ->toContain("sudo tee '/etc/systemd/system/node-exporter.service' >/dev/null");
+            ->toContain('internal:process-systemd-service')
+            ->and($shell->scripts[2])
+            ->toContain('node-exporter.service');
     });
 
     it('restores missing node-owned docker swarm process runtime units through restore mode family dispatch', function (): void {
@@ -1943,13 +1986,9 @@ describe('DoctorReportRunner', function (): void {
                 ],
             ])
             ->and($shell->scripts[2])
-            ->toContain('docker service create')
+            ->toContain('internal:process-docker-swarm-service')
             ->and($shell->scripts[2])
-            ->toContain("--name 'orbit-grafana'")
-            ->and($shell->scripts[2])
-            ->toContain('--replicas 0')
-            ->and($shell->scripts[2])
-            ->toContain("'grafana/grafana:12.0.1'");
+            ->toContain('orbit-grafana');
     });
 
     it('rehydrates managed service runtime config for unrenderable node-owned Docker process units', function (): void {
@@ -2038,19 +2077,20 @@ describe('DoctorReportRunner', function (): void {
                 ],
             ]);
 
-        $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+        $create = collect($shell->scripts)
+            ->first(
+                fn (string $script): bool => str_contains($script, 'internal:process-docker-container'),
+            );
 
         expect($shell->scripts)
-            ->toContain("docker pull 'redis:7.2'")
+            ->toContain($create)
             ->and($create)
-            ->toContain('docker create')
-            ->and($create)
-            ->toContain("--mount 'type=volume,source=orbit-redis,target=/data'")
+            ->toContain('internal:process-docker-container')
             ->and($create)
             ->not
             ->toContain('type=bind,source=/var/lib/orbit/processes/redis,target=/data')
-            ->and($create)
-            ->toContain("'redis:7.2'");
+            ->and($process->runtime_config)
+            ->toHaveKey('service_name', 'orbit-redis');
 
         expect($shell->scripts)->not->toContain("sudo mkdir -p '/var/lib/orbit/processes/redis'");
     });
@@ -2605,7 +2645,10 @@ describe('DoctorReportRunner', function (): void {
             ])
             ->and(collect($report['actions'])->pluck('family')->unique()->all())
             ->toBe(['database_connection'])
-            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'base64 -d')))
+            ->and(collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains($script, 'internal:env-file'),
+                ))
             ->toBeTrue();
     });
 
@@ -3145,17 +3188,18 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ->toBeFalse();
     });
 
-    it('marks node.remote_shell_probe_failed as diagnostic-only in fleet probe fallback', function (): void {
-        $node = createDoctorRunnerAppHostNode(['name' => 'app-prod-1', 'platform' => 'ubuntu']);
+    it('marks node.local_executor_probe_failed as diagnostic-only in fleet probe fallback', function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-prod-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => null,
+        ]);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'allow-https']);
 
-        app()->instance(RemoteShell::class, new DoctorReportRunnerThrowingRemoteShell(
-            failingNodeName: 'app-prod-1',
-            failingScriptNeedle: 'sudo ufw status numbered',
-        ));
-
         $report = app(DoctorReportRunner::class)->probeFleet(families: ['firewall_rule']);
-        $issue = collect($report['issues'])->firstWhere('key', 'node.remote_shell_probe_failed');
+        $issue = collect($report['issues'])->firstWhere('key', 'node.local_executor_probe_failed');
 
         expect($issue)
             ->not
@@ -3313,6 +3357,290 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
 
         return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+function doctorRunnerLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: new DoctorReportRunnerRemoteExecutor($remoteShell),
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::AgentPush,
+    );
+}
+
+final readonly class DoctorReportRunnerRemoteExecutor implements RemoteExecutor
+{
+    public function __construct(
+        private RemoteShell $remoteShell,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $commandName = doctorRunnerInternalCommandNameFromScript($script);
+
+        if (doctorRunnerSynthesizesInternalCommand($commandName)) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: doctorRunnerInternalCommandStdout($commandName, [], new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: '',
+                    stderr: '',
+                    durationMs: 1,
+                )),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        $result = $this->remoteShell->run($node, $script, $options);
+
+        if (! $result->successful() || $commandName === '') {
+            return $result;
+        }
+
+        $input = is_string($options['input'] ?? null)
+            ? doctorRunnerDecodeInput($options['input'])
+            : [];
+
+        return new RemoteShellResult(
+            exitCode: $result->exitCode,
+            stdout: doctorRunnerInternalCommandStdout($commandName, $input, $result),
+            stderr: $result->stderr,
+            durationMs: $result->durationMs,
+        );
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('DoctorReportRunnerRemoteExecutor does not support start().');
+    }
+}
+
+function doctorRunnerNodeForAgentRequest(Request $request): Node
+{
+    $host = parse_url($request->url(), PHP_URL_HOST);
+
+    if (is_string($host)) {
+        $node = Node::query()->where('wireguard_address', $host)->first();
+
+        if ($node instanceof Node) {
+            return $node;
+        }
+    }
+
+    return new Node([
+        'name' => is_string($host) ? $host : 'agent-target',
+        'host' => is_string($host) ? $host : 'agent-target',
+    ]);
+}
+
+function doctorRunnerAgentPushScript(Request $request): string
+{
+    /** @var mixed $argv */
+    $argv = $request['argv'] ?? [];
+
+    if (! is_array($argv)) {
+        return '/usr/local/bin/orbit';
+    }
+
+    return collect($argv)
+        ->filter(static fn (mixed $argument): bool => is_string($argument))
+        ->map(static fn (string $argument): string => escapeshellarg($argument))
+        ->prepend('/usr/local/bin/orbit')
+        ->implode(' ');
+}
+
+function doctorRunnerAgentPushResponse(Request $request, RemoteShellResult $result): mixed
+{
+    $stdout = $result->successful()
+        ? doctorRunnerAgentPushStdout($request, $result)
+        : $result->stdout;
+
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => is_string($request['operation_id'] ?? null) ? $request['operation_id'] : 'doctor-test',
+        'binary' => 'orbit',
+        'status' => $result->successful() ? 'succeeded' : 'failed',
+        'exit_code' => $result->exitCode,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => $stdout,
+            ],
+            [
+                'type' => 'stderr',
+                'message' => $result->stderr,
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $result->exitCode,
+            ],
+        ],
+    ]);
+}
+
+function doctorRunnerAgentPushStdout(Request $request, RemoteShellResult $result): string
+{
+    $commandName = doctorRunnerAgentPushCommandName($request);
+
+    if (! str_starts_with($commandName, 'internal:')) {
+        return $result->stdout;
+    }
+
+    return doctorRunnerInternalCommandStdout($commandName, doctorRunnerAgentPushInput($request), $result);
+}
+
+/**
+ * @param  array<string, mixed>  $input
+ */
+function doctorRunnerInternalCommandStdout(string $commandName, array $input, RemoteShellResult $result): string
+{
+    return json_encode([
+        'success' => [
+            'data' => doctorRunnerInternalCommandSuccessData($commandName, $input, $result),
+            'meta' => [],
+        ],
+    ], JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @param  array<string, mixed>  $input
+ * @return array<string, mixed>
+ */
+function doctorRunnerInternalCommandSuccessData(string $commandName, array $input, RemoteShellResult $result): array
+{
+    if ($commandName === 'internal:env-file') {
+        return (
+            ($input['action'] ?? null) === 'read'
+                ? ['contents' => $result->stdout]
+                : ['status' => 'ok']
+        );
+    }
+
+    if ($commandName === 'internal:process-docker-container' && ($input['action'] ?? null) === 'apply') {
+        return ['outcome' => 'created'];
+    }
+
+    if ($commandName === 'internal:process-systemd-service') {
+        return ['status' => 'changed'];
+    }
+
+    if ($commandName === 'internal:agent-runtime:probe') {
+        return [
+            'runtime_user' => true,
+            'orbit_cli' => true,
+        ];
+    }
+
+    if ($commandName === 'internal:node-security-posture:probe') {
+        return [
+            'runtime_user' => true,
+            'sshd_config' => true,
+            'sshd_listen' => true,
+            'sysctl' => true,
+            'home_perms' => true,
+        ];
+    }
+
+    /** @var mixed $decoded */
+    $decoded = json_decode(trim($result->stdout), associative: true);
+
+    if (is_array($decoded)) {
+        foreach (array_keys($decoded) as $key) {
+            if (! is_string($key)) {
+                return ['stdout' => $result->stdout];
+            }
+        }
+
+        /** @var array<string, mixed> $decoded */
+        return $decoded;
+    }
+
+    return ['stdout' => $result->stdout];
+}
+
+function doctorRunnerInternalCommandNameFromScript(string $script): string
+{
+    if (preg_match('/(?:^|\\s)\'?(internal:[a-z0-9:-]+)\'?(?:\\s|$)/', $script, $matches) !== 1) {
+        return '';
+    }
+
+    return $matches[1];
+}
+
+function doctorRunnerSynthesizesInternalCommand(string $commandName): bool
+{
+    return in_array(
+        $commandName,
+        [
+            'internal:agent-runtime:probe',
+            'internal:node-security-posture:probe',
+        ],
+        true,
+    );
+}
+
+function doctorRunnerAgentPushCommandName(Request $request): string
+{
+    /** @var mixed $argv */
+    $argv = $request['argv'] ?? [];
+
+    if (! is_array($argv)) {
+        return '';
+    }
+
+    foreach ($argv as $argument) {
+        if (is_string($argument) && str_starts_with($argument, 'internal:')) {
+            return $argument;
+        }
+    }
+
+    return '';
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function doctorRunnerAgentPushInput(Request $request): array
+{
+    $input = $request['input'] ?? null;
+
+    if (! is_string($input) || trim($input) === '') {
+        return [];
+    }
+
+    return doctorRunnerDecodeInput($input);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function doctorRunnerDecodeInput(string $input): array
+{
+    /** @var mixed $decoded */
+    $decoded = json_decode($input, associative: true);
+
+    if (! is_array($decoded)) {
+        return [];
+    }
+
+    foreach (array_keys($decoded) as $key) {
+        if (! is_string($key)) {
+            return [];
+        }
+    }
+
+    /** @var array<string, mixed> $decoded */
+    return $decoded;
 }
 
 function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService

@@ -4,21 +4,26 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use App\Services\Processes\ProcessServiceMetadataPayload;
+use App\Services\Processes\RemoteProcessLogs;
 use Orbit\Sdk\Laravel\GatewayApiException;
+use RuntimeException;
 
 final readonly class ShowProcessLogs
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private RemoteShellStream $remoteShellStream,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
+        private RemoteProcessLogs $remoteLogs,
         private ProcessServiceMetadataPayload $serviceMetadata,
     ) {}
 
@@ -29,7 +34,12 @@ final readonly class ShowProcessLogs
     {
         $target = $this->target($context, $name, $lines, $follow);
 
-        $result = $this->remoteShell->run($target['node'], $target['script']);
+        $result = $this->remoteLogs->read(
+            node: $target['node'],
+            backend: $target['backend'],
+            runtimeUnit: $target['runtime_unit'],
+            lines: $lines,
+        );
 
         if (! $result->successful()) {
             throw new GatewayApiException(
@@ -42,7 +52,7 @@ final readonly class ShowProcessLogs
             );
         }
 
-        $parsedLines = $this->parseLines($result->output());
+        $parsedLines = $this->parseLines($this->output($result->stdout));
 
         return [
             'data' => [
@@ -63,7 +73,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, script: string}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string}
      */
     public function streamTarget(ProcessOwnerContext $context, string $name, int $lines): array
     {
@@ -71,7 +81,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, script: string}  $target
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string}  $target
      * @param  callable(string): void  $onOutput
      */
     public function followTarget(array $target, callable $onOutput): void
@@ -91,7 +101,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, script: string}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string}
      */
     private function target(ProcessOwnerContext $context, string $name, int $lines, bool $follow): array
     {
@@ -122,8 +132,48 @@ final readonly class ShowProcessLogs
             'process' => $process,
             'workspace' => $workspace?->name,
             'runtime_unit' => $runtimeUnit,
+            'backend' => $this->backend($driver),
             'script' => $driver->logScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
         ];
+    }
+
+    private function backend(ProcessRuntimeDriver $driver): string
+    {
+        return match (true) {
+            $driver instanceof DockerProcessRuntimeDriver => 'docker',
+            $driver instanceof DockerSwarmProcessRuntimeDriver => 'docker-swarm',
+            $driver instanceof SystemdProcessRuntimeDriver => 'systemd',
+            default => throw new RuntimeException('Unsupported process log runtime backend.'),
+        };
+    }
+
+    private function output(string $stdout): string
+    {
+        /** @var mixed $payload */
+        $payload = json_decode($stdout, associative: true);
+
+        if (! is_array($payload)) {
+            return '';
+        }
+
+        /** @var mixed $success */
+        $success = $payload['success'] ?? null;
+
+        if (! is_array($success)) {
+            return '';
+        }
+
+        /** @var mixed $data */
+        $data = $success['data'] ?? null;
+
+        if (! is_array($data)) {
+            return '';
+        }
+
+        /** @var mixed $output */
+        $output = $data['output'] ?? null;
+
+        return is_string($output) ? $output : '';
     }
 
     /**

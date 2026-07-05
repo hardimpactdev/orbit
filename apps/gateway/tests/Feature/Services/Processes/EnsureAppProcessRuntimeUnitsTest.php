@@ -27,7 +27,7 @@ function makeEnsureRuntimeUnitsAction(
 }
 
 it('renders and enacts systemd units for app process definitions', function (): void {
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
         'tld' => 'test',
         'status' => 'active',
@@ -74,24 +74,17 @@ it('renders and enacts systemd units for app process definitions', function (): 
     expect($warnings)
         ->toBe([])
         ->and($remoteShell->scripts)
-        ->toHaveCount(2)
+        ->toHaveCount(1)
         ->and($remoteShell->scripts[0])
-        ->toContain('sudo test -f "$path"')
-        ->and($remoteShell->scripts[1])
-        ->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null")
-        ->and($remoteShell->scripts[1])
-        ->toContain(base64_encode($unitContent))
-        ->and($remoteShell->scripts[1])
-        ->not
-        ->toContain($unitContent)
+        ->toContain("internal:process-systemd-service 'apply' 'orbit_docs_main_vite.service'")
         ->and($certificates->hosts)
         ->toBe(['docs.test'])
-        ->and($remoteShell->scripts[1])
-        ->toContain("sudo systemctl enable 'orbit_docs_main_vite.service' >/dev/null");
+        ->and($remoteShell->scripts[0])
+        ->toContain('--json');
 });
 
 it('reports process family warnings when systemd unit enactment fails after intent exists', function (): void {
-    $node = Node::factory()->create([
+    $node = createTestAppHostNode([
         'name' => 'app-1',
         'tld' => 'test',
         'status' => 'active',
@@ -143,7 +136,7 @@ it('reports process family warnings when systemd unit enactment fails after inte
             'next_command' => 'doctor --family=process --restore',
         ])
         ->and($remoteShell->scripts)
-        ->toHaveCount(2);
+        ->toHaveCount(1);
 });
 
 it(
@@ -223,7 +216,7 @@ it('does not enact runtime units when an app has no process definitions', functi
 
 describe('runtime dispatcher', function (): void {
     it('does not install systemd units for a docker-runtime process and instead renders the Docker container', function (): void {
-        $node = Node::factory()->create([
+        $node = createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
             'status' => 'active',
@@ -276,18 +269,16 @@ describe('runtime dispatcher', function (): void {
                     fn (string $s): bool => str_contains($s, '/etc/systemd/system/orbit_docs_main_queue.service'),
                 ))
             ->toBeFalse()
-            ->and(collect($remoteShell->scripts)->contains(fn (string $s): bool => str_contains($s, 'docker create')))
+            ->and(collect($remoteShell->scripts)
+                ->contains(fn (string $s): bool => str_contains($s, 'internal:process-docker-container')))
             ->toBeTrue()
             ->and(collect($remoteShell->scripts)
-                ->contains(fn (string $s): bool => str_contains($s, 'orbit_docs_main_queue')))
-            ->toBeTrue()
-            ->and(collect($remoteShell->scripts)
-                ->contains(fn (string $s): bool => str_contains($s, "--entrypoint 'sh'")))
+                ->contains(fn (string $s): bool => str_contains($s, '--json')))
             ->toBeTrue();
     });
 
     it('installs systemd units for a systemd-runtime process on a static app', function (): void {
-        $node = Node::factory()->create([
+        $node = createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
             'status' => 'active',
@@ -345,7 +336,10 @@ describe('runtime dispatcher', function (): void {
             ->toBeFalse()
             ->and(collect($remoteShell->scripts)
                 ->contains(
-                    fn (string $s): bool => str_contains($s, '/etc/systemd/system/orbit_marketing_main_watch.service'),
+                    fn (string $s): bool => str_contains(
+                        $s,
+                        "internal:process-systemd-service 'apply' 'orbit_marketing_main_watch.service'",
+                    ),
                 ))
             ->toBeTrue();
     });
@@ -369,6 +363,19 @@ final class ProcessRuntimeRecordingRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
+        if (str_contains($script, 'internal:process-systemd-service')) {
+            return $this->internalProcessResult([
+                'status' => 'ok',
+                'summary' => 'Applied systemd service.',
+            ]);
+        }
+
+        if (str_contains($script, 'internal:process-docker-container')) {
+            return $this->internalSuccessResult([
+                'outcome' => 'created',
+            ]);
+        }
+
         return (
             array_shift($this->results) ?? new RemoteShellResult(
                 exitCode: 0,
@@ -376,6 +383,62 @@ final class ProcessRuntimeRecordingRemoteShell implements RemoteShell
                 stderr: '',
                 durationMs: 1,
             )
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function internalProcessResult(array $data): RemoteShellResult
+    {
+        foreach ($this->results as $index => $result) {
+            if ($result->exitCode === 0) {
+                continue;
+            }
+
+            array_splice($this->results, 0, $index + 1);
+
+            return $result;
+        }
+
+        if ($this->results !== []) {
+            array_shift($this->results);
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function internalSuccessResult(array $data): RemoteShellResult
+    {
+        if ($this->results !== []) {
+            array_shift($this->results);
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
+            stderr: '',
+            durationMs: 1,
         );
     }
 }

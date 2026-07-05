@@ -14,6 +14,15 @@ uses(RefreshDatabase::class);
 
 const TOOL_INSTALL_API_CALLER_WG_IP = '10.6.0.98';
 
+function tool_install_api_server_headers(array $overrides = []): array
+{
+    return [
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
+        'REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP,
+        ...$overrides,
+    ];
+}
+
 function createToolInstallApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
@@ -67,7 +76,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -91,6 +100,40 @@ describe('ToolInstallController', function (): void {
             ->toHaveCount(1);
     });
 
+    it('requires explicit transitional ssh fallback before installing host capabilities', function (): void {
+        $caller = createToolInstallApiCallerNode();
+        assignToolInstallApiRole($caller, 'gateway');
+        $node = Node::factory()->create([
+            'name' => 'app-install-api-1',
+            'status' => 'active',
+        ]);
+        assignToolInstallApiRole($node, 'app-dev');
+        $shell = new ToolInstallApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-1',
+                'version' => '8.5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node_transport_required')
+            ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+
+        expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'php-cli')->exists())
+            ->toBeFalse()
+            ->and($shell->scripts)
+            ->toBe([]);
+    });
+
     it('configures the related singleton process by default when installing a service tool', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
@@ -106,7 +149,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -158,7 +201,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response->assertOk()
@@ -177,7 +220,7 @@ describe('ToolInstallController', function (): void {
         app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
 
         $payload = ['node' => 'app-oc-3'];
-        $headers = ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP];
+        $headers = tool_install_api_server_headers();
 
         $this->call('POST', '/api/tools/opencode-cli/install', $payload, [], [], $headers)->assertOk();
 
@@ -204,7 +247,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -247,7 +290,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response->assertOk()
@@ -266,7 +309,7 @@ describe('ToolInstallController', function (): void {
         app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
 
         $payload = ['node' => 'app-ps-3'];
-        $headers = ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP];
+        $headers = tool_install_api_server_headers();
 
         $this->call('POST', '/api/tools/polyscope-server/install', $payload, [], [], $headers)->assertOk();
 
@@ -299,7 +342,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response->assertForbidden()
@@ -325,7 +368,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -358,7 +401,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -389,7 +432,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -428,7 +471,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -483,7 +526,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -541,7 +584,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response
@@ -581,7 +624,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response->assertOk();
@@ -620,7 +663,7 @@ describe('ToolInstallController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+            tool_install_api_server_headers(),
         );
 
         $response->assertOk();

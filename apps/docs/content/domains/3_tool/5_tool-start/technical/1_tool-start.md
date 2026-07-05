@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json|--stream-json]`
+# Technical Contract: `orbit tool:start <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json|--stream-json]`
 
 [Back to public `tool-start` documentation.](../tool-start.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:start <tool> [--app=<app>] [--node=<node>] [--json|--stream-json]
+orbit tool:start <tool> [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -24,6 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | Always. | Never. | None. | Registered lifecycle-capable tool name. |
 | `node` | `--node` | When no `--app` or local `node:default` is available. | Never. | `node:default` when set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | Optional. | Never. | None. | Visible app selector used to resolve the owning node. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 | `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects newline-delimited progress frames and non-interactive input mode. Mutually exclusive with `--json`. |

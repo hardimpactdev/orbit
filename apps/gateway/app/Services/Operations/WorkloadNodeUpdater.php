@@ -14,15 +14,12 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use RuntimeException;
 use Throwable;
 
 final readonly class WorkloadNodeUpdater
 {
-    private const string DoctorCommand = 'orbit doctor --self --stream-json';
-
-    private const int DoctorTimeoutSeconds = 120;
-
     public function __construct(
         private NodeRoleAssignments $roles,
         private NodeHostPaths $hostPaths,
@@ -32,7 +29,7 @@ final readonly class WorkloadNodeUpdater
         private FleetUpdateTargetSelector $targets,
         private FleetVersionProbe $fleetVersions,
         private GatewayCliArtifactRelay $artifactRelay,
-        private WorkloadNodeDoctorIssueParser $doctorIssues,
+        private RemoteNodeDoctor $nodeDoctor,
     ) {}
 
     /**
@@ -142,6 +139,17 @@ final readonly class WorkloadNodeUpdater
         );
 
         $script = $this->remoteUpdateScript($operationRun, $plan, $node);
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return [
+                ...$this->targetPayload($node),
+                'status' => 'failed',
+                'failed_step' => 'remote_update',
+                'output' => $transport->message('update:workload-node'),
+            ];
+        }
+
         $result = $this->remoteShell->run($node, $script, [
             'cwd' => $node->orbit_path,
             'timeout' => 300,
@@ -188,17 +196,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function runNodeDoctor(OperationRun $operationRun, Node $node): ?int
     {
-        try {
-            $result = $this->remoteShell->run($node, self::DoctorCommand, [
-                'cwd' => $node->orbit_path,
-                'timeout' => self::DoctorTimeoutSeconds,
-                'metadata' => $this->remoteShellMetadata($operationRun, $node),
-            ]);
-        } catch (Throwable) {
-            return null;
-        }
-
-        return $this->doctorIssues->fromOutput($result->output());
+        return $this->nodeDoctor->issues($node, $operationRun);
     }
 
     private function updatedMessage(Node $node, ?int $issues): string

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--force] [--json]`
 
 [Back to public `schedule-remove` documentation.](../schedule-remove.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--force] [--json]
+orbit schedule:remove [name] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--force] [--json]
 ```
 
 ## Input Contract
@@ -25,6 +25,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `name` | `argument` or interactive schedule data table | `Required in non-interactive mode.` | `Never.` | `None.` | Existing visible schedule slug. |
 | `app` | `--app` | `Optional.` | `Forbidden with `node`.` | `None.` | Visible active app the caller may manage. |
 | `node` | `--node` | `Optional.` | `Forbidden with `app`.` | `None.` | Visible active gateway or node the caller may manage. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `force` | `--force` | `Required in non-interactive mode.` | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
 

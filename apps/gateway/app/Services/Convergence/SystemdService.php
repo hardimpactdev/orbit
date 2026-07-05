@@ -10,6 +10,8 @@ use App\Data\Convergence\SystemdServicePlan;
 use App\Data\Convergence\SystemdServiceProbe;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use InvalidArgumentException;
 use JsonException;
 
@@ -25,7 +27,18 @@ final readonly class SystemdService
 
     public function probe(Node $node, RemoteShell $remoteShell): SystemdServiceProbe
     {
-        $result = $remoteShell->run($node, $this->probeScript(), ['throw' => false]);
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:process-systemd-service',
+            arguments: ['probe', $this->serviceName()],
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'systemd-service.probe',
+                ],
+                'timeout' => 30,
+                'throw' => false,
+            ],
+        );
 
         if (! $result->successful()) {
             return new SystemdServiceProbe(
@@ -39,22 +52,13 @@ final readonly class SystemdService
         }
 
         try {
-            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
+            $payload = RemoteShellSuccessData::fromJsonEnvelope($result);
         } catch (JsonException $exception) {
             return new SystemdServiceProbe(
                 reachable: false,
                 exists: false,
                 enabled: false,
                 error: "Probe returned invalid JSON: {$exception->getMessage()}",
-            );
-        }
-
-        if (! is_array($payload)) {
-            return new SystemdServiceProbe(
-                reachable: false,
-                exists: false,
-                enabled: false,
-                error: 'Probe returned an invalid payload.',
             );
         }
 
@@ -140,7 +144,22 @@ final readonly class SystemdService
             );
         }
 
-        $result = $remoteShell->run($node, $this->writeScript(), ['throw' => false]);
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:process-systemd-service',
+            arguments: ['apply', $this->serviceName()],
+            transportOptions: [
+                'input' => json_encode([
+                    'content' => $this->content,
+                    'enabled' => $this->enabled,
+                ], JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'systemd-service.apply',
+                ],
+                'timeout' => 30,
+                'throw' => false,
+            ],
+        );
 
         if (! $result->successful()) {
             return new ConvergenceApplyResult(
@@ -157,24 +176,6 @@ final readonly class SystemdService
             status: ConvergenceStatus::Changed,
             summary: "Applied systemd service {$this->serviceName()}.",
             details: $this->details(),
-        );
-    }
-
-    public function writeScript(): string
-    {
-        return sprintf(
-            <<<'SH'
-                set -euo pipefail
-                sudo install -d -m 0755 /etc/systemd/system
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
-                sudo systemctl daemon-reload
-                %s
-                SH,
-            escapeshellarg(base64_encode($this->content)),
-            escapeshellarg($this->unitPath()),
-            escapeshellarg($this->unitPath()),
-            $this->enabledScript(),
         );
     }
 
@@ -199,38 +200,9 @@ final readonly class SystemdService
         return hash('sha256', $this->content);
     }
 
-    private function probeScript(): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return sprintf(
-            <<<'SH'
-                service=%s
-                path=%s
-
-                enabled_status="$(sudo systemctl is-enabled "$service" 2>/dev/null || true)"
-                enabled=false
-
-                if [ "$enabled_status" = "enabled" ]; then
-                    enabled=true
-                fi
-
-                if ! sudo test -f "$path"; then
-                    printf '{"exists":false,"hash":null,"enabled":%%s}\n' "$enabled"
-                    exit 0
-                fi
-
-                hash=""
-
-                if command -v sha256sum >/dev/null 2>&1; then
-                    hash="$(sudo sha256sum "$path" | awk '{print $1}')"
-                elif command -v shasum >/dev/null 2>&1; then
-                    hash="$(sudo shasum -a 256 "$path" | awk '{print $1}')"
-                fi
-
-                printf '{"exists":true,"hash":"%%s","enabled":%%s}\n' "$hash" "$enabled"
-                SH,
-            escapeshellarg($this->serviceName()),
-            escapeshellarg($this->unitPath()),
-        );
+        return app(RemoteLocalExecutor::class);
     }
 
     /**
@@ -246,14 +218,5 @@ final readonly class SystemdService
             'expected_hash' => $this->hash(),
             ...$extra,
         ];
-    }
-
-    private function enabledScript(): string
-    {
-        if ($this->enabled) {
-            return 'sudo systemctl enable '.escapeshellarg($this->serviceName()).' >/dev/null';
-        }
-
-        return 'sudo systemctl disable '.escapeshellarg($this->serviceName()).' >/dev/null 2>&1 || true';
     }
 }

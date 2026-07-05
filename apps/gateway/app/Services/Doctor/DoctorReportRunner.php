@@ -50,6 +50,7 @@ use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\S3\S3DoctorProbe;
 use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
@@ -522,6 +523,8 @@ final readonly class DoctorReportRunner
             return $this->probe($node, families: $families, key: $key, onFamilyProgress: $onFamilyProgress);
         } catch (RemoteShellFailed $exception) {
             return $this->nodeProbeFailedReport($node, $families, $key, $exception);
+        } catch (RemoteLocalExecutorTransportFailed $exception) {
+            return $this->nodeLocalExecutorProbeFailedReport($node, $families, $key, $exception);
         }
     }
 
@@ -1430,6 +1433,45 @@ final readonly class DoctorReportRunner
             exception: $exception,
             summary: "Doctor probe failed on node '{$node->name}': {$exception->getMessage()}",
         );
+        $issues = $this->filterIssuesByKey([$issue], $key);
+        $summary = $this->summary('verify', $issues, []);
+
+        return [
+            'healthy' => false,
+            'mode' => 'verify',
+            'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
+            'summary' => $summary,
+            'issues' => $issues,
+            'actions' => [],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    private function nodeLocalExecutorProbeFailedReport(
+        Node $node,
+        array $families,
+        ?string $key,
+        RemoteLocalExecutorTransportFailed $exception,
+        ?DoctorTargetScope $scope = null,
+    ): array {
+        $scope ??= DoctorTargetScope::none();
+        $roleCategories = $this->categoriesForNode($node);
+        $selectedFamilies = $families === []
+            ? $roleCategories
+            : array_values(array_intersect($families, $roleCategories));
+        $issue = $this->annotateIssue([
+            'family' => 'node',
+            'node' => $node->name,
+            'key' => 'node.local_executor_probe_failed',
+            'kind' => DriftKind::Unverifiable->value,
+            'summary' => "Doctor probe failed on node '{$node->name}': {$exception->getMessage()}",
+            'detail' => [
+                'error' => $exception->getMessage(),
+            ],
+        ]);
         $issues = $this->filterIssuesByKey([$issue], $key);
         $summary = $this->summary('verify', $issues, []);
 

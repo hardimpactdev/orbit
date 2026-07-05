@@ -8,11 +8,18 @@ created by the gateway and executed by the node Agent through a node-local
 binary allowlist.
 
 Transport selection chooses the delivery path for an envelope:
-`gateway-only`, `agent-push`, `auto`, or `transitional-ssh-fallback` during v1
-migration/recovery. Every gateway-to-node workload that requires node execution
-belongs to an execution lane; gateway-only work bypasses node execution. See
-[Tech Stack](tech-stack.md#gateway-to-node). Break-glass SSH is operator-owned
-super-admin recovery outside normal Orbit command execution.
+`gateway-only`, `agent-push`, `auto`, or explicit
+`transitional-ssh-fallback` during v1 migration/recovery. `auto` selects
+agent-push for capable envelopes and fails clearly when agent-push is
+unavailable; it does not silently choose SSH. Every gateway-to-node workload
+that requires node execution belongs to an execution lane; gateway-only work
+bypasses node execution. See [Tech Stack](tech-stack.md#gateway-to-node).
+Break-glass SSH is operator-owned super-admin recovery outside normal Orbit
+command execution.
+
+Gateway callers select the explicit transitional SSH path by sending the
+`transitional-ssh-fallback` node transport preference. Requests that do not
+carry that preference stay on `auto`.
 
 ## Scope
 
@@ -265,12 +272,12 @@ Use these rules for every new or migrated gateway-to-node execution path.
   `operation_token`, `timeout_seconds`, and `stream`; the gateway builds the
   argv and owns caller authorization, while the Agent enforces the node-local
   binary allowlist and uses no-shell process execution. Transport selection
-  (`gateway-only`, `agent-push`, `auto`, or `transitional-ssh-fallback`)
-  decides the delivery path for a given envelope without mutating existing
-  `RemoteShell` call sites. Gateway-only envelopes stay on the gateway; agent
-  execution is explicit per envelope.
-  `RemoteShell` remains transitional migration/recovery infrastructure, not a
-  permanent first-class managed execution transport.
+  (`gateway-only`, `agent-push`, `auto`, or explicit
+  `transitional-ssh-fallback`) decides the delivery path for a given envelope.
+  Gateway-only envelopes stay on the gateway; agent execution is explicit per
+  envelope. `auto` does not silently fall back to SSH when agent-push is
+  unavailable. `RemoteShell` remains explicit transitional migration/recovery
+  infrastructure, not a permanent first-class managed execution transport.
 - A host-lane command may control containers, including `docker exec`, but it
   must not execute Orbit's own framework PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside

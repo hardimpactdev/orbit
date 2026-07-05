@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -46,7 +47,10 @@ function grantAppInstanceEnvApiAccess(
 /**
  * @param  array<string, mixed>  $data
  */
-function appInstanceEnvApiJson(string $method, string $uri, array $data = []): TestResponse
+/**
+ * @param  array<string, string>  $server
+ */
+function appInstanceEnvApiJson(string $method, string $uri, array $data = [], array $server = []): TestResponse
 {
     return test()->call(
         $method,
@@ -58,7 +62,7 @@ function appInstanceEnvApiJson(string $method, string $uri, array $data = []): T
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
             'REMOTE_ADDR' => APP_INSTANCE_ENV_API_CALLER_WG_IP,
-        ],
+        ] + $server,
         $data === [] ? null : json_encode($data, JSON_THROW_ON_ERROR),
     );
 }
@@ -169,11 +173,18 @@ it('applies set env values to the remote app runtime when apply is requested', f
         }
     });
 
-    $response = appInstanceEnvApiJson('POST', '/api/apps/billing/instances/development/env', [
-        'key' => 'MAIL_MAILER',
-        'value' => 'smtp',
-        'apply' => true,
-    ]);
+    $response = appInstanceEnvApiJson(
+        'POST',
+        '/api/apps/billing/instances/development/env',
+        [
+            'key' => 'MAIL_MAILER',
+            'value' => 'smtp',
+            'apply' => true,
+        ],
+        [
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+        ],
+    );
 
     $response
         ->assertOk()
@@ -207,6 +218,10 @@ final class AppInstanceEnvControllerRecordingRemoteShell implements RemoteShell
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if (str_contains($script, 'id -u')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "1000\n1000\n", stderr: '', durationMs: 1);
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

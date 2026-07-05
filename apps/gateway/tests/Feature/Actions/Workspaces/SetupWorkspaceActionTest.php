@@ -20,10 +20,14 @@ use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
-use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -68,7 +72,18 @@ beforeEach(function (): void {
     app()->instance(RemoteShell::class, new SetupWorkspaceActionTestShell);
     app()->instance(SiteCertificateInstaller::class, new SetupWorkspaceActionTestCertificateInstaller);
     app()->instance(OrbitCaService::class, new SetupWorkspaceActionTestCa);
+
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
 });
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+});
+
+function setup_workspace_use_agent_push(): void
+{
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+}
 
 it('sets up a workspace and marks it active', function (): void {
     $workspace = Workspace::create([
@@ -202,10 +217,18 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
 });
 
 it('registers workspace proxy routes against the FrankenPHP runtime container', function (): void {
+    setup_workspace_use_agent_push();
+
     NodeRoleAssignment::query()
         ->where('node_id', 1)
         ->where('role', 'gateway')
         ->update(['role' => 'app-dev']);
+    Node::query()
+        ->whereKey(1)
+        ->update([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.41',
+        ]);
 
     $workspace = Workspace::create([
         'app_id' => 1,
@@ -220,12 +243,25 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(SiteCertificateInstaller::class, $certificates);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.47.0.41:9477/v1/commands' => Http::sequence()
+            ->push(setup_workspace_agent_response('caddy-config.read-global', [
+                'content' => new CaddyGlobalConfig()->fresh(),
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.write-site', [
+                'path' => '/etc/caddy/sites/feature-a.demo.caddy',
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.reload', [
+                'container' => 'orbit-caddy',
+            ])),
+    ]);
 
-    app(SetupWorkspace::class)->handle($app, $workspace, $node);
+    app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
 
-    $siteScript = collect($shell->scripts)
-        ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.caddy'));
-    $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    $requests = setup_workspace_agent_requests('10.47.0.41');
+    $sitePayload = json_decode((string) ($requests[1]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    $caddySite = (string) ($sitePayload['content'] ?? '');
     $route = $workspace->proxyRoutes()->first();
 
     expect($caddySite)
@@ -237,13 +273,13 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ->and($caddySite)
         ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
         ->not->toContain('tls_server_name feature-a.demo')->and($caddySite)
-        ->not->toContain('php_fastcgi')->and((string) $siteScript)->toContain(CaddyTool::reloadCommand())->and(
-            (string) $siteScript,
-        )
-        ->not->toContain("docker restart 'orbit-caddy'")->and((string) $siteScript)
-        ->not->toContain('sudo systemctl reload caddy')->and($route?->config['runtime_upstream'])->toBe(
+        ->not->toContain('php_fastcgi')->and($route?->config['runtime_upstream'])->toBe(
             'http://orbit-ws-demo-feature-a',
-        )->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
+        )->and($requests)->toHaveCount(3)->and($requests[0]['argv'][1] ?? null)->toBe('read-global')->and(
+            $requests[1]['argv'][1] ?? null,
+        )->toBe('write-site')->and($sitePayload)->toMatchArray(['domain' => 'feature-a.demo'])->and(
+            $requests[2]['argv'][1] ?? null,
+        )->toBe('reload')->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
             $route?->config['php_socket'],
         )->toBeNull()->and($route?->config['tls'])->toBe([
             'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
@@ -254,7 +290,91 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         ));
 });
 
+it('installs workspace app-dev runtime trust pool through the managed file agent path', function (): void {
+    setup_workspace_use_agent_push();
+
+    NodeRoleAssignment::query()
+        ->where('node_id', 1)
+        ->where('role', 'gateway')
+        ->update(['role' => 'app-dev']);
+    Node::query()
+        ->whereKey(1)
+        ->update([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.42',
+        ]);
+    App::query()
+        ->findOrFail(1)
+        ->update([
+            'runtime_config' => ['proxy_transport' => 'https'],
+        ]);
+
+    $workspace = Workspace::create([
+        'app_id' => 1,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    app()->instance(RemoteShell::class, new SetupWorkspaceActionTestShell);
+    app()->instance(SiteCertificateInstaller::class, new SetupWorkspaceActionTestCertificateInstaller);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.47.0.42:9477/v1/commands' => Http::sequence()
+            ->push(setup_workspace_agent_response('managed-file.probe', [
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]))
+            ->push(setup_workspace_agent_response('managed-file.write', [
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash(algo: 'sha256', data: 'fake-root-ca'),
+                'mode' => '0644',
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.read-global', [
+                'content' => new CaddyGlobalConfig()->fresh(),
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.write-site', [
+                'path' => '/etc/caddy/sites/feature-a.demo.caddy',
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.reload', [
+                'container' => 'orbit-caddy',
+            ])),
+    ]);
+
+    app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
+
+    $requests = setup_workspace_agent_requests('10.47.0.42');
+    $managedFilePayload = json_decode(
+        (string) ($requests[1]['input'] ?? ''),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $sitePayload = json_decode((string) ($requests[3]['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($requests)
+        ->toHaveCount(5)
+        ->and(array_slice($requests[0]['argv'] ?? [], offset: 0, length: 2))
+        ->toBe(['internal:managed-file', 'probe'])
+        ->and(array_slice($requests[1]['argv'] ?? [], offset: 0, length: 2))
+        ->toBe(['internal:managed-file', 'write'])
+        ->and($managedFilePayload)
+        ->toMatchArray([
+            'path' => '/etc/orbit/ca/root.crt',
+            'content' => 'fake-root-ca',
+            'mode' => '0644',
+            'directory_mode' => '0755',
+        ])
+        ->and(array_slice($requests[3]['argv'] ?? [], offset: 0, length: 2))
+        ->toBe(['internal:caddy-config', 'write-site'])
+        ->and((string) ($sitePayload['content'] ?? ''))
+        ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+        ->toContain('tls_server_name feature-a.demo');
+});
+
 it('registers production workspace routes on ingress with a private backend site', function (): void {
+    setup_workspace_use_agent_push();
+
     $appHost = Node::query()->whereKey(1)->firstOrFail();
     NodeRoleAssignment::query()
         ->where('node_id', $appHost->id)
@@ -304,6 +424,18 @@ it('registers production workspace routes on ingress with a private backend site
         ->update([
             'wireguard_address' => '10.6.0.21',
             'user' => 'orbit',
+            'orbit_agent_capable' => true,
+        ]);
+    Node::query()
+        ->whereKey($edge->id)
+        ->update([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.6.0.31',
+        ]);
+    Node::query()
+        ->whereKey($router->id)
+        ->update([
+            'orbit_agent_capable' => true,
         ]);
 
     $workspace = Workspace::create([
@@ -319,6 +451,18 @@ it('registers production workspace routes on ingress with a private backend site
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(SiteCertificateInstaller::class, $certificates);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.31:9477/v1/commands' => setup_workspace_caddy_sequence(
+            '/etc/caddy/sites/feature-a.demo.example.com.caddy',
+        ),
+        'http://10.6.0.2:9477/v1/commands' => setup_workspace_caddy_sequence(
+            '/etc/caddy/sites/feature-a.demo.example.com.caddy',
+        ),
+        'http://10.6.0.21:9477/v1/commands' => setup_workspace_caddy_sequence(
+            '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy',
+        ),
+    ]);
 
     app(EnsureWorkspaceProxyRoute::class)->handle($workspace);
 
@@ -350,134 +494,32 @@ it('registers production workspace routes on ingress with a private backend site
         ->toBe('10.6.0.21')
         ->and($route->config['backend_artifacts'][0]['source_hash'])
         ->toHaveLength(64)
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $edge->id
-                        && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
-                    ),
-                ),
-        )
+        ->and(setup_workspace_agent_requests('10.6.0.31'))
+        ->toHaveCount(3)
+        ->and(setup_workspace_agent_requests('10.6.0.2'))
+        ->toHaveCount(3)
+        ->and(setup_workspace_agent_requests('10.6.0.21'))
+        ->toHaveCount(3)
+        ->and(setup_workspace_agent_site_payload('10.6.0.31')['domain'] ?? null)
+        ->toBe('feature-a.demo.example.com')
+        ->and(setup_workspace_agent_site_payload('10.6.0.21')['backend'] ?? null)
         ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $edge->id
-                        && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $edge->id
-                        && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $router->id
-                        && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $router->id
-                        && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $router->id
-                        && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $appHost->id
-                        && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $appHost->id
-                        && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(
-            collect($shell->runs)
-                ->contains(
-                    fn (array $run): bool => (
-                        $run['node'] === $appHost->id
-                        && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
-                    ),
-                ),
-        )
-        ->toBeTrue()
-        ->and(collect($shell->scripts)
-            ->contains(
-                fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.caddy'),
-            ))
-        ->toBeTrue()
-        ->and(collect($shell->scripts)
-            ->contains(
-                fn (string $script): bool => str_contains(
-                    $script,
-                    '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy',
-                ),
-            ))
-        ->toBeTrue()
-        ->and(
-            (function () use ($shell): bool {
-                foreach ($shell->scripts as $script) {
-                    if (! str_contains($script, 'feature-a.demo.example.com.backend.caddy')) {
-                        continue;
-                    }
-
-                    if (preg_match("/printf %s '([^']+)' | base64 -d/", $script, $matches) === 1) {
-                        $decoded = base64_decode($matches[1]);
-
-                        if (str_contains($decoded, 'reverse_proxy http://orbit-ws-demo-feature-a')) {
-                            return true;
-                        }
-                    }
-                }
-
-                return false;
-            })(),
-        )
-        ->toBeTrue()
+        ->and((string) (setup_workspace_agent_site_payload('10.6.0.21')['content'] ?? ''))
+        ->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
         ->and($certificates->hosts)
         ->toBe(['feature-a.demo.example.com']);
 });
 
 it('starts configured app processes for the workspace after rendering runtime units', function (): void {
+    setup_workspace_use_agent_push();
+
+    Node::query()
+        ->whereKey(1)
+        ->update([
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.47.0.45',
+        ]);
+
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -502,8 +544,29 @@ it('starts configured app processes for the workspace after rendering runtime un
     $certificates = new SetupWorkspaceActionTestCertificateInstaller;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(SiteCertificateInstaller::class, $certificates);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.47.0.45:9477/v1/commands' => Http::sequence()
+            ->push(setup_workspace_agent_response('caddy-config.read-global', [
+                'content' => new CaddyGlobalConfig()->fresh(),
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.write-site', [
+                'path' => '/etc/caddy/sites/feature-a.demo.caddy',
+            ]))
+            ->push(setup_workspace_agent_response('caddy-config.reload', [
+                'container' => 'orbit-caddy',
+            ]))
+            ->push(setup_workspace_agent_response('process.systemd.apply', [
+                'status' => 'changed',
+                'summary' => 'Applied systemd service orbit_demo_feature-a_vite.service.',
+            ]))
+            ->push(setup_workspace_agent_response('process.systemd.start', [
+                'service' => 'orbit_demo_feature-a_vite.service',
+            ])),
+    ]);
 
     $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
+    $requests = setup_workspace_agent_requests('10.47.0.45');
 
     expect($result['processes'])
         ->toMatchArray([
@@ -513,16 +576,14 @@ it('starts configured app processes for the workspace after rendering runtime un
         ])
         ->and($certificates->hosts)
         ->toBe(['feature-a.demo', 'feature-a.demo.beast'])
-        ->and(collect($shell->scripts)
-            ->contains(
-                fn (string $script): bool => str_contains(
-                    $script,
-                    '/etc/systemd/system/orbit_demo_feature-a_vite.service',
-                ),
-            ))
-        ->toBeTrue()
+        ->and($requests)
+        ->toHaveCount(5)
+        ->and(array_slice($requests[3]['argv'] ?? [], offset: 0, length: 3))
+        ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_feature-a_vite.service'])
+        ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
+        ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_feature-a_vite.service'])
         ->and($shell->scripts)
-        ->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
+        ->not->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
 });
 
 it('reports converged for already-active workspace', function (): void {
@@ -962,4 +1023,77 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
             'php_ini_path' => '/etc/orbit/workspaces/demo-feature-a.ini',
             'container_spec_hash_label' => 'orbit.workspace.spec_hash',
         ]);
+}
+
+function setup_workspace_caddy_sequence(string $sitePath): \Illuminate\Http\Client\ResponseSequence
+{
+    return Http::sequence()
+        ->push(setup_workspace_agent_response('caddy-config.read-global', [
+            'content' => new CaddyGlobalConfig()->fresh(),
+        ]))
+        ->push(setup_workspace_agent_response('caddy-config.write-site', [
+            'path' => $sitePath,
+        ]))
+        ->push(setup_workspace_agent_response('caddy-config.reload', [
+            'container' => 'orbit-caddy',
+        ]));
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function setup_workspace_agent_response(string $operationId, array $data, int $exitCode = 0): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return list<Request>
+ */
+function setup_workspace_agent_requests(string $wireguardAddress): array
+{
+    return Http::recorded(
+        fn (Request $request): bool => $request->url() === "http://{$wireguardAddress}:9477/v1/commands",
+    )
+        ->map(fn (array $record): Request => $record[0])
+        ->values()
+        ->all();
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function setup_workspace_agent_site_payload(string $wireguardAddress): array
+{
+    foreach (setup_workspace_agent_requests($wireguardAddress) as $request) {
+        if (($request['argv'][1] ?? null) !== 'write-site') {
+            continue;
+        }
+
+        /** @var array<string, mixed> */
+        return json_decode((string) ($request['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    return [];
 }

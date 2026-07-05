@@ -14,9 +14,12 @@ use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
@@ -24,6 +27,14 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('ProxyRouteFixer', function (): void {
+    beforeEach(function (): void {
+        request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+    });
+
+    afterEach(function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+    });
+
     it('re-applies missing custom proxy routes from gateway intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
@@ -84,6 +95,45 @@ describe('ProxyRouteFixer', function (): void {
             ))->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
 
+    it('requires explicit transitional SSH fallback before repairing proxy routes with legacy shell', function (): void {
+        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+
+        $node = createTestAppHostNode(['name' => 'app-1']);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'vite.docs.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('0', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        expect(fn () => new ProxyRouteFixer(
+            $shell,
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_missing',
+            kind: DriftKind::Missing,
+            summary: 'missing',
+        )))
+            ->toThrow(
+                RuntimeException::class,
+                'proxy TLS repair still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+            );
+
+        expect($shell->scripts)
+            ->toBe([])
+            ->and($route->refresh()->source_hash)
+            ->toBe(str_repeat('0', 64));
+    });
+
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
         $router = Node::factory()
             ->router()
@@ -129,8 +179,12 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
+        $certificateScript = collect($shell->scripts)
+            ->first(fn (string $script): bool => str_contains($script, '/etc/orbit/certs/metrics.orbit.crt'));
+        $siteScript = collect($shell->scripts)
+            ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/metrics.orbit.caddy'));
         $caddySite = base64_decode(
-            (string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(),
+            (string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(),
             true,
         );
 
@@ -359,6 +413,7 @@ describe('ProxyRouteFixer', function (): void {
     it('installs the gateway CA trust pool and reloads the managed caddy container for websocket routes', function (): void {
         $router = Node::factory()
             ->router()
+            ->orbitAgentCapable()
             ->create([
                 'name' => 'gateway-1',
                 'wireguard_address' => '10.6.0.2',
@@ -401,6 +456,21 @@ describe('ProxyRouteFixer', function (): void {
             ],
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $shell);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.6.0.2:9477/v1/commands' => Http::sequence()
+                ->push(proxy_fixer_agent_response('managed-file.probe', [
+                    'exists' => false,
+                    'hash' => null,
+                    'mode' => null,
+                ]))
+                ->push(proxy_fixer_agent_response('managed-file.write', [
+                    'path' => '/etc/orbit/ca/root.crt',
+                    'hash' => hash(algo: 'sha256', data: 'fake-root-ca'),
+                    'mode' => '0644',
+                ])),
+        ]);
 
         $action = new ProxyRouteFixer(
             $shell,
@@ -413,32 +483,40 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
+        $managedFilePayload = json_decode(
+            (string) ($shell->options[1]['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $certificateScript = collect($shell->scripts)
+            ->first(fn (string $script): bool => str_contains($script, '/etc/orbit/certs/websocket.orbit.crt'));
+        $siteScript = collect($shell->scripts)
+            ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/websocket.orbit.caddy'));
         $caddySite = base64_decode(
-            (string) str($shell->scripts[2])->match("/printf %s\\s+'([^']+)'/")->toString(),
+            (string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(),
             true,
         );
 
         expect($action['status'])
             ->toBe('completed')
-            ->and($shell->nodes[0]->is($router))
-            ->toBeTrue()
             ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/ca')
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/ca/root.crt')
-            ->and(base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true))
-            ->toBe('fake-root-ca')
-            ->and($shell->nodes[1]->is($router))
-            ->toBeTrue()
+            ->toContain("internal:managed-file 'probe'")
             ->and($shell->scripts[1])
+            ->toContain("internal:managed-file 'write'")
+            ->and($managedFilePayload)
+            ->toMatchArray([
+                'path' => '/etc/orbit/ca/root.crt',
+                'content' => 'fake-root-ca',
+                'mode' => '0644',
+                'directory_mode' => '0755',
+            ])
+            ->and($certificateScript)
             ->toContain('/etc/orbit/certs/websocket.orbit.crt')
-            ->and($shell->scripts[1])
+            ->and($certificateScript)
             ->toContain('/etc/orbit/certs/websocket.orbit.key')
-            ->and($shell->nodes[2]->is($router))
-            ->toBeTrue()
-            ->and($shell->scripts[2])
+            ->and($siteScript)
             ->toContain('/etc/caddy/sites/websocket.orbit.caddy')
-            ->and($shell->scripts[2])
+            ->and($siteScript)
             ->toContain(CaddyTool::reloadCommand('orbit-e2e-gateway-orbit-caddy'))
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key')
@@ -1074,6 +1152,48 @@ function proxyFixerDecodedSite(string $script): string
     return base64_decode((string) str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 }
 
+/**
+ * @param  array<string, mixed>  $data
+ * @return array<string, mixed>
+ */
+function proxy_fixer_agent_response(string $operationId, array $data, int $exitCode = 0): array
+{
+    return [
+        'transport' => 'agent-push',
+        'operation_id' => $operationId,
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ];
+}
+
+/**
+ * @return list<Request>
+ */
+function proxy_fixer_agent_requests(string $wireguardAddress): array
+{
+    return Http::recorded(
+        fn (Request $request): bool => $request->url() === "http://{$wireguardAddress}:9477/v1/commands",
+    )
+        ->map(fn (array $record): Request => $record[0])
+        ->values()
+        ->all();
+}
+
 final class ProxyFixerRecordingRemoteShell implements RemoteShell
 {
     /** @var list<Node> */
@@ -1082,6 +1202,9 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
     /** @var list<string> */
     public array $scripts = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $options = [];
+
     /**
      * @param  array<string, mixed>  $options
      */
@@ -1089,7 +1212,42 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
     {
         $this->nodes[] = $node;
         $this->scripts[] = $script;
+        $this->options[] = $options;
+
+        if (str_contains($script, "internal:managed-file 'probe'")) {
+            return proxy_fixer_shell_success([
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]);
+        }
+
+        if (str_contains($script, "internal:managed-file 'write'")) {
+            return proxy_fixer_shell_success([
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash('sha256', 'fake-root-ca'),
+                'mode' => '0644',
+            ]);
+        }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ */
+function proxy_fixer_shell_success(array $data): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => $data,
+            ],
+        ], JSON_THROW_ON_ERROR)
+            ."\n",
+        stderr: '',
+        durationMs: 1,
+    );
 }

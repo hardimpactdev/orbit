@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
@@ -384,9 +385,14 @@ class MetricsRoleBaseline implements RoleBaseline
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->processRuntimeDrivers()->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($runtimeApp, $process, $workspace);
-        $preApplyScript = $this->managedFilesScript($process);
 
-        if (! $driver->apply($node, $runtimeApp, $process, $workspace, $preApplyScript)) {
+        if (! $this->applyManagedFiles($node, $process)) {
+            throw new RuntimeException(
+                "Metrics process runtime unit '{$runtimeUnit}' managed files could not be applied.",
+            );
+        }
+
+        if (! $driver->apply($node, $runtimeApp, $process, $workspace)) {
             throw new RuntimeException("Metrics process runtime unit '{$runtimeUnit}' could not be rendered.");
         }
 
@@ -395,11 +401,30 @@ class MetricsRoleBaseline implements RoleBaseline
         }
     }
 
-    private function managedFilesScript(Process $process): ?string
+    private function applyManagedFiles(Node $node, Process $process): bool
+    {
+        $remoteShell = app(RemoteShell::class);
+
+        foreach ($this->managedFiles($process) as $file) {
+            $probe = $file->probe($node, $remoteShell);
+            $result = $file->apply($node, $remoteShell, $file->plan($probe));
+
+            if (! $result->successful()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return list<ManagedFile>
+     */
+    private function managedFiles(Process $process): array
     {
         $runtimeConfig = is_array($process->runtime_config) ? $process->runtime_config : [];
         $managedFiles = is_array($runtimeConfig['managed_files'] ?? null) ? $runtimeConfig['managed_files'] : [];
-        $scripts = [];
+        $files = [];
 
         foreach ($managedFiles as $file) {
             if (! is_array($file)) {
@@ -417,14 +442,14 @@ class MetricsRoleBaseline implements RoleBaseline
                 ? $file['mode']
                 : '0644';
 
-            $scripts[] = new ManagedFile(
+            $files[] = new ManagedFile(
                 path: $path,
                 content: $content,
                 mode: $mode,
-            )->writeScript();
+            );
         }
 
-        return $scripts === [] ? null : implode(PHP_EOL, $scripts);
+        return $files;
     }
 
     private function prometheusConfig(Node $metricsNode): string

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
@@ -17,13 +16,13 @@ use RuntimeException;
 final readonly class AppsFixer
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private AppRuntimeUser $appRuntimeUser,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private ?RemoteAppSecurityRepair $securityRepair = null,
     ) {}
 
     /**
@@ -191,10 +190,15 @@ final readonly class AppsFixer
      */
     private function reapplyAppSecurity(App $app, Node $node, DriftEntry $entry): array
     {
-        $this->remoteShell->run(
-            $node,
-            $this->renderAppSecurityRepairScript($app),
-            ['throw' => true],
+        $user = $this->appRuntimeUser->forApp($app);
+        $home = $user === 'root' ? '/root' : "/home/{$user}";
+        $appPath = rtrim($app->path, '/');
+
+        $this->securityRepair()->repair(
+            node: $node,
+            user: $user,
+            home: $home,
+            path: $appPath,
         );
 
         return [
@@ -207,41 +211,14 @@ final readonly class AppsFixer
             'summary' => "Re-applied app runtime user and filesystem policy for {$app->name}.",
             'details' => [
                 'app' => $app->name,
-                'runtime_user' => $this->appRuntimeUser->forApp($app),
+                'runtime_user' => $user,
                 'path' => $app->path,
             ],
         ];
     }
 
-    private function renderAppSecurityRepairScript(App $app): string
+    private function securityRepair(): RemoteAppSecurityRepair
     {
-        $user = $this->appRuntimeUser->forApp($app);
-        $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $appPath = rtrim($app->path, '/');
-
-        return sprintf(
-            <<<'SH'
-                set -e
-                if ! id -u %s >/dev/null 2>&1; then
-                    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
-                fi
-                sudo install -d -m 0750 -o %s -g %s %s
-                if [ -d %s ]; then
-                    sudo chown -R %s:%s %s
-                    sudo chmod -R go-w %s
-                fi
-                SH,
-            escapeshellarg($user),
-            escapeshellarg($home),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($home),
-            escapeshellarg($appPath),
-            escapeshellarg($user),
-            escapeshellarg($user),
-            escapeshellarg($appPath),
-            escapeshellarg($appPath),
-        );
+        return $this->securityRepair ?? app(RemoteAppSecurityRepair::class);
     }
 }

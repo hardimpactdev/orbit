@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit profile [target] [--app=<app>] [--node=<node>] [--uri=<uri>] [--as-first-user|--user=<id>] [--json]
+orbit profile [target] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--uri=<uri>] [--as-first-user|--user=<id>] [--json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared
 | `target` | `[target]` | Required in non-interactive mode when `--app` is absent and no app can be resolved from the current directory. | `--app` is present. | Current directory app/workspace context, then interactive app selection. | Domain, app hostname, full `http`/`https` URL, or absolute existing app path. Full URLs are split into host target and request URI. Absolute paths must resolve to a gateway-known app. |
 | `app` | `--app` | Never. | `[target]` is present. | `null`. | Existing app name or hostname visible to the caller. |
 | `node` | `--node` | Never. | Never. | Owning node from resolved app, or all authorized nodes during interactive app selection. | Gateway-known node name. Used only to constrain app resolution or app selection. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `uri` | `--uri` | Never. | Never. | `/`, or the path/query parsed from a full URL target when `--uri` was not supplied. | Non-empty request path. Values are normalized to start with `/`. |
 | `as_first_user` | `--as-first-user` | Never. | `--user` is present. | `false`. | Selects Toolbar auth mode `first-user`. |
 | `user` | `--user` | Never. | `--as-first-user` is present. | `null`. | Non-empty user primary key string. Selects Toolbar auth mode `user`. |

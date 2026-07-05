@@ -22,7 +22,7 @@ count = 1
 file = "app/Actions/Apps/CreateAppSourceOnNode.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 3
+count = 2
 
 [[issues]]
 file = "app/Actions/Apps/EnactAppRuntime.php"
@@ -85,18 +85,6 @@ message = "Literal argument `'.'` should be passed as a named argument for clari
 count = 1
 
 [[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "no-boolean-flag-parameter"
-message = "Avoid boolean flag parameters."
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Actions/Apps/PruneAppWorkspaces.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
@@ -124,6 +112,12 @@ count = 1
 file = "app/Actions/Apps/RemoveApp.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "app/Actions/Apps/RemoveApp.php"
+code = "no-else-clause"
+message = "Avoid `else` clauses."
 count = 1
 
 [[issues]]
@@ -164,6 +158,12 @@ count = 1
 
 [[issues]]
 file = "app/Actions/DatabaseConnections/AddDatabaseUser.php"
+code = "constant-name"
+message = "Constant name `InternalCommand` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Actions/DatabaseConnections/AddDatabaseUser.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
 count = 1
@@ -178,13 +178,7 @@ count = 1
 file = "app/Actions/DatabaseConnections/AddDatabaseUser.php"
 code = "sensitive-parameter"
 message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
-count = 3
-
-[[issues]]
-file = "app/Actions/DatabaseConnections/AddDatabaseUser.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Actions/Deploy/AddDeployStep.php"
@@ -368,12 +362,6 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Workspaces/CreateWorkspace.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 1
-
-[[issues]]
-file = "app/Actions/Workspaces/CreateWorkspace.php"
 code = "too-many-methods"
 message = "Class has too many methods."
 count = 1
@@ -404,6 +392,12 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Workspaces/RemoveWorkspace.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Actions/Workspaces/RemoveWorkspace.php"
 code = "halstead"
 message = "Method has a high halstead volume and effort"
 count = 1
@@ -412,6 +406,12 @@ count = 1
 file = "app/Actions/Workspaces/RemoveWorkspace.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "app/Actions/Workspaces/RemoveWorkspace.php"
+code = "no-else-clause"
+message = "Avoid `else` clauses."
 count = 1
 
 [[issues]]
@@ -1076,6 +1076,12 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/ActivityListController.php"
+code = "halstead"
+message = "Method has a high halstead effort"
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/ActivityListController.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
@@ -1210,12 +1216,6 @@ count = 1
 file = "app/Http/Controllers/Api/AppAnalyticsController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/AppCodexController.php"
-code = "constant-name"
-message = "Constant name `ApplyUrl` should be in constant case."
 count = 1
 
 [[issues]]
@@ -2042,6 +2042,12 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/NodeRoleAddController.php"
+code = "halstead"
+message = "Method has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/NodeRoleAddController.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
@@ -2402,6 +2408,12 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/S3CredentialsController.php"
+code = "no-duplicate-match-arm"
+message = "This `match` arm has the same result as an earlier arm."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/S3CredentialsController.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
 count = 1
@@ -2542,6 +2554,12 @@ count = 2
 file = "app/Http/Controllers/Api/ToolListController.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/ToolListController.php"
+code = "halstead"
+message = "Method has a high halstead effort"
 count = 1
 
 [[issues]]
@@ -2705,6 +2723,12 @@ file = "app/Http/Controllers/Api/UpdateAllController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 2
+
+[[issues]]
+file = "app/Http/Controllers/Api/UpdateAllController.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/UpdateAllController.php"
@@ -3225,6 +3249,12 @@ count = 1
 [[issues]]
 file = "app/Providers/AppServiceProvider.php"
 code = "halstead"
+message = "Closure has a high halstead difficulty"
+count = 1
+
+[[issues]]
+file = "app/Providers/AppServiceProvider.php"
+code = "halstead"
 message = "Method has a high halstead difficulty and effort"
 count = 1
 
@@ -3280,7 +3310,7 @@ count = 4
 file = "app/Services/Activity/ActivityHistory.php"
 code = "prefer-static-closure"
 message = "This closure does not use `$this` and should be declared static."
-count = 2
+count = 5
 
 [[issues]]
 file = "app/Services/AgentIde/AgentIdeAdapterRegistry.php"
@@ -4015,6 +4045,30 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
+file = "app/Services/Apps/DependencyAudit/AppDependencyAuditAggregatePayload.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/DependencyAudit/AppDependencyAuditAggregatePayload.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/DependencyAudit/AppDependencyAuditAggregatePayload.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 9
+
+[[issues]]
+file = "app/Services/Apps/DependencyAudit/DependencyAuditSeverityBands.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
 file = "app/Services/Apps/FrankenPhpRuntimeConfigRenderer.php"
 code = "constant-name"
 message = "Constant name `AppDevelopmentThreadPoolLines` should be in constant case."
@@ -4189,6 +4243,12 @@ message = "Consider using early continue pattern to reduce nesting."
 count = 2
 
 [[issues]]
+file = "app/Services/CodexApp/RemoteCodexAppConfig.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
 file = "app/Services/Convergence/ManagedFile.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -4226,26 +4286,26 @@ count = 1
 
 [[issues]]
 file = "app/Services/Convergence/ProcessDockerContainerResource.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 2
 
 [[issues]]
 file = "app/Services/Convergence/ProcessDockerContainerResource.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
+file = "app/Services/Convergence/ProcessDockerContainerResource.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]
 file = "app/Services/Convergence/SystemdService.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Convergence/SystemdService.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -4768,7 +4828,7 @@ count = 1
 file = "app/Services/Deploy/DeployManager.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/Deploy/DeployManager.php"
@@ -5551,6 +5611,12 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 1
 
 [[issues]]
+file = "app/Services/NodeCommandTransport/NodeCommandEnvelope.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
 file = "app/Services/Nodes/Access/NodeAccessAuthorizer.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
@@ -5590,7 +5656,7 @@ count = 3
 file = "app/Services/Nodes/Access/NodePermissionRegistry.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 2
+count = 3
 
 [[issues]]
 file = "app/Services/Nodes/Access/NodePermissionRegistry.php"
@@ -5845,24 +5911,6 @@ message = "Parameter list is too long."
 count = 1
 
 [[issues]]
-file = "app/Services/Nodes/NodeWireGuardSelfRouteProbe.php"
-code = "literal-named-argument"
-message = "Literal argument `' '` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/NodeWireGuardSelfRouteProbe.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Nodes/NodeWireGuardSelfRouteProbe.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 1
-
-[[issues]]
 file = "app/Services/Nodes/NodesDoctorSummary.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
@@ -6097,6 +6145,12 @@ message = "This closure does not use `$this` and should be declared static."
 count = 4
 
 [[issues]]
+file = "app/Services/Nodes/Roles/NodeRoleSettingsResolver.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
 file = "app/Services/Nodes/Roles/RoleBaselines/AgentRoleBaseline.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -6260,6 +6314,12 @@ count = 1
 
 [[issues]]
 file = "app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
 count = 1
@@ -6268,6 +6328,12 @@ count = 1
 file = "app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "app/Services/Nodes/Roles/RoleBaselines/WebSocketRoleBaseline.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -6305,12 +6371,6 @@ file = "app/Services/Operations/FleetUpdateVerifier.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
 count = 2
-
-[[issues]]
-file = "app/Services/Operations/FleetUpdateVerifier.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 1
 
 [[issues]]
 file = "app/Services/Operations/FleetVersionProbe.php"
@@ -6758,18 +6818,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Operations/WorkloadNodeUpdater.php"
-code = "constant-name"
-message = "Constant name `DoctorCommand` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/Operations/WorkloadNodeUpdater.php"
-code = "constant-name"
-message = "Constant name `DoctorTimeoutSeconds` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/Operations/WorkloadNodeUpdater.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
 count = 1
@@ -7045,6 +7093,18 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
+file = "app/Services/Processes/ProcessDockerRuntimeManager.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 2
+
+[[issues]]
+file = "app/Services/Processes/ProcessDockerRuntimeManager.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
 file = "app/Services/Processes/ProcessEventNotifierRenderer.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
@@ -7123,12 +7183,6 @@ message = "Avoid boolean flag parameters."
 count = 1
 
 [[issues]]
-file = "app/Services/Processes/ProcessRuntimeDrivers/DockerProcessRuntimeDriver.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Services/Processes/ProcessRuntimeDrivers/DockerSwarmProcessRuntimeDriver.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -7150,12 +7204,6 @@ count = 1
 file = "app/Services/Processes/ProcessRuntimeDrivers/DockerSwarmProcessRuntimeDriver.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessRuntimeDrivers/DockerSwarmProcessRuntimeDriver.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
@@ -7192,12 +7240,6 @@ count = 1
 file = "app/Services/Processes/ProcessRuntimeDrivers/SystemdProcessRuntimeDriver.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
-count = 1
-
-[[issues]]
-file = "app/Services/Processes/ProcessRuntimeDrivers/SystemdProcessRuntimeDriver.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -7720,6 +7762,18 @@ count = 4
 file = "app/Services/RemoteShell/LocalExecutorCommandBuilder.php"
 code = "too-many-methods"
 message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Services/RemoteShell/RemoteEnvFile.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/RemoteShell/RemoteEnvFile.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
@@ -8269,12 +8323,6 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 2
 
 [[issues]]
-file = "app/Services/RuntimeBackend/GatewayRuntimeBackendProbe.php"
-code = "literal-named-argument"
-message = "Literal argument `3` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
 file = "app/Services/S3/S3BackendName.php"
 code = "constant-name"
 message = "Constant name `BackendPort` should be in constant case."
@@ -8386,6 +8434,12 @@ count = 1
 file = "app/Services/S3/S3DoctorProbe.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/S3/S3DoctorProbe.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
 count = 1
 
 [[issues]]
@@ -8831,6 +8885,12 @@ file = "app/Services/Security/UnattendedUpgradesInstaller.php"
 code = "literal-named-argument"
 message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
 count = 2
+
+[[issues]]
+file = "app/Services/Solo/HttpSoloUpstreamClient.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
 
 [[issues]]
 file = "app/Services/Support/GatewayActionResult.php"
@@ -9548,6 +9608,12 @@ count = 1
 
 [[issues]]
 file = "app/Services/WebSockets/WebSocketDoctorProbe.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/WebSocketDoctorProbe.php"
 code = "literal-named-argument"
 message = "Literal argument `2` should be passed as a named argument for clarity."
 count = 1
@@ -9556,6 +9622,12 @@ count = 1
 file = "app/Services/WebSockets/WebSocketDoctorProbe.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Services/WebSockets/WebSocketDoctorProbe.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
 count = 1
 
 [[issues]]
@@ -9682,18 +9754,6 @@ count = 1
 file = "app/Services/WebSockets/WebSocketRuntimeContainer.php"
 code = "prefer-static-closure"
 message = "This closure does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
-file = "app/Services/WebSockets/WebSocketRuntimeContainerManager.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/WebSockets/WebSocketRuntimeContainerManager.php"
-code = "too-many-methods"
-message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -9845,12 +9905,6 @@ file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 3
-
-[[issues]]
-file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
-code = "no-boolean-flag-parameter"
-message = "Avoid boolean flag parameters."
-count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/OpenCodeWorkspaceDriver.php"
@@ -10042,6 +10096,12 @@ count = 1
 file = "app/Services/Workspaces/WorkspaceRuntimeContainerRenderer.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspaceRuntimeContainerRenderer.php"
+code = "halstead"
+message = "Method has a high halstead effort"
 count = 1
 
 [[issues]]
@@ -10288,30 +10348,6 @@ count = 1
 file = "app/Tools/PhpCliTool.php"
 code = "constant-name"
 message = "Constant name `CurlRetryFlags` should be in constant case."
-count = 1
-
-[[issues]]
-file = "bootstrap/app.php"
-code = "no-empty-comment"
-message = "Empty comments are not allowed."
-count = 2
-
-[[issues]]
-file = "bootstrap/app.php"
-code = "strict-types"
-message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
-count = 1
-
-[[issues]]
-file = "bootstrap/orbit_paths.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "bootstrap/providers.php"
-code = "strict-types"
-message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
 count = 1
 
 [[issues]]
@@ -10999,6 +11035,12 @@ message = "Missing `declare(strict_types=1);` statement at the beginning of the 
 count = 1
 
 [[issues]]
+file = "database/factories/AppDependencyAuditSummaryFactory.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
 file = "database/factories/AppFactory.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
@@ -11461,6 +11503,12 @@ message = "Literal argument `true` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
+file = "database/migrations/2026_06_28_000000_create_gateway_extensions_table.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
 file = "database/seeders/DatabaseSeeder.php"
 code = "no-empty-comment"
 message = "Empty comments are not allowed."
@@ -11829,8 +11877,14 @@ count = 1
 [[issues]]
 file = "tests/Feature/Actions/Apps/EnactAppRuntimeTest.php"
 code = "literal-named-argument"
+message = "Literal argument `6` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Actions/Apps/EnactAppRuntimeTest.php"
+code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "tests/Feature/Actions/Apps/EnactAppRuntimeTest.php"
@@ -11848,12 +11902,6 @@ count = 1
 file = "tests/Feature/Actions/Apps/EnactAppRuntimeTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Actions/Apps/EnsureAppProxyRouteTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
@@ -11881,16 +11929,22 @@ message = "Use `toBeEmpty()` instead of comparing with empty values for clarity.
 count = 1
 
 [[issues]]
-file = "tests/Feature/Actions/Nodes/ReenactNodeArtifactsTest.php"
-code = "file-name"
-message = "Class `ReenactNodeArtifactsRecordingShell` should be in a file named `ReenactNodeArtifactsRecordingShell.php`, found `ReenactNodeArtifactsTest.php`."
+file = "tests/Feature/Actions/DatabaseConnections/AddDatabaseUserTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "tests/Feature/Actions/DatabaseConnections/AddDatabaseUserTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
 
 [[issues]]
 file = "tests/Feature/Actions/Nodes/ReenactNodeArtifactsTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 3
+count = 2
 
 [[issues]]
 file = "tests/Feature/Actions/Processes/ProcessRuntimeLifecycleWarningsTest.php"
@@ -11902,18 +11956,6 @@ count = 1
 file = "tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php"
 code = "function-name"
 message = "Function name `expectWorkspaceFrankenPhpRuntimeProcess` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume and effort"
-count = 1
-
-[[issues]]
-file = "tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -11932,12 +11974,6 @@ count = 1
 file = "tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php"
 code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `SetupWorkspaceActionTestCertificateInstaller` but class `SetupWorkspaceActionTestShell` is already defined in this file."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php"
-code = "strict-behavior"
-message = "Call to `base64_decode` must enforce strict comparison."
 count = 1
 
 [[issues]]
@@ -12213,14 +12249,32 @@ count = 2
 [[issues]]
 file = "tests/Feature/Architecture/McpConfigurationTest.php"
 code = "literal-named-argument"
+message = 'Literal argument `"\n## "` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Architecture/McpConfigurationTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'## Solo Role Matrix'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Architecture/McpConfigurationTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'extra_args'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Architecture/McpConfigurationTest.php"
+code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 5
+count = 6
 
 [[issues]]
 file = "tests/Feature/Architecture/McpConfigurationTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 13
+count = 26
 
 [[issues]]
 file = "tests/Feature/Architecture/RootGatewayForwardingShimTest.php"
@@ -13078,7 +13132,7 @@ count = 1
 file = "tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
+count = 3
 
 [[issues]]
 file = "tests/Feature/Commands/UpdateRunnerCommandTest.php"
@@ -13169,6 +13223,60 @@ file = "tests/Feature/Database/NodeToolInstanceRuntimeSchemaTest.php"
 code = "use-dedicated-expectation"
 message = "Use `toContain()` instead of `in_array()` with `toBeTrue()`."
 count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"- Solo worker: Grok process `103`\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"No worker sessions.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"old\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"proof\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"{\"result\":\"passed\"}\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'-'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0o755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "readable-literal"
+message = "Numeric literal could use underscore separators for readability."
+count = 2
+
+[[issues]]
+file = "tests/Feature/E2ESupport/AgentSessionArchiveTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 2
 
 [[issues]]
 file = "tests/Feature/E2ESupport/DockerRuntimeImageContractTest.php"
@@ -14739,6 +14847,12 @@ count = 1
 [[issues]]
 file = "tests/Feature/E2ESupport/QualityGateArtifactsTest.php"
 code = "literal-named-argument"
+message = "Literal argument `' '` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/QualityGateArtifactsTest.php"
+code = "literal-named-argument"
 message = """Literal argument `'{"gate":"e2e-docker","duration_seconds":217}'` should be passed as a named argument for clarity."""
 count = 1
 
@@ -14782,7 +14896,169 @@ count = 31
 file = "tests/Feature/E2ESupport/QualityGateArtifactsTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 13
+count = 14
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"ORBIT_TEST_RELEASE_ENV=sourced\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"candidate: digest: sha256:stub size: 1\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"tampered\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"version=6.6.6\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"{\"stub\":true}\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0o755` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = "Literal argument `32` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "literal-named-argument"
+message = "Literal argument `40` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "tests/Feature/E2ESupport/ReleaseCandidateHelperTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Orbit Current Slice State\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Orbit Current Slice State\n\nNo worker sessions.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"changed slice state\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"proof\n"` should be passed as a named argument for clarity.'
+count = 2
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'## Evidence Links'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'## Final Distillation'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'- Session archive:'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'is_dir'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "literal-named-argument"
+message = "Literal argument `17` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "readable-literal"
+message = "Numeric literal could use underscore separators for readability."
+count = 3
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "use-simpler-expectation"
+message = "Use `toBeGreaterThanOrEqual()` instead of comparing and asserting `toBeTrue()`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/E2ESupport/SessionArchiveTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 1
 
 [[issues]]
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
@@ -14799,14 +15075,38 @@ count = 1
 [[issues]]
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
 code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
+message = "Literal argument `'Quality checks passed'` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'v'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0777` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
+code = "literal-named-argument"
+message = "Literal argument `1` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
 
 [[issues]]
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
-count = 14
+count = 16
 
 [[issues]]
 file = "tests/Feature/E2ESupport/VerificationScriptsTest.php"
@@ -14824,6 +15124,12 @@ count = 1
 file = "tests/Feature/Http/Api/ActivityListControllerTest.php"
 code = "function-name"
 message = "Function name `createActivityListCallerNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ActivityListControllerTest.php"
+code = "function-name"
+message = "Function name `createRemoteShellActivityEntry` should be in snake case."
 count = 1
 
 [[issues]]
@@ -14860,13 +15166,13 @@ count = 6
 file = "tests/Feature/Http/Api/ActivityListControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'read'` should be passed as a named argument for clarity."
-count = 1
+count = 4
 
 [[issues]]
 file = "tests/Feature/Http/Api/ActivityListControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'write'` should be passed as a named argument for clarity."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Feature/Http/Api/ActivityListControllerTest.php"
@@ -15068,12 +15374,6 @@ count = 3
 
 [[issues]]
 file = "tests/Feature/Http/Api/AppCodexControllerTest.php"
-code = "file-name"
-message = "Class `AppCodexRecordingShell` should be in a file named `AppCodexRecordingShell.php`, found `AppCodexControllerTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/AppCodexControllerTest.php"
 code = "function-name"
 message = "Function name `grantAppCodexAccess` should be in snake case."
 count = 1
@@ -15081,14 +15381,14 @@ count = 1
 [[issues]]
 file = "tests/Feature/Http/Api/AppCodexControllerTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
+message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/AppCodexControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/AppListControllerTest.php"
@@ -15170,6 +15470,12 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/AppRegisterControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/srv/docs'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/AppRegisterControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
 count = 2
@@ -15195,6 +15501,12 @@ count = 1
 [[issues]]
 file = "tests/Feature/Http/Api/AppRemoveControllerTest.php"
 code = "function-name"
+message = "Function name `appRemoveRemoteShellFallbackHeader` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/AppRemoveControllerTest.php"
+code = "function-name"
 message = "Function name `createAppRemoveCallerNode` should be in snake case."
 count = 1
 
@@ -15206,14 +15518,26 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/AppRemoveControllerTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/AppRemoveControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `64` should be passed as a named argument for clarity."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Feature/Http/Api/AppRemoveControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/AppRemoveControllerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -15351,12 +15675,6 @@ count = 1
 [[issues]]
 file = "tests/Feature/Http/Api/AppStoreControllerTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
-count = 1
-
-[[issues]]
-file = "tests/Feature/Http/Api/AppStoreControllerTest.php"
-code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
 
@@ -15376,6 +15694,12 @@ count = 1
 file = "tests/Feature/Http/Api/AppStoreControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'database'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/AppStoreControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'fake-root-ca'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -15889,6 +16213,66 @@ message = "File contains multiple class-like definitions; found class `DoctorRun
 count = 1
 
 [[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "function-name"
+message = "Function name `createExtensionApiCallerNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "function-name"
+message = "Function name `extensionApiRequest` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "function-name"
+message = "Function name `grantExtensionApiAccess` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/api/extensions'` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/api/extensions/cloudflare/enable'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/api/extensions/codex/disable'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/api/extensions/solo/disable'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/api/extensions/solo/enable'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/Http/Api/ExtensionControllerTest.php"
+code = "prefer-dedicated-status-assertion"
+message = "Use the dedicated `assertServiceUnavailable()` assertion instead of `assertStatus(503)`."
+count = 2
+
+[[issues]]
 file = "tests/Feature/Http/Api/FirewallRuleListControllerTest.php"
 code = "function-name"
 message = "Function name `createFirewallRuleListCallerNode` should be in snake case."
@@ -16162,7 +16546,7 @@ count = 1
 file = "tests/Feature/Http/Api/NodeManageControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
+count = 3
 
 [[issues]]
 file = "tests/Feature/Http/Api/NodePermissionsControllerTest.php"
@@ -16402,6 +16786,12 @@ count = 1
 file = "tests/Feature/Http/Api/NodeRoleAddControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/NodeRoleAddControllerTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `NodeRoleAddNoopConverger` but class `NodeRoleAddMetricsRecordingShell` is already defined in this file."
 count = 1
 
 [[issues]]
@@ -16720,6 +17110,12 @@ count = 2
 file = "tests/Feature/Http/Api/NodeStoreControllerTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
+count = 2
+
+[[issues]]
+file = "tests/Feature/Http/Api/NodeStoreControllerTest.php"
+code = "kan-defect"
+message = "Closure has a high kan defect score."
 count = 1
 
 [[issues]]
@@ -16744,7 +17140,7 @@ count = 11
 file = "tests/Feature/Http/Api/NodeStoreControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'vpn'` should be passed as a named argument for clarity."
-count = 3
+count = 5
 
 [[issues]]
 file = "tests/Feature/Http/Api/NodeStoreControllerTest.php"
@@ -16762,7 +17158,7 @@ count = 1
 file = "tests/Feature/Http/Api/NodeStoreControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Feature/Http/Api/NodeStoreStreamControllerTest.php"
@@ -16994,8 +17390,8 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/ProcessLogControllerTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume"
+code = "literal-named-argument"
+message = "Literal argument `'_'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -17120,6 +17516,12 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/ProcessStoreControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ProcessStoreControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertConflict()` assertion instead of `assertStatus(409)`."
 count = 1
@@ -17128,19 +17530,13 @@ count = 1
 file = "tests/Feature/Http/Api/ProcessStoreControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
-count = 13
+count = 14
 
 [[issues]]
 file = "tests/Feature/Http/Api/ProcessStoreControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 9
-
-[[issues]]
-file = "tests/Feature/Http/Api/ProcessStoreControllerTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeTrue()` instead of `not->toBeFalse()` for clarity."
-count = 3
 
 [[issues]]
 file = "tests/Feature/Http/Api/ProcessUpdateControllerTest.php"
@@ -17200,7 +17596,7 @@ count = 1
 file = "tests/Feature/Http/Api/ProcessUpdateControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeFalse()` instead of `toBe(false)` for clearer boolean expectations."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Feature/Http/Api/ProfileControllerTest.php"
@@ -17305,6 +17701,30 @@ message = "Use the dedicated `assertUnprocessable()` assertion instead of `asser
 count = 1
 
 [[issues]]
+file = "tests/Feature/Http/Api/SoloProxyControllerTest.php"
+code = "cyclomatic-complexity"
+message = "Closure has high complexity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/SoloProxyControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'headers.Authorization'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/SoloProxyControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'headers.X-Orbit-Node'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/SoloProxyControllerTest.php"
+code = "no-insecure-comparison"
+message = "Insecure comparison of sensitive data."
+count = 1
+
+[[issues]]
 file = "tests/Feature/Http/Api/ToolCredentialsControllerTest.php"
 code = "function-name"
 message = "Function name `createToolCredentialsCallerNode` should be in snake case."
@@ -17356,13 +17776,13 @@ count = 1
 file = "tests/Feature/Http/Api/ToolInstallControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'app-dev'` should be passed as a named argument for clarity."
-count = 12
+count = 21
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolInstallControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'gateway'` should be passed as a named argument for clarity."
-count = 7
+count = 16
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolInstallControllerTest.php"
@@ -17372,9 +17792,63 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolInstallControllerTest.php"
+code = "prefer-dedicated-status-assertion"
+message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolInstallControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 5
+count = 10
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "file-name"
+message = "Class `ToolLifecycleApiRecordingShell` should be in a file named `ToolLifecycleApiRecordingShell.php`, found `ToolLifecycleControllerTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "function-name"
+message = "Function name `assignToolLifecycleApiRole` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "function-name"
+message = "Function name `createToolLifecycleApiCallerNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "function-name"
+message = "Function name `grantToolLifecycleApiAccess` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app-dev'` should be passed as a named argument for clarity."
+count = 6
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "prefer-dedicated-status-assertion"
+message = "Use the dedicated `assertBadRequest()` assertion instead of `assertStatus(400)`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "prefer-dedicated-status-assertion"
+message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/ToolLifecycleControllerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 4
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolListControllerTest.php"
@@ -17421,14 +17895,14 @@ count = 1
 [[issues]]
 file = "tests/Feature/Http/Api/ToolRemoveControllerTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
+message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolRemoveControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
+count = 4
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolShowControllerTest.php"
@@ -17524,7 +17998,7 @@ count = 1
 file = "tests/Feature/Http/Api/ToolUpdateControllerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'app-dev'` should be passed as a named argument for clarity."
-count = 3
+count = 4
 
 [[issues]]
 file = "tests/Feature/Http/Api/ToolUpdateControllerTest.php"
@@ -17536,7 +18010,7 @@ count = 1
 file = "tests/Feature/Http/Api/ToolUpdateControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
+count = 3
 
 [[issues]]
 file = "tests/Feature/Http/Api/UpdateAllControllerTest.php"
@@ -17608,6 +18082,12 @@ count = 1
 file = "tests/Feature/Http/Api/UpdateAllControllerTest.php"
 code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `UpdateAllControllerTimedRemoteShell` but class `UpdateAllControllerRemoteShell` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/UpdateAllControllerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -17756,6 +18236,12 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php"
+code = "function-name"
+message = "Function name `workspaceRemoveRemoteShellFallbackHeader` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume"
 count = 1
@@ -17764,6 +18250,12 @@ count = 1
 file = "tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertUnprocessable()` assertion instead of `assertStatus(422)`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -17911,6 +18403,24 @@ message = "Class has too many methods."
 count = 3
 
 [[issues]]
+file = "tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php"
+code = "file-name"
+message = "Class `RequireGatewayExtensionOpenController` should be in a file named `RequireGatewayExtensionOpenController.php`, found `RequireGatewayExtensionTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php"
+code = "function-name"
+message = "Function name `requireExtensionCallerNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Middleware/RequireGatewayExtensionTest.php"
+code = "function-name"
+message = "Function name `requireExtensionGet` should be in snake case."
+count = 1
+
+[[issues]]
 file = "tests/Feature/Http/Middleware/RequireGrantPermissionTest.php"
 code = "function-name"
 message = "Function name `requireGrantAccess` should be in snake case."
@@ -18046,6 +18556,12 @@ count = 1
 file = "tests/Feature/Migrations/NormalizeMetricsRouteUpstreamTest.php"
 code = "use-dedicated-expectation"
 message = "Use `toBeFile()` instead of `is_file()` with `toBeTrue()`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Migrations/OpenCodeCliToolBackfillTest.php"
+code = "function-name"
+message = "Function name `runOpenCodeCliToolBackfillMigration` should be in snake case."
 count = 1
 
 [[issues]]
@@ -18428,12 +18944,6 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Services/Ca/OrbitSiteCertificateInstallerTest.php"
-code = "file-name"
-message = "Class `OrbitSiteCertificateInstallerTestShell` should be in a file named `OrbitSiteCertificateInstallerTestShell.php`, found `OrbitSiteCertificateInstallerTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Ca/OrbitSiteCertificateInstallerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `0777` should be passed as a named argument for clarity."
 count = 1
@@ -18442,12 +18952,6 @@ count = 1
 file = "tests/Feature/Services/Ca/OrbitSiteCertificateInstallerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Ca/OrbitSiteCertificateInstallerTest.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
 count = 1
 
 [[issues]]
@@ -18591,6 +19095,12 @@ count = 1
 [[issues]]
 file = "tests/Feature/Services/Gateway/GatewaySwarmInstallerTest.php"
 code = "halstead"
+message = "Closure has a high halstead effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Gateway/GatewaySwarmInstallerTest.php"
+code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
 
@@ -18632,26 +19142,14 @@ count = 18
 
 [[issues]]
 file = "tests/Feature/Services/Nodes/NodeSecurityPostureProbeTest.php"
-code = "file-name"
-message = "Class `RecordingNodeSecurityShell` should be in a file named `RecordingNodeSecurityShell.php`, found `NodeSecurityPostureProbeTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Nodes/NodeSecurityPostureProbeTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
 file = "tests/Feature/Services/Nodes/Roles/AgentRoleBaselineTest.php"
-code = "function-name"
-message = "Function name `fakeAgentRemoteShell` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Services/Nodes/Roles/AgentRoleBaselineTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
+message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
@@ -18667,6 +19165,12 @@ message = "Function name `appDevBaselineNode` should be in snake case."
 count = 1
 
 [[issues]]
+file = "tests/Feature/Services/Nodes/Roles/AppDevelopmentRoleBaselineTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
 file = "tests/Feature/Services/Nodes/Roles/AppProductionRoleBaselineTest.php"
 code = "function-name"
 message = "Function name `appProdBaselineAssignment` should be in snake case."
@@ -18676,6 +19180,18 @@ count = 1
 file = "tests/Feature/Services/Nodes/Roles/AppProductionRoleBaselineTest.php"
 code = "function-name"
 message = "Function name `appProdBaselineNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `metricsRoleBaselineAgentCommandNames` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `metricsRoleBaselineAgentPayload` should be in snake case."
 count = 1
 
 [[issues]]
@@ -18771,7 +19287,31 @@ count = 1
 [[issues]]
 file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
 code = "function-name"
+message = "Function name `webSocketBaselineAgentResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "function-name"
 message = "Function name `webSocketBaselineAssignment` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `webSocketBaselineCertificateAgentResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `webSocketBaselineCertificateRequestMatches` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `webSocketBaselineFailedAgentResponse` should be in snake case."
 count = 1
 
 [[issues]]
@@ -18788,6 +19328,18 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `webSocketBaselineRuntimeAgentResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "function-name"
+message = "Function name `webSocketBaselineRuntimeRequestMatches` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
 code = "literal-named-argument"
 message = "Literal argument `0777` should be passed as a named argument for clarity."
 count = 1
@@ -18796,6 +19348,12 @@ count = 1
 file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
 count = 1
 
 [[issues]]
@@ -18809,6 +19367,12 @@ file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
 code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `WebSocketRoleBaselineTestShell` but class `WebSocketRoleBaselineTestCa` is already defined in this file."
 count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Nodes/Roles/WebSocketRoleBaselineTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 2
 
 [[issues]]
 file = "tests/Feature/Services/Operations/FleetUpdateVerifierTest.php"
@@ -18856,7 +19420,7 @@ count = 1
 file = "tests/Feature/Services/Operations/FleetUpdateVerifierTest.php"
 code = "no-empty-comment"
 message = "Empty comments are not allowed."
-count = 2
+count = 3
 
 [[issues]]
 file = "tests/Feature/Services/Operations/FleetVersionProbeTest.php"
@@ -18886,7 +19450,7 @@ count = 1
 file = "tests/Feature/Services/Operations/FleetVersionProbeTest.php"
 code = "literal-named-argument"
 message = "Literal argument `64` should be passed as a named argument for clarity."
-count = 7
+count = 10
 
 [[issues]]
 file = "tests/Feature/Services/Operations/GatewayCliArtifactRelayTest.php"
@@ -19324,7 +19888,7 @@ count = 1
 file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
 code = "literal-named-argument"
 message = "Literal argument `64` should be passed as a named argument for clarity."
-count = 7
+count = 10
 
 [[issues]]
 file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
@@ -19342,7 +19906,7 @@ count = 4
 file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
 code = "no-isset"
 message = "Use of the `isset` construct."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
@@ -19377,6 +19941,12 @@ count = 1
 [[issues]]
 file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
 code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `WorkloadUpdaterFakeNodeDoctor` but class `WorkloadUpdaterNoopGatewayUpdater` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
+code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `WorkloadUpdaterFakeShell` but class `WorkloadUpdaterNoopGatewayUpdater` is already defined in this file."
 count = 1
 
@@ -19390,7 +19960,7 @@ count = 1
 file = "tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 2
+count = 3
 
 [[issues]]
 file = "tests/Feature/Services/OrbitHostInstallerTest.php"
@@ -19438,6 +20008,12 @@ count = 5
 file = "tests/Feature/Services/Processes/EnsureAppProcessRuntimeUnitsTest.php"
 code = "function-name"
 message = "Function name `makeEnsureRuntimeUnitsAction` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Services/Processes/EnsureAppProcessRuntimeUnitsTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -19861,6 +20437,12 @@ message = "Unsafe use of error control operator `@`."
 count = 6
 
 [[issues]]
+file = "tests/TestCase.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
 file = "tests/Unit/Services/AgentIde/CoreAgentIdeWorkspacePathResolverTest.php"
 code = "file-name"
 message = "Class `CoreAgentIdeWorkspacePathResolverTransport` should be in a file named `CoreAgentIdeWorkspacePathResolverTransport.php`, found `CoreAgentIdeWorkspacePathResolverTest.php`."
@@ -19925,6 +20507,24 @@ file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
 code = "function-name"
 message = "Function name `renderEnvApplierTestContainer` should be in snake case."
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+code = "no-redundant-use"
+message = "Unused import: `Http`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+code = "no-redundant-use"
+message = "Unused import: `Request`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php"
+code = "unfulfilled-expect"
+message = "This pragma was not used and may be removed."
+count = 4
 
 [[issues]]
 file = "tests/Unit/Services/Apps/AppOwningNodeResolverTest.php"
@@ -19999,6 +20599,12 @@ message = "Literal argument `'docker run -d'` should be passed as a named argume
 count = 2
 
 [[issues]]
+file = "tests/Unit/Services/Apps/AppRuntimeContainerManagerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 1
+
+[[issues]]
 file = "tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php"
 code = "function-name"
 message = "Function name `makePhpApp` should be in snake case."
@@ -20035,9 +20641,9 @@ message = "Function name `createAppSetupRunnerTestApp` should be in snake case."
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
-code = "function-name"
-message = "Function name `buildOctaneFixture` should be in snake case."
+file = "tests/Unit/Services/Apps/AppSetupStepRunnerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -20049,49 +20655,19 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
 code = "function-name"
-message = "Function name `readinessFixtureRoot` should be in snake case."
+message = "Function name `readinessProbeResponse` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
 code = "function-name"
-message = "Function name `readinessShell` should be in snake case."
+message = "Function name `readinessProbeWasSent` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
 code = "function-name"
-message = "Function name `runReadinessProbeAgainstFixture` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'orbit-probe-'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0o755` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
-code = "no-error-control-operator"
-message = "Unsafe use of error control operator `@`."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Apps/AppWorkerReadinessTest.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
+message = "Function name `readinessProbe` should be in snake case."
 count = 1
 
 [[issues]]
@@ -20133,13 +20709,37 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Apps/AppsProbeTest.php"
 code = "function-name"
+message = "Function name `appsProbeAgentNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppsProbeTest.php"
+code = "function-name"
+message = "Function name `appsRuntimeConfigsProbeWasSent` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppsProbeTest.php"
+code = "function-name"
+message = "Function name `appsRuntimeContainersProbeWasSent` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppsProbeTest.php"
+code = "function-name"
 message = "Function name `convergedRuntimeSnapshot` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Apps/AppsProbeTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume"
+code = "function-name"
+message = "Function name `fakeAppsRuntimeConfigsProbe` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Apps/AppsProbeTest.php"
+code = "function-name"
+message = "Function name `fakeAppsRuntimeContainersProbe` should be in snake case."
 count = 1
 
 [[issues]]
@@ -20246,14 +20846,44 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Convergence/ManagedFileTest.php"
+code = "cyclomatic-complexity"
+message = "Function has high complexity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/ManagedFileTest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/ManagedFileTest.php"
 code = "file-name"
-message = "Class `ManagedFileRecordingShell` should be in a file named `ManagedFileRecordingShell.php`, found `ManagedFileTest.php`."
+message = "Class `ManagedFileUnexpectedShell` should be in a file named `ManagedFileUnexpectedShell.php`, found `ManagedFileTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/ManagedFileTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"TOKEN=secret-value\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/ManagedFileTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
-code = "file-name"
-message = "Class `ProcessDockerContainerResourceShell` should be in a file named `ProcessDockerContainerResourceShell.php`, found `ProcessDockerContainerResourceTest.php`."
+code = "cyclomatic-complexity"
+message = "Closure has high complexity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
+code = "cyclomatic-complexity"
+message = "Function has high complexity."
 count = 1
 
 [[issues]]
@@ -20263,15 +20893,45 @@ message = "Function name `processDockerContainerResourceContainer` should be in 
 count = 1
 
 [[issues]]
+file = "tests/Unit/Services/Convergence/ProcessDockerContainerResourceTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `ProcessDockerContainerResourceUnusedTransport` but class `ProcessDockerContainerResourceUnusedShell` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/SystemdServiceTest.php"
+code = "cyclomatic-complexity"
+message = "Function has high complexity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/SystemdServiceTest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
 file = "tests/Unit/Services/Convergence/SystemdServiceTest.php"
 code = "file-name"
-message = "Class `SystemdServiceRecordingShell` should be in a file named `SystemdServiceRecordingShell.php`, found `SystemdServiceTest.php`."
+message = "Class `SystemdServiceUnexpectedShell` should be in a file named `SystemdServiceUnexpectedShell.php`, found `SystemdServiceTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/SystemdServiceTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Convergence/UfwFirewallRuleTest.php"
-code = "file-name"
-message = "Class `UfwFirewallRuleRecordingShell` should be in a file named `UfwFirewallRuleRecordingShell.php`, found `UfwFirewallRuleTest.php`."
+code = "literal-named-argument"
+message = "Literal argument `'app-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Convergence/UfwFirewallRuleTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `UfwFirewallRuleUnusedTransport` but class `UfwFirewallRuleUnusedShell` is already defined in this file."
 count = 1
 
 [[issues]]
@@ -20354,6 +21014,18 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php"
+code = "function-name"
+message = "Function name `databaseConnectionAdopterEnvReadFailureResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php"
+code = "function-name"
+message = "Function name `databaseConnectionAdopterEnvReadResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionAdopterTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
@@ -20420,6 +21092,18 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php"
+code = "function-name"
+message = "Function name `databaseConnectionProbeEnvReadFailureResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php"
+code = "function-name"
+message = "Function name `databaseConnectionProbeEnvReadResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
@@ -20456,6 +21140,12 @@ count = 3
 
 [[issues]]
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
 count = 9
@@ -20464,7 +21154,7 @@ count = 9
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionProbeTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 7
+count = 6
 
 [[issues]]
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionRegistryTest.php"
@@ -20492,8 +21182,14 @@ count = 2
 
 [[issues]]
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php"
-code = "file-name"
-message = "Class `DatabaseConnectionRestorerRemoteShell` should be in a file named `DatabaseConnectionRestorerRemoteShell.php`, found `DatabaseConnectionRestorerTest.php`."
+code = "function-name"
+message = "Function name `databaseConnectionRestorerEnvReadResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php"
+code = "function-name"
+message = "Function name `databaseConnectionRestorerEnvWriteResponse` should be in snake case."
 count = 1
 
 [[issues]]
@@ -20518,6 +21214,12 @@ count = 1
 file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `16` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/DatabaseConnections/DatabaseConnectionRestorerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -20566,7 +21268,7 @@ count = 1
 file = "tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'git pull origin main'` should be passed as a named argument for clarity."
-count = 7
+count = 8
 
 [[issues]]
 file = "tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
@@ -20596,6 +21298,12 @@ count = 1
 file = "tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
 code = "no-empty-catch-clause"
 message = "Do not use empty `catch` blocks."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Deploy/DeployManagerContainerRoutingTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -20649,13 +21357,85 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
 code = "function-name"
+message = "Function name `doctorRunnerAgentPushCommandName` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerAgentPushInput` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerAgentPushResponse` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerAgentPushScript` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerAgentPushStdout` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerDecodeInput` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
 message = "Function name `doctorRunnerFleetProbeProcessWorkersAvailable` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
 code = "function-name"
+message = "Function name `doctorRunnerInternalCommandNameFromScript` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerInternalCommandStdout` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerInternalCommandSuccessData` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerLocalExecutor` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
 message = "Function name `doctorRunnerManagedFileProbeResult` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerNodeForAgentRequest` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "function-name"
+message = "Function name `doctorRunnerSynthesizesInternalCommand` should be in snake case."
 count = 1
 
 [[issues]]
@@ -20732,9 +21512,21 @@ count = 3
 
 [[issues]]
 file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
-count = 6
+count = 8
+
+[[issues]]
+file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `DoctorReportRunnerRemoteExecutor` but class `FleetProbeBatchDelayRemoteShell` is already defined in this file."
+count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Doctor/DoctorReportRunnerTest.php"
@@ -20900,12 +21692,6 @@ count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Firewall/FirewallRuleProbeTest.php"
-code = "file-name"
-message = "Class `FirewallProbeRecordingRemoteShell` should be in a file named `FirewallProbeRecordingRemoteShell.php`, found `FirewallRuleProbeTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Firewall/FirewallRuleProbeTest.php"
 code = "function-name"
 message = "Function name `createFirewallRuleProbeAppHostNode` should be in snake case."
 count = 1
@@ -21037,6 +21823,24 @@ message = "Literal argument `'  orbit-scheduler:'` should be passed as a named a
 count = 1
 
 [[issues]]
+file = "tests/Unit/Services/NodeCommandTransport/NodeCommandTransportSelectorTest.php"
+code = "function-name"
+message = "Function name `activeAgentUnavailableNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/NodeCommandTransport/NodeCommandTransportSelectorTest.php"
+code = "function-name"
+message = "Function name `activeCapableNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/NodeCommandTransport/NodeCommandTransportSelectorTest.php"
+code = "function-name"
+message = "Function name `inactiveCapableNode` should be in snake case."
+count = 1
+
+[[issues]]
 file = "tests/Unit/Services/Nodes/Access/NodeAccessAuthorizerTest.php"
 code = "function-name"
 message = "Function name `createAppNode` should be in snake case."
@@ -21146,8 +21950,20 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodeIdentityArtifactProbeTest.php"
+code = "assert-description"
+message = "Missing description in assert function."
+count = 3
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php"
 code = "file-name"
-message = "Class `NodeIdentityArtifactProbeRemoteShell` should be in a file named `NodeIdentityArtifactProbeRemoteShell.php`, found `NodeIdentityArtifactProbeTest.php`."
+message = "Class `NodeRoleAssignmentRemoteExecutor` should be in a file named `NodeRoleAssignmentRemoteExecutor.php`, found `NodeRoleAssignmentServiceTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php"
+code = "function-name"
+message = "Function name `nodeRoleAssignmentLocalExecutor` should be in snake case."
 count = 1
 
 [[issues]]
@@ -21155,6 +21971,12 @@ file = "tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodeRoleAssignmentServiceTest.php"
@@ -21188,14 +22010,8 @@ count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodeWireGuardSelfRouteProbeTest.php"
-code = "file-name"
-message = "Class `NodeWireGuardSelfRouteProbeRemoteShell` should be in a file named `NodeWireGuardSelfRouteProbeRemoteShell.php`, found `NodeWireGuardSelfRouteProbeTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Nodes/NodeWireGuardSelfRouteProbeTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+code = "literal-named-argument"
+message = "Literal argument `'10.6.0.4'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -21221,12 +22037,6 @@ file = "tests/Unit/Services/Nodes/NodesProbeRoleAssignmentsTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 2
-
-[[issues]]
-file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
-code = "file-name"
-message = "Class `NodesProbeRecordingRemoteShell` should be in a file named `NodesProbeRecordingRemoteShell.php`, found `NodesProbeTest.php`."
-count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
@@ -21266,6 +22076,24 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
+code = "function-name"
+message = "Function name `nodesProbeLocalExecutor` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
+code = "function-name"
+message = "Function name `nodesProbeUseAgentPush` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
+code = "function-name"
+message = "Function name `nodesProbeWithRemoteShell` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
 code = "halstead"
 message = "Closure has a high halstead volume"
 count = 1
@@ -21278,15 +22106,15 @@ count = 3
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0` should be passed as a named argument for clarity."
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
 count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `2` should be passed as a named argument for clarity."
-count = 2
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `NodesProbeRemoteExecutor` but class `NodesProbeRecordingRemoteShell` is already defined in this file."
+count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/NodesProbeTest.php"
@@ -21304,7 +22132,7 @@ count = 1
 file = "tests/Unit/Services/Nodes/OperatorNodeManagerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Nodes/Roles/RoleSelfGrantMaterializerTest.php"
@@ -21459,19 +22287,13 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Processes/ProcessDockerRuntimeManagerTest.php"
 code = "file-name"
-message = "Class `ProcessDockerRuntimeManagerShell` should be in a file named `ProcessDockerRuntimeManagerShell.php`, found `ProcessDockerRuntimeManagerTest.php`."
+message = "Class `ProcessDockerRuntimeManagerUnusedTransport` should be in a file named `ProcessDockerRuntimeManagerUnusedTransport.php`, found `ProcessDockerRuntimeManagerTest.php`."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Processes/ProcessDockerRuntimeManagerTest.php"
 code = "function-name"
 message = "Function name `processDockerRuntimeManagerContainer` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Processes/ProcessRuntimeDriversTest.php"
-code = "file-name"
-message = "Class `ProcessRuntimeDriverRecordingShell` should be in a file named `ProcessRuntimeDriverRecordingShell.php`, found `ProcessRuntimeDriversTest.php`."
 count = 1
 
 [[issues]]
@@ -21496,6 +22318,18 @@ count = 1
 file = "tests/Unit/Services/Processes/ProcessesProbeTest.php"
 code = "function-name"
 message = "Function name `processableApp` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Processes/ProcessesProbeTest.php"
+code = "function-name"
+message = "Function name `processesProbeSuccessData` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Processes/ProcessesProbeTest.php"
+code = "function-name"
+message = "Function name `processesProbeWithShell` should be in snake case."
 count = 1
 
 [[issues]]
@@ -21589,6 +22423,24 @@ message = "Use `toBeEmpty()` instead of comparing with empty values for clarity.
 count = 2
 
 [[issues]]
+file = "tests/Unit/Services/Proxy/AppProxyRouteCaddyInstallerTest.php"
+code = "file-name"
+message = "Class `AppProxyRouteInstallerRecordingShell` should be in a file named `AppProxyRouteInstallerRecordingShell.php`, found `AppProxyRouteCaddyInstallerTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Proxy/AppProxyRouteCaddyInstallerTest.php"
+code = "function-name"
+message = "Function name `appProxyRouteCaddyInstallerUseAgentPush` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Proxy/AppProxyRouteCaddyInstallerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 2
+
+[[issues]]
 file = "tests/Unit/Services/Proxy/IngressResolverTest.php"
 code = "readable-literal"
 message = "Numeric literal could use underscore separators for readability."
@@ -21651,6 +22503,12 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Proxy/ProxyRouteFixerTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'fake-root-ca'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Proxy/ProxyRouteFixerTest.php"
+code = "literal-named-argument"
 message = "Literal argument `0777` should be passed as a named argument for clarity."
 count = 1
 
@@ -21658,13 +22516,13 @@ count = 1
 file = "tests/Unit/Services/Proxy/ProxyRouteFixerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `64` should be passed as a named argument for clarity."
-count = 14
+count = 16
 
 [[issues]]
 file = "tests/Unit/Services/Proxy/ProxyRouteFixerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 9
+count = 8
 
 [[issues]]
 file = "tests/Unit/Services/Proxy/ProxyRouteFixerTest.php"
@@ -21676,7 +22534,7 @@ count = 1
 file = "tests/Unit/Services/Proxy/ProxyRouteFixerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 5
+count = 6
 
 [[issues]]
 file = "tests/Unit/Services/Proxy/ProxyRouteIntentTest.php"
@@ -21826,7 +22684,7 @@ count = 1
 file = "tests/Unit/Services/Proxy/ProxyRouteProbeTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'proxy.route_mismatch'` should be passed as a named argument for clarity."
-count = 10
+count = 11
 
 [[issues]]
 file = "tests/Unit/Services/Proxy/ProxyRouteProbeTest.php"
@@ -21915,6 +22773,12 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/RemoteShell/LocalExecutorCommandBuilderTest.php"
 code = "halstead"
+message = "Closure has a high halstead volume"
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/RemoteShell/LocalExecutorCommandBuilderTest.php"
+code = "halstead"
 message = "Closure has a high halstead volume and effort"
 count = 1
 
@@ -21964,6 +22828,12 @@ count = 1
 file = "tests/Unit/Services/RemoteShell/RemoteHostExecutorTest.php"
 code = "prefer-arrow-function"
 message = "This closure can be simplified to a more concise arrow function."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/RemoteShell/RemoteLocalExecutorTest.php"
+code = "cyclomatic-complexity"
+message = "Closure has high complexity."
 count = 1
 
 [[issues]]
@@ -22131,13 +23001,7 @@ count = 2
 [[issues]]
 file = "tests/Unit/Services/RemoteShell/RemoteSecretFileTest.php"
 code = "file-name"
-message = "Class `RemoteSecretFileRecordingShell` should be in a file named `RemoteSecretFileRecordingShell.php`, found `RemoteSecretFileTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/RemoteShell/RemoteSecretFileTest.php"
-code = "prefer-arrow-function"
-message = "This closure can be simplified to a more concise arrow function."
+message = "Class `RemoteSecretFileUnusedTransport` should be in a file named `RemoteSecretFileUnusedTransport.php`, found `RemoteSecretFileTest.php`."
 count = 1
 
 [[issues]]
@@ -22192,7 +23056,7 @@ count = 1
 file = "tests/Unit/Services/Runtime/DockerCommandBuilderTest.php"
 code = "no-else-clause"
 message = "Avoid `else` clauses."
-count = 4
+count = 6
 
 [[issues]]
 file = "tests/Unit/Services/Runtime/OrbitCaddyContainerRouteCoverageTest.php"
@@ -22297,21 +23161,21 @@ message = "Literal argument `'docs-feature'` should be passed as a named argumen
 count = 3
 
 [[issues]]
-file = "tests/Unit/Services/RuntimeBackend/GatewayRuntimeBackendProbeTest.php"
+file = "tests/Unit/Services/S3/S3DoctorProbeTest.php"
 code = "file-name"
-message = "Class `GatewayRuntimeProbeRecordingRemoteShell` should be in a file named `GatewayRuntimeProbeRecordingRemoteShell.php`, found `GatewayRuntimeBackendProbeTest.php`."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/RuntimeBackend/RuntimeBackendProbeTest.php"
-code = "file-name"
-message = "Class `RuntimeBackendProbeRecordingRemoteShell` should be in a file named `RuntimeBackendProbeRecordingRemoteShell.php`, found `RuntimeBackendProbeTest.php`."
+message = "Class `S3DoctorProbeTestTransport` should be in a file named `S3DoctorProbeTestTransport.php`, found `S3DoctorProbeTest.php`."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/S3/S3DoctorProbeTest.php"
 code = "function-name"
 message = "Function name `s3ProbeAssignment` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/S3/S3DoctorProbeTest.php"
+code = "function-name"
+message = "Function name `s3ProbeExecutor` should be in snake case."
 count = 1
 
 [[issues]]
@@ -22337,6 +23201,12 @@ file = "tests/Unit/Services/S3/S3DoctorProbeTest.php"
 code = "function-name"
 message = "Function name `s3Probe` should be in snake case."
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/S3/S3DoctorProbeTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
 
 [[issues]]
 file = "tests/Unit/Services/S3/S3ProxyDoctorProbeTest.php"
@@ -22544,12 +23414,6 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Schedules/SchedulesProbeTest.php"
-code = "halstead"
-message = "Closure has a high halstead volume"
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Schedules/SchedulesProbeTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'schedule.heartbeat_stale'` should be passed as a named argument for clarity."
 count = 1
@@ -22627,6 +23491,12 @@ message = "Use `toBeEmpty()` instead of comparing with empty values for clarity.
 count = 6
 
 [[issues]]
+file = "tests/Unit/Services/Tools/OrbStackToolTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
+count = 1
+
+[[issues]]
 file = "tests/Unit/Services/Tools/ToolCatalogTest.php"
 code = "cyclomatic-complexity"
 message = "Closure has high complexity."
@@ -22664,9 +23534,39 @@ count = 3
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolInstallerGitHubAuthTest.php"
-code = "file-name"
-message = "Class `ToolInstallerGitHubAuthRecordingShell` should be in a file named `ToolInstallerGitHubAuthRecordingShell.php`, found `ToolInstallerGitHubAuthTest.php`."
+code = "function-name"
+message = "Function name `toolInstallerGitHubAuthLocalExecutor` should be in snake case."
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolInstallerGitHubAuthTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolInstallerGitHubAuthTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolInstallerGitHubAuthTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `ToolInstallerGitHubAuthRecordingShell` but class `ToolInstallerGitHubAuthRemoteExecutor` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php"
+code = "file-name"
+message = "Class `ToolRemoteShellTransportRecordingShell` should be in a file named `ToolRemoteShellTransportRecordingShell.php`, found `ToolRemoteShellTransportTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolRemoteShellTransportTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 6
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
@@ -22701,14 +23601,8 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
-code = "halstead"
 message = "Closure has a high halstead volume and effort"
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
@@ -22750,7 +23644,7 @@ count = 1
 file = "tests/Unit/Services/Tools/ToolsFixerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 6
+count = 12
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
@@ -22791,7 +23685,31 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
 code = "function-name"
+message = "Function name `toolsProbeDockerProviderStdout` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
+code = "function-name"
+message = "Function name `toolsProbeLocalExecutor` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
+code = "function-name"
 message = "Function name `toolsProbeManagedFileStdout` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
+code = "function-name"
+message = "Function name `toolsProbeWithAgentPush` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
+code = "function-name"
+message = "Function name `toolsProbeWithRemoteShell` should be in snake case."
 count = 1
 
 [[issues]]
@@ -22911,6 +23829,12 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'tool.docker_provider_unreachable'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
+code = "literal-named-argument"
 message = "Literal argument `'tool.node_invalid'` should be passed as a named argument for clarity."
 count = 6
 
@@ -22946,6 +23870,12 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
 count = 4
@@ -22972,7 +23902,7 @@ count = 1
 file = "tests/Unit/Services/Tools/ToolsProbeTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 5
+count = 6
 
 [[issues]]
 file = "tests/Unit/Services/Updates/UnattendedUpgradesDriverTest.php"
@@ -23150,6 +24080,12 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketCertificateInstallerTest.php"
+code = "file-name"
+message = "Class `WebSocketCertificateInstallerTestCa` should be in a file named `WebSocketCertificateInstallerTestCa.php`, found `WebSocketCertificateInstallerTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/WebSockets/WebSocketCertificateInstallerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `0777` should be passed as a named argument for clarity."
 count = 1
@@ -23167,22 +24103,22 @@ message = "Use of the `isset` construct."
 count = 1
 
 [[issues]]
-file = "tests/Unit/Services/WebSockets/WebSocketCertificateInstallerTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `WebSocketCertificateInstallerTestShell` but class `WebSocketCertificateInstallerTestCa` is already defined in this file."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/WebSockets/WebSocketCertificateInstallerTest.php"
-code = "use-specific-expectations"
-message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+file = "tests/Unit/Services/WebSockets/WebSocketDoctorProbeTest.php"
+code = "file-name"
+message = "Class `WebSocketDoctorProbeTestTransport` should be in a file named `WebSocketDoctorProbeTestTransport.php`, found `WebSocketDoctorProbeTest.php`."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketDoctorProbeTest.php"
-code = "file-name"
-message = "Class `WebSocketDoctorProbeTestRemoteShell` should be in a file named `WebSocketDoctorProbeTestRemoteShell.php`, found `WebSocketDoctorProbeTest.php`."
+code = "function-name"
+message = "Function name `websocketDoctorProbeExecutor` should be in snake case."
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/WebSockets/WebSocketDoctorProbeTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
 
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketDoctorProbeTest.php"
@@ -23222,26 +24158,20 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketRuntimeAppConfigSyncerTest.php"
-code = "file-name"
-message = "Class `WebSocketRuntimeAppConfigSyncerTestShell` should be in a file named `WebSocketRuntimeAppConfigSyncerTestShell.php`, found `WebSocketRuntimeAppConfigSyncerTest.php`."
+code = "function-name"
+message = "Function name `websocketRuntimeAppConfigFromRequest` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketRuntimeAppConfigSyncerTest.php"
 code = "function-name"
-message = "Function name `websocketRuntimeAppConfigFromScript` should be in snake case."
+message = "Function name `websocketRuntimeAppConfigRequestMatches` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketRuntimeAppConfigSyncerTest.php"
 code = "inline-variable-return"
 message = "Variable assignment can be inlined into the return statement."
-count = 1
-
-[[issues]]
-file = "tests/Unit/Services/WebSockets/WebSocketRuntimeAppConfigSyncerTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -23260,6 +24190,12 @@ count = 3
 file = "tests/Unit/Services/WebSockets/WebSocketRuntimeAppConfigSyncerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/WebSockets/WebSocketRuntimeContainerManagerTest.php"
+code = "file-name"
+message = "Class `WebSocketRuntimeContainerManagerUnusedTransport` should be in a file named `WebSocketRuntimeContainerManagerUnusedTransport.php`, found `WebSocketRuntimeContainerManagerTest.php`."
 count = 1
 
 [[issues]]
@@ -23295,7 +24231,7 @@ count = 2
 [[issues]]
 file = "tests/Unit/Services/WebSockets/WebSocketRuntimeSourceInstallerTest.php"
 code = "file-name"
-message = "Class `WebSocketRuntimeSourceInstallerTestShell` should be in a file named `WebSocketRuntimeSourceInstallerTestShell.php`, found `WebSocketRuntimeSourceInstallerTest.php`."
+message = "Class `WebSocketRuntimeSourceInstallerUnusedTransport` should be in a file named `WebSocketRuntimeSourceInstallerUnusedTransport.php`, found `WebSocketRuntimeSourceInstallerTest.php`."
 count = 1
 
 [[issues]]
@@ -23349,6 +24285,12 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
 code = "function-name"
+message = "Function name `openCodeWorkspaceDriverExecutor` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
+code = "function-name"
 message = "Function name `openCodeWorkspaceDriver` should be in snake case."
 count = 1
 
@@ -23372,32 +24314,44 @@ count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
 code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestClientFactory` but class `OpenCodeWorkspaceDriverTestShell` is already defined in this file."
+message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestClientFactory` but class `OpenCodeWorkspaceDriverTestTransport` is already defined in this file."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
 code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestClient` but class `OpenCodeWorkspaceDriverTestShell` is already defined in this file."
+message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestClient` but class `OpenCodeWorkspaceDriverTestTransport` is already defined in this file."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
 code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestProjectResource` but class `OpenCodeWorkspaceDriverTestShell` is already defined in this file."
+message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestProjectResource` but class `OpenCodeWorkspaceDriverTestTransport` is already defined in this file."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
 code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestSessionResource` but class `OpenCodeWorkspaceDriverTestShell` is already defined in this file."
+message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestSessionResource` but class `OpenCodeWorkspaceDriverTestTransport` is already defined in this file."
 count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Workspaces/OpenCodeWorkspaceDriverTest.php"
 code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestWorktreeResource` but class `OpenCodeWorkspaceDriverTestShell` is already defined in this file."
+message = "File contains multiple class-like definitions; found class `OpenCodeWorkspaceDriverTestWorktreeResource` but class `OpenCodeWorkspaceDriverTestTransport` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/PolyscopeWorkspaceBranchAlignerTest.php"
+code = "file-name"
+message = "Class `PolyscopeBranchAlignerLocalTransport` should be in a file named `PolyscopeBranchAlignerLocalTransport.php`, found `PolyscopeWorkspaceBranchAlignerTest.php`."
 count = 1
 
 [[issues]]
@@ -23419,9 +24373,9 @@ message = "Literal passwords or sensitive data should not be stored in code."
 count = 4
 
 [[issues]]
-file = "tests/Unit/Services/Workspaces/PolyscopeWorkspaceBranchAlignerTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `PolyscopeBranchAlignerLocalTransport` but class `PolyscopeBranchAlignerRecordingShell` is already defined in this file."
+file = "tests/Unit/Services/Workspaces/PolyscopeWorkspaceDriverTest.php"
+code = "file-name"
+message = "Class `PolyscopeWorkspaceDriverTransport` should be in a file named `PolyscopeWorkspaceDriverTransport.php`, found `PolyscopeWorkspaceDriverTest.php`."
 count = 1
 
 [[issues]]
@@ -23467,12 +24421,6 @@ message = "Literal passwords or sensitive data should not be stored in code."
 count = 6
 
 [[issues]]
-file = "tests/Unit/Services/Workspaces/PolyscopeWorkspaceDriverTest.php"
-code = "single-class-per-file"
-message = "File contains multiple class-like definitions; found class `PolyscopeWorkspaceDriverUnusedShell` but class `PolyscopeWorkspaceDriverTransport` is already defined in this file."
-count = 1
-
-[[issues]]
 file = "tests/Unit/Services/Workspaces/WorkspaceReadinessProbeTest.php"
 code = "function-name"
 message = "Function name `workspaceForReadinessProbe` should be in snake case."
@@ -23505,6 +24453,12 @@ count = 1
 [[issues]]
 file = "tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php"
 code = "literal-named-argument"
+message = """Literal argument `"sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/Users/nckrtl/packages'"` should be passed as a named argument for clarity."""
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php"
+code = "literal-named-argument"
 message = """Literal argument `"sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"` should be passed as a named argument for clarity."""
 count = 2
 
@@ -23512,7 +24466,13 @@ count = 2
 file = "tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'docker run -d'` should be passed as a named argument for clarity."
-count = 2
+count = 3
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 1
 
 [[issues]]
 file = "tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php"
@@ -23542,6 +24502,12 @@ count = 2
 file = "tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php"
 code = "single-class-per-file"
 message = "File contains multiple class-like definitions; found class `WorkspaceSetupStepRunnerFailingShell` but class `WorkspaceSetupStepRunnerTestShell` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
 
 [[issues]]
@@ -23687,6 +24653,36 @@ file = "tests/Unit/Services/Workspaces/WorkspacesProbeTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorktreeWorkspaceDriverTest.php"
+code = "file-name"
+message = "Class `WorktreeWorkspaceDriverTestTransport` should be in a file named `WorktreeWorkspaceDriverTestTransport.php`, found `WorktreeWorkspaceDriverTest.php`."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorktreeWorkspaceDriverTest.php"
+code = "function-name"
+message = "Function name `worktreeWorkspaceDriverApp` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorktreeWorkspaceDriverTest.php"
+code = "function-name"
+message = "Function name `worktreeWorkspaceDriverExecutor` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorktreeWorkspaceDriverTest.php"
+code = "function-name"
+message = "Function name `worktreeWorkspaceDriverNode` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/Services/Workspaces/WorktreeWorkspaceDriverTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 2
 
 [[issues]]
 file = "tests/Unit/Support/Streaming/ProgressEventStreamResponseFactoryTest.php"

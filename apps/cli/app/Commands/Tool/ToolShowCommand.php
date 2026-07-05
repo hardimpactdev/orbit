@@ -20,6 +20,7 @@ final class ToolShowCommand extends GatewayCommand
         {tool? : Tool catalog name to inspect}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--live : Request gateway live inspection}
         {--json}';
 

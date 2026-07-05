@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:tools [--node=<node>] [--json]
+orbit solo:tools [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

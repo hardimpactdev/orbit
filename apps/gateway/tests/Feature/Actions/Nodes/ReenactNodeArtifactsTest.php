@@ -3,22 +3,35 @@
 declare(strict_types=1);
 
 use App\Actions\Nodes\ReenactNodeArtifacts;
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
-it('rotates wireguard endpoints when gateway endpoint changes', function (): void {
-    $shell = new ReenactNodeArtifactsRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
 
+it('rotates wireguard endpoints when gateway endpoint changes', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.10:9477/v1/commands' => reenact_node_artifacts_agent_response(exitCode: 0),
+    ]);
+
+    /** @var Node $node */
     $node = Node::factory()->create([
         'name' => 'app-1',
         'host' => '192.0.2.10',
         'wireguard_address' => '10.6.0.10',
+        'orbit_agent_capable' => true,
         'gateway_endpoint' => '10.3.0.2',
         'host_key_type' => 'ssh-ed25519',
         'host_key_public' => 'AAAATEST',
@@ -34,34 +47,22 @@ it('rotates wireguard endpoints when gateway endpoint changes', function (): voi
     $warnings = app(ReenactNodeArtifacts::class)->handle($node, ['gateway_endpoint']);
 
     expect($warnings)
-        ->toBe([])
-        ->and($shell->scripts)
-        ->toHaveCount(1)
-        ->and($shell->nodes)
-        ->toBe(['app-1'])
-        ->and($shell->scripts[0])
-        ->toContain("endpoint='10.3.0.2:51820'")
-        ->and($shell->scripts[0])
-        ->toContain('/etc/wireguard/wg-orbit.conf')
-        ->and($shell->scripts[0])
-        ->toContain('/etc/wireguard/wg0.conf')
-        ->and($shell->scripts[0])
-        ->toContain('before-gateway-endpoint-')
-        ->and($shell->scripts[0])
-        ->toContain('Endpoint = ${endpoint}')
-        ->and($shell->scripts[0])
-        ->toContain('wg set "$iface" peer "$peer" endpoint "$endpoint"');
+        ->toBe([]);
+
+    Http::assertSent(fn (Request $request): bool => reenact_node_artifacts_request_matches($request));
 });
 
 it('returns a warning when wireguard endpoint rotation fails', function (): void {
-    $shell = new ReenactNodeArtifactsRecordingShell(
-        result: new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing wireguard config', durationMs: 1),
-    );
-    app()->instance(RemoteShell::class, $shell);
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.10:9477/v1/commands' => reenact_node_artifacts_agent_response(exitCode: 1),
+    ]);
 
+    /** @var Node $node */
     $node = Node::factory()->create([
         'name' => 'app-1',
         'wireguard_address' => '10.6.0.10',
+        'orbit_agent_capable' => true,
         'gateway_endpoint' => '10.3.0.2',
         'host_key_type' => 'ssh-ed25519',
         'host_key_public' => 'AAAATEST',
@@ -85,9 +86,10 @@ it('returns a warning when wireguard endpoint rotation fails', function (): void
 });
 
 it('does not rotate the local gateway node when its advertised endpoint metadata changes', function (): void {
-    $shell = new ReenactNodeArtifactsRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    Http::preventStrayRequests();
+    Http::fake();
 
+    /** @var Node $node */
     $node = Node::factory()->create([
         'name' => 'gateway',
         'wireguard_address' => '10.6.0.2',
@@ -102,26 +104,49 @@ it('does not rotate the local gateway node when its advertised endpoint metadata
 
     $warnings = app(ReenactNodeArtifacts::class)->handle($node, ['gateway_endpoint']);
 
-    expect($warnings)->toBe([])->and($shell->scripts)->toBe([]);
+    expect($warnings)->toBe([]);
+    Http::assertNothingSent();
 });
 
-final class ReenactNodeArtifactsRecordingShell implements RemoteShell
+function reenact_node_artifacts_agent_response(int $exitCode): mixed
 {
-    /** @var list<string> */
-    public array $nodes = [];
+    $payload = $exitCode === 0
+        ? ['success' => ['data' => ['endpoint' => '10.3.0.2:51820'], 'meta' => []]]
+        : ['error' => ['code' => 'wireguard_config_missing', 'message' => 'missing wireguard config', 'meta' => []]];
 
-    /** @var list<string> */
-    public array $scripts = [];
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node.gateway_endpoint.rotate',
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => $exitCode === 0 ? 'stdout' : 'stderr',
+                'message' => json_encode($payload, JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ]);
+}
 
-    public function __construct(
-        private RemoteShellResult $result = new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ) {}
+function reenact_node_artifacts_request_matches(Request $request): bool
+{
+    /** @var mixed $argv */
+    $argv = $request['argv'];
 
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->nodes[] = $node->name;
-        $this->scripts[] = $script;
-
-        return $this->result;
-    }
+    return (
+        is_array($argv)
+        && $request->url() === 'http://10.6.0.10:9477/v1/commands'
+        && $request['binary'] === 'orbit'
+        && ($argv[0] ?? null) === 'internal:wireguard-endpoint:rotate'
+        && ($argv[1] ?? null) === '10.3.0.2:51820'
+        && is_string($argv[2] ?? null)
+        && str_starts_with($argv[2], '--operation-token=')
+        && ($argv[3] ?? null) === '--json'
+        && $request['operation_id'] === 'node.gateway_endpoint.rotate'
+    );
 }

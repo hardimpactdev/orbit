@@ -17,6 +17,7 @@ final class MetricsCredentialsCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'metrics:credentials
         {--node= : Metrics node to read credentials for}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--reset : Rotate the Grafana admin password before returning credentials}
         {--json : Output JSON}';
 

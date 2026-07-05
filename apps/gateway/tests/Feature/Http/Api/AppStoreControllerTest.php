@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -69,6 +70,17 @@ function assignAppStoreRole(
     ]);
 }
 
+/**
+ * @return array<string, string>
+ */
+function app_store_fallback_server(): array
+{
+    return [
+        'REMOTE_ADDR' => APP_STORE_CALLER_WG_IP,
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+    ];
+}
+
 describe('AppStoreController', function (): void {
     it('creates app source and registry intent for authorized callers', function (): void {
         $caller = createAppStoreCallerNode();
@@ -94,7 +106,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -141,7 +153,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -176,7 +188,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -215,7 +227,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -252,7 +264,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -296,7 +308,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -334,7 +346,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -346,7 +358,9 @@ describe('AppStoreController', function (): void {
         expect(App::query()->where('name', 'docs')->exists())
             ->toBeFalse()
             ->and($remoteShell->runs[0]['script'])
-            ->toContain("gh repo clone 'hardimpact/docs'");
+            ->toContain(
+                "internal:app-source:create 'orbit' '/home/orbit/apps/docs' --repository='git@github.com:hardimpact/docs.git'",
+            );
     });
 
     it('creates production app routes on ingress and backend app nodes', function (): void {
@@ -395,7 +409,7 @@ describe('AppStoreController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+            app_store_fallback_server(),
         );
 
         $response
@@ -447,108 +461,17 @@ describe('AppStoreController', function (): void {
             ->toHaveLength(64)
             ->and(collect($remoteShell->runs)->pluck('node')->all())
             ->toContain($ingress->id, $router->id, $targetNode->id)
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $ingress->id
-                            && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $ingress->id
-                            && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $ingress->id
-                            && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $router->id
-                            && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $router->id
-                            && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $router->id
-                            && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $targetNode->id
-                            && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $targetNode->id
-                            && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
-            ->and(
-                collect($remoteShell->runs)
-                    ->contains(
-                        fn (array $run): bool => (
-                            $run['node'] === $targetNode->id
-                            && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
-                        ),
-                    ),
-            )
-            ->toBeTrue()
             ->and(collect($remoteShell->runs)
                 ->pluck('script')
                 ->contains(
-                    fn (string $script): bool => str_contains($script, '/etc/caddy/sites/docs.example.com.caddy'),
+                    fn (string $script): bool => str_contains($script, "internal:caddy-config 'write-site'"),
                 ))
             ->toBeTrue()
             ->and(collect($remoteShell->runs)
-                ->pluck('script')
                 ->contains(
-                    fn (string $script): bool => str_contains(
-                        $script,
-                        '/etc/caddy/sites/docs.example.com.backend.caddy',
+                    fn (array $run): bool => (
+                        str_contains((string) ($run['options']['input'] ?? ''), 'docs.example.com')
+                        && str_contains((string) ($run['options']['input'] ?? ''), 'backend')
                     ),
                 ))
             ->toBeTrue();
@@ -584,6 +507,45 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
             }
         }
 
+        if ($this->result instanceof RemoteShellResult && str_contains($script, 'internal:app-source:create')) {
+            return $this->result;
+        }
+
+        if (str_contains($script, 'internal:app-source:create')) {
+            return app_store_shell_success([
+                'path' => '/home/orbit/apps/docs',
+                'repository' => null,
+            ]);
+        }
+
+        if (str_contains($script, "internal:managed-file 'probe'")) {
+            return app_store_shell_success([
+                'exists' => false,
+                'hash' => null,
+                'mode' => null,
+            ]);
+        }
+
+        if (str_contains($script, "internal:managed-file 'write'")) {
+            return app_store_shell_success([
+                'path' => '/etc/orbit/ca/root.crt',
+                'hash' => hash('sha256', 'fake-root-ca'),
+                'mode' => '0644',
+            ]);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'read-global'")) {
+            return app_store_shell_success(['content' => '']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'write-site'")) {
+            return app_store_shell_success(['path' => '/etc/caddy/sites/docs.test.caddy']);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'reload'")) {
+            return app_store_shell_success(['container' => 'orbit-caddy']);
+        }
+
         return (
             $this->result ?? new RemoteShellResult(
                 exitCode: 0,
@@ -593,4 +555,22 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
             )
         );
     }
+}
+
+/**
+ * @param  array<string, mixed>  $data
+ */
+function app_store_shell_success(array $data): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => $data,
+            ],
+        ], JSON_THROW_ON_ERROR)
+            ."\n",
+        stderr: '',
+        durationMs: 1,
+    );
 }

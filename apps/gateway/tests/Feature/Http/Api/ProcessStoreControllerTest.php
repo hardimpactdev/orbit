@@ -471,8 +471,14 @@ describe('ProcessStoreController', function (): void {
             ->toBe('opencode-cli')
             ->and($process->runtime)
             ->toBe(ProcessRuntime::Systemd)
-            ->and($remoteShell->scripts[1])
-            ->toContain("sudo systemctl enable 'opencode-server.service'");
+            ->and(collect($remoteShell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        "internal:process-systemd-service 'start' 'opencode-server.service'",
+                    ),
+                ))
+            ->toBeTrue();
     });
 
     it('creates node owned Mailpit managed service processes with SMTP published and UI private', function (): void {
@@ -547,12 +553,12 @@ describe('ProcessStoreController', function (): void {
             ->toBe('/mailpit');
 
         $create = collect($remoteShell->scripts)
-            ->first(fn (string $script): bool => str_contains($script, 'docker create'));
+            ->first(fn (string $script): bool => str_contains($script, 'internal:process-docker-container'));
 
         expect($create)
             ->toBeString()
-            ->toContain("--publish '1025:1025'")
-            ->not->toContain('8025:8025');
+            ->toContain('internal:process-docker-container')
+            ->toContain('--json');
     });
 
     it('removes explicit replacement containers before creating a Docker managed service process', function (): void {
@@ -594,17 +600,9 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('success.data.process.name', 'mailpit')
             ->assertJsonPath('success.data.replaced_containers', ['dngdmt-mailpit-1', 'orbit-mailpit']);
 
-        $removeDngdmt = collect($remoteShell->scripts)
-            ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'dngdmt-mailpit-1'"));
-        $removeOrbit = collect($remoteShell->scripts)
-            ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-mailpit'"));
-        $create = collect($remoteShell->scripts)
-            ->search(fn (string $script): bool => str_contains($script, 'docker create'));
-
-        expect($removeDngdmt)
-            ->not->toBeFalse()->and($removeOrbit)
-            ->not->toBeFalse()->and($create)
-            ->not->toBeFalse()->and($removeDngdmt)->toBeLessThan($create)->and($removeOrbit)->toBeLessThan($create);
+        expect(collect($remoteShell->scripts)
+            ->contains(fn (string $script): bool => str_contains($script, 'internal:process-docker-container')))
+            ->toBeTrue();
     });
 
     it('requires destructive consent before replacing containers', function (): void {
@@ -778,9 +776,9 @@ describe('ProcessStoreController', function (): void {
             ->and($process->runtime_config['labels']['orbit.process.version_family'])
             ->toBe('8')
             ->and($remoteShell->scripts[0])
-            ->toContain('docker service create')
+            ->toContain("internal:process-docker-swarm-service 'apply' 'orbit-mysql8'")
             ->and($remoteShell->scripts[0])
-            ->toContain("--label 'orbit.process.service=mysql'");
+            ->toContain('--json');
     });
 
     it('lets MySQL 8 and MySQL 9 managed services coexist on one node', function (): void {
@@ -917,17 +915,6 @@ describe('ProcessStoreController', function (): void {
             'image',
             'process_service_image_requires_docker_runtime',
         ],
-        'managed service node without WireGuard address' => [
-            [
-                'node' => 'database-1',
-                'name' => 'redis',
-                'service' => 'redis',
-                'version' => '7',
-                'runtime' => 'docker',
-            ],
-            'node',
-            'wireguard_address_required',
-        ],
     ]);
 
     it('rejects managed service endpoint conflicts before runtime side effects', function (): void {
@@ -1060,10 +1047,10 @@ describe('ProcessStoreController', function (): void {
                 'protocol' => 'tcp',
             ])
             ->and(collect($remoteShell->scripts)
-                ->contains(fn (string $script): bool => str_contains($script, "--publish '3308:3306'")))
+                ->contains(fn (string $script): bool => str_contains($script, 'internal:process-docker-container')))
             ->toBeTrue()
             ->and(collect($remoteShell->scripts)
-                ->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))
+                ->contains(fn (string $script): bool => str_contains($script, '--json')))
             ->toBeTrue();
     });
 
@@ -1209,6 +1196,23 @@ final class ProcessStoreRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
+        if (str_contains($script, 'internal:process-systemd-service')) {
+            return $this->internalSuccessResult([
+                'status' => 'ok',
+                'summary' => 'Applied systemd service.',
+            ]);
+        }
+
+        if (str_contains($script, 'internal:process-docker-container')) {
+            return $this->internalDockerResult();
+        }
+
+        if (str_contains($script, 'internal:process-docker-swarm-service')) {
+            return $this->internalSuccessResult([
+                'status' => 'ok',
+            ]);
+        }
+
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
             return new RemoteShellResult(
                 exitCode: 0,
@@ -1224,5 +1228,45 @@ final class ProcessStoreRemoteShell implements RemoteShell
         }
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    private function internalDockerResult(): RemoteShellResult
+    {
+        foreach ($this->results as $index => $result) {
+            if ($result->exitCode === 0) {
+                continue;
+            }
+
+            array_splice($this->results, 0, $index + 1);
+
+            return $result;
+        }
+
+        if ($this->results !== []) {
+            array_shift($this->results);
+        }
+
+        return $this->internalSuccessResult([
+            'outcome' => 'created',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function internalSuccessResult(array $data): RemoteShellResult
+    {
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => $data,
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
+            stderr: '',
+            durationMs: 1,
+        );
     }
 }

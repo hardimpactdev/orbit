@@ -7,12 +7,14 @@ namespace App\Services\Nodes;
 use App\Contracts\RemoteShell;
 use App\Data\Security\PinnedHostKey;
 use App\Models\Node;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Security\SshHostKeyPinner;
 
 final readonly class OperatorNodeManager
 {
     public function __construct(
         private RemoteShell $remoteShell,
+        private ExplicitRemoteShellFallback $explicitFallback,
     ) {}
 
     /**
@@ -28,6 +30,13 @@ final readonly class OperatorNodeManager
         }
 
         $wireguardAddress = $this->wireguardAddress($node);
+
+        if (! $this->explicitFallback->allowed()) {
+            throw new OperatorNodeManagementException(
+                'node_transport_required',
+                $this->explicitFallback->message('node self-management SSH verification'),
+            );
+        }
 
         $node->forceFill([
             'user' => $user,

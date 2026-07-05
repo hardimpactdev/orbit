@@ -117,10 +117,14 @@ it('adds a mysql user through a managed docker process and stores the connection
     expect($connection->credentials)
         ->toBe(['password' => 'super-secret'])
         ->and($response->getContent())
-        ->not->toContain('super-secret')->and($shell->script)->toContain("container='mysql8'")->and($shell->script)
+        ->not->toContain('super-secret')->and($shell->script)->toContain(
+            'internal:database-add-user',
+        )->and($shell->script)
         ->not->toContain('super-secret')->and($shell->options['input'])->toContain(
-            'CREATE DATABASE IF NOT EXISTS `dlf_leden`',
-        )->and($shell->options['input'])->toContain("IDENTIFIED BY 'super-secret'");
+            '"container":"mysql8"',
+        )->and($shell->options['input'])->toContain(
+            '"database":"dlf_leden"',
+        )->and($shell->options['input'])->toContain('"username":"dlf_leden"');
 });
 
 it('updates an existing connection after converging the mysql user', function (): void {

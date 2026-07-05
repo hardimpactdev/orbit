@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:scratchpad:append-section <scratchpad> [--node=<node>] [--content=<content>] [--heading=<heading>] [--search=<search>] [--replace=<replace>] [--name=<name>] [--expected-revision=<expected-revision>] [--force] [--json]
+orbit solo:scratchpad:append-section <scratchpad> [--node=<node>] [--node-transport=<transport>] [--content=<content>] [--heading=<heading>] [--search=<search>] [--replace=<replace>] [--name=<name>] [--expected-revision=<expected-revision>] [--force] [--json]
 ```
 
 ## Input Contract

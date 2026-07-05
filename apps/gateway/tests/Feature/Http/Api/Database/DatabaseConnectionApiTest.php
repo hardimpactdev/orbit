@@ -14,6 +14,7 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -66,6 +67,17 @@ function grantDatabaseApiAccess(Node $consumer, Node $serving, array $permission
     ]);
 }
 
+/**
+ * @return array<string, string>
+ */
+function database_api_fallback_server(): array
+{
+    return [
+        'REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP,
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+    ];
+}
+
 describe('database connection api', function (): void {
     it('allows active non-gateway callers with database permissions to use registry endpoints', function (): void {
         $caller = createDatabaseApiCallerNode();
@@ -84,7 +96,7 @@ describe('database connection api', function (): void {
             [],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
         $attachResponse = $this->call(
             'POST',
@@ -95,7 +107,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $listResponse->assertOk()
@@ -167,7 +179,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $response
@@ -219,7 +231,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $response
@@ -271,7 +283,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
         $writeResponse = $this->call(
             'POST',
@@ -283,7 +295,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $readResponse->assertOk()
@@ -368,7 +380,7 @@ describe('database connection api', function (): void {
             [],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $response
@@ -398,7 +410,7 @@ describe('database connection api', function (): void {
             [],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
         $showResponse = $this->call(
             'GET',
@@ -406,7 +418,7 @@ describe('database connection api', function (): void {
             [],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $listResponse
@@ -449,7 +461,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $createResponse->assertOk()
@@ -472,7 +484,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $updateResponse->assertOk()
@@ -489,7 +501,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $attachResponse->assertOk()
@@ -508,7 +520,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $detachResponse->assertOk()
@@ -535,7 +547,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $removeResponse->assertOk()
@@ -578,7 +590,7 @@ describe('database connection api', function (): void {
             [],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
         $missingShow = $this->call(
             'GET',
@@ -586,7 +598,7 @@ describe('database connection api', function (): void {
             [],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
         $invalidAttach = $this->call(
             'POST',
@@ -597,7 +609,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $removeWithoutForce
@@ -626,7 +638,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $response->assertUnprocessable()
@@ -651,7 +663,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $updateResponse = $this->call(
@@ -662,7 +674,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $createResponse
@@ -697,7 +709,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $attachResponse->assertOk();
@@ -711,7 +723,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $detachResponse->assertOk();
@@ -743,7 +755,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $response
@@ -777,7 +789,7 @@ describe('database connection api', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+            database_api_fallback_server(),
         );
 
         $response

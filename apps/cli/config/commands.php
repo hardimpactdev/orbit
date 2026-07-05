@@ -70,11 +70,49 @@ use App\Commands\Gateway\GatewayListCommand;
 use App\Commands\Gateway\GatewayTrustCommand;
 use App\Commands\Gateway\GatewayUseCommand;
 use App\Commands\GatewayStatusCommand;
+use App\Commands\Internal\AgentAclEnsureCommand;
+use App\Commands\Internal\AgentRuntimeProbeCommand;
+use App\Commands\Internal\AgentUserEnsureCommand;
+use App\Commands\Internal\AppCacheClearCommand;
+use App\Commands\Internal\AppRuntimeConfigsProbeCommand;
+use App\Commands\Internal\AppRuntimeContainersProbeCommand;
+use App\Commands\Internal\AppRuntimeExtensionsProbeCommand;
+use App\Commands\Internal\AppSecurityRepairCommand;
+use App\Commands\Internal\AppSourceCreateCommand;
+use App\Commands\Internal\AppSourcePathProbeCommand;
+use App\Commands\Internal\AppWorkerReadinessProbeCommand;
+use App\Commands\Internal\CaddyConfigCommand;
+use App\Commands\Internal\CodexAppConfigCommand;
+use App\Commands\Internal\DatabaseAddUserCommand as InternalDatabaseAddUserCommand;
 use App\Commands\Internal\DatabaseQueryLocalCommand;
+use App\Commands\Internal\DoctorSelfCommand;
+use App\Commands\Internal\EnvFileCommand;
+use App\Commands\Internal\FirewallRuleCommand as InternalFirewallRuleCommand;
+use App\Commands\Internal\FirewallRuleProbeCommand;
+use App\Commands\Internal\FleetUpdateVerifyCommand;
+use App\Commands\Internal\GatewayRuntimeBackendProbeCommand;
+use App\Commands\Internal\ManagedFileCommand;
+use App\Commands\Internal\NodeSecurityPostureProbeCommand;
+use App\Commands\Internal\ProcessDockerContainerCommand;
+use App\Commands\Internal\ProcessDockerSwarmServiceCommand;
+use App\Commands\Internal\ProcessLogsCommand as InternalProcessLogsCommand;
+use App\Commands\Internal\ProcessSystemdServiceCommand;
+use App\Commands\Internal\RuntimeBackendProbeCommand;
+use App\Commands\Internal\S3RuntimeProbeCommand;
+use App\Commands\Internal\SecretFileCommand;
+use App\Commands\Internal\SiteCertificateInstallCommand;
+use App\Commands\Internal\SoloUpstreamRequestCommand;
+use App\Commands\Internal\UnattendedUpgradesApplyCommand;
+use App\Commands\Internal\UnattendedUpgradesProbeCommand;
 use App\Commands\Internal\VerifyExecutorCommand;
+use App\Commands\Internal\WebSocketRuntimeCommand;
 use App\Commands\Internal\WgEasyStateCommand;
+use App\Commands\Internal\WireGuardEndpointRotateCommand;
+use App\Commands\Internal\WireGuardInterfacePublicKeyReadCommand;
+use App\Commands\Internal\WireGuardSelfRouteCommand;
 use App\Commands\Internal\WorkspaceAdapterLookupCommand;
 use App\Commands\Internal\WorkspaceAdapterUpdateCommand;
+use App\Commands\Internal\WorkspaceSourceCreateCommand;
 use App\Commands\Manifest\ManifestRemoveCommand;
 use App\Commands\Manifest\ManifestUpdateCommand;
 use App\Commands\Metrics\MetricsCredentialsCommand;
@@ -343,9 +381,47 @@ return [
         // Internal executor commands — always hidden from public CLI output.
         VerifyExecutorCommand::class,
         WgEasyStateCommand::class,
+        AgentAclEnsureCommand::class,
+        AgentRuntimeProbeCommand::class,
+        AgentUserEnsureCommand::class,
+        AppCacheClearCommand::class,
+        AppRuntimeConfigsProbeCommand::class,
+        AppRuntimeContainersProbeCommand::class,
+        AppRuntimeExtensionsProbeCommand::class,
+        AppSourceCreateCommand::class,
+        AppSourcePathProbeCommand::class,
+        AppSecurityRepairCommand::class,
+        AppWorkerReadinessProbeCommand::class,
+        CaddyConfigCommand::class,
+        CodexAppConfigCommand::class,
+        InternalDatabaseAddUserCommand::class,
         DatabaseQueryLocalCommand::class,
+        DoctorSelfCommand::class,
+        EnvFileCommand::class,
+        InternalFirewallRuleCommand::class,
+        FirewallRuleProbeCommand::class,
+        FleetUpdateVerifyCommand::class,
+        GatewayRuntimeBackendProbeCommand::class,
+        ManagedFileCommand::class,
+        NodeSecurityPostureProbeCommand::class,
+        ProcessDockerContainerCommand::class,
+        ProcessDockerSwarmServiceCommand::class,
+        InternalProcessLogsCommand::class,
+        ProcessSystemdServiceCommand::class,
+        RuntimeBackendProbeCommand::class,
+        S3RuntimeProbeCommand::class,
+        SecretFileCommand::class,
+        SiteCertificateInstallCommand::class,
+        SoloUpstreamRequestCommand::class,
+        UnattendedUpgradesApplyCommand::class,
+        UnattendedUpgradesProbeCommand::class,
+        WebSocketRuntimeCommand::class,
+        WireGuardEndpointRotateCommand::class,
+        WireGuardInterfacePublicKeyReadCommand::class,
+        WireGuardSelfRouteCommand::class,
         WorkspaceAdapterLookupCommand::class,
         WorkspaceAdapterUpdateCommand::class,
+        WorkspaceSourceCreateCommand::class,
     ],
 
     'remove' => [

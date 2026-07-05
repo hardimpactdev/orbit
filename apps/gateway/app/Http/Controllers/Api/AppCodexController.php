@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Contracts\RemoteShell;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Services\CodexApp\CodexAppConfigMerger;
+use App\Services\CodexApp\RemoteCodexAppConfig;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolCatalog;
@@ -18,12 +18,10 @@ final readonly class AppCodexController
 {
     private const string ConfigPath = '~/.codex/codex-app/config.json';
 
-    private const string ApplyUrl = 'codex://codex-app/apply-config';
-
     public function add(
         Request $request,
         string $app,
-        RemoteShell $remoteShell,
+        RemoteCodexAppConfig $codexConfig,
         CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
@@ -34,7 +32,7 @@ final readonly class AppCodexController
         }
 
         [$model, $target] = $context;
-        $config = $this->readConfig($remoteShell, $target);
+        $config = $this->readConfig($codexConfig, $target);
 
         if ($config instanceof JsonResponse) {
             return $config;
@@ -48,13 +46,13 @@ final readonly class AppCodexController
             $project['remote_path'],
         );
 
-        $write = $this->writeConfig($remoteShell, $target, $config);
+        $write = $this->writeConfig($codexConfig, $target, $config);
 
         if ($write instanceof JsonResponse) {
             return $write;
         }
 
-        $warnings = $this->applyConfig($remoteShell, $target);
+        $warnings = $this->applyConfig($codexConfig, $target);
 
         return $this->success([
             'codex_project' => [
@@ -68,7 +66,7 @@ final readonly class AppCodexController
     public function remove(
         Request $request,
         string $app,
-        RemoteShell $remoteShell,
+        RemoteCodexAppConfig $codexConfig,
         CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
@@ -79,7 +77,7 @@ final readonly class AppCodexController
         }
 
         [$model, $target] = $context;
-        $config = $this->readConfig($remoteShell, $target);
+        $config = $this->readConfig($codexConfig, $target);
 
         if ($config instanceof JsonResponse) {
             return $config;
@@ -89,13 +87,13 @@ final readonly class AppCodexController
         $removed = $merger->hasProject($config, $project['label'], $project['ssh_alias']);
         $config = $merger->removeProject($config, $project['label'], $project['ssh_alias']);
 
-        $write = $this->writeConfig($remoteShell, $target, $config);
+        $write = $this->writeConfig($codexConfig, $target, $config);
 
         if ($write instanceof JsonResponse) {
             return $write;
         }
 
-        $warnings = $this->applyConfig($remoteShell, $target);
+        $warnings = $this->applyConfig($codexConfig, $target);
 
         return $this->success([
             'codex_project' => [
@@ -108,7 +106,7 @@ final readonly class AppCodexController
 
     public function list(
         Request $request,
-        RemoteShell $remoteShell,
+        RemoteCodexAppConfig $codexConfig,
         CodexAppConfigMerger $merger,
         ToolCatalog $catalog,
     ): JsonResponse {
@@ -130,7 +128,7 @@ final readonly class AppCodexController
             return $unsupported;
         }
 
-        $config = $this->readConfig($remoteShell, $target);
+        $config = $this->readConfig($codexConfig, $target);
 
         if ($config instanceof JsonResponse) {
             return $config;
@@ -265,13 +263,9 @@ final readonly class AppCodexController
         );
     }
 
-    private function readConfig(RemoteShell $remoteShell, Node $target): array|JsonResponse
+    private function readConfig(RemoteCodexAppConfig $codexConfig, Node $target): array|JsonResponse
     {
-        $result = $remoteShell->run(
-            $target,
-            'if [ -f '.self::ConfigPath.' ]; then cat '.self::ConfigPath."; else printf '{}'; fi",
-            ['throw' => false],
-        );
+        $result = $codexConfig->read($target);
 
         if (! $result->successful()) {
             return $this->error(
@@ -287,7 +281,8 @@ final readonly class AppCodexController
             );
         }
 
-        $json = trim($result->stdout) !== '' ? $result->stdout : '{}';
+        $contents = $codexConfig->data($result)['contents'] ?? null;
+        $json = is_string($contents) && trim($contents) !== '' ? $contents : '{}';
         $decoded = json_decode($json, true);
 
         if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
@@ -309,27 +304,11 @@ final readonly class AppCodexController
     /**
      * @param  array<string, mixed>  $config
      */
-    private function writeConfig(RemoteShell $remoteShell, Node $target, array $config): ?JsonResponse
+    private function writeConfig(RemoteCodexAppConfig $codexConfig, Node $target, array $config): ?JsonResponse
     {
-        $result = $remoteShell->run(
+        $result = $codexConfig->write(
             $target,
-            <<<'BASH'
-                set -e
-                config="$HOME/.codex/codex-app/config.json"
-                dir="$(dirname "$config")"
-                mkdir -p "$dir"
-                chmod 700 "$dir"
-                tmp="$(mktemp "$dir/config.json.XXXXXX")"
-                trap 'rm -f "$tmp"' EXIT
-                cat > "$tmp"
-                chmod 600 "$tmp"
-                mv "$tmp" "$config"
-                trap - EXIT
-                BASH,
-            [
-                'throw' => false,
-                'input' => json_encode($config, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n",
-            ],
+            json_encode($config, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n",
         );
 
         if ($result->successful()) {
@@ -352,9 +331,9 @@ final readonly class AppCodexController
     /**
      * @return list<array{code: string, message: string, meta: array<string, mixed>}>
      */
-    private function applyConfig(RemoteShell $remoteShell, Node $target): array
+    private function applyConfig(RemoteCodexAppConfig $codexConfig, Node $target): array
     {
-        $result = $remoteShell->run($target, 'open '.escapeshellarg(self::ApplyUrl), ['throw' => false]);
+        $result = $codexConfig->apply($target);
 
         if ($result->successful()) {
             return [];

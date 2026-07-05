@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 
 final readonly class ToolRemover
 {
@@ -51,6 +52,15 @@ final readonly class ToolRemover
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, 'remove');
+        }
+
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return ToolRegistryFailure::nodeTransportRequired(
+                $transport->message('tool:remove'),
+                $transport->meta(),
+            );
         }
 
         $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);

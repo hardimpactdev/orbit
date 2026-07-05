@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\NodeCommandTransport;
 
 use App\Models\Node;
+use RuntimeException;
 
 final readonly class NodeCommandTransportSelector
 {
@@ -21,9 +22,11 @@ final readonly class NodeCommandTransportSelector
             return NodeTransport::TransitionalSshFallback;
         }
 
-        return $this->canUseAgentPush($node, $envelope)
-            ? NodeTransport::AgentPush
-            : NodeTransport::TransitionalSshFallback;
+        if ($this->canUseAgentPush($node, $envelope)) {
+            return NodeTransport::AgentPush;
+        }
+
+        throw new RuntimeException('agent-push transport is unavailable');
     }
 
     private function canUseAgentPush(Node $node, NodeCommandEnvelope $envelope): bool

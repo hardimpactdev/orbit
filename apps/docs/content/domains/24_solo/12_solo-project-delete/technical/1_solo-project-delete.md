@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:project:delete <project> [--node=<node>] [--force] [--json]
+orbit solo:project:delete <project> [--node=<node>] [--node-transport=<transport>] [--force] [--json]
 ```
 
 ## Input Contract

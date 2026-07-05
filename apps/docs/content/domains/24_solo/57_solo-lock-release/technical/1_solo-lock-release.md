@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit solo:lock:release <name> [--node=<node>] [--json]
+orbit solo:lock:release <name> [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract

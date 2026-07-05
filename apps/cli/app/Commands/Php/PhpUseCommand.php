@@ -24,6 +24,7 @@ final class PhpUseCommand extends GatewayCommand
         {--app= : App selector}
         {--workspace= : Workspace selector}
         {--node= : Node selector}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--inherit : Restore workspace PHP inheritance}
         {--cli : Select node CLI PHP default}
         {--json : Output JSON}';

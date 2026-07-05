@@ -273,6 +273,7 @@ describe('tool API target authorization', function (): void {
             [],
             [
                 'HTTP_ACCEPT' => 'text/event-stream',
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
                 'REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP,
             ],
         );

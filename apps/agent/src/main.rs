@@ -11,6 +11,7 @@ use orbit_agent::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    io::Write,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -115,12 +116,19 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
     let timeout_seconds = request.timeout_seconds.clamp(1, 300);
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
 
-    let mut child = match Command::new(&request.binary)
+    let mut command = Command::new(&request.binary);
+    command
         .args(&request.argv)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
+        .stderr(Stdio::piped());
+
+    if request.input.is_some() {
+        command.stdin(Stdio::piped());
+    } else {
+        command.stdin(Stdio::null());
+    }
+
+    let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
             return CommandExecution {
@@ -133,6 +141,23 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
             };
         }
     };
+
+    if let Some(input) = &request.input {
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(error) = stdin.write_all(input.as_bytes()) {
+                let _ = child.kill();
+
+                return CommandExecution {
+                    status: "failed".to_string(),
+                    exit_code: None,
+                    frames: vec![CommandPushFrame {
+                        frame_type: "stderr".to_string(),
+                        message: format!("failed to write binary stdin: {error}"),
+                    }],
+                };
+            }
+        }
+    }
 
     loop {
         match child.try_wait() {
@@ -230,6 +255,7 @@ struct CommandPushRequest {
     operation_id: String,
     binary: String,
     argv: Vec<String>,
+    input: Option<String>,
     operation_token: String,
     timeout_seconds: u64,
     #[allow(dead_code)]
@@ -253,7 +279,7 @@ struct CommandExecution {
     exit_code: Option<i32>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct CommandPushFrame {
     #[serde(rename = "type")]
     frame_type: String,
@@ -286,6 +312,29 @@ mod tests {
     #[test]
     fn default_bind_addr_targets_loopback_agent_port() {
         assert_eq!(default_http_bind_addr(), "127.0.0.1:9477");
+    }
+
+    #[test]
+    fn execute_binary_writes_request_input_to_stdin() {
+        let execution = execute_binary(&CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "/bin/cat".to_string(),
+            argv: vec![],
+            input: Some("agent stdin\n".to_string()),
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        });
+
+        assert_eq!(execution.status, "succeeded");
+        assert_eq!(execution.exit_code, Some(0));
+        assert_eq!(
+            execution.frames.first(),
+            Some(&CommandPushFrame {
+                frame_type: "stdout".to_string(),
+                message: "agent stdin".to_string(),
+            })
+        );
     }
 
     #[tokio::test]

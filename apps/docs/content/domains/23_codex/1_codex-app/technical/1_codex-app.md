@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit codex:app <action> [app] --node=<node> [--json]
+orbit codex:app <action> [app] --node=<node> [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -30,6 +30,7 @@ This command follows the shared
 | `action` | `{action}` | Always. | Never. | None. | Must be `add`, `remove`, or `list`. |
 | `app` | `[app]` | `add`, `remove`. | `list`. | None. | Existing app selector. |
 | `node` | `--node` | Always. | Never. | None. | Active visible non-gateway node whose platform resolves to macOS for `codex-app`. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 
 ## API Surface

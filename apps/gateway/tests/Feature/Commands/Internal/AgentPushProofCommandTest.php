@@ -97,9 +97,10 @@ it('fails before transport when agent-push selection is unavailable', function (
 
     expect($payload)->toMatchArray([
         'node' => 'mini',
-        'transport' => 'transitional-ssh-fallback',
+        'transport' => 'agent-push',
         'status' => 'failed',
         'binary' => 'orbit',
+        'error' => 'agent-push transport is unavailable for the target node; RemoteShell requires explicit --transport=transitional-ssh-fallback break-glass opt-in when this command supports it',
     ]);
 });
 

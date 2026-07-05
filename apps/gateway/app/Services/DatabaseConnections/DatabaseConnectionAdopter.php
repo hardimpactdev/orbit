@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\DatabaseConnections;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\AdoptAction;
@@ -13,6 +12,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\RemoteShell\RemoteEnvFile;
 use Illuminate\Support\Str;
 
 final readonly class DatabaseConnectionAdopter
@@ -25,7 +25,7 @@ final readonly class DatabaseConnectionAdopter
 
     public function __construct(
         private EnvFileEditor $envFileEditor,
-        private RemoteShell $remoteShell,
+        private RemoteEnvFile $remoteEnvFile,
         private DatabaseConnectionTargetEndpointResolver $endpointResolver,
     ) {}
 
@@ -122,9 +122,7 @@ final readonly class DatabaseConnectionAdopter
     {
         $contents = $this->shouldUseLocalFilesystem($node) && is_file($path)
             ? file_get_contents($path)
-            : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), [
-                'throw' => false,
-            ])->stdout;
+            : $this->remoteEnvFile->read($node, $path);
 
         if (! is_string($contents) || $contents === '') {
             return [];

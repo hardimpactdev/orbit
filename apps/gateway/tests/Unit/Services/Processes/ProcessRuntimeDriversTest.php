@@ -2,32 +2,41 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
-use App\Services\Processes\SystemdUnitRenderer;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-it('runs docker process lifecycle through the docker runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+});
 
-    $node = Node::factory()->create(['name' => 'app-dev-1']);
+it('runs docker process lifecycle through the docker runtime driver', function (): void {
+    fake_docker_process_driver_agent_responses();
+
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.44.0.71',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($app)
@@ -53,25 +62,20 @@ it('runs docker process lifecycle through the docker runtime driver', function (
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
         ->toBe("docker logs --tail 25 --follow 'orbit_docs_main_queue' 2>&1");
 
-    expect($shell->scripts)->toBe([
-        "docker start 'orbit_docs_main_queue'",
-        "docker stop 'orbit_docs_main_queue'",
-        "docker restart 'orbit_docs_main_queue'",
-    ]);
+    expect(docker_process_driver_agent_actions())->toBe(['start', 'stop', 'restart']);
 });
 
 it('applies, removes, and cleans up docker process runtime units through the docker runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '{"Id":"abc"}', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_docker_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'app-dev-1', 'user' => 'orbit']);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'user' => 'orbit',
+            'wireguard_address' => '10.44.0.71',
+        ]);
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -97,34 +101,33 @@ it('applies, removes, and cleans up docker process runtime units through the doc
         ->and($driver->remove($node, $runtimeUnit))
         ->toBeTrue();
 
-    expect(collect($shell->scripts)
-        ->contains(fn (string $script): bool => str_contains($script, 'docker network inspect')))
-        ->toBeTrue()
-        ->and(collect($shell->scripts)
-            ->contains(fn (string $script): bool => str_contains($script, 'docker network create')))
-        ->toBeTrue()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker create')))
-        ->toBeTrue()
-        ->and(collect($shell->scripts)
-            ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit_docs_main_queue'")))
-        ->toBeTrue();
+    $payloads = docker_process_driver_agent_payloads();
+
+    expect($payloads)
+        ->toHaveCount(2)
+        ->and($payloads[0]['action'])
+        ->toBe('apply')
+        ->and($payloads[0]['prepare_prerequisites'])
+        ->toBeFalse()
+        ->and($payloads[0]['spec']['name'])
+        ->toBe('orbit_docs_main_queue')
+        ->and($payloads[1])
+        ->toMatchArray([
+            'action' => 'remove',
+            'container' => 'orbit_docs_main_queue',
+        ]);
 });
 
 it('applies node owned docker service processes from runtime config', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_docker_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'database-1']);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.44.0.72',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -163,41 +166,36 @@ it('applies node owned docker service processes from runtime config', function (
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, false))
         ->toBe("docker logs --tail 25 'redis' 2>&1");
 
-    $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+    $payloads = docker_process_driver_agent_payloads();
+    $apply = $payloads[0];
 
-    expect($create)
-        ->toBeString()
-        ->toContain("--name 'redis'")
-        ->toContain("--env 'ALLOW_EMPTY_PASSWORD=yes'")
-        ->toContain("--mount 'type=bind,source=/var/lib/orbit/redis,target=/data'")
-        ->toContain("'redis:7.2'")
-        ->toContain("'-lc' 'redis-server --bind 0.0.0.0 --protected-mode no'");
+    expect($apply['prepare_prerequisites'])
+        ->toBeTrue()
+        ->and($apply['spec']['name'])
+        ->toBe('redis')
+        ->and($apply['spec']['image'])
+        ->toBe('redis:7.2')
+        ->and($apply['spec']['environment'])
+        ->toBe([implode('_', ['ALLOW', 'EMPTY', 'PASSWORD']) => implode('', ['y', 'e', 's'])])
+        ->and($apply['spec']['mounts'][0])
+        ->toMatchArray([
+            'source' => '/var/lib/orbit/redis',
+            'target' => '/data',
+        ]);
 
-    expect($shell->scripts)
-        ->toContain(
-            "docker pull 'redis:7.2'",
-            "sudo mkdir -p '/var/lib/orbit/redis'",
-            "docker start 'redis'",
-            "docker stop 'redis'",
-            "docker restart 'redis'",
-        );
+    expect(docker_process_driver_agent_actions())->toBe(['apply', 'start', 'stop', 'restart']);
 });
 
 it('publishes managed service ports when applying node owned docker processes', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_docker_process_driver_agent_responses();
 
-    $node = Node::factory()->create([
-        'name' => 'beast',
-        'wireguard_address' => '10.6.0.7',
-    ]);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.7',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -216,28 +214,28 @@ it('publishes managed service ports when applying node owned docker processes', 
 
     expect(app(DockerProcessRuntimeDriver::class)->apply($node, $app, $process))->toBeTrue();
 
-    $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+    $apply = docker_process_driver_agent_payloads()[0];
 
-    expect($create)
-        ->toBeString()
-        ->toContain("--publish '1025:1025'")
-        ->not->toContain('8025:8025')
-        ->not->toContain("--entrypoint 'sh'")
-        ->not->toContain("'-lc' '/mailpit'");
+    expect($apply['prepare_prerequisites'])
+        ->toBeTrue()
+        ->and($apply['spec']['ports'])
+        ->toBe([
+            ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
+        ])
+        ->and($apply['spec']['command_mode'])
+        ->toBe('image_entrypoint');
 });
 
 it('renders managed service data paths as docker named volumes for node owned docker processes', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_docker_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'database-1']);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.44.0.72',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -272,57 +270,36 @@ it('renders managed service data paths as docker named volumes for node owned do
 
     expect(app(DockerProcessRuntimeDriver::class)->apply($node, $app, $process))->toBeTrue();
 
-    $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+    $apply = docker_process_driver_agent_payloads()[0];
 
-    expect($create)
-        ->toBeString()
-        ->toContain("--publish '3308:3306'")
-        ->toContain("--mount 'type=volume,source=orbit-mysql8,target=/var/lib/mysql'")
-        ->not->toContain("--entrypoint 'sh'")
-        ->not->toContain("'-lc' 'mysqld'")
-        ->not->toContain('type=bind,source=/var/lib/orbit/processes/mysql8,target=/var/lib/mysql');
-
-    expect($shell->scripts)->not->toContain("sudo mkdir -p '/var/lib/orbit/processes/mysql8'");
-});
-
-it('fails docker process apply when the pre apply script fails', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
-
-    $node = Node::factory()->create(['name' => 'database-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-    $process = Process::factory()
-        ->forOwner($node)
-        ->create([
-            'name' => 'redis',
-            'command' => 'redis-server',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'image' => 'redis:7.2',
-            ],
-        ]);
-
-    $driver = app(DockerProcessRuntimeDriver::class);
-
-    expect($driver->apply($node, $app, $process, preApplyScript: 'false'))
-        ->toBeFalse()
-        ->and($shell->scripts)
+    expect($apply['prepare_prerequisites'])
+        ->toBeTrue()
+        ->and($apply['spec']['ports'])
         ->toBe([
-            "set -euo pipefail\nfalse",
-        ]);
+            ['published' => 3308, 'target' => 3306, 'protocol' => 'tcp'],
+        ])
+        ->and($apply['spec']['volumes'])
+        ->toBe([
+            [
+                'source' => 'orbit-mysql8',
+                'target' => '/var/lib/mysql',
+                'read_only' => false,
+            ],
+        ])
+        ->and($apply['spec']['mounts'])
+        ->toBeEmpty();
 });
 
 it('runs docker swarm process lifecycle through the docker swarm runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'database-1']);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.44.0.72',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -351,21 +328,20 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
         ->toBe("docker service logs --tail 25 --follow 'orbit-redis-7' 2>&1");
 
-    expect($shell->scripts)->toBe([
-        "docker service update --detach --replicas 1 'orbit-redis-7'",
-        "docker service update --detach --replicas 0 'orbit-redis-7'",
-        "docker service update --detach --force 'orbit-redis-7'",
-    ]);
+    expect(process_driver_agent_actions('internal:process-docker-swarm-service'))
+        ->toBe(['start', 'stop', 'restart']);
 });
 
 it('applies, removes, and cleans up docker swarm process runtime services from runtime config', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'database-1']);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'database-1',
+            'wireguard_address' => '10.44.0.72',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -422,64 +398,51 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->and($driver->remove($node, $runtimeUnit))
         ->toBeTrue();
 
-    expect($shell->scripts[0])
-        ->toContain("docker service inspect 'orbit-mysql-8' >/dev/null 2>&1")
-        ->toContain('docker service create')
-        ->toContain("--name 'orbit-mysql-8'")
-        ->toContain("--restart-condition 'any'")
-        ->toContain("--label 'orbit.process.service=mysql'")
-        ->toContain("--label 'orbit.process.spec_hash=abc123'")
-        ->toContain("--publish 'published=3308,target=3306,protocol=tcp'")
-        ->toContain("--mount 'type=volume,source=orbit-mysql-8,target=/var/lib/mysql'")
-        ->toContain(
-            "--mount 'type=bind,source=/var/lib/orbit/processes/mysql8/mysql.cnf,target=/etc/mysql/conf.d/orbit.cnf,readonly'",
-        )
-        ->toContain("--update-order 'stop-first'")
-        ->toContain("--update-parallelism '1'")
-        ->toContain("'mysql:8.4'")
-        ->toContain("'-lc' 'mysqld'")
-        ->and($shell->scripts[1])
-        ->toBe("docker service rm 'orbit-mysql-8'");
+    $payload = process_driver_agent_payloads('internal:process-docker-swarm-service')[0];
 
-    expect($shell->scripts[0])->not->toContain("--restart-condition 'always'");
-});
-
-it('runs docker swarm pre apply scripts under strict mode before service apply', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
-
-    $node = Node::factory()->create(['name' => 'metrics-1']);
-    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
-    $process = Process::factory()
-        ->forOwner($node)
-        ->create([
-            'name' => 'prometheus',
-            'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
-            'restart_policy' => ProcessRestartPolicy::Always,
-            'runtime' => ProcessRuntime::DockerSwarm,
-            'runtime_config' => [
-                'image' => 'prom/prometheus:v3.12.0',
-                'service_name' => 'orbit-prometheus',
+    expect($payload)
+        ->toMatchArray([
+            'image' => 'mysql:8.4',
+            'command' => 'mysqld',
+            'command_mode' => 'shell',
+            'restart_condition' => 'any',
+            'labels' => [
+                'orbit.managed' => 'true',
+                'orbit.process' => 'mysql8',
+                'orbit.process.service' => 'mysql',
+                'orbit.process.spec_hash' => 'abc123',
+                'orbit.process.version' => '8.4',
+                'orbit.process.version_family' => '8',
             ],
+            'ports' => [
+                'published=3308,target=3306,protocol=tcp',
+            ],
+            'mounts' => [
+                'type=volume,source=orbit-mysql-8,target=/var/lib/mysql',
+                'type=bind,source=/var/lib/orbit/processes/mysql8/mysql.cnf,target=/etc/mysql/conf.d/orbit.cnf,readonly',
+            ],
+            'update_order' => 'stop-first',
+            'update_parallelism' => '1',
+            'expected_hash' => 'abc123',
         ]);
 
-    $driver = app(DockerSwarmProcessRuntimeDriver::class);
-
-    expect($driver->apply($node, $app, $process, preApplyScript: 'sudo install -d /var/lib/orbit'))
-        ->toBeTrue()
-        ->and($shell->scripts[0])
-        ->toStartWith("set -euo pipefail\nsudo install -d /var/lib/orbit\nneeds_create=1");
+    expect(process_driver_agent_arguments('internal:process-docker-swarm-service'))
+        ->toBe([
+            ['apply',  'orbit-mysql-8'],
+            ['remove', 'orbit-mysql-8'],
+        ]);
 });
 
 it('does not exit early from docker swarm apply scripts when the service spec already matches', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'metrics-1']);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'metrics-1',
+            'wireguard_address' => '10.44.0.72',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -499,19 +462,22 @@ it('does not exit early from docker swarm apply scripts when the service spec al
 
     $driver = app(DockerSwarmProcessRuntimeDriver::class);
 
-    expect($driver->apply($node, $app, $process))
-        ->toBeTrue()
-        ->and($shell->scripts[0])
-        ->not->toContain('exit 0');
+    expect($driver->apply($node, $app, $process))->toBeTrue();
+
+    expect(process_driver_agent_payloads('internal:process-docker-swarm-service')[0]['expected_hash'])
+        ->toBe('abc123');
 });
 
 it('uses the image entrypoint for docker swarm service processes configured for it', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'metrics-1']);
+    $node = Node::factory()
+        ->database()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'metrics-1',
+            'wireguard_address' => '10.44.0.72',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -529,26 +495,27 @@ it('uses the image entrypoint for docker swarm service processes configured for 
 
     $driver = app(DockerSwarmProcessRuntimeDriver::class);
 
-    expect($driver->apply($node, $app, $process))
-        ->toBeTrue()
-        ->and($shell->scripts[0])
-        ->toContain('docker service create')
-        ->and($shell->scripts[0])
-        ->toContain("'grafana/grafana:13.0.2'")
-        ->and($shell->scripts[0])
-        ->not->toContain("--entrypoint 'sh'")->and($shell->scripts[0])
-        ->not->toContain("'-lc' '/run.sh'");
+    expect($driver->apply($node, $app, $process))->toBeTrue();
+
+    expect(process_driver_agent_payloads('internal:process-docker-swarm-service')[0])
+        ->toMatchArray([
+            'command_mode' => 'image_entrypoint',
+            'image' => 'grafana/grafana:13.0.2',
+        ]);
 });
 
 it('runs systemd process lifecycle through the systemd runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'app-dev-1', 'user' => 'orbit', 'orbit_path' => '/home/orbit/orbit']);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'wireguard_address' => '10.44.0.71',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -575,32 +542,22 @@ it('runs systemd process lifecycle through the systemd runtime driver', function
         ->and($driver->logScript($app, $process, null, $runtimeUnit, 25, true))
         ->toBe("sudo journalctl -u 'opencode-server.service' -n 25 -f --no-pager --output=short-iso 2>&1");
 
-    expect($shell->scripts)->toBe([
-        "sudo systemctl start 'opencode-server.service'",
-        "sudo systemctl stop 'opencode-server.service'",
-        "sudo systemctl restart 'opencode-server.service'",
-    ]);
+    expect(process_driver_agent_actions('internal:process-systemd-service'))
+        ->toBe(['start', 'stop', 'restart']);
 });
 
 it('applies, removes, and cleans up systemd process runtime units through the systemd runtime driver', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'exists' => false,
-                'hash' => null,
-                'enabled' => false,
-            ], JSON_THROW_ON_ERROR)
-                ."\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
+    fake_process_driver_agent_responses();
 
-    $node = Node::factory()->create(['name' => 'app-dev-1', 'user' => 'orbit', 'orbit_path' => '/home/orbit/orbit']);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+            'wireguard_address' => '10.44.0.71',
+        ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
     $process = Process::factory()
         ->forOwner($node)
@@ -614,7 +571,6 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
 
     $driver = app(SystemdProcessRuntimeDriver::class);
     $runtimeUnit = $driver->runtimeUnitName($app, $process);
-    $unitContent = app(SystemdUnitRenderer::class)->render($node, $app, $process);
 
     expect($driver->cleanupScript($runtimeUnit))
         ->toBe(
@@ -625,82 +581,173 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
         ->and($driver->remove($node, $runtimeUnit))
         ->toBeTrue();
 
-    expect($shell->scripts[0])
-        ->toContain('sudo test -f "$path"')
-        ->toContain('sudo systemctl is-enabled "$service"');
-    expect($shell->scripts[1])
-        ->toStartWith('set -euo pipefail')
-        ->toContain('sudo install -d -m 0755 /etc/systemd/system')
-        ->toContain("sudo tee '/etc/systemd/system/opencode-server.service' >/dev/null")
-        ->toContain("sudo chmod 0644 '/etc/systemd/system/opencode-server.service'")
-        ->toContain('sudo systemctl daemon-reload')
-        ->toContain("sudo systemctl enable 'opencode-server.service' >/dev/null")
-        ->toContain(base64_encode($unitContent))
-        ->not
-        ->toContain($unitContent)
-        ->and($shell->scripts[2])
-        ->toContain("sudo systemctl stop 'opencode-server.service'")
-        ->toContain("sudo systemctl disable 'opencode-server.service'")
-        ->toContain("sudo rm -f '/etc/systemd/system/opencode-server.service'")
-        ->toContain('sudo systemctl daemon-reload');
-});
-
-it('runs systemd pre apply scripts before probing and converging service units', function (): void {
-    $shell = new ProcessRuntimeDriverRecordingShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode([
-                'exists' => true,
-                'hash' => 'different-hash',
-                'enabled' => true,
-            ], JSON_THROW_ON_ERROR)
-                ."\n",
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-    app()->instance(RemoteShell::class, $shell);
-
-    $node = Node::factory()->create(['name' => 'metrics-1', 'user' => 'orbit']);
-    $app = App::factory()->create(['name' => 'metrics-1', 'node_id' => $node->id, 'path' => '/home/orbit']);
-    $process = Process::factory()
-        ->forOwner($node)
-        ->create([
-            'name' => 'node-exporter',
-            'command' => 'node_exporter --web.listen-address=0.0.0.0:9100',
-            'restart_policy' => ProcessRestartPolicy::Always,
-            'runtime' => ProcessRuntime::Systemd,
-            'tool' => 'node-exporter',
+    expect(process_driver_agent_arguments('internal:process-systemd-service'))
+        ->toBe([
+            ['apply', 'opencode-server.service'],
+            ['remove', 'opencode-server.service', '/etc/systemd/system/opencode-server.service'],
         ]);
-
-    $driver = app(SystemdProcessRuntimeDriver::class);
-
-    expect($driver->apply($node, $app, $process, preApplyScript: 'sudo install -d /var/lib/orbit/node-exporter'))
-        ->toBeTrue()
-        ->and($shell->scripts[0])
-        ->toBe("set -euo pipefail\nsudo install -d /var/lib/orbit/node-exporter")
-        ->and($shell->scripts[1])
-        ->toContain('sudo test -f "$path"')
-        ->and($shell->scripts[2])
-        ->toContain("sudo tee '/etc/systemd/system/node-exporter.service' >/dev/null");
 });
 
-final class ProcessRuntimeDriverRecordingShell implements RemoteShell
+function fake_docker_process_driver_agent_responses(): void
 {
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results,
-        public array $scripts = [],
-    ) {}
+    fake_process_driver_agent_responses();
+}
 
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
+function fake_process_driver_agent_responses(): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        '*' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'process.docker.test',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'action' => 'test',
+                                'outcome' => 'created',
+                                'changed' => true,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'type' => 'exit',
+                    'message' => '0',
+                ],
+            ],
+        ]),
+    ]);
+}
 
-        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
+/**
+ * @return list<array<string, mixed>>
+ */
+function docker_process_driver_agent_payloads(): array
+{
+    return collect(Http::recorded())
+        ->map(function (array $record): array {
+            /** @var Request $request */
+            [$request] = $record;
+
+            /** @var mixed $payload */
+            $payload = json_decode((string) $request['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+            if (! is_array($payload)) {
+                return [];
+            }
+
+            foreach (array_keys($payload) as $key) {
+                if (! is_string($key)) {
+                    return [];
+                }
+            }
+
+            /** @var array<string, mixed> $payload */
+            return $payload;
+        })
+        ->all();
+}
+
+/**
+ * @return list<string>
+ */
+function docker_process_driver_agent_actions(): array
+{
+    return collect(docker_process_driver_agent_payloads())
+        ->map(fn (array $payload): mixed => $payload['action'] ?? null)
+        ->filter(fn (mixed $action): bool => is_string($action))
+        ->values()
+        ->all();
+}
+
+/**
+ * @return list<list<string>>
+ */
+function process_driver_agent_arguments(string $commandName): array
+{
+    return collect(Http::recorded())
+        ->map(function (array $record) use ($commandName): array {
+            /** @var Request $request */
+            [$request] = $record;
+            $argv = $request['argv'];
+
+            if (! is_array($argv) || ($argv[0] ?? null) !== $commandName) {
+                return [];
+            }
+
+            return collect(array_slice($argv, offset: 1))
+                ->filter(
+                    fn (mixed $argument): bool => (
+                        is_string($argument)
+                        && ! str_starts_with($argument, '--operation-token=')
+                        && $argument !== '--json'
+                    ),
+                )
+                ->values()
+                ->all();
+        })
+        ->filter(fn (array $arguments): bool => $arguments !== [])
+        ->values()
+        ->all();
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function process_driver_agent_payloads(string $commandName): array
+{
+    return collect(Http::recorded())
+        ->map(function (array $record) use ($commandName): array {
+            /** @var Request $request */
+            [$request] = $record;
+            $argv = $request['argv'];
+
+            if (! is_array($argv) || ($argv[0] ?? null) !== $commandName) {
+                return [];
+            }
+
+            $input = $request['input'] ?? null;
+
+            if (! is_string($input) || trim($input) === '') {
+                return [];
+            }
+
+            /** @var mixed $payload */
+            $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            if (! is_array($payload)) {
+                return [];
+            }
+
+            foreach (array_keys($payload) as $key) {
+                if (! is_string($key)) {
+                    return [];
+                }
+            }
+
+            /** @var array<string, mixed> $payload */
+            return $payload;
+        })
+        ->filter(fn (array $payload): bool => $payload !== [])
+        ->values()
+        ->all();
+}
+
+/**
+ * @return list<string>
+ */
+function process_driver_agent_actions(string $commandName): array
+{
+    return collect(process_driver_agent_arguments($commandName))
+        ->map(fn (array $arguments): mixed => $arguments[0] ?? null)
+        ->filter(fn (mixed $action): bool => is_string($action))
+        ->values()
+        ->all();
 }

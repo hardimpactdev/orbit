@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\RemoteShell;
 
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
+use SensitiveParameter;
 
 final readonly class LocalExecutorCommandBuilder
 {
@@ -26,10 +28,223 @@ final readonly class LocalExecutorCommandBuilder
             'agent',
             'ingress',
         ],
+        'internal:agent-acl:ensure' => ['agent'],
+        'internal:agent-runtime:probe' => ['agent'],
+        'internal:agent-user:ensure' => ['agent'],
+        'internal:app-cache:clear' => ['app-dev', 'app-prod'],
+        'internal:app-runtime-configs:probe' => ['app-dev', 'app-prod'],
+        'internal:app-runtime-containers:probe' => ['app-dev', 'app-prod'],
+        'internal:app-runtime-extensions:probe' => ['app-dev', 'app-prod'],
+        'internal:app-source:create' => ['app-dev', 'app-prod'],
+        'internal:app-source-path:probe' => ['app-dev', 'app-prod'],
+        'internal:app-security:repair' => ['app-dev', 'app-prod'],
+        'internal:app-worker-readiness:probe' => ['app-dev', 'app-prod'],
+        'internal:caddy-config' => ['gateway', 'router', 'app-dev', 'app-prod', 'agent', 'ingress'],
+        'internal:codex-app-config' => ['agent'],
+        'internal:doctor-self' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:env-file' => ['app-dev', 'app-prod', 'database'],
+        'internal:firewall-rule' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:firewall-rule:probe' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:fleet-update:verify' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:gateway-runtime-backend:probe' => ['gateway'],
+        'internal:managed-file' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:node-security-posture:probe' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
         'internal:wg-easy:state' => ['vpn'],
+        'internal:database-add-user' => ['app-dev', 'app-prod', 'database'],
         'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
+        'internal:process-docker-container' => ['app-dev', 'app-prod', 'database'],
+        'internal:process-docker-swarm-service' => ['app-dev', 'app-prod', 'database', 'metrics'],
+        'internal:process-logs' => ['app-dev', 'app-prod', 'database', 'agent'],
+        'internal:process-systemd-service' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent'],
+        'internal:s3-runtime:probe' => ['s3'],
+        'internal:secret-file' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:site-certificate:install' => ['app-dev', 'app-prod', 'websocket'],
+        'internal:solo-upstream-request' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:websocket-runtime' => ['websocket'],
+        'internal:unattended-upgrades:apply' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:unattended-upgrades:probe' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:wireguard-endpoint:rotate' => [
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:wireguard-interface-public-key:read' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
+        'internal:wireguard-self-route' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+            'metrics',
+            'analytics',
+        ],
         'internal:workspace-adapter:lookup' => ['app-dev'],
         'internal:workspace-adapter:update' => ['app-dev'],
+        'internal:workspace-source:create' => ['app-dev'],
     ];
 
     /**
@@ -59,6 +274,31 @@ final readonly class LocalExecutorCommandBuilder
             operationToken: $operationToken,
             redactOperationToken: false,
         );
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $options
+     * @return list<string>
+     */
+    public function buildArgv(
+        Node $targetNode,
+        string $commandName,
+        array $arguments,
+        array $options,
+        string $operationToken,
+    ): array {
+        $this->ensureCommandNameIsValid($commandName);
+        $this->ensureCommandIsAllowedForTarget($commandName, $targetNode);
+        $this->ensureOperationTokenIsValid($operationToken);
+
+        return [
+            $commandName,
+            ...$this->argumentValues($arguments),
+            ...$this->optionValues($options),
+            "--operation-token={$operationToken}",
+            '--json',
+        ];
     }
 
     /**
@@ -101,8 +341,8 @@ final readonly class LocalExecutorCommandBuilder
         $segments = [
             $this->orbitBinarySegment(),
             $commandName,
-            ...$this->argumentSegments($arguments),
-            ...$this->optionSegments($options),
+            ...array_map(escapeshellarg(...), $this->argumentValues($arguments)),
+            ...array_map($this->escapeOptionValue(...), $this->optionValues($options)),
             '--operation-token='.($redactOperationToken ? '<redacted>' : escapeshellarg($operationToken)),
             '--json',
         ];
@@ -146,7 +386,7 @@ final readonly class LocalExecutorCommandBuilder
         }
 
         foreach ($allowedRoles as $role) {
-            if ($targetNode->hasActiveRole($role)) {
+            if ($this->nodeHasEligibleRole($targetNode, $role)) {
                 return;
             }
         }
@@ -154,7 +394,20 @@ final readonly class LocalExecutorCommandBuilder
         throw LocalExecutorCommandBuilderException::commandNotAllowed($commandName);
     }
 
-    private function ensureOperationTokenIsValid(string $operationToken): void
+    private function nodeHasEligibleRole(Node $targetNode, string $role): bool
+    {
+        if ($targetNode->hasActiveRole($role)) {
+            return true;
+        }
+
+        return $targetNode
+            ->roleAssignments()
+            ->where('role', $role)
+            ->where('status', NodeRoleStatus::Pending->value)
+            ->exists();
+    }
+
+    private function ensureOperationTokenIsValid(#[SensitiveParameter] string $operationToken): void
     {
         $this->ensureNoNullByte($operationToken, 'operation token');
 
@@ -169,9 +422,9 @@ final readonly class LocalExecutorCommandBuilder
      * @param  array<int|string, mixed>  $arguments
      * @return list<string>
      */
-    private function argumentSegments(array $arguments): array
+    private function argumentValues(array $arguments): array
     {
-        $segments = [];
+        $values = [];
 
         foreach ($arguments as $argument) {
             if (! is_scalar($argument)) {
@@ -181,19 +434,19 @@ final readonly class LocalExecutorCommandBuilder
             $value = $this->scalarToString($argument);
             $this->ensureNoNullByte($value, 'argument');
 
-            $segments[] = escapeshellarg($value);
+            $values[] = $value;
         }
 
-        return $segments;
+        return $values;
     }
 
     /**
      * @param  array<int|string, mixed>  $options
      * @return list<string>
      */
-    private function optionSegments(array $options): array
+    private function optionValues(array $options): array
     {
-        $segments = [];
+        $values = [];
 
         foreach ($options as $key => $value) {
             $optionKey = $this->validatedOptionKey($key);
@@ -205,10 +458,17 @@ final readonly class LocalExecutorCommandBuilder
             $optionValue = $this->scalarToString($value);
             $this->ensureNoNullByte($optionValue, 'option value');
 
-            $segments[] = "--{$optionKey}=".escapeshellarg($optionValue);
+            $values[] = "--{$optionKey}={$optionValue}";
         }
 
-        return $segments;
+        return $values;
+    }
+
+    private function escapeOptionValue(string $option): string
+    {
+        [$key, $value] = explode('=', $option, limit: 2);
+
+        return "{$key}=".escapeshellarg($value);
     }
 
     private function validatedOptionKey(int|string $key): string

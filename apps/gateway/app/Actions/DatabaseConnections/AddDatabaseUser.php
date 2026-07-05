@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Actions\DatabaseConnections;
 
-use App\Contracts\RemoteShell;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use JsonException;
 
 final readonly class AddDatabaseUser
 {
+    private const string InternalCommand = 'internal:database-add-user';
+
     private const string IdentifierPattern = '/^[A-Za-z0-9_]{1,64}$/';
 
     public function __construct(
-        private RemoteShell $remoteShell,
+        private RemoteLocalExecutor $localExecutor,
         private DatabaseConnectionRegistry $registry,
     ) {}
 
@@ -230,15 +233,43 @@ final readonly class AddDatabaseUser
             return $container;
         }
 
-        $result = $this->remoteShell->run($node, $this->convergenceScript($container), [
-            'input' => $this->sql($database, $username, $password),
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'database.add-user',
-                'ORBIT_TOOL_SERVICE' => $process->name,
+        try {
+            $input = json_encode([
+                'container' => $container,
+                'database' => $database,
+                'username' => $username,
+                'password' => $password,
+            ], JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            return DatabaseConnectionRegistryFailure::validation(
+                'service',
+                $process->name,
+                'Could not encode database user convergence payload.',
+                [
+                    'service' => $process->name,
+                    'reason' => $exception->getMessage(),
+                ],
+            );
+        }
+
+        $result = $this->localExecutor->runInternal(
+            $node,
+            self::InternalCommand,
+            [],
+            [],
+            [
+                'input' => $input,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'database.add-user',
+                    'ORBIT_TOOL_SERVICE' => $process->name,
+                ],
+                'strict' => true,
+                'timeout' => 120,
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+                'redact_command_options' => ['password'],
             ],
-            'strict' => true,
-            'timeout' => 120,
-        ]);
+        );
 
         if ($result->successful()) {
             return null;
@@ -272,63 +303,5 @@ final readonly class AddDatabaseUser
                 'service' => $process->name,
             ],
         );
-    }
-
-    private function convergenceScript(string $container): string
-    {
-        return sprintf(
-            <<<'SH'
-                container=%s
-                if ! docker inspect "$container" >/dev/null 2>&1; then
-                  echo "Managed MySQL container '$container' was not found." >&2
-                  exit 67
-                fi
-
-                ready=0
-                for attempt in $(seq 1 30); do
-                  if docker exec "$container" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin ping -uroot --silent' >/dev/null 2>&1; then
-                    ready=1
-                    break
-                  fi
-                  sleep 2
-                done
-
-                if [ "$ready" != 1 ]; then
-                  echo "Managed MySQL container '$container' did not become ready." >&2
-                  exit 68
-                fi
-
-                docker exec -i "$container" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot'
-                SH,
-            escapeshellarg($container),
-        );
-    }
-
-    private function sql(string $database, string $username, string $password): string
-    {
-        return implode(PHP_EOL, [
-            'CREATE DATABASE IF NOT EXISTS '
-                .$this->identifier($database)
-                .' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
-            'CREATE USER IF NOT EXISTS '
-                .$this->stringLiteral($username)
-                ."@'%' IDENTIFIED BY "
-                .$this->stringLiteral($password)
-                .';',
-            'ALTER USER '.$this->stringLiteral($username)."@'%' IDENTIFIED BY ".$this->stringLiteral($password).';',
-            'GRANT ALL PRIVILEGES ON '.$this->identifier($database).'.* TO '.$this->stringLiteral($username)."@'%';",
-            'FLUSH PRIVILEGES;',
-            '',
-        ]);
-    }
-
-    private function identifier(string $value): string
-    {
-        return '`'.$value.'`';
-    }
-
-    private function stringLiteral(string $value): string
-    {
-        return "'".str_replace(['\\', "'"], ['\\\\', "''"], $value)."'";
     }
 }

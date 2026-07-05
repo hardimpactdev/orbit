@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
-use App\Contracts\RemoteShell;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Database\Eloquent\Collection;
+use RuntimeException;
 
 class WebSocketRuntimeAppConfigSyncer
 {
     public function __construct(
-        private readonly RemoteShell $remoteShell,
         private readonly NodeRoleAssignments $nodeRoleAssignments,
         private readonly WebSocketRuntimeContainerRenderer $runtimeContainerRenderer,
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     public function sync(): void
@@ -25,12 +26,27 @@ class WebSocketRuntimeAppConfigSyncer
         $content = $this->configFileContent($this->enabledBindings());
 
         foreach ($this->webSocketNodes() as $node) {
-            $this->remoteShell->run($node, $this->installScript($node, $content), [
-                'throw' => true,
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'websocket-runtime-app-config-sync',
+            $result = $this->localExecutor()->runInternal(
+                node: $node,
+                commandName: 'internal:websocket-runtime',
+                arguments: ['app-config:sync'],
+                transportOptions: [
+                    'throw' => true,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => 'websocket-runtime.app-config:sync',
+                    ],
+                    'input' => json_encode([
+                        'content' => $content,
+                        'container' => $this->runtimeContainerRenderer->containerName($node),
+                    ], JSON_THROW_ON_ERROR),
+                    'redact_stdout' => true,
+                    'redact_stderr' => true,
                 ],
-            ]);
+            );
+
+            if (! $result->successful()) {
+                throw new RuntimeException("Websocket runtime app config sync failed for node [{$node->name}].");
+            }
         }
     }
 
@@ -129,25 +145,8 @@ class WebSocketRuntimeAppConfigSyncer
         return $hosts === [] ? ['*'] : $hosts;
     }
 
-    private function installScript(Node $node, string $content): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        $containerName = $this->runtimeContainerRenderer->containerName($node);
-
-        return sprintf(
-            <<<'SH'
-                set -e
-                sudo install -d -m 0755 /etc/orbit/websocket
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
-                if docker container inspect %s >/dev/null 2>&1; then
-                    docker restart %s >/dev/null
-                fi
-                SH,
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg(WebSocketRuntimeSourceInstaller::AppsConfigPath),
-            escapeshellarg(WebSocketRuntimeSourceInstaller::AppsConfigPath),
-            escapeshellarg($containerName),
-            escapeshellarg($containerName),
-        );
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 }

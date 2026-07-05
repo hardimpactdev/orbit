@@ -1,4 +1,4 @@
-# Technical Contract: `orbit firewall:list [--node=<node>] [--json]`
+# Technical Contract: `orbit firewall:list [--node=<node>] [--node-transport=<transport>] [--json]`
 
 [Back to public `firewall-list` documentation.](../firewall-list.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit firewall:list [--node=<node>] [--json]
+orbit firewall:list [--node=<node>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -23,6 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | `Optional.` | `Never.` | `None.` | `Visible active Ubuntu node with at least one active role assignment.` |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
 
 ## Behavior Contract

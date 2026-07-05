@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\FakeInvokedProcess;
@@ -42,6 +43,12 @@ beforeEach(function (): void {
         'status' => 'active',
         'wireguard_address' => UPDATE_ALL_CALLER_WG_IP,
     ]);
+
+    $this->withHeader(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+});
+
+afterEach(function (): void {
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 });
 
 it('updates local checkout and returns updates array for gateway caller', function (): void {
@@ -52,7 +59,17 @@ it('updates local checkout and returns updates array for gateway caller', functi
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
 
-    $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/update/all',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+        ],
+    );
 
     $response->assertOk();
     $response->assertJsonPath('success.data.updates.0.target', 'gateway');
@@ -76,7 +93,17 @@ it('returns local_update_failed when git pull fails', function (): void {
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
 
-    $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/update/all',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+        ],
+    );
 
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'local_update_failed');
@@ -108,7 +135,17 @@ it('includes active app host nodes in updates and uses RemoteShell', function ()
             new UpdateAllControllerTimedRemoteShell($logPath, pullDelayMicroseconds: 0),
         );
 
-        $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/update/all',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+            ],
+        );
 
         $response->assertOk();
         $response->assertJsonPath('success.data.updates.1.target', 'beast');
@@ -130,6 +167,37 @@ it('includes active app host nodes in updates and uses RemoteShell', function ()
     } finally {
         @unlink($logPath);
     }
+});
+
+it('requires explicit transitional SSH fallback before remote update stages', function (): void {
+    createUpdateAllAppHostNode([
+        'name' => 'beast',
+        'host' => 'beast',
+        'orbit_path' => '/home/nckrtl/orbit',
+    ]);
+
+    Process::fake([
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
+    Process::preventStrayProcesses();
+
+    $shell = new UpdateAllControllerRemoteShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this
+        ->withoutHeader(ExplicitRemoteShellFallback::HEADER)
+        ->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+
+    $response->assertOk();
+    $response->assertJsonPath('success.data.updates.1.target', 'beast');
+    $response->assertJsonPath('success.data.updates.1.status', 'failed');
+    $response->assertJsonPath(
+        'success.data.updates.1.output',
+        'update:all remote stages still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+    );
+    $response->assertJsonPath('success.meta.summary.failed', 1);
+
+    expect($shell->nodes)->toBe([]);
 });
 
 it('updates app nodes in parallel after gateway checkout succeeds', function (): void {
@@ -158,7 +226,17 @@ it('updates app nodes in parallel after gateway checkout succeeds', function ():
     try {
         app()->instance(RemoteShell::class, new UpdateAllControllerTimedRemoteShell($logPath));
 
-        $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/update/all',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+            ],
+        );
 
         $response->assertOk();
         $response->assertJsonPath('success.data.updates.1.target', 'beast');
@@ -222,6 +300,7 @@ it('starts app node updates concurrently in the streamed gateway path without pc
             [
                 'HTTP_ACCEPT' => 'text/event-stream',
                 'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
             ],
         );
 
@@ -287,7 +366,17 @@ it('excludes control nodes from remote updates', function (): void {
     $shell = new UpdateAllControllerRemoteShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/update/all',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+        ],
+    );
 
     $response->assertOk();
     $response->assertJsonPath('success.data.updates.0.target', 'gateway');
@@ -309,7 +398,17 @@ it('reports remote_update_failed when an app host node fails', function (): void
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell(exitCode: 255, stderr: 'Permission denied'));
 
-    $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/update/all',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
+        ],
+    );
 
     $response->assertOk();
     $response->assertJsonPath('success.data.updates.0.status', 'completed');
@@ -392,6 +491,7 @@ it('streams progress events for gateway-owned update targets', function (): void
         [
             'HTTP_ACCEPT' => 'text/event-stream',
             'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
         ],
     );
 

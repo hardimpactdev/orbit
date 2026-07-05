@@ -12,10 +12,20 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Schedules\SchedulesProbe;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -60,6 +70,9 @@ function createSchedulesProbeGatewayNode(array $attributes = []): Node
     return $node;
 }
 
+/**
+ * @mago-expect lint:halstead
+ */
 describe('SchedulesProbe', function (): void {
     it('has key and label', function (): void {
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
@@ -311,13 +324,21 @@ describe('SchedulesProbe', function (): void {
     });
 
     it('detects unreachable schedule targets from the gateway', function (): void {
-        $node = createTestAppHostNode(['name' => 'app-1']);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.82:9477/v1/commands' => schedule_probe_agent_response(exitCode: 1, stderr: 'agent timeout'),
+        ]);
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.44.0.82',
+        ]);
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell(
             exitCode: 255,
             stderr: 'ssh timeout',
-        )));
+        )), schedule_probe_local_executor());
 
         $drift = $probe->diff($schedule, $probe->introspect($schedule));
 
@@ -325,10 +346,29 @@ describe('SchedulesProbe', function (): void {
             ->toBe(DriftKind::Missing)
             ->and(scheduleProbeIssue($drift, 'schedule.scheduler_missing'))
             ->toBeNull();
+
+        Http::assertSent(
+            fn ($request): bool => (
+                $request->url() === 'http://10.44.0.82:9477/v1/commands'
+                && $request['binary'] === 'orbit'
+                && $request['argv'][0] === 'internal:executor:verify'
+                && str_starts_with((string) $request['argv'][1], '--operation-token=')
+                && $request['argv'][2] === '--json'
+                && $request['operation_id'] === 'schedule.target.reachable'
+            ),
+        );
     });
 
     it('detects stuck schedule run history', function (): void {
-        $node = createTestAppHostNode(['name' => 'app-1']);
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.82:9477/v1/commands' => schedule_probe_agent_response(),
+        ]);
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'orbit_agent_capable' => true,
+            'wireguard_address' => '10.44.0.82',
+        ]);
         $app = App::factory()->create(['node_id' => $node->id]);
         $schedule = Schedule::factory()->forApp($app)->create();
         ScheduleRun::factory()->create([
@@ -338,13 +378,69 @@ describe('SchedulesProbe', function (): void {
             'started_at' => now()->subMinutes(30),
             'finished_at' => null,
         ]);
-        $probe = new SchedulesProbe(new RuntimeBackendProbe(new SchedulesProbeRemoteShell));
+        $probe = new SchedulesProbe(
+            new RuntimeBackendProbe(new SchedulesProbeRemoteShell),
+            schedule_probe_local_executor(),
+        );
 
         $drift = $probe->diff($schedule, $probe->introspect($schedule));
 
         expect(scheduleProbeIssue($drift, 'schedule.run_stuck')?->kind)->toBe(DriftKind::Divergent);
     });
 });
+
+function schedule_probe_local_executor(): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: new class implements RemoteExecutor {
+            public function run(Node $node, string $script, array $options = []): RemoteShellResult
+            {
+                throw new RuntimeException('SSH transport should not be called for schedule target reachability.');
+            }
+
+            public function start(Node $node, string $script, array $options = []): InvokedProcess
+            {
+                throw new RuntimeException('Schedule target reachability tests do not start long-running transports.');
+            }
+        },
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: schedule_probe_operation_secret(),
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: schedule_probe_operation_secret(),
+    );
+}
+
+function schedule_probe_agent_response(int $exitCode = 0, string $stderr = ''): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'schedule.target.reachable',
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => $stderr === '' ? 'stdout' : 'stderr',
+                'message' => $stderr,
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ]);
+}
+
+function schedule_probe_operation_secret(): string
+{
+    return implode('-', ['gateway', 'secret']);
+}
 
 final class SchedulesProbeRemoteShell implements RemoteShell
 {

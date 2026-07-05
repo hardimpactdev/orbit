@@ -11,6 +11,7 @@ final class FirewallDenyCommand extends FirewallStoreCommand
         {name? : Firewall rule name}
         {--port= : Destination port or range}
         {--node= : Target node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--direction=incoming : incoming or outgoing}
         {--from= : Source CIDR or any}
         {--to= : Destination CIDR}

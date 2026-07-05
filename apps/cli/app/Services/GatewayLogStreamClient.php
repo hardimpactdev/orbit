@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\StreamInterface;
 
@@ -17,7 +18,22 @@ final readonly class GatewayLogStreamClient
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
+        private ?string $nodeTransportPreference = null,
     ) {}
+
+    public function withNodeTransportPreference(?string $preference): self
+    {
+        if ($preference === $this->nodeTransportPreference) {
+            return $this;
+        }
+
+        return new self(
+            baseUrl: $this->baseUrl,
+            timeout: $this->timeout,
+            caPemPath: $this->caPemPath,
+            nodeTransportPreference: $preference,
+        );
+    }
 
     /**
      * @param  array<string, mixed>  $query
@@ -28,10 +44,7 @@ final readonly class GatewayLogStreamClient
         $baseUrl = $this->normalizedBaseUrl();
 
         try {
-            $response = Http::baseUrl($baseUrl)
-                ->withHeaders(['Accept' => 'text/plain'])
-                ->timeout($this->timeout)
-                ->withOptions($this->streamOptions())
+            $response = $this->pendingRequest($baseUrl)
                 ->get('/'.ltrim($path, '/'), $query);
         } catch (ConnectionException $exception) {
             throw $this->classifyNetworkError($exception);
@@ -44,6 +57,20 @@ final readonly class GatewayLogStreamClient
         $this->processResponseStream($response->toPsrResponse()->getBody(), $onOutput);
 
         return 0;
+    }
+
+    private function pendingRequest(string $baseUrl): PendingRequest
+    {
+        $request = Http::baseUrl($baseUrl)
+            ->withHeaders(['Accept' => 'text/plain'])
+            ->timeout($this->timeout)
+            ->withOptions($this->streamOptions());
+
+        if ($this->nodeTransportPreference !== null) {
+            $request = $request->withHeader('X-Orbit-Node-Transport-Preference', $this->nodeTransportPreference);
+        }
+
+        return $request;
     }
 
     /**

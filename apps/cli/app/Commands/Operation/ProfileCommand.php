@@ -24,6 +24,7 @@ final class ProfileCommand extends GatewayCommand
         {target? : Domain, app hostname, full URL, or absolute app path}
         {--app= : App name or hostname to profile}
         {--node= : Constrain app resolution to a node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--uri= : Request URI to profile}
         {--as-first-user : Authenticate the profiled request as the first user}
         {--user= : Authenticate the profiled request as the given primary key}

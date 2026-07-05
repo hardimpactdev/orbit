@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\WebSockets;
 
-use App\Contracts\RemoteShell;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
@@ -16,14 +16,13 @@ class WebSocketCertificateInstaller
 
     public function __construct(
         private readonly OrbitCaService $ca,
-        private readonly RemoteShell $remoteShell,
         private readonly WebSocketBackendName $backendName,
+        private readonly ?RemoteLocalExecutor $localExecutor = null,
     ) {}
 
     /**
-     * Install backend TLS material through the RemoteHostExecutor lane because
-     * this writes host-owned `/etc/orbit/certs` artifacts consumed by workload
-     * containers. It does not execute Orbit PHP/artisan on the target node.
+     * Install backend TLS material through the node-local executor. The target
+     * agent writes host-owned `/etc/orbit/certs` artifacts using fixed argv.
      *
      * @see apps/docs/content/execution-lanes.md
      *
@@ -36,21 +35,29 @@ class WebSocketCertificateInstaller
         $local = $this->ca->issueLeaf($backendName, [$wireGuardAddress]);
         $remote = $this->pathsForBackend($backendName);
 
-        $this->remoteShell->run(
-            $node,
-            $this->installScript(
-                certPath: $remote['cert'],
-                cert: File::get($local['cert']),
-                keyPath: $remote['key'],
-                key: File::get($local['key']),
-            ),
-            [
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:site-certificate:install',
+            transportOptions: [
                 'throw' => true,
                 'metadata' => [
-                    'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
+                    'ORBIT_OPERATION_ID' => 'websocket-certificate.install',
                 ],
+                'input' => json_encode([
+                    'cert_path' => $remote['cert'],
+                    'key_path' => $remote['key'],
+                    'cert' => File::get($local['cert']),
+                    'key' => File::get($local['key']),
+                    'owner' => null,
+                ], JSON_THROW_ON_ERROR),
+                'redact_stdout' => true,
+                'redact_stderr' => true,
             ],
         );
+
+        if (! $result->successful()) {
+            throw new RuntimeException('Websocket certificate install failed.');
+        }
 
         return $remote;
     }
@@ -85,24 +92,8 @@ class WebSocketCertificateInstaller
         return $wireGuardAddress;
     }
 
-    private function installScript(string $certPath, string $cert, string $keyPath, string $key): string
+    private function localExecutor(): RemoteLocalExecutor
     {
-        return sprintf(
-            <<<'SH'
-                set -e
-                sudo install -d -m 0755 %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
-                sudo chmod 0600 %s
-                SH,
-            escapeshellarg(dirname($certPath)),
-            escapeshellarg(base64_encode($cert)),
-            escapeshellarg($certPath),
-            escapeshellarg(base64_encode($key)),
-            escapeshellarg($keyPath),
-            escapeshellarg($certPath),
-            escapeshellarg($keyPath),
-        );
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 }

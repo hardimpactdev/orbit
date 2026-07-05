@@ -14,6 +14,15 @@ uses(RefreshDatabase::class);
 
 const TOOL_REMOVE_API_CALLER_WG_IP = '10.6.0.97';
 
+function tool_remove_api_server_headers(array $overrides = []): array
+{
+    return [
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
+        'REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP,
+        ...$overrides,
+    ];
+}
+
 function createToolRemoveApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
@@ -56,7 +65,7 @@ describe('ToolRemoveController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+            tool_remove_api_server_headers(),
         );
 
         $response
@@ -81,6 +90,43 @@ describe('ToolRemoveController', function (): void {
             ->toBe('laravel-installer')
             ->and($entry->properties->get('node'))
             ->toBe('app-remove-api-1');
+    });
+
+    it('requires explicit transitional ssh fallback before running remove scripts', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
+        grantToolRemoveApiAccess($caller, $node);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'laravel-installer',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolRemoveApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/laravel-installer',
+            [
+                'node' => 'app-remove-api-1',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node_transport_required')
+            ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+
+        expect(NodeTool::find($tool->id))
+            ->not
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
     });
 
     it('removes stale tool records whose catalog definition no longer exists', function (): void {
@@ -143,8 +189,7 @@ describe('ToolRemoveController', function (): void {
             [],
             [
                 'HTTP_ACCEPT' => 'text/event-stream',
-                'REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP,
-            ],
+            ] + tool_remove_api_server_headers(),
         );
 
         $response->assertOk();

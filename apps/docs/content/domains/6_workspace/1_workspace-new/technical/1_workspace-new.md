@@ -172,7 +172,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   (`error.code=workspace.parent_app_invalid`).
 - **SSH failure (pre-configuration)** — gateway cannot reach the node
   *before* the gateway workspace row is written
-  (`error.code=workspace.ssh_failure`).
+  (`error.code=workspace.node_unreachable`).
 - **Workspace source failure (pre-configuration)** — the selected workspace
   source driver cannot create the physical source path or external IDE
   workspace before the gateway row is written

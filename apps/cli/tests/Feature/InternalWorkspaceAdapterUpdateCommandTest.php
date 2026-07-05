@@ -84,7 +84,7 @@ describe('internal workspace adapter update command', function (): void {
             ['--adapter' => 'opencode'],
             JsonEnvelope::failure(
                 'validation_failed',
-                'Workspace adapter update supports only the polyscope adapter.',
+                'Workspace adapter workspace-branch update supports only the polyscope adapter.',
                 ['field' => 'adapter', 'adapter' => 'opencode'],
             ),
         ],
@@ -92,7 +92,7 @@ describe('internal workspace adapter update command', function (): void {
             ['--update' => 'repository-path'],
             JsonEnvelope::failure(
                 'validation_failed',
-                'Workspace adapter update must be workspace-branch.',
+                'Workspace adapter update must be workspace-branch or host-branch.',
                 ['field' => 'update', 'update' => 'repository-path'],
             ),
         ],
@@ -179,6 +179,88 @@ describe('internal workspace adapter update command', function (): void {
         'lookup fixture id' => ['poly-worktree-1'],
         'sdk fixture id' => ['wt-1'],
     ]);
+
+    it('renames a Polyscope workspace host branch through fixed git argv', function (): void {
+        $workspacePath = "{$this->workspaceAdapterUpdateTemp}/workspace";
+        mkdir($workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'init', '-q'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'config', 'user.email', 'orbit@example.test'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'config', 'user.name', 'Orbit Test'], $workspacePath);
+        file_put_contents("{$workspacePath}/README.md", "test\n");
+        workspaceAdapterUpdateRunProcess(['git', 'add', 'README.md'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'commit', '-q', '-m', 'Initial'], $workspacePath);
+
+        [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions([
+            '--update' => 'host-branch',
+            '--workspace-path' => $workspacePath,
+            '--branch' => 'feature-docs',
+            '--workspace-id' => null,
+        ]));
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload)
+            ->toBe(JsonEnvelope::success([
+                'adapter' => 'polyscope',
+                'update' => 'host-branch',
+                'workspace_path' => $workspacePath,
+                'branch' => 'feature-docs',
+                'base_ref' => null,
+                'renamed' => true,
+            ]));
+
+        $branch = workspaceAdapterUpdateRunProcess(['git', 'branch', '--show-current'], $workspacePath)->getOutput();
+
+        expect(trim($branch))->toBe('feature-docs');
+    });
+
+    it('renames and resets an OpenCode workspace host branch through fixed git argv', function (): void {
+        $workspacePath = "{$this->workspaceAdapterUpdateTemp}/opencode-workspace";
+        mkdir($workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'init', '-q'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'config', 'user.email', 'orbit@example.test'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'config', 'user.name', 'Orbit Test'], $workspacePath);
+        file_put_contents("{$workspacePath}/README.md", "base\n");
+        workspaceAdapterUpdateRunProcess(['git', 'add', 'README.md'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'commit', '-q', '-m', 'Base'], $workspacePath);
+        $baseRef = trim(workspaceAdapterUpdateRunProcess(['git', 'rev-parse', 'HEAD'], $workspacePath)->getOutput());
+        file_put_contents("{$workspacePath}/README.md", "created by opencode\n");
+        workspaceAdapterUpdateRunProcess(['git', 'add', 'README.md'], $workspacePath);
+        workspaceAdapterUpdateRunProcess(['git', 'commit', '-q', '-m', 'OpenCode branch tip'], $workspacePath);
+
+        [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions([
+            '--adapter' => 'opencode',
+            '--update' => 'host-branch',
+            '--workspace-path' => $workspacePath,
+            '--branch' => 'feature-docs',
+            '--base-ref' => $baseRef,
+            '--workspace-id' => null,
+        ]));
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload)
+            ->toBe(JsonEnvelope::success([
+                'adapter' => 'opencode',
+                'update' => 'host-branch',
+                'workspace_path' => $workspacePath,
+                'branch' => 'feature-docs',
+                'base_ref' => $baseRef,
+                'renamed' => true,
+            ]));
+
+        $branch = workspaceAdapterUpdateRunProcess(['git', 'branch', '--show-current'], $workspacePath)->getOutput();
+        $head = workspaceAdapterUpdateRunProcess(['git', 'rev-parse', 'HEAD'], $workspacePath)->getOutput();
+
+        expect(trim($branch))
+            ->toBe('feature-docs')
+            ->and(trim($head))
+            ->toBe($baseRef);
+    });
 
     it('returns a failure envelope when the Polyscope database is missing', function (): void {
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions());
@@ -298,6 +380,7 @@ function validWorkspaceAdapterUpdateOptions(array $overrides = []): array
         '--update' => 'workspace-branch',
         '--workspace-id' => 'poly-worktree-1',
         '--branch' => 'feature-docs',
+        '--workspace-path' => null,
         '--operation-token' => workspaceAdapterUpdateSignedOperationToken(),
         '--json' => true,
         ...$overrides,
@@ -332,6 +415,14 @@ function createPolyscopeWorkspaceUpdateDatabase(string $path, string $workspaceI
     $statement->bindValue(':id', $workspaceId, PDO::PARAM_STR);
     $statement->bindValue(':branch', 'main', PDO::PARAM_STR);
     $statement->execute();
+}
+
+function workspaceAdapterUpdateRunProcess(array $command, string $cwd): Process
+{
+    $process = new Process($command, $cwd);
+    $process->mustRun();
+
+    return $process;
 }
 
 function createEmptyWorkspaceAdapterUpdateDatabase(string $path): void

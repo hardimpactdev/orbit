@@ -14,6 +14,15 @@ uses(RefreshDatabase::class);
 
 const TOOL_LIFECYCLE_API_CALLER_WG_IP = '10.6.0.94';
 
+function tool_lifecycle_api_server_headers(array $overrides = []): array
+{
+    return [
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
+        'REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP,
+        ...$overrides,
+    ];
+}
+
 function createToolLifecycleApiCallerNode(array $overrides = []): Node
 {
     return Node::factory()->create(array_merge([
@@ -68,7 +77,7 @@ it('dispatches orbstack lifecycle scripts through the remote shell', function (s
         ['node' => 'mac-1'],
         [],
         [],
-        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+        tool_lifecycle_api_server_headers(),
     );
 
     $response
@@ -86,6 +95,39 @@ it('dispatches orbstack lifecycle scripts through the remote shell', function (s
     'stop',
     'restart',
 ]);
+
+it('requires explicit transitional ssh fallback before running lifecycle scripts', function (): void {
+    $caller = createToolLifecycleApiCallerNode();
+    $node = Node::factory()->create([
+        'name' => 'mac-1',
+        'platform' => 'macos_15-4',
+        'status' => 'active',
+    ]);
+    assignToolLifecycleApiRole($node, 'app-dev');
+    grantToolLifecycleApiAccess($caller, $node, ['tool:start']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'orbstack',
+    ]);
+    $shell = new ToolLifecycleApiRecordingShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/tools/orbstack/start',
+        ['node' => 'mac-1'],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node_transport_required')
+        ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+
+    expect($shell->scripts)->toBe([]);
+});
 
 it('fails unsupported lifecycle tools before running host commands', function (): void {
     $caller = createToolLifecycleApiCallerNode();
@@ -109,7 +151,7 @@ it('fails unsupported lifecycle tools before running host commands', function ()
         ['node' => 'mac-1'],
         [],
         [],
-        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+        tool_lifecycle_api_server_headers(),
     );
 
     $response
@@ -143,7 +185,7 @@ it('fails unsupported orbstack platforms before running host commands', function
         ['node' => 'linux-1'],
         [],
         [],
-        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+        tool_lifecycle_api_server_headers(),
     );
 
     $response
@@ -173,7 +215,7 @@ it('requires an adopted orbstack tool row before lifecycle execution', function 
         ['node' => 'mac-1'],
         [],
         [],
-        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+        tool_lifecycle_api_server_headers(),
     );
 
     $response
@@ -212,7 +254,7 @@ it('reports remote shell lifecycle failures without retrying', function (): void
         ['node' => 'mac-1'],
         [],
         [],
-        ['REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP],
+        tool_lifecycle_api_server_headers(),
     );
 
     $response

@@ -26,6 +26,8 @@ final readonly class NodeCommandEnvelope
      */
     public array $argv;
 
+    public ?string $input;
+
     public int $timeoutSeconds;
 
     public bool $stream;
@@ -39,6 +41,7 @@ final readonly class NodeCommandEnvelope
      *     operation_id?: string|null,
      *     binary?: string|null,
      *     argv?: list<string>,
+     *     input?: string|null,
      *     timeout_seconds?: int,
      *     stream?: bool,
      * }  $attributes
@@ -52,6 +55,7 @@ final readonly class NodeCommandEnvelope
         $this->operationId = $attributes['operation_id'] ?? null;
         $this->binary = $attributes['binary'] ?? null;
         $this->argv = $attributes['argv'] ?? [];
+        $this->input = $attributes['input'] ?? null;
         $this->timeoutSeconds = $attributes['timeout_seconds'] ?? 30;
         $this->stream = $attributes['stream'] ?? true;
     }
@@ -88,6 +92,7 @@ final readonly class NodeCommandEnvelope
         string $operationId,
         string $binary,
         array $argv,
+        ?string $input = null,
         int $timeoutSeconds = 30,
         bool $stream = true,
     ): self {
@@ -98,6 +103,7 @@ final readonly class NodeCommandEnvelope
             'operation_id' => $operationId,
             'binary' => $binary,
             'argv' => $argv,
+            'input' => $input,
             'timeout_seconds' => $timeoutSeconds,
             'stream' => $stream,
         ]);

@@ -6,6 +6,7 @@ namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
 use App\Models\Node;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 
 final readonly class ToolLifecycleManager
 {
@@ -59,6 +60,15 @@ final readonly class ToolLifecycleManager
 
         if ($script === null) {
             return ToolRegistryFailure::unsupportedAction($tool, $action);
+        }
+
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return ToolRegistryFailure::nodeTransportRequired(
+                $transport->message("tool:{$action}"),
+                $transport->meta(),
+            );
         }
 
         $result = $this->remoteShell->run($targetNode, $script, ['throw' => false]);

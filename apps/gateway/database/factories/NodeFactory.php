@@ -23,6 +23,9 @@ class NodeFactory extends Factory
             'user' => 'orbit',
             'orbit_path' => '/home/orbit/orbit',
             'status' => NodeStatus::Active,
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => fake()->unique()->ipv4(),
+            'orbit_agent_capable' => false,
         ];
     }
 

@@ -14,6 +14,7 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -24,6 +25,7 @@ final readonly class RemoveApp
         private RemoteShell $remoteShell,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
+        private ExplicitRemoteShellFallback $transport,
     ) {}
 
     /**
@@ -127,14 +129,23 @@ final readonly class RemoveApp
                 ];
             }
 
-            // Best-effort cleanup of non-runtime artifacts (caddy site,
-            // process runtime units, optional app path). Failures here surface as
-            // proxy/process drift through their own families on the next
-            // doctor pass.
-            $this->remoteShell->run(
-                $app->node,
-                $this->renderNonRuntimeCleanupScript($app, $processCleanupScripts, $removeAppPath),
-            );
+            if ($this->transport->allowed()) {
+                // Best-effort cleanup of non-runtime artifacts (caddy site,
+                // process runtime units, optional app path). Failures here surface as
+                // proxy/process drift through their own families on the next
+                // doctor pass.
+                $this->remoteShell->run(
+                    $app->node,
+                    $this->renderNonRuntimeCleanupScript($app, $processCleanupScripts, $removeAppPath),
+                );
+            } else {
+                $warnings[] = [
+                    'code' => 'node_transport_required',
+                    'family' => 'transport',
+                    'message' => $this->transport->message('app:remove cleanup'),
+                    'next_command' => 'app:remove --node-transport=transitional-ssh-fallback',
+                ];
+            }
         }
 
         return [

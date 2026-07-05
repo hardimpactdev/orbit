@@ -14,6 +14,7 @@ final class DatabaseUpdateCommand extends DatabaseGatewayCommand
         {--slug= : New database connection slug}
         {--driver= : Database driver}
         {--node= : Owning database node selector}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--host= : Database host}
         {--port= : Database port}
         {--database= : Database name}

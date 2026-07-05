@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
@@ -24,10 +24,19 @@ uses(TestCase::class, RefreshDatabase::class);
 
 it('aligns a Polyscope workspace branch through the app node', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'beast']);
-    $hostShell = new PolyscopeBranchAlignerRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '{"branch":"cta"}', stderr: '', durationMs: 1),
-    );
     $localTransport = new PolyscopeBranchAlignerLocalTransport(
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'adapter' => 'polyscope',
+                'update' => 'host-branch',
+                'workspace_path' => '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
+                'branch' => 'cta',
+                'renamed' => true,
+            ]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stderr: '',
+            durationMs: 1,
+        ),
         new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode(JsonEnvelope::success([
@@ -43,7 +52,6 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
     );
 
     new PolyscopeWorkspaceBranchAligner(
-        remoteShell: $hostShell,
         localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
     )->align(
         node: $node,
@@ -52,58 +60,56 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
         name: 'cta',
     );
 
-    expect($hostShell->runs)
-        ->toHaveCount(1)
-        ->and($hostShell->runs[0]['node'])
-        ->toBe('beast')
-        ->and($hostShell->runs[0]['options']['metadata'])
-        ->toMatchArray([
-            'ORBIT_POLYSCOPE_WORKSPACE_PATH' => '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
-            'ORBIT_WORKSPACE_NAME' => 'cta',
-        ])
-        ->and($hostShell->runs[0]['script'])
-        ->toContain('git', 'branch', '-m')
-        ->and($hostShell->runs[0]['script'])
-        ->not->toContain('python3')->and($hostShell->runs[0]['script'])
-        ->not->toContain('python -c')->and($hostShell->runs[0]['script'])
-        ->not->toContain('sqlite3')->and($hostShell->runs[0]['script'])
-        ->not->toContain('update worktrees');
+    expect($localTransport->calls)->toHaveCount(2);
 
-    expect($localTransport->calls)->toHaveCount(1);
+    $hostBranchScript = $localTransport->calls[0]['script'];
+    $adapterUpdateScript = $localTransport->calls[1]['script'];
 
-    $localScript = $localTransport->calls[0]['script'];
-
-    expect($localScript)
+    expect($hostBranchScript)
         ->toContain('internal:workspace-adapter:update')
-        ->and($localScript)
+        ->and($hostBranchScript)
         ->toContain("--adapter='polyscope'")
-        ->and($localScript)
-        ->toContain("--update='workspace-branch'")
-        ->and($localScript)
-        ->toContain("--workspace-id='wt-1'")
-        ->and($localScript)
+        ->and($hostBranchScript)
+        ->toContain("--update='host-branch'")
+        ->and($hostBranchScript)
+        ->toContain("--workspace-path='/home/nckrtl/.polyscope/clones/6dad0913/young-bat'")
+        ->and($hostBranchScript)
         ->toContain("--branch='cta'")
-        ->and($localScript)
+        ->and($hostBranchScript)
         ->toContain('--operation-token=')
-        ->and($localScript)
-        ->not->toContain('python3')->and($localScript)
-        ->not->toContain('python -c')->and($localScript)
+        ->and($hostBranchScript)
+        ->not->toContain('python3')->and($hostBranchScript)
+        ->not->toContain('python -c')->and($hostBranchScript)
+        ->not->toContain('sqlite3')->and($adapterUpdateScript)->toContain('internal:workspace-adapter:update')->and(
+            $adapterUpdateScript,
+        )->toContain("--adapter='polyscope'")->and($adapterUpdateScript)->toContain("--update='workspace-branch'")->and(
+            $adapterUpdateScript,
+        )->toContain("--workspace-id='wt-1'")->and($adapterUpdateScript)->toContain("--branch='cta'")->and(
+            $adapterUpdateScript,
+        )->toContain('--operation-token=')->and($adapterUpdateScript)
+        ->not->toContain('python3')->and($adapterUpdateScript)
+        ->not->toContain('python -c')->and($adapterUpdateScript)
         ->not->toContain('sqlite3');
 });
 
 it('does not leak host branch rename output when a Polyscope branch cannot be aligned', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'beast']);
     $secret = 'remote-host-secret';
-    $hostShell = new PolyscopeBranchAlignerRecordingShell(
-        new RemoteShellResult(exitCode: 1, stdout: "stdout {$secret}", stderr: "stderr {$secret}", durationMs: 1),
-    );
     $localTransport = new PolyscopeBranchAlignerLocalTransport(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(
+            exitCode: 1,
+            stdout: json_encode(JsonEnvelope::failure(
+                'branch_rename_failed',
+                "secret {$secret}",
+                ['secret' => $secret],
+            ), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stderr: "stderr {$secret}",
+            durationMs: 1,
+        ),
     );
 
     try {
         new PolyscopeWorkspaceBranchAligner(
-            remoteShell: $hostShell,
             localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
         )->align(
             node: $node,
@@ -126,16 +132,25 @@ it('does not leak host branch rename output when a Polyscope branch cannot be al
             ]);
     }
 
-    expect($localTransport->calls)->toBeEmpty();
+    expect($localTransport->calls)->toHaveCount(1);
 });
 
 it('does not leak local executor output when Polyscope adapter metadata cannot be updated', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'beast']);
     $secret = 'remote-update-secret';
-    $hostShell = new PolyscopeBranchAlignerRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '{"branch":"cta"}', stderr: '', durationMs: 1),
-    );
     $localTransport = new PolyscopeBranchAlignerLocalTransport(
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'adapter' => 'polyscope',
+                'update' => 'host-branch',
+                'workspace_path' => '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
+                'branch' => 'cta',
+                'renamed' => true,
+            ]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stderr: '',
+            durationMs: 1,
+        ),
         new RemoteShellResult(
             exitCode: 1,
             stdout: json_encode(JsonEnvelope::failure(
@@ -150,7 +165,6 @@ it('does not leak local executor output when Polyscope adapter metadata cannot b
 
     try {
         new PolyscopeWorkspaceBranchAligner(
-            remoteShell: $hostShell,
             localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
         )->align(
             node: $node,
@@ -175,35 +189,18 @@ it('does not leak local executor output when Polyscope adapter metadata cannot b
     }
 });
 
-final class PolyscopeBranchAlignerRecordingShell implements RemoteShell
-{
-    /** @var list<array{node: string, script: string, options: array<string, mixed>}> */
-    public array $runs = [];
-
-    public function __construct(
-        private readonly RemoteShellResult $result,
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->runs[] = [
-            'node' => $node->name,
-            'script' => $script,
-            'options' => $options,
-        ];
-
-        return $this->result;
-    }
-}
-
 final class PolyscopeBranchAlignerLocalTransport implements RemoteExecutor
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
 
-    public function __construct(
-        private readonly RemoteShellResult $result,
-    ) {}
+    /** @var list<RemoteShellResult> */
+    private array $results;
+
+    public function __construct(RemoteShellResult ...$results)
+    {
+        $this->results = $results;
+    }
 
     /**
      * @param  array<string, mixed>  $options
@@ -217,7 +214,14 @@ final class PolyscopeBranchAlignerLocalTransport implements RemoteExecutor
             'options' => $options,
         ];
 
-        return $this->result;
+        return (
+            array_shift($this->results) ?? new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: 'unexpected call',
+                durationMs: 1,
+            )
+        );
     }
 
     /**
@@ -244,6 +248,7 @@ function polyscopeBranchAlignerLocalExecutor(PolyscopeBranchAlignerLocalTranspor
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 

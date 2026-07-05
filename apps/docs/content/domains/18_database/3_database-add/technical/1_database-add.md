@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit database:add [slug] --driver=<mysql|pgsql|sqlite> [--node=<node>] [--host=<host>] [--port=<port>] [--database=<name>] [--path=<path>] [--username=<username>] [--password=<password>] [--json]
+orbit database:add [slug] --driver=<mysql|pgsql|sqlite> [--node=<node>] [--node-transport=<transport>] [--host=<host>] [--port=<port>] [--database=<name>] [--path=<path>] [--username=<username>] [--password=<password>] [--json]
 ```
 
 ## Input Contract
@@ -31,6 +31,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `username` | `--username` | `driver` is `mysql` or `pgsql`. | Never. | Non-secret username. |
 | `password` | `--password` | Optional. | Never. | Secret; stored only in encrypted credentials. |
 | `node` | `--node` | Required when `driver=sqlite`; optional otherwise. | Never. | Visible node slug. SQLite always requires an owning node plus file path. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | Selects the JSON renderer. |
 
 ## Behavior Contract

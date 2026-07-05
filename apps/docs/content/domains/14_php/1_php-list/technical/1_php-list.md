@@ -1,4 +1,4 @@
-# Technical Contract: `orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]`
+# Technical Contract: `orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--live] [--json]`
 
 [Back to public `php:list` documentation.](../php-list.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--live] [--json]
+orbit php:list [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--live] [--json]
 ```
 
 ## Input Contract
@@ -23,6 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | Local `node:default` when no app or workspace context resolves a node. | Visible node slug. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `app` | `--app` | Optional. | Never. | Cwd-inferred app when available. | Visible app selector. |
 | `workspace` | `--workspace` | Optional. | Never. | Cwd-inferred workspace when available. | Visible workspace selector. Requires resolved parent app when the workspace name is ambiguous. |
 | `live` | `--live` | Optional. | Never. | `false`. | Requests live image inspection on the resolved node. |

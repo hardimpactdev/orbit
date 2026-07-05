@@ -16,13 +16,25 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\Platform\PlatformDetector;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Security\OperationTokenSigner;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -55,6 +67,14 @@ function assignNodesProbeAppHostRole(Node $node, array $settings = ['tld' => 'te
     ]);
 }
 
+function nodesProbeUseAgentPush(): void
+{
+    request()->headers->set(
+        \App\Services\RemoteShell\ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+}
+
 function assignNodesProbeGatewayRole(Node $node): void
 {
     NodeRoleAssignment::factory()->create([
@@ -72,6 +92,32 @@ function assignNodesProbeAgentRole(Node $node, array $settings = ['tld' => 'agen
         'status' => 'active',
         'settings' => $settings,
     ]);
+}
+
+function nodesProbeWithRemoteShell(NodesProbeRecordingRemoteShell $remoteShell): NodesProbe
+{
+    return new NodesProbe(
+        remoteShell: $remoteShell,
+        localExecutor: nodesProbeLocalExecutor($remoteShell),
+    );
+}
+
+function nodesProbeLocalExecutor(NodesProbeRecordingRemoteShell $remoteShell): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: new NodesProbeRemoteExecutor($remoteShell),
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: 'gateway-secret',
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
 }
 
 function createNodesProbeGatewayNode(): Node
@@ -149,7 +195,7 @@ describe('record completeness', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'incomplete-prod',
@@ -166,7 +212,7 @@ describe('record completeness', function (): void {
         expect($keys)
             ->toContain('node.record_incomplete')
             ->and($keys)
-            ->not->toContain('node.ssh_unreachable')->and($keys)
+            ->not->toContain('node.transport_unreachable')->and($keys)
             ->not->toContain('node.runtime_missing')->and($remoteShell->scripts)->toBe([]);
     });
 
@@ -513,7 +559,13 @@ describe('external service stubs', function (): void {
             ->toBe('Could not detect local platform for test: Unsupported platform family: Solaris');
     });
 
-    it('accepts reachable app nodes over SSH', function (): void {
+    it('accepts reachable app nodes over agent transport', function (): void {
+        nodesProbeUseAgentPush();
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.51:9477/v1/commands' => nodes_probe_executor_verify_response(),
+        ]);
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
@@ -525,28 +577,34 @@ describe('external service stubs', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
+            'wireguard_address' => '10.44.0.51',
+            'orbit_agent_capable' => true,
         ]);
         assignNodesProbeAppHostRole($node);
-        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.44.0.51/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');
+        $transport = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.transport_unreachable');
 
-        expect($ssh)->toHaveCount(0);
-        expect(array_slice($remoteShell->scripts, 0, 2))->toBe([
-            'true',
-            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
-        ]);
-        expect($remoteShell->scripts)->toHaveCount(3);
-        expect($remoteShell->scripts[2])->toContain('"runtime_user"');
-        expect($remoteShell->options[0]['timeout'])->toBe(10);
+        expect($transport)->toHaveCount(0);
+        expect($remoteShell->scripts)->not->toContain('true');
+        Http::assertSent(fn (Request $request): bool => nodes_probe_executor_verify_request_matches(
+            request: $request,
+            url: 'http://10.44.0.51:9477/v1/commands',
+        ));
     });
 
-    it('detects unreachable app nodes over SSH', function (): void {
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'connection refused', durationMs: 1),
-        ]));
+    it('detects unreachable app nodes over agent transport', function (): void {
+        nodesProbeUseAgentPush();
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.52:9477/v1/commands' => nodes_probe_executor_verify_response(
+                exitCode: 255,
+                stderr: 'connection refused',
+            ),
+        ]);
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
 
         $node = Node::create([
             'name' => 'test',
@@ -555,63 +613,82 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'tld' => 'test',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
+            'wireguard_address' => '10.44.0.52',
+            'orbit_agent_capable' => true,
         ]);
         assignNodesProbeAppHostRole($node);
-        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.5/32']);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.44.0.52/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable'));
+        $transport = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.transport_unreachable',
+        ));
 
-        expect($ssh)->toHaveCount(1);
-        expect($ssh[0]->kind)->toBe(DriftKind::Unverifiable);
-        expect($ssh[0]->detail)->toBe([
+        expect($transport)->toHaveCount(1);
+        expect($transport[0]->kind)->toBe(DriftKind::Unverifiable);
+        expect($transport[0]->detail)->toBe([
             'exit_code' => 255,
             'output' => 'connection refused',
         ]);
+        Http::assertSent(fn (Request $request): bool => nodes_probe_executor_verify_request_matches(
+            request: $request,
+            url: 'http://10.44.0.52:9477/v1/commands',
+        ));
     });
 
-    it('detects unreachable agent nodes over SSH', function (): void {
+    it('detects unreachable agent nodes over agent transport', function (): void {
+        nodesProbeUseAgentPush();
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.53:9477/v1/commands' => nodes_probe_executor_verify_response(
+                exitCode: 255,
+                stderr: 'agent connection timed out',
+            ),
+        ]);
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(
-                exitCode: 255,
-                stdout: '',
-                stderr: 'ssh: connect to host 10.6.0.11 port 22: Connection timed out',
-                durationMs: 1,
-            ),
         ]));
 
         $node = Node::create([
             'name' => 'agent',
-            'host' => '10.6.0.11',
+            'host' => '10.44.0.53',
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.11',
+            'wireguard_address' => '10.44.0.53',
             'tld' => 'agent',
+            'orbit_agent_capable' => true,
         ]);
         assignNodesProbeAgentRole($node);
-        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.11/32']);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.44.0.53/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable'));
+        $transport = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.transport_unreachable',
+        ));
 
-        expect($ssh)->toHaveCount(1);
-        expect($ssh[0]->kind)->toBe(DriftKind::Unverifiable);
-        expect($ssh[0]->summary)->toBe('Gateway cannot reach node agent over SSH.');
-        expect($ssh[0]->detail)->toBe([
+        expect($transport)->toHaveCount(1);
+        expect($transport[0]->kind)->toBe(DriftKind::Unverifiable);
+        expect($transport[0]->summary)->toBe('Gateway cannot reach node agent over node transport.');
+        expect($transport[0]->detail)->toBe([
             'exit_code' => 255,
-            'output' => 'ssh: connect to host 10.6.0.11 port 22: Connection timed out',
+            'output' => 'agent connection timed out',
         ]);
+        Http::assertSent(fn (Request $request): bool => nodes_probe_executor_verify_request_matches(
+            request: $request,
+            url: 'http://10.44.0.53:9477/v1/commands',
+        ));
     });
 
-    it('skips SSH reachability for non-app nodes', function (): void {
+    it('skips node transport reachability for non-app nodes', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'gateway',
@@ -623,18 +700,17 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');
+        $transport = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.transport_unreachable');
 
-        expect($ssh)->toHaveCount(0);
-        expect($remoteShell->scripts)->toHaveCount(1);
-        expect($remoteShell->scripts[0])->toContain('"runtime_user"');
+        expect($transport)->toHaveCount(0);
+        expect($remoteShell->scripts)->not->toContain('true');
     });
 
-    it('skips SSH reachability for database nodes', function (): void {
+    it('skips node transport reachability for database nodes', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'database',
@@ -652,11 +728,10 @@ describe('external service stubs', function (): void {
         WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.3/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');
+        $transport = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.transport_unreachable');
 
-        expect($ssh)->toHaveCount(0);
-        expect($remoteShell->scripts)->toHaveCount(1);
-        expect($remoteShell->scripts[0])->toContain('"runtime_user"');
+        expect($transport)->toHaveCount(0);
+        expect($remoteShell->scripts)->not->toContain('true');
     });
 
     it('returns empty for gateway service checks', function (): void {
@@ -680,7 +755,7 @@ describe('external service stubs', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'test',
@@ -698,16 +773,13 @@ describe('external service stubs', function (): void {
         $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.runtime_missing');
 
         expect($runtime)->toHaveCount(0);
-        expect(array_slice($remoteShell->scripts, 0, 2))->toBe([
-            'true',
-            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
-        ]);
-        expect($remoteShell->scripts)->toHaveCount(3);
-        expect($remoteShell->scripts[2])->toContain('"runtime_user"');
+        expect($remoteShell->scripts[0])->toContain('internal:executor:verify');
+        expect($remoteShell->scripts[1])->toContain('internal:runtime-backend:probe');
+        expect($remoteShell->scripts)->toHaveCount(2);
     });
 
     it('detects missing app runtime backend', function (): void {
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
         ]));
@@ -739,7 +811,7 @@ describe('external service stubs', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'should not run', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'gateway',
@@ -754,8 +826,7 @@ describe('external service stubs', function (): void {
         $runtime = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.runtime_missing');
 
         expect($runtime)->toHaveCount(0);
-        expect($remoteShell->scripts)->toHaveCount(1);
-        expect($remoteShell->scripts[0])->toContain('"runtime_user"');
+        expect($remoteShell->scripts)->toHaveCount(0);
     });
 
     it('detects missing development TLD for development app nodes', function (): void {
@@ -1234,7 +1305,7 @@ describe('adoption', function (): void {
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
@@ -1276,16 +1347,25 @@ describe('adoption', function (): void {
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: nodeIdentityArtifactPayload(['role' => 'unknown', 'local_role' => 'unknown']),
-                stderr: '',
-                durationMs: 1,
-            ),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
+
+        $otherNode = Node::create([
+            'name' => 'other',
+            'host' => '10.0.0.2',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.9',
+        ]);
+        assignNodesProbeGatewayRole($otherNode);
+        WireGuardPeer::factory()->create([
+            'node_id' => $otherNode->id,
+            'public_key' => 'app-public-key',
+            'allowed_ips' => '10.6.0.9/32',
+        ]);
 
         $node = Node::create([
             'name' => 'test',
@@ -1312,7 +1392,7 @@ describe('adoption', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'test',
@@ -1340,16 +1420,25 @@ describe('adoption', function (): void {
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: nodeIdentityArtifactPayload(['name' => 'other']),
-                stderr: '',
-                durationMs: 1,
-            ),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
+
+        $otherNode = Node::create([
+            'name' => 'other',
+            'host' => '10.0.0.2',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.8',
+        ]);
+        assignNodesProbeAppHostRole($otherNode);
+        WireGuardPeer::factory()->create([
+            'node_id' => $otherNode->id,
+            'public_key' => 'app-public-key',
+            'allowed_ips' => '10.6.0.8/32',
+        ]);
 
         $node = Node::create([
             'name' => 'test',
@@ -1370,7 +1459,7 @@ describe('adoption', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "systemd 255\n", stderr: '', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithRemoteShell($remoteShell);
 
         $node = Node::create([
             'name' => 'test',
@@ -1394,13 +1483,12 @@ describe('adoption', function (): void {
             'exit_code' => 0,
             'output' => 'systemd 255',
         ]);
-        expect($remoteShell->scripts)->toBe([
-            'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
-        ]);
+        expect($remoteShell->scripts)->toHaveCount(1);
+        expect($remoteShell->scripts[0])->toContain('internal:runtime-backend:probe');
     });
 
     it('snapshots unavailable app runtime readiness for adopt', function (): void {
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'command not found: systemctl', durationMs: 1),
         ]));
 
@@ -1564,7 +1652,7 @@ describe('adoption', function (): void {
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
@@ -1596,7 +1684,7 @@ describe('adoption', function (): void {
     });
 
     it('adopts available app runtime readiness', function (): void {
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
@@ -1628,7 +1716,7 @@ describe('adoption', function (): void {
     });
 
     it('conflicts unavailable app runtime readiness during adopt', function (): void {
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+        $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
         ]));
 
@@ -1753,10 +1841,16 @@ describe('agent role baseline', function (): void {
     });
 
     it('detects missing agent runtime user for agent nodes', function (): void {
-        $remoteShell = new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'no such user', durationMs: 1),
+        nodesProbeUseAgentPush();
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.42:9477/v1/commands' => nodes_probe_agent_runtime_response([
+                'runtime_user' => false,
+                'orbit_cli' => false,
+            ]),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
 
         $node = Node::create([
             'name' => 'agent-1',
@@ -1764,8 +1858,9 @@ describe('agent role baseline', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
+            'wireguard_address' => '10.44.0.42',
             'tld' => 'agent',
+            'orbit_agent_capable' => true,
         ]);
         $node->roleAssignments()->create([
             'role' => 'agent',
@@ -1796,14 +1891,20 @@ describe('agent role baseline', function (): void {
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Missing);
+        Http::assertSent(fn (Request $request): bool => nodes_probe_agent_runtime_request_matches($request));
     });
 
     it('detects an agent runtime user that cannot execute the Orbit CLI', function (): void {
-        $remoteShell = new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 126, stdout: '', stderr: 'Permission denied', durationMs: 1),
+        nodesProbeUseAgentPush();
+
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.42:9477/v1/commands' => nodes_probe_agent_runtime_response([
+                'runtime_user' => true,
+                'orbit_cli' => false,
+            ]),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
 
         $node = Node::create([
             'name' => 'agent-1',
@@ -1811,8 +1912,9 @@ describe('agent role baseline', function (): void {
             'orbit_path' => '/orbit',
             'status' => 'active',
             'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.5',
+            'wireguard_address' => '10.44.0.42',
             'tld' => 'agent',
+            'orbit_agent_capable' => true,
         ]);
         $node->roleAssignments()->create([
             'role' => 'agent',
@@ -1843,8 +1945,7 @@ describe('agent role baseline', function (): void {
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Divergent);
-        expect($remoteShell->scripts[1])->toContain('sudo -u agent -H');
-        expect($remoteShell->scripts[1])->toContain('/usr/local/bin/orbit --version --local');
+        Http::assertSent(fn (Request $request): bool => nodes_probe_agent_runtime_request_matches($request));
     });
 
     it('passes when agent DNS mapping is correct', function (): void {
@@ -2020,6 +2121,80 @@ function nodeIdentityArtifactPayload(array $overrides = []): string
     ], $overrides), JSON_THROW_ON_ERROR);
 }
 
+/**
+ * @param  array<string, mixed>  $data
+ */
+function nodes_probe_agent_runtime_response(array $data): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node-agent-runtime.probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => $data,
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
+}
+
+function nodes_probe_executor_verify_response(int $exitCode = 0, string $stderr = ''): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node.reachable',
+        'binary' => 'orbit',
+        'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+        'exit_code' => $exitCode,
+        'frames' => [
+            [
+                'type' => $stderr === '' ? 'stdout' : 'stderr',
+                'message' => $stderr,
+            ],
+            [
+                'type' => 'exit',
+                'message' => (string) $exitCode,
+            ],
+        ],
+    ]);
+}
+
+function nodes_probe_executor_verify_request_matches(Request $request, string $url): bool
+{
+    return (
+        $request->url() === $url
+        && $request['binary'] === 'orbit'
+        && $request['argv'][0] === 'internal:executor:verify'
+        && str_starts_with((string) $request['argv'][1], '--operation-token=')
+        && $request['argv'][2] === '--json'
+        && $request['operation_id'] === 'node.reachable'
+    );
+}
+
+function nodes_probe_agent_runtime_request_matches(Request $request): bool
+{
+    return (
+        $request->url() === 'http://10.44.0.42:9477/v1/commands'
+        && $request['binary'] === 'orbit'
+        && $request['argv'][0] === 'internal:agent-runtime:probe'
+        && str_starts_with((string) $request['argv'][1], '--operation-token=')
+        && $request['argv'][2] === '--json'
+        && $request['operation_id'] === 'node-agent-runtime.probe'
+    );
+}
+
 final class NodesProbeRecordingRemoteShell implements RemoteShell
 {
     /**
@@ -2045,5 +2220,22 @@ final class NodesProbeRecordingRemoteShell implements RemoteShell
         $this->options[] = $options;
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final readonly class NodesProbeRemoteExecutor implements RemoteExecutor
+{
+    public function __construct(
+        private NodesProbeRecordingRemoteShell $remoteShell,
+    ) {}
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return $this->remoteShell->run($node, $script, $options);
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('NodesProbeRemoteExecutor does not support start().');
     }
 }

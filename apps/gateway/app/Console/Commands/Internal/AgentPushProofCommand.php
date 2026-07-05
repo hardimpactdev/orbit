@@ -14,6 +14,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 #[Signature('orbit:internal:agent-push-proof
     {node : Target node registry name}
@@ -46,7 +47,20 @@ class AgentPushProofCommand extends Command
             binary: 'orbit',
             argv: ['version', '--json'],
         );
-        $transport = $selector->select($node, $envelope, NodeTransportPreference::Auto);
+        try {
+            $transport = $selector->select($node, $envelope, NodeTransportPreference::Auto);
+        } catch (RuntimeException) {
+            $this->emit([
+                'node' => $node->name,
+                'transport' => NodeTransport::AgentPush->value,
+                'status' => 'failed',
+                'operation_id' => $envelope->operationId,
+                'binary' => $envelope->binary,
+                'error' => 'agent-push transport is unavailable for the target node; RemoteShell requires explicit --transport=transitional-ssh-fallback break-glass opt-in when this command supports it',
+            ]);
+
+            return self::FAILURE;
+        }
 
         if ($transport !== NodeTransport::AgentPush) {
             $this->emit([

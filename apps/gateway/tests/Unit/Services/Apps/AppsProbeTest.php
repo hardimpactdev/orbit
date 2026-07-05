@@ -12,14 +12,23 @@ use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Services\Apps\AppsProbe;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    request()->headers->set(
+        ExplicitRemoteShellFallback::HEADER,
+        NodeTransportPreference::AgentPush->value,
+    );
+
     $this->probe = new AppsProbe;
 });
 
@@ -468,12 +477,12 @@ describe('managed runtime config reality', function (): void {
     });
 
     it('lists orphan /etc/orbit/apps/*.ini files via the node config scan when the directory probe is present', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeRecordingRemoteShell(
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeConfigsProbe(
             "orbit-config-dir:present\n/etc/orbit/apps/docs.ini\n/etc/orbit/apps/marketing.ini\n",
         );
 
-        $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+        $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
         expect($probe->status->value)
             ->toBe('present')
@@ -488,17 +497,15 @@ describe('managed runtime config reality', function (): void {
                 'path' => '/etc/orbit/apps/docs.ini',
                 'app_slug' => 'docs',
             ])
-            ->and($shell->scripts[0])
-            ->toContain('sudo find "$dir"')
-            ->and($shell->scripts[0])
-            ->toContain("dir='/etc/orbit/apps'");
+            ->and(appsRuntimeConfigsProbeWasSent())
+            ->toBeTrue();
     });
 
     it('reports the runtime config directory as proven-absent when sudo test -d exits 1 cleanly', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeRecordingRemoteShell("orbit-config-dir:absent\n");
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeConfigsProbe("orbit-config-dir:absent\n");
 
-        $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+        $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
         expect($probe->status->value)
             ->toBe('absent')
@@ -509,15 +516,15 @@ describe('managed runtime config reality', function (): void {
     });
 
     it('reports unknown sudo/probe failures distinctly (does NOT silently hide stale runtime_config_extra artifacts)', function (): void {
-        $node = appNode();
+        $node = appsProbeAgentNode();
         // Even if find emits artifact lines after an error sentinel, we must
         // not surface them — they are not trustworthy. The status carries
         // forward as Error and the configs snapshot is intentionally empty.
-        $shell = new AppsProbeRecordingRemoteShell(
+        fakeAppsRuntimeConfigsProbe(
             "orbit-config-dir:error sudo: a terminal is required to read the password\n/etc/orbit/apps/stale.ini\n",
         );
 
-        $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+        $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
         expect($probe->status->value)
             ->toBe('error')
@@ -530,16 +537,16 @@ describe('managed runtime config reality', function (): void {
     it(
         'reports as error (not clean empty) when sudo test -d succeeds but sudo find itself fails (would otherwise hide stale runtime_config_extra)',
         function (): void {
-            $node = appNode();
+            $node = appsProbeAgentNode();
             // Probe script must distinguish a successful directory check followed
             // by a FAILING find from a successful directory check with no entries.
-            // The shell emits `orbit-config-dir:error <stderr>` so the orchestrator
+            // The internal agent probe emits `orbit-config-dir:error <stderr>` so the orchestrator
             // does not treat this as a clean empty snapshot.
-            $shell = new AppsProbeRecordingRemoteShell(
+            fakeAppsRuntimeConfigsProbe(
                 "orbit-config-dir:error find: '/etc/orbit/apps': Permission denied\n",
             );
 
-            $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+            $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
             expect($probe->status->value)
                 ->toBe('error')
@@ -551,12 +558,12 @@ describe('managed runtime config reality', function (): void {
     );
 
     it('captures both find stdout and find exit status so a non-zero find exit becomes error even without stderr text', function (): void {
-        $node = appNode();
-        // Simulate: shell emits error sentinel because find exited non-zero
+        $node = appsProbeAgentNode();
+        // Simulate: internal agent probe emits error sentinel because find exited non-zero
         // with no stderr text (the script falls back to a synthesized message).
-        $shell = new AppsProbeRecordingRemoteShell("orbit-config-dir:error sudo find failed (ec=2)\n");
+        fakeAppsRuntimeConfigsProbe("orbit-config-dir:error sudo find failed (ec=2)\n");
 
-        $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+        $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
         expect($probe->status->value)
             ->toBe('error')
@@ -569,61 +576,46 @@ describe('managed runtime config reality', function (): void {
     it(
         'reports Error status (no clean absence) when the remote shell call itself throws — SSH/transport failure must not abort doctor',
         function (): void {
-            $node = appNode();
-            $shell = new AppsProbeThrowingRemoteShell('ssh: connect to host: connection refused');
+            $node = appsProbeAgentNode();
+            Http::preventStrayRequests();
+            Http::fake([
+                'http://10.6.0.63:9477/v1/commands' => Http::response(['error' => 'agent unavailable'], 503),
+            ]);
 
-            $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+            $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
             expect($probe->status->value)
                 ->toBe('error')
                 ->and($probe->error)
-                ->toContain('connection refused')
+                ->toContain('HTTP 503')
                 ->and($probe->configs->isEmpty())
                 ->toBeTrue();
         },
     );
 
-    it('reports Error status (no clean absence) when the remote shell returns a non-zero exit code without a sentinel', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeFailingRemoteShell(exitCode: 255, stderr: 'remote shell pipeline broke');
+    it('reports Error status (no clean absence) when the agent response has no sentinel', function (): void {
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeConfigsProbe('agent command failed before sentinel');
 
-        $probe = new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+        $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
         expect($probe->status->value)
             ->toBe('error')
             ->and($probe->error)
-            ->toContain('remote shell pipeline broke')
+            ->toContain('no status sentinel')
             ->and($probe->configs->isEmpty())
             ->toBeTrue();
     });
 
     it(
-        'renders an introspect script that captures sudo find exit status and stderr separately and only emits `orbit-config-dir:present` after find succeeds',
+        'dispatches runtime config scans through the agent internal command',
         function (): void {
-            $node = appNode();
-            $shell = new AppsProbeRecordingRemoteShell("orbit-config-dir:absent\n");
+            $node = appsProbeAgentNode();
+            fakeAppsRuntimeConfigsProbe("orbit-config-dir:absent\n");
 
-            new AppsProbe($shell)->introspectNodeRuntimeConfigs($node);
+            new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
-            $script = $shell->scripts[0];
-
-            expect($script)
-                ->toContain("dir='/etc/orbit/apps'")
-                ->and($script)
-                ->toContain('sudo test -d')
-                ->and($script)
-                ->toContain('sudo find')
-                // The script must capture the find exit code separately so a
-                // successful test -d followed by a failing find still surfaces
-                // through the error sentinel.
-                ->and($script)
-                ->toContain('list_ec=$?')
-                ->and($script)
-                ->toContain('orbit-config-dir:error')
-                ->and($script)
-                ->toContain('orbit-config-dir:present')
-                ->and($script)
-                ->toContain('orbit-config-dir:absent');
+            expect(appsRuntimeConfigsProbeWasSent())->toBeTrue();
         },
     );
 });
@@ -800,12 +792,12 @@ function issue(array $drift, string $key): ?DriftEntry
 
 describe('extra runtime container scan', function (): void {
     it('lists every orbit-owned app runtime container on the node by label when the scan succeeds (Present status)', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeRecordingRemoteShell(
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeContainersProbe(
             "orbit-container-scan:present\norbit-app-docs\tdocs\norbit-app-marketing\tmarketing\n",
         );
 
-        $probe = new AppsProbe($shell)->introspectNode($node);
+        $probe = new AppsProbe()->introspectNode($node);
 
         expect($probe->status->value)
             ->toBe('present')
@@ -820,19 +812,15 @@ describe('extra runtime container scan', function (): void {
                 'container_name' => 'orbit-app-docs',
                 'app_slug' => 'docs',
             ])
-            ->and($shell->scripts[0])
-            ->toContain('docker container ls')
-            ->and($shell->scripts[0])
-            ->toContain('orbit.managed=true')
-            ->and($shell->scripts[0])
-            ->toContain('orbit.container.kind=app-runtime');
+            ->and(appsRuntimeContainersProbeWasSent())
+            ->toBeTrue();
     });
 
     it('reports Absent status when docker is not installed on the node (no Orbit-managed runtime containers can exist)', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeRecordingRemoteShell("orbit-container-scan:absent\n");
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeContainersProbe("orbit-container-scan:absent\n");
 
-        $probe = new AppsProbe($shell)->introspectNode($node);
+        $probe = new AppsProbe()->introspectNode($node);
 
         expect($probe->status->value)
             ->toBe('absent')
@@ -845,15 +833,15 @@ describe('extra runtime container scan', function (): void {
     it(
         'reports Error status with the docker stderr when docker container ls fails for an unknown reason (does NOT silently hide stale runtime_container_extra artifacts)',
         function (): void {
-            $node = appNode();
+            $node = appsProbeAgentNode();
             // Even if container entries appear after an error sentinel, they
             // must not be surfaced — the status carries forward as Error and
             // the snapshot is intentionally empty.
-            $shell = new AppsProbeRecordingRemoteShell(
+            fakeAppsRuntimeContainersProbe(
                 "orbit-container-scan:error Cannot connect to the Docker daemon at unix:///var/run/docker.sock\norbit-app-stale\tstale\n",
             );
 
-            $probe = new AppsProbe($shell)->introspectNode($node);
+            $probe = new AppsProbe()->introspectNode($node);
 
             expect($probe->status->value)
                 ->toBe('error')
@@ -865,40 +853,43 @@ describe('extra runtime container scan', function (): void {
     );
 
     it('reports Error status when the remote shell call itself throws (SSH/transport failure must not abort doctor)', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeThrowingRemoteShell('ssh: connect to host: connection refused');
+        $node = appsProbeAgentNode();
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.6.0.63:9477/v1/commands' => Http::response(['error' => 'agent unavailable'], 503),
+        ]);
 
-        $probe = new AppsProbe($shell)->introspectNode($node);
+        $probe = new AppsProbe()->introspectNode($node);
 
         expect($probe->status->value)
             ->toBe('error')
             ->and($probe->error)
-            ->toContain('connection refused')
+            ->toContain('HTTP 503')
             ->and($probe->containers->isEmpty())
             ->toBeTrue();
     });
 
-    it('reports Error status when the remote shell returns a non-zero exit code without a sentinel', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeFailingRemoteShell(exitCode: 255, stderr: 'remote shell pipeline broke');
+    it('reports Error status when the agent response has no sentinel', function (): void {
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeContainersProbe('agent command failed before sentinel');
 
-        $probe = new AppsProbe($shell)->introspectNode($node);
+        $probe = new AppsProbe()->introspectNode($node);
 
         expect($probe->status->value)
             ->toBe('error')
             ->and($probe->error)
-            ->toContain('remote shell pipeline broke')
+            ->toContain('no status sentinel')
             ->and($probe->containers->isEmpty())
             ->toBeTrue();
     });
 
     it('skips lines without an orbit.app label inside a Present scan', function (): void {
-        $node = appNode();
-        $shell = new AppsProbeRecordingRemoteShell(
+        $node = appsProbeAgentNode();
+        fakeAppsRuntimeContainersProbe(
             "orbit-container-scan:present\norbit-app-docs\tdocs\nbroken-line\t\n",
         );
 
-        $probe = new AppsProbe($shell)->introspectNode($node);
+        $probe = new AppsProbe()->introspectNode($node);
 
         expect($probe->status->value)->toBe('present')->and($probe->containers->keys())->toBe(['docs']);
     });
@@ -932,6 +923,95 @@ function appNode(array $overrides = [], string $role = 'app-dev'): Node
         ],
         role: $role,
     );
+}
+
+function appsProbeAgentNode(array $overrides = []): Node
+{
+    return appNode([
+        'wireguard_address' => '10.6.0.63',
+        'orbit_agent_capable' => true,
+        ...$overrides,
+    ]);
+}
+
+function fakeAppsRuntimeConfigsProbe(string $stdout): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.63:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'app-runtime-configs.probe',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'stdout' => $stdout,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+            ],
+        ]),
+    ]);
+}
+
+function appsRuntimeConfigsProbeWasSent(): bool
+{
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->url() === 'http://10.6.0.63:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['argv'][0] === 'internal:app-runtime-configs:probe'
+        ),
+    );
+
+    return true;
+}
+
+function fakeAppsRuntimeContainersProbe(string $stdout): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.63:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'app-runtime-containers.probe',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'stdout' => $stdout,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+            ],
+        ]),
+    ]);
+}
+
+function appsRuntimeContainersProbeWasSent(): bool
+{
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->url() === 'http://10.6.0.63:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['argv'][0] === 'internal:app-runtime-containers:probe'
+        ),
+    );
+
+    return true;
 }
 
 final class AppsProbeRecordingRemoteShell implements RemoteShell

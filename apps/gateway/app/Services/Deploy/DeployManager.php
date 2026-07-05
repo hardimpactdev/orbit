@@ -16,6 +16,7 @@ use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppRuntimeUser;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -30,6 +31,7 @@ final readonly class DeployManager
         private AppCommandRouter $appCommandRouter = new AppCommandRouter,
         private AddDeployStep $addDeployStep = new AddDeployStep,
         private RemoveDeployStep $removeDeployStep = new RemoveDeployStep,
+        private ExplicitRemoteShellFallback $transport = new ExplicitRemoteShellFallback,
     ) {}
 
     /**
@@ -127,6 +129,14 @@ final readonly class DeployManager
                 message: "Deployment pipeline is empty for app '{$model->name}'.",
                 errorCode: 'deploy.pipeline_empty',
                 errorMeta: ['app' => $model->name],
+            );
+        }
+
+        if (! $this->transport->allowed()) {
+            throw new GatewayApiException(
+                message: $this->transport->message('deploy:run'),
+                errorCode: 'node_transport_required',
+                errorMeta: $this->transport->meta(),
             );
         }
 

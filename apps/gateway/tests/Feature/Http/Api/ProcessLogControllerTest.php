@@ -9,8 +9,12 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
@@ -21,6 +25,7 @@ function createProcessLogCallerNode(array $overrides = [], ?string $role = null)
     $attributes = array_merge([
         'name' => 'caller',
         'host' => PROCESS_LOG_CALLER_WG_IP,
+        'orbit_agent_capable' => true,
         'wireguard_address' => PROCESS_LOG_CALLER_WG_IP,
     ], $overrides);
 
@@ -29,6 +34,14 @@ function createProcessLogCallerNode(array $overrides = [], ?string $role = null)
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
+}
+
+function create_process_log_agent_node(array $overrides = [], string $role = 'app-dev'): Node
+{
+    return createTestAppHostNode(array_merge([
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.6.0.44',
+    ], $overrides), $role);
 }
 
 function grantProcessLogAccess(Node $caller, Node $appNode): void
@@ -43,16 +56,60 @@ function grantProcessLogAccess(Node $caller, Node $appNode): void
     ]);
 }
 
+function fake_process_log_agent(string $output, int $exitCode = 0, string $stderr = ''): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        '*' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'process.logs.read',
+            'binary' => 'orbit',
+            'status' => $exitCode === 0 ? 'succeeded' : 'failed',
+            'exit_code' => $exitCode,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'output' => $output,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'type' => 'stderr',
+                    'message' => $stderr,
+                ],
+            ],
+        ]),
+    ]);
+}
+
+/**
+ * @return array<string, string>
+ */
+function process_log_agent_push_server(): array
+{
+    return [
+        'REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP,
+        'HTTP_'.str_replace('-', '_', strtoupper(ExplicitRemoteShellFallback::HEADER)) =>
+            NodeTransportPreference::AgentPush->value,
+    ];
+}
+
+/**
+ * @mago-expect lint:halstead
+ */
 describe('ProcessLogController', function (): void {
     it('returns bounded logs for authorized control callers', function (): void {
         $caller = createProcessLogCallerNode();
-        $appNode = createTestAppHostNode();
+        $appNode = create_process_log_agent_node();
         grantProcessLogAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
-        app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "Vite ready\n", stderr: '', durationMs: 1),
-        ]));
+        fake_process_log_agent("Vite ready\n");
 
         $response = $this->call(
             'GET',
@@ -63,7 +120,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response
@@ -71,6 +128,18 @@ describe('ProcessLogController', function (): void {
             ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_main_vite')
             ->assertJsonPath('success.data.logs.lines.0.message', 'Vite ready')
             ->assertJsonPath('success.meta.line_count', 1);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request['argv'][0] === 'internal:process-logs'
+                && json_decode((string) $request['input'], associative: true) === [
+                    'backend' => 'systemd',
+                    'runtime_unit' => 'orbit_docs_main_vite',
+                    'lines' => 5,
+                    'follow' => false,
+                ]
+            ),
+        );
     });
 
     it('returns bounded logs for a workspace owned process', function (): void {
@@ -85,9 +154,7 @@ describe('ProcessLogController', function (): void {
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
             ]);
-        app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "FrankenPHP ready\n", stderr: '', durationMs: 1),
-        ]));
+        fake_process_log_agent("FrankenPHP ready\n");
 
         $response = $this->call(
             'GET',
@@ -98,7 +165,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response
@@ -112,7 +179,7 @@ describe('ProcessLogController', function (): void {
 
     it('returns bounded logs for a node owned process', function (): void {
         createProcessLogCallerNode(role: 'gateway');
-        $node = createTestAppHostNode(['name' => 'app-1']);
+        $node = create_process_log_agent_node(['name' => 'app-1']);
         Process::factory()
             ->forOwner($node)
             ->create([
@@ -120,9 +187,7 @@ describe('ProcessLogController', function (): void {
                 'runtime' => ProcessRuntime::Systemd,
                 'tool' => 'opencode-cli',
             ]);
-        app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "OpenCode ready\n", stderr: '', durationMs: 1),
-        ]));
+        fake_process_log_agent("OpenCode ready\n");
 
         $response = $this->call(
             'GET',
@@ -133,7 +198,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response
@@ -147,7 +212,7 @@ describe('ProcessLogController', function (): void {
 
     it('returns managed service metadata when reading node owned service process logs', function (): void {
         createProcessLogCallerNode(role: 'gateway');
-        $node = createTestAppHostNode([
+        $node = create_process_log_agent_node([
             'name' => 'database-1',
             'wireguard_address' => '10.6.0.44',
         ]);
@@ -175,10 +240,9 @@ describe('ProcessLogController', function (): void {
                     ],
                 ],
             ]);
-        $remoteShell = new ProcessLogApiRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "MySQL ready\n", stderr: '', durationMs: 1),
-        ]);
+        $remoteShell = new ProcessLogApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
+        fake_process_log_agent("MySQL ready\n");
 
         $response = $this->call(
             'GET',
@@ -189,7 +253,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response
@@ -207,7 +271,19 @@ describe('ProcessLogController', function (): void {
             ->assertJsonMissingPath('success.data.logs.service.credentials')
             ->assertJsonPath('success.data.logs.lines.0.message', 'MySQL ready');
 
-        expect($remoteShell->scripts[0])->toBe("docker service logs --tail 5 'orbit-mysql8' 2>&1");
+        expect($remoteShell->scripts)->toBe([]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request['argv'][0] === 'internal:process-logs'
+                && json_decode((string) $request['input'], associative: true) === [
+                    'backend' => 'docker-swarm',
+                    'runtime_unit' => 'orbit-mysql8',
+                    'lines' => 5,
+                    'follow' => false,
+                ]
+            ),
+        );
     });
 
     it('rejects unsupported persisted runtimes before log side effects', function (): void {
@@ -228,7 +304,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response
@@ -238,7 +314,7 @@ describe('ProcessLogController', function (): void {
             ->assertJsonPath('error.meta.runtime', 'docker-swarm')
             ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
-        expect($remoteShell->scripts)->toBe([]);
+        expect($remoteShell->scripts)->toBeEmpty();
     });
 
     it('requires authorization before log reads', function (): void {
@@ -257,7 +333,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response
@@ -271,12 +347,10 @@ describe('ProcessLogController', function (): void {
 
     it('returns log read failures as gateway errors', function (): void {
         createProcessLogCallerNode(role: 'gateway');
-        $appNode = createTestAppHostNode();
+        $appNode = create_process_log_agent_node();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
-        app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
-            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing', durationMs: 1),
-        ]));
+        fake_process_log_agent('', exitCode: 1, stderr: 'missing');
 
         $response = $this->call(
             'GET',
@@ -286,7 +360,7 @@ describe('ProcessLogController', function (): void {
             ],
             [],
             [],
-            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+            process_log_agent_push_server(),
         );
 
         $response->assertStatus(502)

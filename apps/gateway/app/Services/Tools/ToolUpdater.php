@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteSecretFile;
 
 final readonly class ToolUpdater
@@ -61,6 +62,15 @@ final readonly class ToolUpdater
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
         }
 
+        $transport = app(ExplicitRemoteShellFallback::class);
+
+        if (! $transport->allowed()) {
+            return ToolRegistryFailure::nodeTransportRequired(
+                $transport->message('tool:update'),
+                $transport->meta(),
+            );
+        }
+
         if ($expectedVersion !== null) {
             $model->expected_version = $expectedVersion;
             $model->save();
@@ -76,7 +86,7 @@ final readonly class ToolUpdater
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 $tool,
-                $model->node?->name,
+                $model->node->name,
                 'update',
                 $result->exitCode,
                 trim($result->stderr),
@@ -85,7 +95,7 @@ final readonly class ToolUpdater
 
         return [
             'name' => $tool,
-            'node' => $model->node?->name,
+            'node' => $model->node->name,
             'version' => $model->expected_version,
         ];
     }
@@ -167,6 +177,18 @@ final readonly class ToolUpdater
                 continue;
             }
 
+            $transport = app(ExplicitRemoteShellFallback::class);
+
+            if (! $transport->allowed()) {
+                $failed[] = [
+                    'tool' => $tool,
+                    'node' => $nodeName,
+                    'error' => $transport->message('tool:update'),
+                ];
+
+                continue;
+            }
+
             $nt->expected_version = $latestVersion;
             $nt->save();
 
@@ -190,7 +212,7 @@ final readonly class ToolUpdater
             if (! $result->successful()) {
                 $failed[] = [
                     'tool' => $tool,
-                    'node' => $nt->node?->name,
+                    'node' => $nt->node->name,
                     'error' => trim($result->stderr) ?: 'update script failed',
                 ];
 
@@ -199,7 +221,7 @@ final readonly class ToolUpdater
 
             $updated[] = [
                 'tool' => $tool,
-                'node' => $nt->node?->name,
+                'node' => $nt->node->name,
             ];
         }
 

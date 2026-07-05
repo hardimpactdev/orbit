@@ -13,46 +13,35 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Enums\Processes\ProcessDockerContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Processes\ProcessDockerContainer;
-use App\Services\Runtime\DockerCommandBuilder;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use JsonException;
 use RuntimeException;
 
 final readonly class ProcessDockerContainerResource
 {
     public function __construct(
         private ProcessDockerContainer $container,
-        private DockerCommandBuilder $commands,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     public function ensureNetwork(Node $node, RemoteShell $remoteShell): void
     {
-        $result = $remoteShell->run($node, $this->commands->networkInspect($this->container->network()), [
-            'throw' => false,
-        ]);
+        $result = $this->runAction($node, 'ensure-network');
 
         if ($result->successful()) {
-            return;
-        }
-
-        $create = $remoteShell->run($node, $this->commands->networkCreate($this->container->network()), [
-            'throw' => false,
-        ]);
-
-        if ($create->successful()) {
             return;
         }
 
         throw new RuntimeException($this->failureMessage(
             $node,
             "create {$this->container->network()} Docker network",
-            $create,
+            $result,
         ));
     }
 
     public function probe(Node $node, RemoteShell $remoteShell): ProcessDockerContainerProbe
     {
-        $result = $remoteShell->run($node, $this->commands->containerInspect($this->container->name()), [
-            'throw' => false,
-        ]);
+        $result = $this->runAction($node, 'probe');
 
         if (! $result->successful()) {
             return new ProcessDockerContainerProbe(
@@ -62,17 +51,17 @@ final readonly class ProcessDockerContainerResource
             );
         }
 
-        $output = trim($result->stdout);
+        $data = $this->successData($result);
+        $exists = $data['exists'] ?? false;
 
-        if ($output === '') {
+        if ($exists !== true) {
             return new ProcessDockerContainerProbe(
                 reachable: true,
                 exists: false,
             );
         }
 
-        $inspection = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-
+        $inspection = $data['inspection'] ?? null;
         if (! is_array($inspection)) {
             throw new RuntimeException(
                 "Docker returned an invalid inspect payload for {$this->container->name()} on {$node->name}.",
@@ -82,7 +71,7 @@ final readonly class ProcessDockerContainerResource
         return new ProcessDockerContainerProbe(
             reachable: true,
             exists: true,
-            specHash: $this->observedSpecHash($inspection),
+            specHash: $this->stringValue($data['spec_hash'] ?? null),
             inspection: $inspection,
         );
     }
@@ -146,48 +135,74 @@ final readonly class ProcessDockerContainerResource
             );
         }
 
-        if ($plan->outcome === ProcessDockerContainerApplyOutcome::Recreated) {
-            $remove = $remoteShell->run($node, $this->commands->containerRemove($this->container->name()), [
-                'throw' => false,
-            ]);
+        $result = $this->runAction($node, 'apply');
 
-            if (! $remove->successful()) {
-                return $this->failedResult(
-                    $node,
-                    "remove drifted {$this->container->name()} container",
-                    $remove,
-                    $plan,
-                );
-            }
+        if (! $result->successful()) {
+            return $this->failedResult($node, "apply {$this->container->name()} container", $result, $plan);
         }
 
-        $create = $remoteShell->run($node, $this->commands->createIdle($this->container), ['throw' => false]);
-
-        if (! $create->successful()) {
-            return $this->failedResult($node, "create {$this->container->name()} container", $create, $plan);
-        }
+        $data = $this->successData($result);
+        $changed = ($data['changed'] ?? true) === true;
 
         return new ConvergenceApplyResult(
-            status: ConvergenceStatus::Changed,
-            summary: "Applied Docker process container {$this->container->name()}.",
-            details: $plan->details,
+            status: $changed ? ConvergenceStatus::Changed : ConvergenceStatus::Ok,
+            summary: $this->stringValue($data['summary'] ?? null)
+            ?? "Applied Docker process container {$this->container->name()}.",
+            details: $this->details([
+                'outcome' => $this->stringValue($data['outcome'] ?? null) ?? $plan->outcome->value,
+            ]),
         );
     }
 
     /**
-     * @param  array<string, mixed>  $inspection
+     * @return array<string, mixed>
      */
-    private function observedSpecHash(array $inspection): ?string
+    private function successData(RemoteShellResult $result): array
     {
-        $labels = $inspection['Config']['Labels'] ?? [];
+        $payload = $this->jsonPayload($result->stdout);
+        /** @var mixed $success */
+        $success = $payload['success'] ?? null;
+        /** @var mixed $data */
+        $data = is_array($success) ? $success['data'] ?? null : null;
 
-        if (! is_array($labels)) {
-            return null;
+        if (is_array($data) && $this->hasOnlyStringKeys($data)) {
+            /** @var array<string, mixed> $stringData */
+            $stringData = $data;
+
+            return $stringData;
         }
 
-        $hash = $labels[ProcessDockerContainer::SpecHashLabel] ?? null;
+        throw new RuntimeException('Process Docker container response is invalid.');
+    }
 
-        return is_string($hash) ? $hash : null;
+    /**
+     * @return array<string, mixed>
+     */
+    private function jsonPayload(string $stdout): array
+    {
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode($stdout, associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
+
+        if (! is_array($payload) || ! $this->hasOnlyStringKeys($payload)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $stringPayload */
+        $stringPayload = $payload;
+
+        return $stringPayload;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $payload
+     */
+    private function hasOnlyStringKeys(array $payload): bool
+    {
+        return array_all(array_keys($payload), fn ($key) => is_string($key));
     }
 
     private function failedResult(
@@ -209,10 +224,55 @@ final readonly class ProcessDockerContainerResource
 
     private function failureMessage(Node $node, string $step, RemoteShellResult $result): string
     {
-        $output = trim($result->errorOutput().' '.$result->stdout);
+        $output = trim($result->errorOutput().' '.$this->failureEnvelopeMessage($result));
         $message = $output !== '' ? $output : 'unknown error';
 
         return "Failed to {$step} on {$node->name}: {$message}";
+    }
+
+    private function failureEnvelopeMessage(RemoteShellResult $result): string
+    {
+        $payload = $this->jsonPayload($result->stdout);
+        /** @var mixed $error */
+        $error = $payload['error'] ?? null;
+
+        if (! is_array($error)) {
+            return $result->stdout;
+        }
+
+        /** @var mixed $message */
+        $message = $error['message'] ?? null;
+
+        return is_string($message) ? $message : $result->stdout;
+    }
+
+    private function runAction(Node $node, string $action): RemoteShellResult
+    {
+        $payload = [
+            'action' => $action,
+            'spec' => [
+                ...$this->container->spec(),
+                'expected_hash' => $this->container->specHash(),
+            ],
+        ];
+
+        return $this->localExecutor->runInternal(
+            node: $node,
+            commandName: 'internal:process-docker-container',
+            transportOptions: [
+                'input' => json_encode($payload, JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => "process.docker.{$action}",
+                ],
+                'strict' => false,
+                'timeout' => 120,
+            ],
+        );
+    }
+
+    private function stringValue(mixed $value): ?string
+    {
+        return is_string($value) ? $value : null;
     }
 
     /**

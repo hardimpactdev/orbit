@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Contracts\OpenCodeClientFactory;
-use App\Contracts\RemoteShell;
 use App\Contracts\WorkspaceSourceDriver;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use HardImpact\OpenCode\Data\Worktree as OpenCodeWorktree;
 use HardImpact\OpenCode\OpenCode;
 use Throwable;
@@ -19,7 +19,7 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
 {
     public function __construct(
         private OpenCodeClientFactory $clientFactory,
-        private RemoteShell $remoteShell,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
@@ -106,15 +106,20 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
 
     private function alignBranch(Node $node, string $path, string $name, string $base): void
     {
-        $result = $this->remoteShell->run(
-            $node,
-            $this->alignBranchScript(),
-            [
-                'metadata' => [
-                    'ORBIT_WORKSPACE_PATH' => $path,
-                    'ORBIT_WORKSPACE_NAME' => $name,
-                    'ORBIT_WORKSPACE_BASE' => $base,
-                ],
+        $result = $this->localExecutor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-adapter:update',
+            commandOptions: [
+                'adapter' => 'opencode',
+                'update' => 'host-branch',
+                'workspace-path' => $path,
+                'branch' => $name,
+                'base-ref' => $base,
+            ],
+            transportOptions: [
+                'redact_stdout' => true,
+                'redact_stderr' => true,
+                'strict' => false,
                 'timeout' => 300,
             ],
         );
@@ -135,34 +140,6 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
                 'reason' => trim($result->stderr) ?: trim($result->stdout),
             ],
         );
-    }
-
-    private function alignBranchScript(): string
-    {
-        return <<<'SH'
-            set -Eeuo pipefail
-            workspace_path="${ORBIT_WORKSPACE_PATH:?}"
-            workspace_name="${ORBIT_WORKSPACE_NAME:?}"
-            base_ref="${ORBIT_WORKSPACE_BASE:?}"
-
-            if [ ! -d "$workspace_path/.git" ] && [ ! -f "$workspace_path/.git" ]; then
-                echo "workspace path is not a git worktree: $workspace_path" >&2
-                exit 2
-            fi
-
-            current_branch="$(git -C "$workspace_path" branch --show-current)"
-
-            if [ "$current_branch" != "$workspace_name" ]; then
-                if git -C "$workspace_path" rev-parse --verify --quiet "$workspace_name" >/dev/null; then
-                    echo "git branch already exists: $workspace_name" >&2
-                    exit 2
-                fi
-
-                git -C "$workspace_path" branch -m "$workspace_name"
-            fi
-
-            git -C "$workspace_path" reset --hard "$base_ref"
-            SH;
     }
 
     private function createSession(OpenCode $client, string $name, string $path): ?string

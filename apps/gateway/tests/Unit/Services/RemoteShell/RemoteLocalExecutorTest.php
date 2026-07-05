@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
@@ -18,6 +19,7 @@ use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
@@ -26,6 +28,165 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 describe(RemoteLocalExecutor::class, function (): void {
+    it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands' => Http::response([
+                'transport' => 'agent-push',
+                'operation_id' => '00000000-0000-4000-8000-000000000406',
+                'binary' => 'orbit',
+                'status' => 'succeeded',
+                'exit_code' => 0,
+                'frames' => [
+                    [
+                        'type' => 'stdout',
+                        'message' => "{\"ok\":true}\n",
+                    ],
+                    [
+                        'type' => 'exit',
+                        'message' => '0',
+                    ],
+                ],
+            ]),
+        ]);
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (): RemoteShellResult => throw new RuntimeException(
+                'SSH transport should not be called by default.',
+            ),
+        );
+        $executor = remoteLocalExecutor(
+            transport: $transport,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+
+        $result = $executor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: ['lookup', 'polyscope'],
+            commandOptions: ['state-path' => "/home/orbit/.polyscope/state's.db"],
+            transportOptions: [
+                'input' => '{"probe":true}',
+                'timeout' => 45,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000406',
+                ],
+            ],
+        );
+
+        expect($result)
+            ->toBeInstanceOf(RemoteShellResult::class)
+            ->and($result->exitCode)
+            ->toBe(0)
+            ->and($result->stdout)
+            ->toBe("{\"ok\":true}\n")
+            ->and($transport->calls)
+            ->toBeEmpty();
+
+        Http::assertSent(
+            fn ($request): bool => (
+                $request->url() === 'http://10.44.0.70:9477/v1/commands'
+                && $request['binary'] === 'orbit'
+                && $request['argv'][0] === 'internal:workspace-adapter:lookup'
+                && $request['argv'][1] === 'lookup'
+                && $request['argv'][2] === 'polyscope'
+                && $request['argv'][3] === "--state-path=/home/orbit/.polyscope/state's.db"
+                && str_starts_with((string) $request['argv'][4], '--operation-token=')
+                && $request['argv'][5] === '--json'
+                && $request['input'] === '{"probe":true}'
+                && $request['operation_id'] === '00000000-0000-4000-8000-000000000406'
+                && $request['timeout_seconds'] === 45
+            ),
+        );
+    });
+
+    it('keeps ssh dispatch behind explicit transitional fallback opt-in', function (): void {
+        Http::preventStrayRequests();
+        $transportResult = new RemoteShellResult(exitCode: 0, stdout: "verified\n", stderr: '', durationMs: 17);
+        $transport = new RemoteLocalExecutorRecordingTransport($transportResult);
+        $executor = remoteLocalExecutor(
+            transport: $transport,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+
+        $result = $executor->runInternal(
+            node: $node,
+            commandName: 'internal:executor:verify',
+            transportOptions: [
+                'transport' => 'transitional-ssh-fallback',
+                'timeout' => 45,
+            ],
+        );
+
+        expect($result)
+            ->toBe($transportResult)
+            ->and($transport->calls)
+            ->toHaveCount(1)
+            ->and($transport->calls[0]['script'])
+            ->toContain('internal:executor:verify');
+    });
+
+    it('honors the request transport header as an explicit transitional fallback opt-in', function (): void {
+        Http::preventStrayRequests();
+        request()->headers->set('X-Orbit-Node-Transport-Preference', 'transitional-ssh-fallback');
+        $transportResult = new RemoteShellResult(exitCode: 0, stdout: "verified\n", stderr: '', durationMs: 17);
+        $transport = new RemoteLocalExecutorRecordingTransport($transportResult);
+        $executor = remoteLocalExecutor(
+            transport: $transport,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => false,
+        ])->save();
+
+        try {
+            $result = $executor->runInternal(
+                node: $node,
+                commandName: 'internal:executor:verify',
+            );
+        } finally {
+            request()->headers->remove('X-Orbit-Node-Transport-Preference');
+        }
+
+        expect($result)
+            ->toBe($transportResult)
+            ->and($transport->calls)
+            ->toHaveCount(1);
+    });
+
+    it('does not fall back to ssh when default agent-push selection fails', function (): void {
+        Http::preventStrayRequests();
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (): RemoteShellResult => throw new RuntimeException(
+                'SSH transport should not be called by default.',
+            ),
+        );
+        $executor = remoteLocalExecutor(
+            transport: $transport,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => false,
+        ])->save();
+
+        expect(fn (): RemoteShellResult => $executor->runInternal(
+            node: $node,
+            commandName: 'internal:executor:verify',
+        ))
+            ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
+
+        expect($transport->calls)->toBeEmpty();
+    });
+
     it('mints a token, builds a local executor command, dispatches through transport, and returns the transport result', function (): void {
         $transportResult = new RemoteShellResult(exitCode: 0, stdout: "{\"ok\":true}\n", stderr: '', durationMs: 17);
         $transport = new RemoteLocalExecutorRecordingTransport($transportResult);
@@ -992,6 +1153,7 @@ describe(RemoteLocalExecutor::class, function (): void {
 function remoteLocalExecutor(
     RemoteLocalExecutorRecordingTransport $transport,
     ?OperationTokenFactory $operationTokens = null,
+    NodeTransportPreference $defaultTransportPreference = NodeTransportPreference::TransitionalSshFallback,
 ): RemoteLocalExecutor {
     return new RemoteLocalExecutor(
         transport: $transport,
@@ -1000,6 +1162,7 @@ function remoteLocalExecutor(
         activityLogger: remoteLocalExecutorActivityLogger(),
         operationRuns: app(OperationRunRecorder::class),
         operationTokenSecret: 'gateway-secret',
+        defaultTransportPreference: $defaultTransportPreference,
     );
 }
 

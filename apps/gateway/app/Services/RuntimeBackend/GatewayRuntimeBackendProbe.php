@@ -4,49 +4,60 @@ declare(strict_types=1);
 
 namespace App\Services\RuntimeBackend;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RuntimeBackend\GatewayRuntimeBackendProbeResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
-use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Runtime\OrbitContainerNames;
 
 /**
  * Gateway-only runtime backend probe.
  *
- * Inspects the gateway `orbit-gateway` container state over SSH. This probe
+ * Inspects the gateway `orbit-gateway` container state over node transport. This probe
  * is scoped to gateway nodes only; app-host nodes use {@see RuntimeBackendProbe}
  * for the host process runtime.
- *
- * Mirrors the structured output pattern from {@see ProxyRouteProbe::introspectCaddyContainer}.
  */
 final readonly class GatewayRuntimeBackendProbe
 {
     public function __construct(
-        private RemoteShell $remoteShell,
+        private ?RemoteLocalExecutor $localExecutor = null,
         private OrbitContainerNames $containerNames = new OrbitContainerNames,
     ) {}
 
     public function check(Node $node): GatewayRuntimeBackendProbeResult
     {
-        $result = $this->remoteShell->run($node, $this->script(), ['timeout' => 15, 'throw' => false]);
-        $parts = explode("\t", trim($result->output()), 3);
-        $runtimeStatus = ($parts[0] ?? '') !== '' ? $parts[0] : 'unknown';
+        $result = $this->localExecutor()->runInternal(
+            node: $node,
+            commandName: 'internal:gateway-runtime-backend:probe',
+            arguments: [
+                $this->containerNames->gateway(),
+            ],
+            transportOptions: [
+                'timeout' => 15,
+                'throw' => false,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'gateway-runtime-backend.probe',
+                ],
+            ],
+        );
+        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+        $runtimeStatus = is_string($data['runtime_status'] ?? null) ? $data['runtime_status'] : 'unknown';
 
         return new GatewayRuntimeBackendProbeResult(
             runtimeStatus: $runtimeStatus,
-            containerExists: ($parts[1] ?? '') === 'true',
-            containerRunning: ($parts[2] ?? '') === 'true',
+            containerExists: ($data['container_exists'] ?? null) === true,
+            containerRunning: ($data['container_running'] ?? null) === true,
             exitCode: $result->exitCode,
             output: trim($result->output()),
         );
     }
 
-    public function remoteShell(): RemoteShell
+    public function localExecutor(): RemoteLocalExecutor
     {
-        return $this->remoteShell;
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     /**
@@ -117,36 +128,5 @@ final readonly class GatewayRuntimeBackendProbe
         }
 
         return [];
-    }
-
-    private function script(): string
-    {
-        $runtimeName = escapeshellarg($this->containerNames->gateway());
-
-        return sprintf(
-            <<<'BASH'
-                # orbit-gateway-container-probe:container-inspect
-                container=%s
-                runtime="available"
-                exists="false"
-                running="false"
-
-                if ! command -v docker >/dev/null 2>&1; then
-                    runtime="no_docker"
-                elif ! docker info >/dev/null 2>&1; then
-                    runtime="daemon_unavailable"
-                else
-                    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
-                        exists="true"
-                        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
-                        if [ "$state" = "true" ]; then
-                            running="true"
-                        fi
-                    fi
-                fi
-                printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
-                BASH,
-            $runtimeName,
-        );
     }
 }

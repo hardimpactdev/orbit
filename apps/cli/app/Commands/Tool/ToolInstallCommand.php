@@ -13,6 +13,7 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {tool? : Tool catalog name to install}
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--tool-version= : Version or version family to install}
         {--user=* : Additional OS user to install a user-scoped CLI tool for}
         {--status=installed : Desired state after install (installed|running)}

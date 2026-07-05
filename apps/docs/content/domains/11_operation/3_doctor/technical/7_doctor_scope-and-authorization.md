@@ -22,7 +22,7 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 - Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
 - `--all` is mutually exclusive with `--node`, `--self`, `--app`,
   `--workspace`, `--fix`, `--restore`, and `--adopt`.
-- Reject `--node=all` with `validation_failed` and `field=node` metadata before
+- Reject `--node [--node-transport=<transport>]=all` with `validation_failed` and `field=node` metadata before
   probes.
 - Reject unresolvable family, node, app, or workspace scopes before probes.
 - Reject family selections outside the target node's active-role category set before probes. The `process` family is inside that set for every node with at least one active role assignment.
