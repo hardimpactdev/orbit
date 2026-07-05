@@ -265,6 +265,59 @@ it('runs workload updates through the typed local executor without ssh fallback 
         ->toBe('2.0.0');
 });
 
+it('does not send role images to macos workload cli installers', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'orbit_path' => '/Users/nckrtl/orbit',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-macos-arm64',
+                    'sha256' => str_repeat('a', 64),
+                ],
+            ],
+            roleImages: [
+                'orbit-caddy' => 'caddy:2.9-alpine',
+                'orbit-websocket' => 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'mini',
+                'node' => 'mini',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and(workloadUpdaterInstallPayload($shell, node: 'mini'))
+        ->toMatchArray([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake",
+            'sha256' => str_repeat('a', 64),
+            'install_root' => '/Users/nckrtl/orbit',
+            'bin_path' => '/Users/nckrtl/.local/bin/orbit',
+            'shared_binary_path' => null,
+            'role_images' => [],
+        ]);
+});
+
 it('updates topology candidate artifacts with the same version when the CLI hash differs', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);

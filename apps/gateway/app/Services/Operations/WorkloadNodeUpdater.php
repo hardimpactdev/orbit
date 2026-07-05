@@ -291,6 +291,10 @@ final readonly class WorkloadNodeUpdater
      */
     private function requiredRoleImages(OperationUpdatePlan $plan, Node $node): array
     {
+        if (NodeHostPaths::isMacosPlatform($node->platform)) {
+            return [];
+        }
+
         $images = [];
 
         if ($this->roles->nodeHostsOrbitCaddy($node) && is_string($plan->role_images['orbit-caddy'] ?? null)) {
