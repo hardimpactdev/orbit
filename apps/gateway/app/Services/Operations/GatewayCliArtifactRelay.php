@@ -44,7 +44,7 @@ class GatewayCliArtifactRelay
 
     public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
-        $this->cleanupExpired();
+        $artifacts = [];
 
         foreach (array_keys($plan->cli_artifacts) as $platform) {
             if (! is_string($platform)) {
@@ -57,6 +57,16 @@ class GatewayCliArtifactRelay
                 continue;
             }
 
+            $artifacts[$platform] = $artifact;
+        }
+
+        if ($artifacts === []) {
+            return;
+        }
+
+        $this->cleanupExpired();
+
+        foreach ($artifacts as $platform => $artifact) {
             $this->stageArtifact($operationRun, $platform, $artifact);
         }
     }

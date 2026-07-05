@@ -49,6 +49,23 @@ it('uses public manifest CLI artifact URLs directly without staging them on the 
     Http::assertNothingSent();
 });
 
+it('does not touch the artifact cache when all manifest CLI artifacts are public URLs', function (): void {
+    config()->set('orbit.updates.artifact_cache_ttl_seconds', 1);
+
+    $expired = storage_path('framework/testing/update-artifacts/update-artifacts/expired-run');
+    File::ensureDirectoryExists($expired);
+    touch($expired, time() - 10);
+
+    $binary = 'orbit-linux-binary';
+    $sha256 = hash('sha256', $binary);
+    $run = gatewayCliArtifactRelayRun();
+    $plan = gatewayCliArtifactRelayPlan($run, $sha256);
+
+    app(GatewayCliArtifactRelay::class)->stage($run, $plan);
+
+    expect(File::isDirectory($expired))->toBeTrue();
+});
+
 it('stages a local-only manifest CLI artifact and serves it through the gateway endpoint', function (): void {
     $binary = 'orbit-linux-binary';
     $sha256 = hash('sha256', $binary);
