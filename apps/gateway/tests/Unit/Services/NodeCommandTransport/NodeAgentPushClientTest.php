@@ -117,6 +117,29 @@ it('accepts nullable exit codes from the target node agent listener', function (
     expect($result->frames)->toHaveCount(1);
 });
 
+it('uses the envelope command timeout with a small HTTP buffer', function (): void {
+    $method = new ReflectionMethod(NodeAgentPushClient::class, 'requestTimeoutSeconds');
+    $method->setAccessible(true);
+
+    $shortEnvelope = NodeCommandEnvelope::agentPushBinary(
+        operationId: 'op_gateway_test_short_timeout',
+        binary: 'orbit',
+        argv: ['app:list', '--json'],
+        timeoutSeconds: 3,
+    );
+    $longEnvelope = NodeCommandEnvelope::agentPushBinary(
+        operationId: 'op_gateway_test_long_timeout',
+        binary: 'orbit',
+        argv: ['internal:app-introspect:probe', '--json'],
+        timeoutSeconds: 45,
+    );
+
+    expect($method->invoke(new NodeAgentPushClient, $shortEnvelope))
+        ->toBe(10)
+        ->and($method->invoke(new NodeAgentPushClient, $longEnvelope))
+        ->toBe(50);
+});
+
 it('refuses to push envelopes that are not allowlisted for agent push', function (): void {
     Http::preventStrayRequests();
 

@@ -29,7 +29,7 @@ final readonly class NodeAgentPushClient
             throw new InvalidArgumentException('Agent-push operation token is required.');
         }
 
-        $response = Http::timeout(10)
+        $response = Http::timeout($this->requestTimeoutSeconds($envelope))
             ->acceptJson()
             ->withToken($operationToken)
             ->post($this->urlFor($node), $this->payloadForTransport($envelope, $operationToken));
@@ -70,6 +70,11 @@ final readonly class NodeAgentPushClient
         }
 
         return "http://{$host}:9477/v1/commands";
+    }
+
+    private function requestTimeoutSeconds(NodeCommandEnvelope $envelope): int
+    {
+        return max(10, $envelope->timeoutSeconds + 5);
     }
 
     /**
