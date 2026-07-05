@@ -78,6 +78,40 @@ describe('internal fleet update install cli command', function (): void {
             ->and(shell_exec(escapeshellarg("{$workspace}/bin/orbit").' --version --local'))
             ->toBe("Orbit 9.9.9\n");
     });
+
+    it('keeps cli installs successful when role image pre-pulls are unavailable', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $sha256 = hash_file('sha256', $artifactPath);
+        $pathWithoutDocker = make_fleet_update_install_cli_path_without_docker($workspace);
+
+        putenv("PATH={$pathWithoutDocker}");
+        $_ENV['PATH'] = $pathWithoutDocker;
+        $_SERVER['PATH'] = $pathWithoutDocker;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => ['ghcr.io/hardimpactdev/orbit-nonexistent-image:missing'],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data['stdout'] ?? '')
+            ->toContain('skip_required_image')
+            ->and(hash_file('sha256', "{$workspace}/install-root/bin/orbit-binary"))
+            ->toBe($sha256);
+    });
 });
 
 function fleet_update_install_cli_signed_operation_token(
@@ -182,4 +216,31 @@ function make_fleet_update_install_cli_workspace(): string
     chmod(filename: $artifact, permissions: 0o755);
 
     return $workspace;
+}
+
+function make_fleet_update_install_cli_path_without_docker(string $workspace): string
+{
+    $bin = "{$workspace}/path-bin";
+
+    mkdir($bin, recursive: true);
+
+    foreach (['awk', 'bash', 'cp', 'dirname', 'install', 'ln', 'mktemp', 'mv', 'readlink', 'rm', 'sh'] as $command) {
+        $path = trim((string) shell_exec('command -v '.escapeshellarg($command)));
+
+        if ($path !== '') {
+            symlink($path, "{$bin}/{$command}");
+        }
+    }
+
+    foreach (['sha256sum', 'shasum'] as $command) {
+        $path = trim((string) shell_exec('command -v '.escapeshellarg($command)));
+
+        if ($path !== '') {
+            symlink($path, "{$bin}/{$command}");
+
+            break;
+        }
+    }
+
+    return $bin;
 }

@@ -159,11 +159,21 @@ final readonly class LocalFleetUpdateInstallCliAction
 
             role_images_json="${ORBIT_ROLE_IMAGES_JSON:-[]}"
             if [ "$role_images_json" != "[]" ]; then
-                echo pull_required_images
-                php -r '$images = json_decode(getenv("ORBIT_ROLE_IMAGES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($images as $image) { echo $image, "\n"; }' | while IFS= read -r image; do
-                    docker pull "$image"
-                    docker image inspect "$image" >/dev/null
-                done
+                if ! command -v docker >/dev/null 2>&1; then
+                    echo skip_required_images_no_docker
+                else
+                    echo pull_required_images
+                    php -r '$images = json_decode(getenv("ORBIT_ROLE_IMAGES_JSON"), true, 512, JSON_THROW_ON_ERROR); foreach ($images as $image) { echo $image, "\n"; }' | while IFS= read -r image; do
+                        if ! docker pull "$image"; then
+                            echo "skip_required_image_pull_failed $image"
+                            continue
+                        fi
+
+                        if ! docker image inspect "$image" >/dev/null; then
+                            echo "skip_required_image_inspect_failed $image"
+                        fi
+                    done
+                fi
             fi
 
             echo verify
