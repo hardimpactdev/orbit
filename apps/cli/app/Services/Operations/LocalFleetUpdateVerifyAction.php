@@ -19,7 +19,7 @@ final readonly class LocalFleetUpdateVerifyAction
         $check = $this->check($check);
 
         if ($check === 'cli') {
-            return $this->verifyCli();
+            return $this->verifyCli($payload);
         }
 
         return $this->verifyRoleImages($payload);
@@ -28,9 +28,10 @@ final readonly class LocalFleetUpdateVerifyAction
     /**
      * @return array<string, mixed>
      */
-    private function verifyCli(): array
+    private function verifyCli(array $payload): array
     {
-        $result = $this->runProcess(['orbit', '--version', '--local'], timeout: 30);
+        $binPath = LocalFleetUpdateVerifyBinPath::fromPayload($payload['bin_path'] ?? null);
+        $result = $this->runProcess([$binPath, '--version', '--local'], timeout: 30);
 
         if (! $result->isSuccessful()) {
             throw new LocalFleetUpdateVerifyFailure(
@@ -43,6 +44,7 @@ final readonly class LocalFleetUpdateVerifyAction
         return [
             'check' => 'cli',
             'verified' => true,
+            'bin_path' => $binPath,
             'version' => trim($result->getOutput()),
         ];
     }

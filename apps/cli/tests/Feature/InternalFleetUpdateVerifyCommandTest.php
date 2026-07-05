@@ -81,10 +81,61 @@ describe('internal fleet update verify command', function (): void {
             ->toMatchArray([
                 'check' => 'cli',
                 'verified' => true,
+                'bin_path' => 'orbit',
                 'version' => 'Orbit 1.2.3',
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('orbit --version --local');
+    });
+
+    it('verifies the local Orbit CLI through an explicit launcher path', function (): void {
+        $bin = install_fleet_update_verify_fake_bin('orbit', output: "Orbit 1.2.4\n");
+
+        [$exitCode, $output] = run_internal_fleet_update_verify_command(
+            [
+                'check' => 'cli',
+                '--operation-token' => fleet_update_verify_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'bin_path' => "{$bin}/orbit",
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_verify_success_data($output);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data)
+            ->toMatchArray([
+                'check' => 'cli',
+                'verified' => true,
+                'bin_path' => "{$bin}/orbit",
+                'version' => 'Orbit 1.2.4',
+            ])
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('orbit --version --local');
+    });
+
+    it('rejects non Orbit binary paths for CLI verification', function (): void {
+        [$exitCode, $output] = run_internal_fleet_update_verify_command(
+            [
+                'check' => 'cli',
+                '--operation-token' => fleet_update_verify_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'bin_path' => '/bin/sh',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
+                'validation_failed',
+                'Fleet update verification binary path is invalid.',
+                ['field' => 'bin_path'],
+            ));
     });
 
     it('verifies required role images through fixed Docker argv', function (): void {

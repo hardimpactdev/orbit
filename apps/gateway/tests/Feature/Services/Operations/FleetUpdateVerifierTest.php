@@ -136,6 +136,8 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'internal:fleet-update:verify',
             'cli',
         ])
+        ->and($requests[0]['input'])
+        ->toBe(json_encode(['bin_path' => '/usr/local/bin/orbit'], JSON_THROW_ON_ERROR))
         ->and($requests[0]['operation_id'])
         ->toBe($run->id)
         ->and(array_column($requests, 'node'))
@@ -155,6 +157,49 @@ it('verifies gateway scheduler workload CLI and required role images', function 
         ])
         ->and($requests[4]['input'])
         ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR));
+});
+
+it('verifies macos workload CLI through the user launcher and skips required role images', function (): void {
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request));
+
+    $run = fleetVerifierRun();
+    Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'wireguard_address' => '10.44.0.8',
+        ]);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVerifierSnapshot());
+
+    app(FleetUpdateVerifier::class)->verify($run, $plan);
+
+    $requests = fleet_verifier_agent_requests();
+
+    expect($requests)
+        ->toHaveCount(1)
+        ->and($requests[0]['node'])
+        ->toBe('10.44.0.8')
+        ->and(array_slice($requests[0]['argv'], offset: 0, length: 2))
+        ->toBe([
+            'internal:fleet-update:verify',
+            'cli',
+        ])
+        ->and($requests[0]['input'])
+        ->toBe(json_encode(['bin_path' => '/Users/nckrtl/.local/bin/orbit'], JSON_THROW_ON_ERROR));
 });
 
 it('fails when workload CLI verification fails', function (): void {

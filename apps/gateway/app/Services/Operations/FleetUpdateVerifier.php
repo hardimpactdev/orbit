@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
-use App\Enums\Nodes\NodeRoleName;
-use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewaySwarmManager;
@@ -84,6 +82,9 @@ class FleetUpdateVerifier
                 arguments: ['cli'],
                 transportOptions: [
                     'cwd' => $node->orbit_path,
+                    'input' => json_encode([
+                        'bin_path' => FleetUpdateNodeCliLauncher::binPath($node),
+                    ], JSON_THROW_ON_ERROR),
                     'timeout' => 30,
                     'metadata' => [
                         'ORBIT_OPERATION_ID' => $operationRun->id,
@@ -102,7 +103,7 @@ class FleetUpdateVerifier
     private function verifyRequiredRoleImages(OperationRun $operationRun, OperationUpdatePlan $plan): null
     {
         foreach ($this->targets->workloadNodes() as $node) {
-            $images = $this->requiredRoleImages($plan, $node);
+            $images = FleetUpdateNodeCliLauncher::requiredRoleImages($plan, $node, $this->roles);
 
             if ($images === []) {
                 continue;
@@ -158,26 +159,5 @@ class FleetUpdateVerifier
         $this->operationRuns->appendStep($operationRun->id, $key, 'done', $doneMessage);
 
         return null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function requiredRoleImages(OperationUpdatePlan $plan, Node $node): array
-    {
-        $images = [];
-
-        if ($this->roles->nodeHostsOrbitCaddy($node) && is_string($plan->role_images['orbit-caddy'] ?? null)) {
-            $images[] = $plan->role_images['orbit-caddy'];
-        }
-
-        if (
-            $this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
-            && is_string($plan->role_images['orbit-websocket'] ?? null)
-        ) {
-            $images[] = $plan->role_images['orbit-websocket'];
-        }
-
-        return array_values(array_unique($images));
     }
 }
