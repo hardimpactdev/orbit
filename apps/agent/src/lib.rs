@@ -5,6 +5,10 @@ use std::process::Command;
 use std::time::Duration;
 use url::Url;
 
+mod http;
+
+pub use http::{run_agent_service, run_agent_service_blocking};
+
 const GATEWAY_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]

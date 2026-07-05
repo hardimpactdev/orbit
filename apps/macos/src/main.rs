@@ -6,6 +6,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
@@ -36,6 +37,8 @@ enum RefreshSource {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            start_embedded_agent_service();
+
             let tray_menu = build_tray_menu(app.handle(), &load_menu_state())?;
             let menu_items = Arc::new(Mutex::new(tray_menu.items));
             let menu_command_items = Arc::clone(&menu_items);
@@ -70,6 +73,18 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run Orbit macOS");
+}
+
+fn start_embedded_agent_service() {
+    if load_menu_state_from_agent_service().is_some() {
+        return;
+    }
+
+    if std::env::var_os("ORBIT_AGENT_HTTP_BIND").is_none() {
+        std::env::set_var("ORBIT_AGENT_HTTP_BIND", "0.0.0.0:9477");
+    }
+
+    thread::spawn(orbit_agent::run_agent_service_blocking);
 }
 
 struct TrayMenu {
