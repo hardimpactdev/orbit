@@ -12,6 +12,7 @@ use orbit_agent::{
 use serde::{Deserialize, Serialize};
 use std::{
     io::Write,
+    path::Path,
     process::{Command, Stdio},
     sync::Arc,
     thread,
@@ -130,11 +131,13 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
 
     let execution = execute_binary_once(request, &request.argv, timeout_seconds, deadline);
 
-    if should_retry_without_operation_token(request, &execution) {
+    if should_retry_stale_fleet_update_without_legacy_flags(request, &execution) {
         let argv = request
             .argv
             .iter()
-            .filter(|argument| !argument.starts_with("--operation-token="))
+            .filter(|argument| {
+                !argument.starts_with("--operation-token=") && argument.as_str() != "--json"
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -150,7 +153,7 @@ fn execute_binary_once(
     timeout_seconds: u64,
     deadline: Instant,
 ) -> CommandExecution {
-    let mut command = Command::new(&request.binary);
+    let mut command = Command::new(command_binary(request));
     command
         .args(argv)
         .stdout(Stdio::piped())
@@ -231,7 +234,42 @@ fn execute_binary_once(
     }
 }
 
-fn should_retry_without_operation_token(
+fn command_binary(request: &CommandPushRequest) -> String {
+    if request.binary != "orbit" {
+        return request.binary.clone();
+    }
+
+    resolve_orbit_binary().unwrap_or_else(|| request.binary.clone())
+}
+
+fn resolve_orbit_binary() -> Option<String> {
+    if let Some(path) = existing_env_path("ORBIT_AGENT_ORBIT_BINARY") {
+        return Some(path);
+    }
+
+    [
+        "/usr/local/bin/orbit",
+        "/Users/nckrtl/.local/bin/orbit",
+        "/home/nckrtl/.local/bin/orbit",
+        "/opt/homebrew/bin/orbit",
+        "../cli/orbit",
+    ]
+    .into_iter()
+    .find(|path| Path::new(path).exists())
+    .map(str::to_string)
+}
+
+fn existing_env_path(key: &str) -> Option<String> {
+    let path = std::env::var(key).ok()?.trim().to_string();
+
+    if path.is_empty() || !Path::new(&path).exists() {
+        return None;
+    }
+
+    Some(path)
+}
+
+fn should_retry_stale_fleet_update_without_legacy_flags(
     request: &CommandPushRequest,
     execution: &CommandExecution,
 ) -> bool {
@@ -239,10 +277,14 @@ fn should_retry_without_operation_token(
         return false;
     }
 
+    if request.argv.first().map(String::as_str) != Some("internal:fleet-update:install-cli") {
+        return false;
+    }
+
     if !request
         .argv
         .iter()
-        .any(|argument| argument.starts_with("--operation-token="))
+        .any(|argument| argument.starts_with("--operation-token=") || argument == "--json")
     {
         return false;
     }
@@ -251,6 +293,9 @@ fn should_retry_without_operation_token(
         frame
             .message
             .contains("The \"--operation-token\" option does not exist.")
+            || frame
+                .message
+                .contains("The \"--json\" option does not exist.")
     })
 }
 
@@ -413,13 +458,14 @@ mod tests {
     }
 
     #[test]
-    fn retry_without_operation_token_is_used_for_stale_orbit_cli() {
+    fn retry_without_legacy_flags_is_used_for_stale_fleet_update_cli() {
         let request = CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
             binary: "orbit".to_string(),
             argv: vec![
                 "internal:fleet-update:install-cli".to_string(),
                 "--operation-token=op_test_123".to_string(),
+                "--json".to_string(),
             ],
             input: None,
             operation_token: "op_test_123".to_string(),
@@ -435,17 +481,20 @@ mod tests {
             }],
         };
 
-        assert!(should_retry_without_operation_token(&request, &execution));
+        assert!(should_retry_stale_fleet_update_without_legacy_flags(
+            &request, &execution
+        ));
     }
 
     #[test]
-    fn retry_without_operation_token_is_not_used_for_successful_execution() {
+    fn retry_without_legacy_flags_is_not_used_for_successful_execution() {
         let request = CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
             binary: "orbit".to_string(),
             argv: vec![
                 "internal:fleet-update:install-cli".to_string(),
                 "--operation-token=op_test_123".to_string(),
+                "--json".to_string(),
             ],
             input: None,
             operation_token: "op_test_123".to_string(),
@@ -461,15 +510,21 @@ mod tests {
             }],
         };
 
-        assert!(!should_retry_without_operation_token(&request, &execution));
+        assert!(!should_retry_stale_fleet_update_without_legacy_flags(
+            &request, &execution
+        ));
     }
 
     #[test]
-    fn retry_without_operation_token_requires_token_argument() {
+    fn retry_without_legacy_flags_requires_fleet_update_command() {
         let request = CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
             binary: "orbit".to_string(),
-            argv: vec!["internal:fleet-update:install-cli".to_string()],
+            argv: vec![
+                "version".to_string(),
+                "--operation-token=op_test_123".to_string(),
+                "--json".to_string(),
+            ],
             input: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
@@ -484,7 +539,53 @@ mod tests {
             }],
         };
 
-        assert!(!should_retry_without_operation_token(&request, &execution));
+        assert!(!should_retry_stale_fleet_update_without_legacy_flags(
+            &request, &execution
+        ));
+    }
+
+    #[test]
+    fn retry_without_legacy_flags_handles_json_option_failures() {
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec![
+                "internal:fleet-update:install-cli".to_string(),
+                "--operation-token=op_test_123".to_string(),
+                "--json".to_string(),
+            ],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+        let execution = CommandExecution {
+            status: "failed".to_string(),
+            exit_code: Some(1),
+            frames: vec![CommandPushFrame {
+                frame_type: "stderr".to_string(),
+                message: "The \"--json\" option does not exist.".to_string(),
+            }],
+        };
+
+        assert!(should_retry_stale_fleet_update_without_legacy_flags(
+            &request, &execution
+        ));
+    }
+
+    #[test]
+    fn command_binary_preserves_non_orbit_binaries() {
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "/bin/cat".to_string(),
+            argv: vec![],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+
+        assert_eq!(command_binary(&request), "/bin/cat");
     }
 
     #[tokio::test]
