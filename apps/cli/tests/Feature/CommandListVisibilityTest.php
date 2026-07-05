@@ -457,6 +457,7 @@ describe('command list visibility', function (): void {
         'internal:database-query-local',
         'internal:database-add-user',
         'internal:app-cache:clear',
+        'internal:app-introspect:probe',
         'internal:app-runtime-configs:probe',
         'internal:app-runtime-containers:probe',
         'internal:app-runtime-extensions:probe',

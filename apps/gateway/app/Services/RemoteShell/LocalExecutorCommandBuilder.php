@@ -32,6 +32,7 @@ final readonly class LocalExecutorCommandBuilder
         'internal:agent-runtime:probe' => ['agent'],
         'internal:agent-user:ensure' => ['agent'],
         'internal:app-cache:clear' => ['app-dev', 'app-prod'],
+        'internal:app-introspect:probe' => ['app-dev', 'app-prod'],
         'internal:app-runtime-configs:probe' => ['app-dev', 'app-prod'],
         'internal:app-runtime-containers:probe' => ['app-dev', 'app-prod'],
         'internal:app-runtime-extensions:probe' => ['app-dev', 'app-prod'],

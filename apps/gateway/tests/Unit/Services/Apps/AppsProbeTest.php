@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\App;
 use App\Models\Node;
@@ -47,8 +45,8 @@ describe('interface contract', function (): void {
 });
 
 describe('docker-first probe', function (): void {
-    it('renders a POSIX shell introspection script that does not depend on host PHP', function (): void {
-        $node = appNode();
+    it('dispatches app introspection through the internal agent-push command', function (): void {
+        $node = appsProbeAgentNode();
         $app = App::factory()
             ->for($node, 'node')
             ->create([
@@ -56,53 +54,9 @@ describe('docker-first probe', function (): void {
                 'path' => '/home/orbit/apps/docs',
                 'document_root' => 'public',
             ]);
-        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t0\n");
+        fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
 
-        new AppsProbe($shell)->introspect($app);
-
-        $script = $shell->scripts[0];
-
-        expect($script)
-            ->not->toContain('php -r')->and($script)
-            ->not->toContain('php-fpm')->and($script)->toStartWith('set -eu')->and($script)->toContain(
-                'docker container inspect',
-            )->and($script)->toContain('command -v docker')->and($shell->options[0])
-            ->not->toHaveKey('input');
-    });
-
-    it('passes runtime container identity through environment-assignment lines so the shell does not require STDIN input', function (): void {
-        $node = appNode();
-        $app = App::factory()
-            ->for($node, 'node')
-            ->create([
-                'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'web',
-                'php_version' => '8.5',
-            ]);
-        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t0\n");
-
-        new AppsProbe($shell)->introspect($app);
-
-        expect($shell->scripts[0])
-            ->toContain("APP_DOCUMENT_ROOT='web'")
-            ->toContain("RUNTIME_CONTAINER_NAME='orbit-app-docs'");
-    });
-});
-
-describe('source path and document root reality', function (): void {
-    it('introspects source path, document root, and runtime container reality on the owning app node', function (): void {
-        $node = appNode();
-        $app = App::factory()
-            ->for($node, 'node')
-            ->create([
-                'name' => 'docs',
-                'path' => '/home/orbit/apps/docs',
-                'document_root' => 'public',
-            ]);
-        $shell = new AppsProbeRecordingRemoteShell("docs\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t1\t0\n");
-
-        $snapshot = new AppsProbe($shell)->introspect($app);
+        $snapshot = new AppsProbe()->introspect($app);
 
         expect($snapshot->get('docs'))->toMatchArray([
             'path_exists' => true,
@@ -115,19 +69,61 @@ describe('source path and document root reality', function (): void {
             'system_user_exists' => true,
             'fs_permissions_ok' => true,
         ]);
-        expect($shell->scripts[0])
-            ->toContain('docker container inspect')
-            ->and($shell->scripts[0])
-            ->toContain("APP_NAME='docs'")
-            ->and($shell->scripts[0])
-            ->toContain("APP_PATH='/home/orbit/apps/docs'")
-            ->and($shell->scripts[0])
-            ->toContain("APP_DOCUMENT_ROOT='public'")
-            ->and($shell->scripts[0])
-            ->toContain("RUNTIME_KIND='php'")
-            ->and($shell->scripts[0])
-            ->toContain("RUNTIME_CONTAINER_NAME='orbit-app-docs'");
-        expect($shell->nodes[0]->is($node))->toBeTrue();
+        expect(apps_introspect_probe_was_sent())->toBeTrue();
+    });
+
+    it('passes app reality inputs as a typed JSON payload', function (): void {
+        $node = appsProbeAgentNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => 'web',
+                'php_version' => '8.5',
+            ]);
+        fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
+
+        new AppsProbe()->introspect($app);
+
+        Http::assertSent(function (Request $request): bool {
+            $payload = json_decode((string) $request['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+            return (
+                $request['argv'][0] === 'internal:app-introspect:probe'
+                && $payload['document_root'] === 'web'
+                && $payload['runtime_container_name'] === 'orbit-app-docs'
+            );
+        });
+    });
+});
+
+describe('source path and document root reality', function (): void {
+    it('introspects source path, document root, and runtime container reality on the owning app node', function (): void {
+        $node = appsProbeAgentNode();
+        $app = App::factory()
+            ->for($node, 'node')
+            ->create([
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+                'document_root' => 'public',
+            ]);
+        fake_apps_introspect_probe(apps_introspect_snapshot('docs'));
+
+        $snapshot = new AppsProbe()->introspect($app);
+
+        expect($snapshot->get('docs'))->toMatchArray([
+            'path_exists' => true,
+            'root_exists' => true,
+            'root_inside_path' => true,
+            'docker_available' => true,
+            'container_exists' => true,
+            'container_spec_matches' => true,
+            'container_running' => true,
+            'system_user_exists' => true,
+            'fs_permissions_ok' => true,
+        ]);
+        expect(apps_introspect_probe_was_sent())->toBeTrue();
     });
 
     it('detects missing source paths', function (): void {
@@ -974,6 +970,72 @@ function appsRuntimeConfigsProbeWasSent(): bool
     return true;
 }
 
+/**
+ * @param  array<string, mixed>  $snapshot
+ */
+function fake_apps_introspect_probe(array $snapshot): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.6.0.63:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'app.introspect',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [
+                [
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => [
+                            'data' => [
+                                'snapshot' => $snapshot,
+                            ],
+                            'meta' => [],
+                        ],
+                    ], JSON_THROW_ON_ERROR),
+                ],
+            ],
+        ]),
+    ]);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function apps_introspect_snapshot(string $name): array
+{
+    return [
+        'name' => $name,
+        'path_exists' => true,
+        'root_exists' => true,
+        'root_inside_path' => true,
+        'docker_available' => true,
+        'container_exists' => true,
+        'container_spec_matches' => true,
+        'container_running' => true,
+        'system_user_exists' => true,
+        'fs_permissions_ok' => true,
+        'runtime_config_exists' => true,
+        'runtime_config_matches' => true,
+        'runtime_image_available' => true,
+        'runtime_image_probe_failed' => false,
+    ];
+}
+
+function apps_introspect_probe_was_sent(): bool
+{
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->url() === 'http://10.6.0.63:9477/v1/commands'
+            && $request['binary'] === 'orbit'
+            && $request['argv'][0] === 'internal:app-introspect:probe'
+        ),
+    );
+
+    return true;
+}
+
 function fakeAppsRuntimeContainersProbe(string $stdout): void
 {
     Http::preventStrayRequests();
@@ -1012,70 +1074,4 @@ function appsRuntimeContainersProbeWasSent(): bool
     );
 
     return true;
-}
-
-final class AppsProbeRecordingRemoteShell implements RemoteShell
-{
-    /**
-     * @var list<Node>
-     */
-    public array $nodes = [];
-
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
-
-    /**
-     * @var list<array<string, mixed>>
-     */
-    public array $options = [];
-
-    public function __construct(
-        private readonly string $stdout,
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->nodes[] = $node;
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return new RemoteShellResult(
-            exitCode: 0,
-            stdout: $this->stdout,
-            stderr: '',
-            durationMs: 1,
-        );
-    }
-}
-
-final class AppsProbeThrowingRemoteShell implements RemoteShell
-{
-    public function __construct(
-        private readonly string $message,
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        throw new \RuntimeException($this->message);
-    }
-}
-
-final class AppsProbeFailingRemoteShell implements RemoteShell
-{
-    public function __construct(
-        private readonly int $exitCode,
-        private readonly string $stderr,
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        return new RemoteShellResult(
-            exitCode: $this->exitCode,
-            stdout: '',
-            stderr: $this->stderr,
-            durationMs: 1,
-        );
-    }
 }

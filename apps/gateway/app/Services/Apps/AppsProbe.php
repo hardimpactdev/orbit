@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
@@ -19,12 +18,12 @@ use App\Services\Php\PhpRuntimeCatalog;
 final readonly class AppsProbe
 {
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
         private ?AppRuntimeUser $appRuntimeUser = null,
         private ?AppRuntimeContainerRenderer $appRuntimeContainerRenderer = null,
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
         private ?AppAgentIdeDefaults $agentIdeDefaults = null,
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
+        private ?RemoteAppIntrospectProbe $introspectProbe = null,
         private ?RemoteAppRuntimeConfigsProbe $runtimeConfigsProbe = null,
         private ?RemoteAppRuntimeContainersProbe $runtimeContainersProbe = null,
     ) {}
@@ -47,6 +46,17 @@ final readonly class AppsProbe
             return new ProbeSnapshot([]);
         }
 
+        return $this->snapshotFromProbe(
+            snapshot: $this->introspectProbe()->snapshot($app->node, $this->introspectionPayload($app)),
+            fallbackName: $app->name,
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function introspectionPayload(App $app): array
+    {
         $isPhpApp = $app->runtimeKind() === AppRuntimeKind::Php;
         $containerName = $isPhpApp ? $this->appRuntimeContainerRenderer()->containerName($app) : '';
         $expectedSpecHash = '';
@@ -69,198 +79,57 @@ final readonly class AppsProbe
             }
         }
 
-        $script = $this->renderIntrospectScript([
-            'APP_NAME' => $app->name,
-            'APP_PATH' => rtrim($app->path, '/'),
-            'APP_DOCUMENT_ROOT' => $app->document_root,
-            'RUNTIME_KIND' => $app->runtimeKind()->value,
-            'RUNTIME_USER' => $this->appRuntimeUser()->forApp($app),
-            'RUNTIME_CONTAINER_NAME' => $containerName,
-            'EXPECTED_SPEC_HASH' => $expectedSpecHash,
-            'RUNTIME_CONFIG_PATH' => $runtimeConfigPath,
-            'EXPECTED_RUNTIME_CONFIG_HASH' => $expectedRuntimeConfigHash,
-            'EXPECTED_RUNTIME_IMAGE' => $expectedImage,
-        ]);
-
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($app->node, $script, [
-            'throw' => true,
-        ]);
-
-        $items = [];
-
-        foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
-            if ($line === '') {
-                continue;
-            }
-
-            $parts = explode("\t", $line);
-
-            if (count($parts) !== 14) {
-                continue;
-            }
-
-            [
-                $name,
-                $pathExists,
-                $rootExists,
-                $rootInsidePath,
-                $dockerAvailable,
-                $containerExists,
-                $containerSpecMatches,
-                $containerRunning,
-                $systemUserExists,
-                $fsPermissionsOk,
-                $runtimeConfigExists,
-                $runtimeConfigMatches,
-                $runtimeImageAvailable,
-                $runtimeImageProbeFailed,
-            ] = $parts;
-
-            $items[$name] = [
-                'path_exists' => $pathExists === '1',
-                'root_exists' => $rootExists === '1',
-                'root_inside_path' => $rootInsidePath === '1',
-                'docker_available' => $dockerAvailable === '1',
-                'container_exists' => $containerExists === '1',
-                'container_spec_matches' => $containerSpecMatches === '1',
-                'container_running' => $containerRunning === '1',
-                'system_user_exists' => $systemUserExists === '1',
-                'fs_permissions_ok' => $fsPermissionsOk === '1',
-                'runtime_config_exists' => $runtimeConfigExists === '1',
-                'runtime_config_matches' => $runtimeConfigMatches === '1',
-                'runtime_image_available' => $runtimeImageAvailable === '1',
-                'runtime_image_probe_failed' => $runtimeImageProbeFailed === '1',
-            ];
-        }
-
-        return new ProbeSnapshot($items);
+        return [
+            'name' => $app->name,
+            'path' => rtrim($app->path, '/'),
+            'document_root' => $app->document_root,
+            'runtime_kind' => $app->runtimeKind()->value,
+            'runtime_user' => $this->appRuntimeUser()->forApp($app),
+            'runtime_container_name' => $containerName,
+            'expected_spec_hash' => $expectedSpecHash,
+            'runtime_config_path' => $runtimeConfigPath,
+            'expected_runtime_config_hash' => $expectedRuntimeConfigHash,
+            'expected_runtime_image' => $expectedImage,
+        ];
     }
 
     /**
-     * Render the POSIX shell introspection script. Docker-first nodes
-     * intentionally omit host PHP, so the script may not assume `php` is
-     * available. Only POSIX `sh` builtins, `docker`, `id`, `stat`, and
-     * `find` are required on the node.
-     *
-     * @param  array<string, string>  $variables
+     * @param  array<string, mixed>  $snapshot
      */
-    private function renderIntrospectScript(array $variables): string
+    private function snapshotFromProbe(array $snapshot, string $fallbackName): ProbeSnapshot
     {
-        $assignments = '';
+        $name = is_string($snapshot['name'] ?? null) ? $snapshot['name'] : $fallbackName;
 
-        foreach ($variables as $key => $value) {
-            $assignments .= "{$key}=".escapeshellarg($value).PHP_EOL;
-        }
+        return new ProbeSnapshot([
+            $name => [
+                'path_exists' => $this->snapshotBool($snapshot, 'path_exists'),
+                'root_exists' => $this->snapshotBool($snapshot, 'root_exists'),
+                'root_inside_path' => $this->snapshotBool($snapshot, 'root_inside_path'),
+                'docker_available' => $this->snapshotBool($snapshot, 'docker_available'),
+                'container_exists' => $this->snapshotBool($snapshot, 'container_exists'),
+                'container_spec_matches' => $this->snapshotBool($snapshot, 'container_spec_matches'),
+                'container_running' => $this->snapshotBool($snapshot, 'container_running'),
+                'system_user_exists' => $this->snapshotBool($snapshot, 'system_user_exists'),
+                'fs_permissions_ok' => $this->snapshotBool($snapshot, 'fs_permissions_ok'),
+                'runtime_config_exists' => $this->snapshotBool($snapshot, 'runtime_config_exists'),
+                'runtime_config_matches' => $this->snapshotBool($snapshot, 'runtime_config_matches'),
+                'runtime_image_available' => $this->snapshotBool($snapshot, 'runtime_image_available'),
+                'runtime_image_probe_failed' => $this->snapshotBool($snapshot, 'runtime_image_probe_failed'),
+            ],
+        ]);
+    }
 
-        return <<<SH
-            set -eu
-            {$assignments}
-            path_exists=0
-            [ -d "\$APP_PATH" ] && path_exists=1
+    /**
+     * @param  array<string, mixed>  $snapshot
+     */
+    private function snapshotBool(array $snapshot, string $key): bool
+    {
+        return ($snapshot[$key] ?? false) === true;
+    }
 
-            root_rel=\${APP_DOCUMENT_ROOT#/}
-            root_rel=\${root_rel%/}
-            if [ -z "\$root_rel" ] || [ "\$root_rel" = "." ]; then
-                root_path="\$APP_PATH"
-            else
-                root_path="\$APP_PATH/\$root_rel"
-            fi
-
-            root_exists=0
-            [ -d "\$root_path" ] && root_exists=1
-
-            root_inside_path=0
-            case "\$root_path" in
-                "\$APP_PATH"|"\$APP_PATH"/*) root_inside_path=1 ;;
-            esac
-
-            docker_available=0
-            if command -v docker >/dev/null 2>&1; then
-                docker_available=1
-            fi
-
-            container_exists=0
-            container_spec_matches=0
-            container_running=0
-
-            if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$RUNTIME_CONTAINER_NAME" ] && [ "\$docker_available" -eq 1 ]; then
-                if docker container inspect "\$RUNTIME_CONTAINER_NAME" >/dev/null 2>&1; then
-                    container_exists=1
-                    observed_hash=\$(docker container inspect --format '{{index .Config.Labels "orbit.app.spec_hash"}}' "\$RUNTIME_CONTAINER_NAME" 2>/dev/null || printf '')
-                    if [ -n "\$EXPECTED_SPEC_HASH" ] && [ "\$observed_hash" = "\$EXPECTED_SPEC_HASH" ]; then
-                        container_spec_matches=1
-                    fi
-                    running=\$(docker container inspect --format '{{.State.Running}}' "\$RUNTIME_CONTAINER_NAME" 2>/dev/null || printf 'false')
-                    if [ "\$running" = "true" ]; then
-                        container_running=1
-                    fi
-                fi
-            elif [ "\$RUNTIME_KIND" = "static" ]; then
-                container_spec_matches=1
-            fi
-
-            system_user_exists=0
-            if [ -n "\$RUNTIME_USER" ] && id -u "\$RUNTIME_USER" >/dev/null 2>&1; then
-                system_user_exists=1
-            fi
-
-            fs_permissions_ok=0
-            if [ "\$path_exists" -eq 1 ] && [ -n "\$RUNTIME_USER" ]; then
-                observed_owner=\$(stat -c '%U' "\$APP_PATH" 2>/dev/null || stat -f '%Su' "\$APP_PATH" 2>/dev/null || printf '')
-                not_world_writable=\$(find "\$APP_PATH" -maxdepth 0 ! -perm /022 -print 2>/dev/null || printf '')
-                if [ "\$observed_owner" = "\$RUNTIME_USER" ] && [ -n "\$not_world_writable" ]; then
-                    fs_permissions_ok=1
-                fi
-            fi
-
-            runtime_config_exists=0
-            runtime_config_matches=0
-            if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$RUNTIME_CONFIG_PATH" ]; then
-                if sudo test -e "\$RUNTIME_CONFIG_PATH" 2>/dev/null; then
-                    runtime_config_exists=1
-                    observed_config_hash=\$(sudo sha256sum "\$RUNTIME_CONFIG_PATH" 2>/dev/null | awk '{print \$1}' || printf '')
-                    if [ -n "\$EXPECTED_RUNTIME_CONFIG_HASH" ] && [ "\$observed_config_hash" = "\$EXPECTED_RUNTIME_CONFIG_HASH" ]; then
-                        runtime_config_matches=1
-                    fi
-                fi
-            elif [ "\$RUNTIME_KIND" = "static" ]; then
-                runtime_config_matches=1
-            fi
-
-            runtime_image_available=0
-            runtime_image_probe_failed=0
-            if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$EXPECTED_RUNTIME_IMAGE" ] && [ "\$docker_available" -eq 1 ]; then
-                set +e
-                image_err=\$(docker image inspect "\$EXPECTED_RUNTIME_IMAGE" 2>&1 >/dev/null)
-                image_ec=\$?
-                set -e
-                if [ "\$image_ec" = "0" ]; then
-                    runtime_image_available=1
-                elif printf '%s' "\$image_err" | grep -qi 'no such image'; then
-                    runtime_image_available=0
-                else
-                    runtime_image_probe_failed=1
-                fi
-            elif [ "\$RUNTIME_KIND" = "static" ]; then
-                runtime_image_available=1
-            fi
-
-            printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
-                "\$APP_NAME" \\
-                "\$path_exists" \\
-                "\$root_exists" \\
-                "\$root_inside_path" \\
-                "\$docker_available" \\
-                "\$container_exists" \\
-                "\$container_spec_matches" \\
-                "\$container_running" \\
-                "\$system_user_exists" \\
-                "\$fs_permissions_ok" \\
-                "\$runtime_config_exists" \\
-                "\$runtime_config_matches" \\
-                "\$runtime_image_available" \\
-                "\$runtime_image_probe_failed"
-            SH;
+    private function introspectProbe(): RemoteAppIntrospectProbe
+    {
+        return $this->introspectProbe ?? app(RemoteAppIntrospectProbe::class);
     }
 
     /**

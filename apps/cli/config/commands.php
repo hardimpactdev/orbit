@@ -74,6 +74,7 @@ use App\Commands\Internal\AgentAclEnsureCommand;
 use App\Commands\Internal\AgentRuntimeProbeCommand;
 use App\Commands\Internal\AgentUserEnsureCommand;
 use App\Commands\Internal\AppCacheClearCommand;
+use App\Commands\Internal\AppIntrospectProbeCommand;
 use App\Commands\Internal\AppRuntimeConfigsProbeCommand;
 use App\Commands\Internal\AppRuntimeContainersProbeCommand;
 use App\Commands\Internal\AppRuntimeExtensionsProbeCommand;
@@ -386,6 +387,7 @@ return [
         AgentRuntimeProbeCommand::class,
         AgentUserEnsureCommand::class,
         AppCacheClearCommand::class,
+        AppIntrospectProbeCommand::class,
         AppRuntimeConfigsProbeCommand::class,
         AppRuntimeContainersProbeCommand::class,
         AppRuntimeExtensionsProbeCommand::class,

@@ -3541,6 +3541,12 @@ function doctorRunnerInternalCommandSuccessData(string $commandName, array $inpu
         ];
     }
 
+    if ($commandName === 'internal:app-introspect:probe') {
+        return [
+            'snapshot' => doctorRunnerAppIntrospectSnapshot($result->stdout),
+        ];
+    }
+
     if ($commandName === 'internal:node-security-posture:probe') {
         return [
             'runtime_user' => true,
@@ -3566,6 +3572,35 @@ function doctorRunnerInternalCommandSuccessData(string $commandName, array $inpu
     }
 
     return ['stdout' => $result->stdout];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function doctorRunnerAppIntrospectSnapshot(string $stdout): array
+{
+    $columns = explode("\t", trim($stdout));
+
+    if (count($columns) !== 14) {
+        return [];
+    }
+
+    return [
+        'name' => $columns[0],
+        'path_exists' => $columns[1] === '1',
+        'root_exists' => $columns[2] === '1',
+        'root_inside_path' => $columns[3] === '1',
+        'docker_available' => $columns[4] === '1',
+        'container_exists' => $columns[5] === '1',
+        'container_spec_matches' => $columns[6] === '1',
+        'container_running' => $columns[7] === '1',
+        'system_user_exists' => $columns[8] === '1',
+        'fs_permissions_ok' => $columns[9] === '1',
+        'runtime_config_exists' => $columns[10] === '1',
+        'runtime_config_matches' => $columns[11] === '1',
+        'runtime_image_available' => $columns[12] === '1',
+        'runtime_image_probe_failed' => $columns[13] === '1',
+    ];
 }
 
 function doctorRunnerInternalCommandNameFromScript(string $script): string
