@@ -41,24 +41,18 @@ final readonly class NodeAgentPushClient
         /** @var array<string, mixed> $payload */
         $payload = $response->json();
 
-        return new NodeAgentPushResult([
-            'transport' => $this->stringValue($payload, 'transport'),
-            'operation_id' => $this->stringValue($payload, 'operation_id'),
-            'binary' => $this->stringValue($payload, 'binary'),
-            'status' => $this->stringValue($payload, 'status'),
-            'frames' => $this->frames($payload),
-            'exit_code' => $this->intValue($payload, 'exit_code'),
-        ]);
+        return NodeAgentPushResult::fromAgentPayload($payload);
     }
 
     private function assertAllowlisted(NodeCommandEnvelope $envelope): void
     {
-        if (
+        $isAllowlisted =
             $envelope->commandId === self::AGENT_PUSH_BINARY_COMMAND_ID
             && $envelope->requiresNodeExecution
             && $envelope->supportsAgentPushTransport
-            && $envelope->binary === self::AGENT_PUSH_BINARY_ALLOWLISTED_BINARY
-        ) {
+            && $envelope->binary === self::AGENT_PUSH_BINARY_ALLOWLISTED_BINARY;
+
+        if ($isAllowlisted) {
             return;
         }
 
@@ -108,49 +102,5 @@ final readonly class NodeAgentPushClient
         }
 
         return $payload;
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function stringValue(array $payload, string $key): string
-    {
-        if (! array_key_exists($key, $payload) || ! is_string($payload[$key]) || trim($payload[$key]) === '') {
-            throw new RuntimeException("Orbit Agent push response is missing '{$key}'.");
-        }
-
-        return $payload[$key];
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return list<array<array-key, mixed>>
-     */
-    private function frames(array $payload): array
-    {
-        if (! array_key_exists('frames', $payload) || ! is_array($payload['frames'])) {
-            return [];
-        }
-
-        return array_values(array_filter(
-            $payload['frames'],
-            is_array(...),
-        ));
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     */
-    private function intValue(array $payload, string $key): ?int
-    {
-        if (! array_key_exists($key, $payload)) {
-            return null;
-        }
-
-        if (! is_int($payload[$key])) {
-            throw new RuntimeException("Orbit Agent push response '{$key}' must be an integer.");
-        }
-
-        return $payload[$key];
     }
 }

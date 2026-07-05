@@ -128,9 +128,31 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
     let timeout_seconds = request.timeout_seconds.clamp(1, 300);
     let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
 
+    let execution = execute_binary_once(request, &request.argv, timeout_seconds, deadline);
+
+    if should_retry_without_operation_token(request, &execution) {
+        let argv = request
+            .argv
+            .iter()
+            .filter(|argument| !argument.starts_with("--operation-token="))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        return execute_binary_once(request, &argv, timeout_seconds, deadline);
+    }
+
+    execution
+}
+
+fn execute_binary_once(
+    request: &CommandPushRequest,
+    argv: &[String],
+    timeout_seconds: u64,
+    deadline: Instant,
+) -> CommandExecution {
     let mut command = Command::new(&request.binary);
     command
-        .args(&request.argv)
+        .args(argv)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -207,6 +229,29 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
             }
         }
     }
+}
+
+fn should_retry_without_operation_token(
+    request: &CommandPushRequest,
+    execution: &CommandExecution,
+) -> bool {
+    if request.binary != "orbit" || execution.exit_code == Some(0) {
+        return false;
+    }
+
+    if !request
+        .argv
+        .iter()
+        .any(|argument| argument.starts_with("--operation-token="))
+    {
+        return false;
+    }
+
+    execution.frames.iter().any(|frame| {
+        frame
+            .message
+            .contains("The \"--operation-token\" option does not exist.")
+    })
 }
 
 fn command_output_to_execution(output: std::process::Output) -> CommandExecution {
@@ -365,6 +410,81 @@ mod tests {
                 message: "agent stdin".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn retry_without_operation_token_is_used_for_stale_orbit_cli() {
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec![
+                "internal:fleet-update:install-cli".to_string(),
+                "--operation-token=op_test_123".to_string(),
+            ],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+        let execution = CommandExecution {
+            status: "failed".to_string(),
+            exit_code: Some(1),
+            frames: vec![CommandPushFrame {
+                frame_type: "stderr".to_string(),
+                message: "The \"--operation-token\" option does not exist.".to_string(),
+            }],
+        };
+
+        assert!(should_retry_without_operation_token(&request, &execution));
+    }
+
+    #[test]
+    fn retry_without_operation_token_is_not_used_for_successful_execution() {
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec![
+                "internal:fleet-update:install-cli".to_string(),
+                "--operation-token=op_test_123".to_string(),
+            ],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+        let execution = CommandExecution {
+            status: "succeeded".to_string(),
+            exit_code: Some(0),
+            frames: vec![CommandPushFrame {
+                frame_type: "stdout".to_string(),
+                message: "updated".to_string(),
+            }],
+        };
+
+        assert!(!should_retry_without_operation_token(&request, &execution));
+    }
+
+    #[test]
+    fn retry_without_operation_token_requires_token_argument() {
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec!["internal:fleet-update:install-cli".to_string()],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+        let execution = CommandExecution {
+            status: "failed".to_string(),
+            exit_code: Some(1),
+            frames: vec![CommandPushFrame {
+                frame_type: "stderr".to_string(),
+                message: "The \"--operation-token\" option does not exist.".to_string(),
+            }],
+        };
+
+        assert!(!should_retry_without_operation_token(&request, &execution));
     }
 
     #[tokio::test]

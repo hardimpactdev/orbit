@@ -75,6 +75,48 @@ it('pushes an allowlisted binary argv envelope to the target node agent listener
     );
 });
 
+it('accepts nullable exit codes from the target node agent listener', function (): void {
+    Http::preventStrayRequests();
+
+    Http::fake([
+        'http://10.6.0.23:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'op_gateway_test_456',
+            'binary' => 'orbit',
+            'status' => 'failed',
+            'exit_code' => null,
+            'frames' => [
+                [
+                    'type' => 'stderr',
+                    'message' => 'binary execution timed out after 30 seconds',
+                ],
+            ],
+        ]),
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'mini',
+        'host' => 'mini.local',
+        'wireguard_address' => '10.6.0.23',
+        'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
+    ]);
+
+    $result = new NodeAgentPushClient()->execute(
+        node: $node,
+        envelope: NodeCommandEnvelope::agentPushBinary(
+            operationId: 'op_gateway_test_456',
+            binary: 'orbit',
+            argv: ['app:list', '--json'],
+        ),
+        operationToken: agent_push_client_test_operation_token(),
+    );
+
+    expect($result->status)->toBe('failed');
+    expect($result->exitCode)->toBeNull();
+    expect($result->frames)->toHaveCount(1);
+});
+
 it('refuses to push envelopes that are not allowlisted for agent push', function (): void {
     Http::preventStrayRequests();
 
