@@ -40,6 +40,7 @@ use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RemoteShell\SshRemoteShellStream;
 use App\Services\Solo\HttpSoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamClient;
@@ -146,6 +147,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
+        $this->app->bind(RunsInternalCommands::class, RemoteLocalExecutor::class);
         $this->app->bind(RemoteLocalExecutor::class, fn ($app): RemoteLocalExecutor => new RemoteLocalExecutor(
             transport: $app->make(RemoteHostExecutor::class),
             commands: $app->make(LocalExecutorCommandBuilder::class),

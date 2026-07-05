@@ -105,11 +105,19 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
         ->and($updateScripts)
         ->toHaveCount(1)
         ->and($updateScripts[0]['script'])
-        ->toContain('http://gateway.test/artifacts/linux-amd64')
-        ->not
-        ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64')
-        ->toContain(str_repeat('e', 64))
-        ->toContain("docker pull 'caddy:2.9-alpine'");
+        ->toContain('internal:fleet-update:install-cli')
+        ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64');
+
+    $installPayload = json_decode($updateScripts[0]['options']['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($installPayload)
+        ->toMatchArray([
+            'artifact_url' => 'http://gateway.test/artifacts/linux-amd64',
+            'sha256' => str_repeat('e', 64),
+            'role_images' => ['caddy:2.9-alpine'],
+        ])
+        ->and(json_encode($installPayload, JSON_THROW_ON_ERROR))
+        ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64');
 
     Http::assertSentCount(1);
 });

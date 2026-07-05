@@ -24,7 +24,7 @@ use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
-final readonly class RemoteLocalExecutor implements RemoteExecutor
+final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternalCommands
 {
     private const string LOCAL_EXECUTOR_HOME = '/home/orbit';
 

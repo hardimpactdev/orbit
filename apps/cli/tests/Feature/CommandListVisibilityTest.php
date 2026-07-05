@@ -470,6 +470,7 @@ describe('command list visibility', function (): void {
         'internal:env-file',
         'internal:firewall-rule',
         'internal:firewall-rule:probe',
+        'internal:fleet-update:install-cli',
         'internal:fleet-update:verify',
         'internal:gateway-runtime-backend:probe',
         'internal:managed-file',

@@ -89,6 +89,7 @@ use App\Commands\Internal\DoctorSelfCommand;
 use App\Commands\Internal\EnvFileCommand;
 use App\Commands\Internal\FirewallRuleCommand as InternalFirewallRuleCommand;
 use App\Commands\Internal\FirewallRuleProbeCommand;
+use App\Commands\Internal\FleetUpdateInstallCliCommand;
 use App\Commands\Internal\FleetUpdateVerifyCommand;
 use App\Commands\Internal\GatewayRuntimeBackendProbeCommand;
 use App\Commands\Internal\ManagedFileCommand;
@@ -400,6 +401,7 @@ return [
         EnvFileCommand::class,
         InternalFirewallRuleCommand::class,
         FirewallRuleProbeCommand::class,
+        FleetUpdateInstallCliCommand::class,
         FleetUpdateVerifyCommand::class,
         GatewayRuntimeBackendProbeCommand::class,
         ManagedFileCommand::class,

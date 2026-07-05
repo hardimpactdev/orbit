@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
-use App\Contracts\RemoteShell;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
@@ -14,7 +13,7 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
 use Throwable;
 
@@ -23,7 +22,7 @@ final readonly class WorkloadNodeUpdater
     public function __construct(
         private NodeRoleAssignments $roles,
         private NodeHostPaths $hostPaths,
-        private RemoteShell $remoteShell,
+        private RunsInternalCommands $localExecutor,
         private UpdateLeaseManager $leases,
         private OperationRunRecorder $operationRuns,
         private FleetUpdateTargetSelector $targets,
@@ -138,23 +137,18 @@ final readonly class WorkloadNodeUpdater
             "Installing CLI {$plan->target_version}",
         );
 
-        $script = $this->remoteUpdateScript($operationRun, $plan, $node);
-        $transport = app(ExplicitRemoteShellFallback::class);
-
-        if (! $transport->allowed()) {
-            return [
-                ...$this->targetPayload($node),
-                'status' => 'failed',
-                'failed_step' => 'remote_update',
-                'output' => $transport->message('update:workload-node'),
-            ];
-        }
-
-        $result = $this->remoteShell->run($node, $script, [
-            'cwd' => $node->orbit_path,
-            'timeout' => 300,
-            'metadata' => $this->remoteShellMetadata($operationRun, $node),
-        ]);
+        $result = $this->localExecutor->runInternal(
+            $node,
+            'internal:fleet-update:install-cli',
+            [],
+            [],
+            [
+                'cwd' => $node->orbit_path,
+                'timeout' => 300,
+                'input' => json_encode($this->installPayload($operationRun, $plan, $node), JSON_THROW_ON_ERROR),
+                'metadata' => $this->remoteShellMetadata($operationRun, $node),
+            ],
+        );
 
         if (! $result->successful()) {
             return [
@@ -210,101 +204,31 @@ final readonly class WorkloadNodeUpdater
         return "Workload node {$node->name} updated ({$issues} {$noun})";
     }
 
-    private function remoteUpdateScript(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): string
+    /**
+     * @return array{
+     *     artifact_url: string,
+     *     sha256: string,
+     *     install_root: string,
+     *     bin_path: string,
+     *     shared_binary_path: string|null,
+     *     role_images: list<string>,
+     * }
+     */
+    private function installPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
         $artifact = $this->cliArtifact($operationRun, $plan, $node);
         $installRoot = rtrim($node->orbit_path, '/') ?: '/home/orbit/orbit';
-        $roleImages = $this->requiredRoleImages($plan, $node);
 
-        $lines = [
-            'set -euo pipefail',
-            'tmp="$(mktemp -d)"',
-            'trap \'rm -rf "$tmp"\' EXIT',
-            'ORBIT_CLI_SHA256='.$this->quote($artifact['sha256']),
-            'check_sha256() {',
-            '    file="$1"',
-            '    if command -v sha256sum >/dev/null 2>&1; then',
-            '        printf \'%s  %s\n\' "$ORBIT_CLI_SHA256" "$file" | sha256sum -c -',
-            '        return',
-            '    fi',
-            '    if command -v shasum >/dev/null 2>&1; then',
-            '        actual="$(shasum -a 256 "$file" | awk \'{ print $1 }\')"',
-            '        test "$actual" = "$ORBIT_CLI_SHA256"',
-            '        return',
-            '    fi',
-            '    echo "No SHA-256 checksum tool found." >&2',
-            '    return 127',
-            '}',
-            'INSTALL_ROOT="${ORBIT_INSTALL_PATH:-'.$installRoot.'}"',
-            'BIN_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"',
-            'SHARED_BINARY_PATH="${ORBIT_SHARED_BINARY_PATH:-}"',
-            'echo download_cli',
-            'curl -fksSL '.$this->quote($artifact['url']).' -o "$tmp/orbit"',
-            'check_sha256 "$tmp/orbit"',
-            'echo install_cli',
-            'install -d "$INSTALL_ROOT/bin"',
-            'install -m 0755 "$tmp/orbit" "$INSTALL_ROOT/bin/orbit-binary"',
-            'link_target="$INSTALL_ROOT/bin/orbit-binary"',
-            'case "$BIN_PATH" in',
-            '    /usr/local/bin/*)',
-            '        if [ -z "$SHARED_BINARY_PATH" ]; then',
-            '            link_name="$(basename "$BIN_PATH")"',
-            '            SHARED_BINARY_PATH="/usr/local/lib/orbit/${link_name}-binary"',
-            '        fi',
-            '        link_target="$SHARED_BINARY_PATH"',
-            '        shared_parent="$(dirname "$link_target")"',
-            '        if [ -d "$shared_parent" ] && [ -w "$shared_parent" ]; then',
-            '            install -d -m 0755 "$shared_parent"',
-            '            install -m 0755 "$tmp/orbit" "$link_target"',
-            '        elif [ "$(id -u)" -eq 0 ]; then',
-            '            install -d -m 0755 "$shared_parent"',
-            '            install -m 0755 "$tmp/orbit" "$link_target"',
-            '        else',
-            '            sudo -n install -d -m 0755 "$shared_parent"',
-            '            sudo -n install -m 0755 "$tmp/orbit" "$link_target"',
-            '        fi',
-            '        ;;',
-            'esac',
-            'link_parent="$(dirname "$BIN_PATH")"',
-            'if [ -w "$link_parent" ]; then',
-            '    ln -sfn "$link_target" "$BIN_PATH"',
-            'else',
-            '    sudo -n ln -sfn "$link_target" "$BIN_PATH"',
-            'fi',
-            'echo reconcile_launcher',
-            'resolved="$(command -v orbit 2>/dev/null || true)"',
-            'case "$resolved" in',
-            '    /*)',
-            '        if [ "$resolved" != "$BIN_PATH" ] && [ "$(readlink -f "$resolved" 2>/dev/null || true)" != "$(readlink -f "$link_target" 2>/dev/null || true)" ]; then',
-            '            if [ -w "$(dirname "$resolved")" ]; then',
-            '                ln -sfn "$link_target" "$resolved" || true',
-            '            else',
-            '                sudo -n ln -sfn "$link_target" "$resolved" || true',
-            '            fi',
-            '        fi',
-            '        ;;',
-            'esac',
-            'echo verify_cli',
-            'check_sha256 "$INSTALL_ROOT/bin/orbit-binary"',
-            'check_sha256 "$link_target"',
-            'resolved_binary="$(readlink -f "$BIN_PATH" 2>/dev/null || printf %s "$BIN_PATH")"',
-            'check_sha256 "$resolved_binary"',
-            '"$BIN_PATH" --version --local',
+        return [
+            'artifact_url' => $artifact['url'],
+            'sha256' => $artifact['sha256'],
+            'install_root' => $installRoot,
+            'bin_path' => NodeHostPaths::isMacosPlatform($node->platform)
+                ? $this->hostPaths->homeDirectory($node).'/.local/bin/orbit'
+                : '/usr/local/bin/orbit',
+            'shared_binary_path' => null,
+            'role_images' => $this->requiredRoleImages($plan, $node),
         ];
-
-        if ($roleImages !== []) {
-            $lines[] = 'echo pull_required_images';
-
-            foreach ($roleImages as $image) {
-                $lines[] = 'docker pull '.$this->quote($image);
-                $lines[] = 'docker image inspect '.$this->quote($image).' >/dev/null';
-            }
-        }
-
-        $lines[] = 'echo verify';
-        $lines[] = '"$BIN_PATH" --version --local';
-
-        return implode("\n", $lines);
     }
 
     private function recordInstalledCli(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void
@@ -432,10 +356,5 @@ final readonly class WorkloadNodeUpdater
         $ttlSeconds = (int) config('orbit.updates.lease_ttl_seconds', 300);
 
         return max(1, $ttlSeconds);
-    }
-
-    private function quote(string $value): string
-    {
-        return escapeshellarg($value);
     }
 }

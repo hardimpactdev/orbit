@@ -25,6 +25,7 @@ use App\Services\Operations\WorkloadNodeUpdateFailed;
 use App\Services\Operations\WorkloadNodeUpdater;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteShellMetadata;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
@@ -43,7 +44,7 @@ afterEach(function (): void {
 
 it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     $appDev = Node::factory()
@@ -145,46 +146,30 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
 
-    expect($shell->scriptFor('agent-1'))
-        ->toContain('download_cli')
-        ->toContain('pull_required_images')
-        ->toContain("docker pull 'caddy:2.9-alpine'");
-
-    expect($shell->scriptFor('app-dev-1'))
-        ->toContain('download_cli')
-        ->toContain('curl -fksSL')
-        ->toContain('install_cli')
-        ->toContain('verify_cli')
-        ->toContain('sha256sum -c -')
-        ->toContain('SHARED_BINARY_PATH="${ORBIT_SHARED_BINARY_PATH:-}"')
-        ->toContain('SHARED_BINARY_PATH="/usr/local/lib/orbit/${link_name}-binary"')
-        ->toContain('link_target="$SHARED_BINARY_PATH"')
-        ->toContain('sudo -n install -m 0755 "$tmp/orbit" "$link_target"')
-        ->toContain('sudo -n ln -sfn "$link_target" "$BIN_PATH"')
-        ->toContain('"$BIN_PATH" --version --local')
-        ->toContain('reconcile_launcher')
-        ->toContain('command -v orbit')
-        ->toContain('sudo -n ln -sfn')
-        ->toContain('pull_required_images')
-        ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
-        ->not->toContain(
-            'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
-        )->toContain(str_repeat('e', 64))->toContain("docker pull 'caddy:2.9-alpine'")
-        ->not->toContain('orbit-websocket:2.0.0');
-
-    expect($shell->scriptFor('app-prod-1'))
-        ->toContain("docker pull 'caddy:2.9-alpine'")
-        ->toContain(
-            "docker pull 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'",
-        );
-
-    expect($shell->scriptFor('database-1'))
-        ->toContain('download_cli')
-        ->not->toContain('pull_required_images');
-
-    expect($shell->scriptFor('ingress-1'))
-        ->toContain("docker pull 'caddy:2.9-alpine'")
-        ->not->toContain('orbit-websocket:2.0.0');
+    expect(workloadUpdaterInstallPayload($shell, 'agent-1'))
+        ->toMatchArray([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
+            'sha256' => str_repeat('e', 64),
+            'install_root' => '/home/orbit/orbit',
+            'bin_path' => '/usr/local/bin/orbit',
+            'shared_binary_path' => null,
+            'role_images' => ['caddy:2.9-alpine'],
+        ])
+        ->and(workloadUpdaterInstallPayload($shell, 'app-dev-1'))
+        ->toMatchArray([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
+            'sha256' => str_repeat('e', 64),
+            'role_images' => ['caddy:2.9-alpine'],
+        ])
+        ->and(workloadUpdaterInstallPayload($shell, 'app-prod-1')['role_images'])
+        ->toBe([
+            'caddy:2.9-alpine',
+            'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        ])
+        ->and(workloadUpdaterInstallPayload($shell, 'database-1')['role_images'])
+        ->toBe([])
+        ->and(workloadUpdaterInstallPayload($shell, 'ingress-1')['role_images'])
+        ->toBe(['caddy:2.9-alpine']);
 
     $installedCli = $appDev->fresh()->installed_cli;
 
@@ -202,7 +187,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
 
 it('skips a workload node already on the target version and runs no remote update', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     Node::factory()
@@ -245,10 +230,10 @@ it('skips a workload node already on the target version and runs no remote updat
         ->toBe(0);
 });
 
-it('requires explicit transitional ssh fallback before running workload update scripts', function (): void {
+it('runs workload updates through the typed local executor without ssh fallback opt-in', function (): void {
     request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     $node = Node::factory()
@@ -268,20 +253,21 @@ it('requires explicit transitional ssh fallback before running workload update s
                 'target' => 'app-dev-1',
                 'node' => 'app-dev-1',
                 'role' => 'app-dev',
-                'status' => 'failed',
-                'failed_step' => 'remote_update',
-                'output' => 'update:workload-node still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
+                'status' => 'completed',
+                'doctor_issues' => 0,
             ],
         ])
         ->and($shell->updatedNodes())
-        ->toBe([])
+        ->toBe(['app-dev-1'])
+        ->and($shell->calls[0]['script'])
+        ->toBe('internal:fleet-update:install-cli')
         ->and($node->fresh()->installed_cli?->version)
-        ->toBe('1.0.0');
+        ->toBe('2.0.0');
 });
 
 it('updates topology candidate artifacts with the same version when the CLI hash differs', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     $node = Node::factory()
@@ -321,8 +307,8 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->toBe(['app-dev-1'])
         ->and($shell->scriptsFor('app-dev-1'))
         ->toBe([$shell->scriptFor('app-dev-1')])
-        ->and($shell->scriptFor('app-dev-1'))
-        ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
+        ->and(workloadUpdaterInstallPayload($shell, 'app-dev-1')['artifact_url'])
+        ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
         ->and(workloadUpdaterStepMessages($run))
         ->not
         ->toContain(
@@ -336,7 +322,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
 
 it('updates macos workload nodes with darwin arm64 CLI artifacts and portable checksum verification', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     $node = Node::factory()
@@ -377,11 +363,10 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
                 'doctor_issues' => 0,
             ],
         ])
-        ->and($shell->scriptFor('NMBP'))
-        ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake")
-        ->toContain('check_sha256 "$tmp/orbit"')
-        ->toContain('command -v sha256sum')
-        ->toContain('shasum -a 256 "$file"')
+        ->and(workloadUpdaterInstallPayload($shell, 'NMBP')['artifact_url'])
+        ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake")
+        ->and(workloadUpdaterInstallPayload($shell, 'NMBP')['bin_path'])
+        ->toBe('/Users/nckrtl/.local/bin/orbit')
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe([
             'ORBIT_OPERATION_ID' => $run->id,
@@ -399,7 +384,7 @@ it('runs orbit doctor after a node update and reports the issue count in the don
     $shell = new WorkloadUpdaterFakeShell(
         doctorIssues: ['app-dev-1' => 2, 'app-prod-1' => 0],
     );
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
     app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor(
         issues: ['app-dev-1' => 2, 'app-prod-1' => 0],
     ));
@@ -430,7 +415,7 @@ it('keeps a workload update completed when advisory node doctor fails', function
     $shell = new WorkloadUpdaterFakeShell(
         doctorFailures: ['app-dev-1' => new RuntimeException('doctor timed out')],
     );
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
     app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor(
         failures: ['app-dev-1' => new RuntimeException('doctor timed out')],
     ));
@@ -467,7 +452,7 @@ it('keeps a workload update completed when advisory node doctor fails', function
 
 it('emits per-node sub-steps: installing cli, recording metadata, running doctor, done', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
@@ -508,7 +493,7 @@ it('emits per-node sub-steps: installing cli, recording metadata, running doctor
 
 it('emits skipped sub-step (no download/replace/doctor) for a node already on the desired CLI artifact', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     Node::factory()
@@ -537,7 +522,7 @@ it('emits skipped sub-step (no download/replace/doctor) for a node already on th
 
 it('keeps a non-zero doctor issue count from failing the node update', function (): void {
     $shell = new WorkloadUpdaterFakeShell(doctorIssues: ['app-dev-1' => 5]);
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
     app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor(
         issues: ['app-dev-1' => 5],
     ));
@@ -555,7 +540,7 @@ it('continues updating later workload nodes when one remote update fails', funct
     $shell = new WorkloadUpdaterFakeShell(failures: [
         'app-dev-1' => new RemoteShellResult(exitCode: 12, stdout: '', stderr: 'download failed', durationMs: 10),
     ]);
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
 
     $run = workloadUpdaterRun();
     Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
@@ -596,7 +581,7 @@ it('fails the runner workload phase with target results when any workload update
     $shell = new WorkloadUpdaterFakeShell(failures: [
         'app-dev-1' => new RemoteShellResult(exitCode: 12, stdout: '', stderr: 'download failed', durationMs: 10),
     ]);
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
     app()->instance(GatewayServiceUpdater::class, new WorkloadUpdaterNoopGatewayUpdater);
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterFailIfCalledFleetVerifier);
 
@@ -696,7 +681,7 @@ it('fails the runner workload phase with target results when any workload update
 
 it('fails the update operation when a workload node lease is already held', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
     app()->instance(GatewayServiceUpdater::class, new WorkloadUpdaterNoopGatewayUpdater);
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterNoopFleetVerifier);
 
@@ -775,7 +760,7 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
     config()->set('app.version', '2.0.0');
 
     $shell = new WorkloadUpdaterFakeShell;
-    app()->instance(RemoteShell::class, $shell);
+    app()->instance(RunsInternalCommands::class, $shell);
     app()->instance(GatewayServiceUpdater::class, new WorkloadUpdaterNoopGatewayUpdater);
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterNoopFleetVerifier);
 
@@ -1027,7 +1012,29 @@ function workloadUpdaterVersionStdout(string $version, string $script): string
     return "Version       {$version}\n";
 }
 
-final class WorkloadUpdaterFakeShell implements RemoteShell
+/**
+ * @return array<string, mixed>
+ */
+function workloadUpdaterInstallPayload(WorkloadUpdaterFakeShell $shell, string $node): array
+{
+    /** @var mixed $payload */
+    $payload = json_decode($shell->scriptFor($node), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($payload)) {
+        return [];
+    }
+
+    foreach (array_keys($payload) as $key) {
+        if (! is_string($key)) {
+            return [];
+        }
+    }
+
+    /** @var array<string, mixed> $payload */
+    return $payload;
+}
+
+final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommands
 {
     /**
      * @var list<array{node: string, script: string, options: array<string, mixed>}>
@@ -1121,6 +1128,44 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
         );
     }
 
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
+     */
+    #[Override]
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        new RemoteShellMetadata()->prologue($transportOptions['metadata'] ?? []);
+
+        $this->calls[] = [
+            'node' => $node->name,
+            'script' => $commandName,
+            'options' => $transportOptions,
+        ];
+
+        $this->activeLeases[$node->name] = UpdateLease::query()
+            ->whereNotNull('active_resource_key')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (UpdateLease $lease): string => "{$lease->resource_type}:{$lease->resource_key}")
+            ->all();
+
+        return (
+            $this->failures[$node->name] ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: "updated\n",
+                stderr: '',
+                durationMs: 20,
+            )
+        );
+    }
+
     public function scriptFor(string $node): string
     {
         foreach ($this->calls as $call) {
@@ -1129,7 +1174,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
                 && ! workloadUpdaterIsVersionProbe($call['script'])
                 && ! str_contains($call['script'], 'doctor')
             ) {
-                return $call['script'];
+                return is_string($call['options']['input'] ?? null) ? $call['options']['input'] : $call['script'];
             }
         }
 
@@ -1142,7 +1187,9 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
     public function scriptsFor(string $node): array
     {
         return array_values(array_map(
-            fn (array $call): string => $call['script'],
+            fn (array $call): string => is_string($call['options']['input'] ?? null)
+                ? $call['options']['input']
+                : $call['script'],
             array_filter($this->calls, fn (array $call): bool => $call['node'] === $node),
         ));
     }
