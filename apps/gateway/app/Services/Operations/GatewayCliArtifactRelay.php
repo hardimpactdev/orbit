@@ -25,6 +25,14 @@ class GatewayCliArtifactRelay
     {
         $artifact = $this->manifestArtifact($plan, $platform);
 
+        if (! $this->shouldRelayArtifact($artifact)) {
+            return [
+                'url' => $artifact['url'],
+                'sha256' => $artifact['sha256'],
+                'source_url' => $artifact['url'],
+            ];
+        }
+
         $this->stageArtifact($operationRun, $platform, $artifact);
 
         return [
@@ -43,7 +51,13 @@ class GatewayCliArtifactRelay
                 continue;
             }
 
-            $this->stageArtifact($operationRun, $platform, $this->manifestArtifact($plan, $platform));
+            $artifact = $this->manifestArtifact($plan, $platform);
+
+            if (! $this->shouldRelayArtifact($artifact)) {
+                continue;
+            }
+
+            $this->stageArtifact($operationRun, $platform, $artifact);
         }
     }
 
@@ -230,6 +244,20 @@ class GatewayCliArtifactRelay
         || $host === '::1'
         || $host === 'host.docker.internal'
         || str_starts_with($host, '127.');
+    }
+
+    /**
+     * @param  array{url: string, sha256: string}  $artifact
+     */
+    private function shouldRelayArtifact(array $artifact): bool
+    {
+        $scheme = strtolower((string) parse_url($artifact['url'], PHP_URL_SCHEME));
+
+        if (! in_array($scheme, ['http', 'https'], strict: true)) {
+            return true;
+        }
+
+        return $this->isLocalOnlyBaseUrl($artifact['url']);
     }
 
     private function tokenMatches(OperationRun $operationRun, string $platform, string $sha256, ?string $token): bool

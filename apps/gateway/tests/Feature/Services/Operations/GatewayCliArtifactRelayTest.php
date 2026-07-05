@@ -27,14 +27,36 @@ afterEach(function (): void {
     File::deleteDirectory((string) config('orbit.paths.config_root'));
 });
 
-it('stages a manifest CLI artifact and serves it through the gateway endpoint', function (): void {
+it('uses public manifest CLI artifact URLs directly without staging them on the gateway', function (): void {
     $binary = 'orbit-linux-binary';
     $sha256 = hash('sha256', $binary);
     $run = gatewayCliArtifactRelayRun();
     $plan = gatewayCliArtifactRelayPlan($run, $sha256);
 
+    Http::fake();
+
+    $artifact = app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64');
+
+    expect($artifact)
+        ->toBe([
+            'url' => 'https://artifacts.example/orbit-linux-amd64',
+            'sha256' => $sha256,
+            'source_url' => 'https://artifacts.example/orbit-linux-amd64',
+        ])
+        ->and(File::isDirectory(storage_path("framework/testing/update-artifacts/update-artifacts/{$run->id}")))
+        ->toBeFalse();
+
+    Http::assertNothingSent();
+});
+
+it('stages a local-only manifest CLI artifact and serves it through the gateway endpoint', function (): void {
+    $binary = 'orbit-linux-binary';
+    $sha256 = hash('sha256', $binary);
+    $run = gatewayCliArtifactRelayRun();
+    $plan = gatewayCliArtifactRelayPlan($run, $sha256, artifactUrl: 'http://localhost/orbit-linux-amd64');
+
     Http::fake([
-        'https://artifacts.example/orbit-linux-amd64' => Http::response($binary, 200),
+        'http://localhost/orbit-linux-amd64' => Http::response($binary, 200),
     ]);
 
     $artifact = app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64');
@@ -42,7 +64,7 @@ it('stages a manifest CLI artifact and serves it through the gateway endpoint', 
     expect($artifact)
         ->toMatchArray([
             'sha256' => $sha256,
-            'source_url' => 'https://artifacts.example/orbit-linux-amd64',
+            'source_url' => 'http://localhost/orbit-linux-amd64',
         ])
         ->and($artifact['url'])
         ->toStartWith("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=");
@@ -68,10 +90,10 @@ it('uses the registered gateway address when the configured artifact base url is
     $binary = 'orbit-linux-binary';
     $sha256 = hash('sha256', $binary);
     $run = gatewayCliArtifactRelayRun();
-    $plan = gatewayCliArtifactRelayPlan($run, $sha256);
+    $plan = gatewayCliArtifactRelayPlan($run, $sha256, artifactUrl: 'http://localhost/orbit-linux-amd64');
 
     Http::fake([
-        'https://artifacts.example/orbit-linux-amd64' => Http::response($binary, 200),
+        'http://localhost/orbit-linux-amd64' => Http::response($binary, 200),
     ]);
 
     $artifact = app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64');
@@ -82,10 +104,14 @@ it('uses the registered gateway address when the configured artifact base url is
 it('rejects gateway artifact downloads with an invalid token', function (): void {
     $binary = 'orbit-linux-binary';
     $run = gatewayCliArtifactRelayRun();
-    $plan = gatewayCliArtifactRelayPlan($run, hash('sha256', $binary));
+    $plan = gatewayCliArtifactRelayPlan(
+        $run,
+        hash('sha256', $binary),
+        artifactUrl: 'http://localhost/orbit-linux-amd64',
+    );
 
     Http::fake([
-        'https://artifacts.example/orbit-linux-amd64' => Http::response($binary, 200),
+        'http://localhost/orbit-linux-amd64' => Http::response($binary, 200),
     ]);
 
     app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64');
@@ -96,10 +122,10 @@ it('rejects gateway artifact downloads with an invalid token', function (): void
 
 it('fails staging when the downloaded artifact hash does not match the manifest', function (): void {
     $run = gatewayCliArtifactRelayRun();
-    $plan = gatewayCliArtifactRelayPlan($run, str_repeat('b', 64));
+    $plan = gatewayCliArtifactRelayPlan($run, str_repeat('b', 64), artifactUrl: 'http://localhost/orbit-linux-amd64');
 
     Http::fake([
-        'https://artifacts.example/orbit-linux-amd64' => Http::response('wrong-binary', 200),
+        'http://localhost/orbit-linux-amd64' => Http::response('wrong-binary', 200),
     ]);
 
     expect(fn () => app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64'))
@@ -127,8 +153,11 @@ function gatewayCliArtifactRelayRun(): OperationRun
     );
 }
 
-function gatewayCliArtifactRelayPlan(OperationRun $run, string $sha256): OperationUpdatePlan
-{
+function gatewayCliArtifactRelayPlan(
+    OperationRun $run,
+    string $sha256,
+    string $artifactUrl = 'https://artifacts.example/orbit-linux-amd64',
+): OperationUpdatePlan {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:'.str_repeat('a', 64);
 
     return OperationUpdatePlan::query()->create([
@@ -144,7 +173,7 @@ function gatewayCliArtifactRelayPlan(OperationRun $run, string $sha256): Operati
             'images' => ['gateway' => $gatewayImage],
             'cli_artifacts' => [
                 'linux-amd64' => [
-                    'url' => 'https://artifacts.example/orbit-linux-amd64',
+                    'url' => $artifactUrl,
                     'sha256' => $sha256,
                 ],
             ],
@@ -152,7 +181,7 @@ function gatewayCliArtifactRelayPlan(OperationRun $run, string $sha256): Operati
         ],
         'cli_artifacts' => [
             'linux-amd64' => [
-                'url' => 'https://artifacts.example/orbit-linux-amd64',
+                'url' => $artifactUrl,
                 'sha256' => $sha256,
             ],
         ],
