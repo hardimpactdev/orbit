@@ -74,6 +74,28 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     });
 
+    it('allows runtime backend probes for managed process runtime nodes', function (string $role): void {
+        $operationToken = local_executor_test_operation_token();
+
+        $argv = localExecutorCommandBuilder()->buildArgv(
+            targetNode: localExecutorTargetNode([$role]),
+            commandName: 'internal:runtime-backend:probe',
+            arguments: ['systemd'],
+            options: [],
+            operationToken: $operationToken,
+        );
+
+        expect($argv)->toBe([
+            'internal:runtime-backend:probe',
+            'systemd',
+            "--operation-token={$operationToken}",
+            '--json',
+        ]);
+    })->with([
+        'metrics',
+        'analytics',
+    ]);
+
     it('allows internal commands for pending role convergence', function (): void {
         $node = Node::factory()->create(['name' => 'target']);
 
@@ -387,7 +409,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'metrics',
                 'analytics',
             ],
-            'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent'],
+            'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent', 'metrics', 'analytics'],
             'internal:s3-runtime:probe' => ['s3'],
             'internal:secret-file' => [
                 'vpn',

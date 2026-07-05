@@ -158,7 +158,7 @@ final readonly class LocalExecutorCommandBuilder
             'metrics',
             'analytics',
         ],
-        'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent'],
+        'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent', 'metrics', 'analytics'],
         'internal:s3-runtime:probe' => ['s3'],
         'internal:secret-file' => [
             'vpn',
