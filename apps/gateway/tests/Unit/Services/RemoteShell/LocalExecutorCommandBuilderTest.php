@@ -16,18 +16,24 @@ uses(RefreshDatabase::class);
 
 describe(LocalExecutorCommandBuilder::class, function (): void {
     it('builds the verify command with an operation token and json output', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
         $command = localExecutorCommandBuilder()->build(
             targetNode: localExecutorTargetNode(['gateway']),
             commandName: 'internal:executor:verify',
             arguments: [],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: $operationToken,
         );
 
-        expect($command)->toBe("/usr/local/bin/orbit internal:executor:verify --operation-token='token-abc' --json");
+        expect($command)->toBe(
+            "/usr/local/bin/orbit internal:executor:verify --operation-token='{$operationToken}' --json",
+        );
     });
 
     it('builds argv for agent-push without binary or shell escaping', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
         $argv = localExecutorCommandBuilder()->buildArgv(
             targetNode: localExecutorTargetNode(['app-dev']),
             commandName: 'internal:workspace-adapter:lookup',
@@ -37,7 +43,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'enabled' => true,
                 'locked' => false,
             ],
-            operationToken: 'token-abc',
+            operationToken: $operationToken,
         );
 
         expect($argv)->toBe([
@@ -52,7 +58,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             "--state-path=/home/orbit/.polyscope/state's.db",
             '--enabled=1',
             '--locked=0',
-            '--operation-token=token-abc',
+            "--operation-token={$operationToken}",
             '--json',
         ]);
     });
@@ -63,7 +69,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: 'internal:workspace-adapter:lookup',
             arguments: [],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))
             ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     });
@@ -81,34 +87,51 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: 'internal:managed-file',
             arguments: ['probe'],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))->toContain('internal:managed-file');
     });
 
-    it('uses the configured local executor binary path when provided', function (): void {
+    it('uses the configured local executor binary path only for gateway nodes', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
         config()->set('orbit.local_executor_binary', '/usr/local/bin/orbit-cli');
 
-        $command = localExecutorCommandBuilder()->build(
+        $gatewayCommand = localExecutorCommandBuilder()->build(
+            targetNode: localExecutorTargetNode(['gateway']),
+            commandName: 'internal:gateway-runtime-backend:probe',
+            arguments: [],
+            options: [],
+            operationToken: $operationToken,
+        );
+        $workloadCommand = localExecutorCommandBuilder()->build(
             targetNode: localExecutorTargetNode(['vpn']),
             commandName: 'internal:wg-easy:state',
             arguments: ['state:list-users'],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: $operationToken,
         );
 
-        expect($command)->toBe(
-            escapeshellarg('/usr/local/bin/orbit-cli')
-                ." internal:wg-easy:state 'state:list-users' --operation-token='token-abc' --json",
-        );
+        expect($gatewayCommand)
+            ->toBe(
+                escapeshellarg('/usr/local/bin/orbit-cli')
+                    ." internal:gateway-runtime-backend:probe --operation-token='{$operationToken}' --json",
+            )
+            ->and($workloadCommand)
+            ->toBe(
+                '/usr/local/bin/orbit'
+                ." internal:wg-easy:state 'state:list-users' --operation-token='{$operationToken}' --json",
+            );
     });
 
     it('appends escaped positional arguments after the command name', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
         $command = localExecutorCommandBuilder()->build(
             targetNode: localExecutorTargetNode(['app-dev']),
             commandName: 'internal:workspace-adapter:lookup',
             arguments: ['two words', "quote'arg", 7, 1.5, true, false],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: $operationToken,
         );
 
         expect($command)->toBe(implode(' ', [
@@ -120,12 +143,14 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             escapeshellarg('1.5'),
             escapeshellarg('1'),
             escapeshellarg('0'),
-            "--operation-token='token-abc'",
+            "--operation-token='{$operationToken}'",
             '--json',
         ]));
     });
 
     it('appends escaped option values after positional arguments', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
         $command = localExecutorCommandBuilder()->build(
             targetNode: localExecutorTargetNode(['vpn']),
             commandName: 'internal:wg-easy:state',
@@ -136,7 +161,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'enabled' => true,
                 'locked' => false,
             ],
-            operationToken: 'token-abc',
+            operationToken: $operationToken,
         );
 
         expect($command)->toBe(implode(' ', [
@@ -147,7 +172,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             '--state-path='.escapeshellarg("/srv/wg easy/db's.sqlite"),
             '--enabled='.escapeshellarg('1'),
             '--locked='.escapeshellarg('0'),
-            "--operation-token='token-abc'",
+            "--operation-token='{$operationToken}'",
             '--json',
         ]));
     });
@@ -175,7 +200,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: 'internal:workspace-adapter:lookup',
             arguments: [],
             options: ['state-path' => '/home/orbit/.polyscope/polyscope.db'],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         );
 
         expect($auditLine)
@@ -195,7 +220,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: $commandName,
             arguments: [],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))
             ->toThrow(LocalExecutorCommandBuilderException::class);
     })->with([
@@ -215,7 +240,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: 'internal:not-registered',
             arguments: [],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))
             ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     });
@@ -475,7 +500,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: $commandName,
             arguments: [],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))->toContain($commandName);
 
         expect(fn (): string => localExecutorCommandBuilder()->build(
@@ -483,7 +508,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: $commandName,
             arguments: [],
             options: [],
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))
             ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     })->with([
@@ -562,7 +587,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             commandName: 'internal:executor:verify',
             arguments: [],
             options: $options,
-            operationToken: 'token-abc',
+            operationToken: local_executor_test_operation_token(),
         ))
             ->toThrow(LocalExecutorCommandBuilderException::class);
     })->with([
@@ -584,7 +609,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: [],
                 options: ['state-path' => $value],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             ))
                 ->toThrow(LocalExecutorCommandBuilderException::class);
         } finally {
@@ -609,7 +634,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: "internal:executor\0verify",
                 arguments: [],
                 options: [],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             ),
         ],
         'argument' => [
@@ -618,7 +643,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: ["safe\0unsafe"],
                 options: [],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             ),
         ],
         'option key' => [
@@ -627,7 +652,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: [],
                 options: ["bad\0key" => 'value'],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             ),
         ],
         'option value' => [
@@ -636,7 +661,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 commandName: 'internal:executor:verify',
                 arguments: [],
                 options: ['state-path' => "safe\0unsafe"],
-                operationToken: 'token-abc',
+                operationToken: local_executor_test_operation_token(),
             ),
         ],
         'operation token' => [

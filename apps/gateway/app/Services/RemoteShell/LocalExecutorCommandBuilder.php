@@ -352,7 +352,7 @@ final readonly class LocalExecutorCommandBuilder
         $this->ensureOperationTokenIsValid($operationToken);
 
         $segments = [
-            $this->orbitBinarySegment(),
+            $this->orbitBinarySegment($targetNode),
             $commandName,
             ...array_map(escapeshellarg(...), $this->argumentValues($arguments)),
             ...array_map($this->escapeOptionValue(...), $this->optionValues($options)),
@@ -363,10 +363,12 @@ final readonly class LocalExecutorCommandBuilder
         return implode(' ', $segments);
     }
 
-    private function orbitBinarySegment(): string
+    private function orbitBinarySegment(Node $targetNode): string
     {
         $configuredBinary = config('orbit.local_executor_binary');
-        $binary = is_string($configuredBinary) && trim($configuredBinary) !== ''
+        $binary = is_string($configuredBinary)
+        && trim($configuredBinary) !== ''
+        && $targetNode->hasActiveRole('gateway')
             ? trim($configuredBinary)
             : self::ORBIT_BINARY;
 
