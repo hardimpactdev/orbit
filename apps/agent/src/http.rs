@@ -11,9 +11,9 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    io::Write,
-    path::Path,
-    process::{Command, Stdio},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    process::{Command, ExitStatus, Stdio},
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -109,31 +109,44 @@ async fn command_push(
     State(state): State<AgentHttpState>,
     Json(request): Json<CommandPushRequest>,
 ) -> impl IntoResponse {
+    match tokio::task::spawn_blocking(move || command_push_blocking(state, request)).await {
+        Ok(Ok(response)) => (StatusCode::OK, Json(response)).into_response(),
+        Ok(Err((status, message))) => command_error(status, &message),
+        Err(error) => command_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("agent-push worker failed: {error}"),
+        ),
+    }
+}
+
+fn command_push_blocking(
+    state: AgentHttpState,
+    request: CommandPushRequest,
+) -> Result<CommandPushResponse, (StatusCode, String)> {
     if let Err(reason) = state.authorizer.authorize(&request) {
-        return command_error(
+        return Err((
             StatusCode::UNAUTHORIZED,
-            &format!("agent-push operation token was rejected: {reason}"),
-        );
+            format!("agent-push operation token was rejected: {reason}"),
+        ));
     }
 
     if request.binary != "orbit" {
-        return command_error(StatusCode::BAD_REQUEST, "unsupported Orbit Agent binary");
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "unsupported Orbit Agent binary".to_string(),
+        ));
     }
 
     let execution = execute_binary(&request);
 
-    (
-        StatusCode::OK,
-        Json(CommandPushResponse {
-            transport: "agent-push".to_string(),
-            operation_id: request.operation_id,
-            binary: request.binary,
-            status: execution.status,
-            frames: execution.frames,
-            exit_code: execution.exit_code,
-        }),
-    )
-        .into_response()
+    Ok(CommandPushResponse {
+        transport: "agent-push".to_string(),
+        operation_id: request.operation_id,
+        binary: request.binary,
+        status: execution.status,
+        frames: execution.frames,
+        exit_code: execution.exit_code,
+    })
 }
 
 fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
@@ -190,18 +203,21 @@ fn execute_binary_once(
         }
     };
 
+    let stdout = child.stdout.take().map(spawn_output_drain);
+    let stderr = child.stderr.take().map(spawn_output_drain);
+
     if let Some(input) = &request.input {
         if let Some(mut stdin) = child.stdin.take() {
             if let Err(error) = stdin.write_all(input.as_bytes()) {
                 let _ = child.kill();
+                let _ = child.wait();
+                let output = collect_drained_output(stdout, stderr);
 
                 return CommandExecution {
                     status: "failed".to_string(),
                     exit_code: None,
-                    frames: vec![CommandPushFrame {
-                        frame_type: "stderr".to_string(),
-                        message: format!("failed to write binary stdin: {error}"),
-                    }],
+                    frames: output
+                        .with_error_frame(format!("failed to write binary stdin: {error}")),
                 };
             }
         }
@@ -209,39 +225,93 @@ fn execute_binary_once(
 
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => {
-                return command_output_to_execution(
-                    child
-                        .wait_with_output()
-                        .expect("completed child output should be readable"),
-                );
+            Ok(Some(status)) => {
+                let output = collect_drained_output(stdout, stderr);
+
+                return command_output_to_execution(status, output.stdout, output.stderr);
             }
             Ok(None) if Instant::now() >= deadline => {
                 let _ = child.kill();
+                let _ = child.wait();
+                let output = collect_drained_output(stdout, stderr);
 
                 return CommandExecution {
                     status: "failed".to_string(),
                     exit_code: None,
-                    frames: vec![CommandPushFrame {
-                        frame_type: "stderr".to_string(),
-                        message: format!(
-                            "binary execution timed out after {timeout_seconds} seconds"
-                        ),
-                    }],
+                    frames: output.with_error_frame(format!(
+                        "binary execution timed out after {timeout_seconds} seconds"
+                    )),
                 };
             }
             Ok(None) => thread::sleep(Duration::from_millis(25)),
             Err(error) => {
+                let output = collect_drained_output(stdout, stderr);
+
                 return CommandExecution {
                     status: "failed".to_string(),
                     exit_code: None,
-                    frames: vec![CommandPushFrame {
-                        frame_type: "stderr".to_string(),
-                        message: format!("failed to wait for allowlisted binary: {error}"),
-                    }],
+                    frames: output.with_error_frame(format!(
+                        "failed to wait for allowlisted binary: {error}"
+                    )),
                 };
             }
         }
+    }
+}
+
+fn spawn_output_drain<R>(mut reader: R) -> thread::JoinHandle<Result<Vec<u8>, String>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        reader
+            .read_to_end(&mut bytes)
+            .map_err(|error| error.to_string())?;
+
+        Ok(bytes)
+    })
+}
+
+fn collect_drained_output(
+    stdout: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+    stderr: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+) -> DrainedCommandOutput {
+    DrainedCommandOutput {
+        stdout: collect_drained_pipe(stdout, "stdout"),
+        stderr: collect_drained_pipe(stderr, "stderr"),
+    }
+}
+
+fn collect_drained_pipe(
+    handle: Option<thread::JoinHandle<Result<Vec<u8>, String>>>,
+    stream: &str,
+) -> Vec<u8> {
+    match handle {
+        Some(handle) => match handle.join() {
+            Ok(Ok(bytes)) => bytes,
+            Ok(Err(error)) => format!("failed to read command {stream}: {error}").into_bytes(),
+            Err(_) => format!("failed to join command {stream} reader").into_bytes(),
+        },
+        None => Vec::new(),
+    }
+}
+
+struct DrainedCommandOutput {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+impl DrainedCommandOutput {
+    fn with_error_frame(self, message: String) -> Vec<CommandPushFrame> {
+        let mut frames = output_bytes_to_frames(self.stdout, self.stderr);
+
+        frames.push(CommandPushFrame {
+            frame_type: "stderr".to_string(),
+            message,
+        });
+
+        frames
     }
 }
 
@@ -258,16 +328,12 @@ fn resolve_orbit_binary() -> Option<String> {
         return Some(path);
     }
 
-    [
-        "/usr/local/bin/orbit",
-        "/Users/nckrtl/.local/bin/orbit",
-        "/home/nckrtl/.local/bin/orbit",
-        "/opt/homebrew/bin/orbit",
-        "../cli/orbit",
-    ]
-    .into_iter()
-    .find(|path| Path::new(path).exists())
-    .map(str::to_string)
+    let mut candidates = home_relative_orbit_binary().into_iter().collect::<Vec<_>>();
+    candidates.push("/usr/local/bin/orbit".to_string());
+    candidates.push("/opt/homebrew/bin/orbit".to_string());
+    candidates.push("../cli/orbit".to_string());
+
+    candidates.into_iter().find(|path| Path::new(path).exists())
 }
 
 fn existing_env_path(key: &str) -> Option<String> {
@@ -278,6 +344,14 @@ fn existing_env_path(key: &str) -> Option<String> {
     }
 
     Some(path)
+}
+
+fn home_relative_orbit_binary() -> Option<String> {
+    std::env::var("HOME")
+        .ok()
+        .filter(|home| !home.trim().is_empty())
+        .map(|home| PathBuf::from(home).join(".local/bin/orbit"))
+        .map(|path| path.to_string_lossy().to_string())
 }
 
 fn should_retry_stale_fleet_update_without_legacy_flags(
@@ -310,11 +384,36 @@ fn should_retry_stale_fleet_update_without_legacy_flags(
     })
 }
 
-fn command_output_to_execution(output: std::process::Output) -> CommandExecution {
+fn command_output_to_execution(
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+) -> CommandExecution {
+    let mut frames = output_bytes_to_frames(stdout, stderr);
+    let exit_code = status.code();
+
+    frames.push(CommandPushFrame {
+        frame_type: "exit".to_string(),
+        message: exit_code
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "terminated".to_string()),
+    });
+
+    CommandExecution {
+        status: if status.success() {
+            "succeeded".to_string()
+        } else {
+            "failed".to_string()
+        },
+        exit_code,
+        frames,
+    }
+}
+
+fn output_bytes_to_frames(stdout: Vec<u8>, stderr: Vec<u8>) -> Vec<CommandPushFrame> {
     let mut frames = Vec::new();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let exit_code = output.status.code();
+    let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
 
     if !stdout.is_empty() {
         frames.push(CommandPushFrame {
@@ -330,22 +429,7 @@ fn command_output_to_execution(output: std::process::Output) -> CommandExecution
         });
     }
 
-    frames.push(CommandPushFrame {
-        frame_type: "exit".to_string(),
-        message: exit_code
-            .map(|code| code.to_string())
-            .unwrap_or_else(|| "terminated".to_string()),
-    });
-
-    CommandExecution {
-        status: if output.status.success() {
-            "succeeded".to_string()
-        } else {
-            "failed".to_string()
-        },
-        exit_code,
-        frames,
-    }
+    frames
 }
 
 fn command_error(status: StatusCode, message: &str) -> axum::response::Response {
@@ -463,6 +547,33 @@ mod tests {
             Some(&CommandPushFrame {
                 frame_type: "stdout".to_string(),
                 message: "agent stdin".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn execute_binary_drains_large_stdout_while_child_runs() {
+        let execution = execute_binary(&CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "/bin/sh".to_string(),
+            argv: vec![
+                "-c".to_string(),
+                "i=0; while [ $i -lt 8192 ]; do printf 0123456789abcdef; i=$((i + 1)); done"
+                    .to_string(),
+            ],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 5,
+            stream: true,
+        });
+
+        assert_eq!(execution.status, "succeeded");
+        assert_eq!(execution.exit_code, Some(0));
+        assert_eq!(
+            execution.frames.first(),
+            Some(&CommandPushFrame {
+                frame_type: "stdout".to_string(),
+                message: "0123456789abcdef".repeat(8192),
             })
         );
     }

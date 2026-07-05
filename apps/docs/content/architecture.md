@@ -352,9 +352,11 @@ transport and does not add a separate Orbit approval queue.
 
 The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
 it can show service/gateway status, refresh status on menu open or Refresh, and
-offer UI-level Restart and Quit actions. Launching or quitting the macOS UI does
-not own the independent `apps/agent` service lifetime. Job history belongs in
-gateway operation/activity history.
+offer UI-level Restart and Quit actions. When no local Agent service is
+reachable, the macOS UI starts an embedded `apps/agent` service inside the app
+process and quitting the UI stops that embedded instance. If an external
+service is already reachable, the UI uses it without managing that service's
+lifetime. Job history belongs in gateway operation/activity history.
 
 `RemoteLocalExecutor` is the gateway-dispatched lane for packaged node-local
 helper logic that needs host file access plus PHP/PDO without relying on ad hoc

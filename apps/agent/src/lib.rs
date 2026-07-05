@@ -26,6 +26,37 @@ pub enum ConfigError {
     InvalidConfig(String),
 }
 
+pub fn launchd_safe_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+
+    [
+        format!("{home}/.orbstack/bin"),
+        format!("{home}/.docker/bin"),
+        format!("{home}/.local/bin"),
+        format!("{home}/.composer/vendor/bin"),
+        "/Applications/OrbStack.app/Contents/MacOS/xbin".to_string(),
+        "/Applications/Docker.app/Contents/Resources/bin".to_string(),
+        "/opt/homebrew/bin".to_string(),
+        "/opt/homebrew/sbin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+        "/usr/sbin".to_string(),
+        "/sbin".to_string(),
+    ]
+    .join(":")
+}
+
+pub fn install_launchd_safe_path() {
+    let existing_path = std::env::var("PATH").unwrap_or_default();
+
+    std::env::set_var("PATH", launchd_safe_process_path(&existing_path));
+}
+
+fn launchd_safe_process_path(existing_path: &str) -> String {
+    format!("{}:{existing_path}", launchd_safe_path())
+}
+
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -781,24 +812,7 @@ impl JobExecutor for LocalJobExecutor {
 
 impl LocalJobExecutor {
     fn launchd_safe_path() -> String {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
-
-        [
-            format!("{home}/.orbstack/bin"),
-            format!("{home}/.docker/bin"),
-            format!("{home}/.local/bin"),
-            format!("{home}/.composer/vendor/bin"),
-            "/Applications/OrbStack.app/Contents/MacOS/xbin".to_string(),
-            "/Applications/Docker.app/Contents/Resources/bin".to_string(),
-            "/opt/homebrew/bin".to_string(),
-            "/opt/homebrew/sbin".to_string(),
-            "/usr/local/bin".to_string(),
-            "/usr/bin".to_string(),
-            "/bin".to_string(),
-            "/usr/sbin".to_string(),
-            "/sbin".to_string(),
-        ]
-        .join(":")
+        launchd_safe_path()
     }
 
     fn script_with_launchd_safe_path(script: &str) -> String {
@@ -1590,6 +1604,26 @@ bearer_token = "dev-token-placeholder"
         assert!(script.contains("/.orbstack/bin"));
         assert!(script.contains("/opt/homebrew/bin"));
         assert!(script.ends_with("\ndocker --version"));
+    }
+
+    #[test]
+    fn launchd_safe_path_includes_macos_container_provider_paths() {
+        let path = launchd_safe_path();
+
+        assert!(path.contains("/.orbstack/bin"));
+        assert!(path.contains("/.docker/bin"));
+        assert!(path.contains("/Applications/OrbStack.app/Contents/MacOS/xbin"));
+        assert!(path.contains("/Applications/Docker.app/Contents/Resources/bin"));
+        assert!(path.contains("/opt/homebrew/bin"));
+        assert!(path.contains("/usr/local/bin"));
+    }
+
+    #[test]
+    fn launchd_safe_process_path_hardens_minimal_launchd_path() {
+        let path = launchd_safe_process_path("/usr/bin:/bin");
+
+        assert!(path.starts_with(&launchd_safe_path()));
+        assert!(path.ends_with(":/usr/bin:/bin"));
     }
 
     #[test]

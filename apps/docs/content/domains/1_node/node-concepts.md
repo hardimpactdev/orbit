@@ -440,10 +440,16 @@ workload role does not imply Orbit Agent capability.
 
 The headless service receives structured `binary + argv` Orbit envelopes from
 the gateway, reports lifecycle events back to gateway operation/activity
-history, and exposes minimal loopback health and status endpoints for local
-UI/readiness checks. The macOS UI can show service or gateway status,
-node/gateway identity, Refresh, Restart, and Quit, but launching or quitting
-the UI does not own the service lifetime.
+history, and exposes the command push endpoint on the Agent listener. The
+gateway verifies that endpoint with operation tokens. The service also exposes
+minimal loopback health and status endpoints for local UI/readiness checks.
+
+The macOS UI can show service or gateway status, node/gateway identity,
+Refresh, Restart, and Quit. When no local service is reachable, the UI starts an
+embedded headless service in the app process. Embedded mode binds the listener
+on all interfaces so the gateway can reach the node over the Orbit network.
+Quitting the UI stops that embedded instance. If a separately installed service
+is already reachable, the UI uses it without managing its lifetime.
 
 V1 has no WebSocket requirement, no arbitrary shell-over-agent transport, no
 menu job history, no production packaging or autostart installer, no

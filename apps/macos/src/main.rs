@@ -35,6 +35,8 @@ enum RefreshSource {
 }
 
 fn main() {
+    bootstrap_process_environment();
+
     tauri::Builder::default()
         .setup(|app| {
             start_embedded_agent_service();
@@ -75,13 +77,17 @@ fn main() {
         .expect("failed to run Orbit macOS");
 }
 
-fn start_embedded_agent_service() {
-    if load_menu_state_from_agent_service().is_some() {
-        return;
-    }
+fn bootstrap_process_environment() {
+    orbit_agent::install_launchd_safe_path();
 
     if std::env::var_os("ORBIT_AGENT_HTTP_BIND").is_none() {
         std::env::set_var("ORBIT_AGENT_HTTP_BIND", "0.0.0.0:9477");
+    }
+}
+
+fn start_embedded_agent_service() {
+    if load_menu_state_from_agent_service().is_some() {
+        return;
     }
 
     thread::spawn(orbit_agent::run_agent_service_blocking);

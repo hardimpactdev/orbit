@@ -310,8 +310,11 @@ authenticated Agent listener plus minimal loopback `/health` and `/status`
 endpoints, receives binary argv envelopes, executes only node-local
 allowlisted binaries through no-shell process APIs, and reports collected
 stdout/stderr/status/exit frames; `apps/macos` is the macOS-only Tauri tray UI
-that reads service status and performs one-shot gateway status refreshes
-without owning the service loop.
+that reads service status and performs one-shot gateway status refreshes. When
+no local headless service is already reachable, the macOS UI starts an embedded
+`apps/agent` service in the app process; quitting the UI stops that embedded
+instance. If a separately installed service is already reachable, the UI uses
+that service and does not manage its lifetime.
 
 V1 is scoped narrowly:
 
@@ -321,7 +324,7 @@ V1 is scoped narrowly:
 - one-shot gateway/status refresh when the macOS menu opens, showing Connected
   or Disconnected plus node name and gateway name/host;
 - menu icon state belongs to the UI process, with UI Restart and Quit actions
-  that do not manage the independent service lifetime;
+  managing only the UI process and any embedded service it started itself;
 - no menu job history;
 - `app-dev-convergence` may run fixed sudo-protected installer steps and rely
   on the operating system prompt, but there is no arbitrary privileged shell or
