@@ -1,18 +1,19 @@
 use axum::{
     extract::State,
-    http::{header, HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use orbit_agent::{
-    build_service_status_snapshot, default_http_bind_addr, run_polling_worker_loop,
-    ServiceStatusSnapshot,
+    build_service_status_snapshot, default_http_bind_addr, run_polling_worker_loop, AgentConfig,
+    HttpAgentGateway, ServiceStatusSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     io::Write,
     process::{Command, Stdio},
+    sync::Arc,
     thread,
     time::{Duration, Instant},
 };
@@ -48,47 +49,58 @@ async fn status() -> Json<ServiceStatusSnapshot> {
 }
 
 fn app() -> Router {
-    app_with_push_token(std::env::var("ORBIT_AGENT_PUSH_TOKEN").ok())
+    app_with_authorizer(Arc::new(GatewayCommandAuthorizer))
 }
 
-fn app_with_push_token(push_token: Option<String>) -> Router {
+fn app_with_authorizer(authorizer: Arc<dyn CommandAuthorizer>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/status", get(status))
         .route("/v1/commands", post(command_push))
-        .with_state(AgentHttpState { push_token })
+        .with_state(AgentHttpState { authorizer })
 }
 
 #[derive(Clone)]
 struct AgentHttpState {
-    push_token: Option<String>,
+    authorizer: Arc<dyn CommandAuthorizer>,
+}
+
+trait CommandAuthorizer: Send + Sync {
+    fn authorize(&self, request: &CommandPushRequest) -> Result<(), String>;
+}
+
+struct GatewayCommandAuthorizer;
+
+impl CommandAuthorizer for GatewayCommandAuthorizer {
+    fn authorize(&self, request: &CommandPushRequest) -> Result<(), String> {
+        let command = request
+            .argv
+            .first()
+            .ok_or_else(|| "agent-push argv must include an Orbit command".to_string())?;
+        let config = AgentConfig::load_default().map_err(|error| error.to_string())?;
+        let gateway = HttpAgentGateway::new(config);
+        let verification = gateway
+            .verify_operation_token(&request.operation_token, command)
+            .map_err(|error| format!("{error:?}"))?;
+
+        if verification.allowed {
+            return Ok(());
+        }
+
+        Err(verification
+            .reason
+            .unwrap_or_else(|| "operation token rejected".to_string()))
+    }
 }
 
 async fn command_push(
     State(state): State<AgentHttpState>,
-    headers: HeaderMap,
     Json(request): Json<CommandPushRequest>,
 ) -> impl IntoResponse {
-    let Some(expected_token) = state
-        .push_token
-        .as_deref()
-        .filter(|token| !token.is_empty())
-    else {
+    if let Err(reason) = state.authorizer.authorize(&request) {
         return command_error(
             StatusCode::UNAUTHORIZED,
-            "agent-push bearer token is not configured",
-        );
-    };
-
-    let bearer = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-
-    if bearer != Some(expected_token) || request.operation_token != expected_token {
-        return command_error(
-            StatusCode::UNAUTHORIZED,
-            "agent-push bearer token was rejected",
+            &format!("agent-push operation token was rejected: {reason}"),
         );
     }
 
@@ -300,6 +312,24 @@ mod tests {
     use serde_json::Value;
     use tower::ServiceExt;
 
+    struct StaticCommandAuthorizer {
+        allowed: bool,
+    }
+
+    impl CommandAuthorizer for StaticCommandAuthorizer {
+        fn authorize(&self, _request: &CommandPushRequest) -> Result<(), String> {
+            if self.allowed {
+                return Ok(());
+            }
+
+            Err("invalid_token".to_string())
+        }
+    }
+
+    fn app_with_static_authorizer(allowed: bool) -> Router {
+        app_with_authorizer(Arc::new(StaticCommandAuthorizer { allowed }))
+    }
+
     #[test]
     fn health_response_is_ok() {
         let response = HealthResponse {
@@ -339,14 +369,11 @@ mod tests {
 
     #[tokio::test]
     async fn command_push_endpoint_accepts_allowlisted_binary_argv_envelope() {
-        std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
-
-        let response = app_with_push_token(Some("op_test_123".to_string()))
+        let response = app_with_static_authorizer(true)
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
                     .uri("/v1/commands")
-                    .header(header::AUTHORIZATION, "Bearer op_test_123")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(axum::body::Body::from(
                         serde_json::json!({
@@ -383,14 +410,11 @@ mod tests {
 
     #[tokio::test]
     async fn command_push_endpoint_rejects_non_allowlisted_binaries() {
-        std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
-
-        let response = app_with_push_token(Some("op_test_123".to_string()))
+        let response = app_with_static_authorizer(true)
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
                     .uri("/v1/commands")
-                    .header(header::AUTHORIZATION, "Bearer op_test_123")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(axum::body::Body::from(
                         serde_json::json!({
@@ -412,15 +436,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn command_push_endpoint_rejects_mismatched_operation_tokens() {
-        std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
-
-        let response = app_with_push_token(Some("op_test_123".to_string()))
+    async fn command_push_endpoint_rejects_gateway_denied_operation_tokens() {
+        let response = app_with_static_authorizer(false)
             .oneshot(
                 Request::builder()
                     .method(Method::POST)
                     .uri("/v1/commands")
-                    .header(header::AUTHORIZATION, "Bearer op_test_123")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(axum::body::Body::from(
                         serde_json::json!({
@@ -428,36 +449,6 @@ mod tests {
                             "binary": "orbit",
                             "argv": ["version", "--json"],
                             "operation_token": "op_wrong_123",
-                            "timeout_seconds": 30,
-                            "stream": true,
-                        })
-                        .to_string(),
-                    ))
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
-
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn command_push_endpoint_rejects_mismatched_bearer_tokens() {
-        std::env::set_var("ORBIT_AGENT_PUSH_TOKEN", "op_test_123");
-
-        let response = app_with_push_token(Some("op_test_123".to_string()))
-            .oneshot(
-                Request::builder()
-                    .method(Method::POST)
-                    .uri("/v1/commands")
-                    .header(header::AUTHORIZATION, "Bearer op_wrong_123")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(axum::body::Body::from(
-                        serde_json::json!({
-                            "operation_id": "op_agent_test_123",
-                            "binary": "orbit",
-                            "argv": ["version", "--json"],
-                            "operation_token": "op_test_123",
                             "timeout_seconds": 30,
                             "stream": true,
                         })

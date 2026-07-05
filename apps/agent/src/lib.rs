@@ -174,6 +174,25 @@ impl GatewayClient {
         )
     }
 
+    pub fn build_verify_operation_token_request(
+        &self,
+        operation_token: &str,
+        command: &str,
+    ) -> RequestSpec {
+        let mut request = self.request(
+            "POST",
+            "/api/internal-executor/token/verify",
+            Some(json!({
+                "operation_token": operation_token,
+                "command": command,
+            })),
+        );
+
+        request.bearer_token = self.config.bearer_token.clone();
+
+        request
+    }
+
     pub fn parse_claim_response(&self, body: &str) -> Result<Option<Job>, GatewayError> {
         if body.trim().is_empty() {
             return Ok(None);
@@ -202,6 +221,16 @@ impl GatewayClient {
             .map_err(|error| GatewayError::InvalidResponse(error.to_string()))?;
 
         Ok(envelope.job)
+    }
+
+    pub fn parse_verify_operation_token_response(
+        &self,
+        body: &str,
+    ) -> Result<OperationTokenVerification, GatewayError> {
+        let envelope: OperationTokenVerificationEnvelope = serde_json::from_str(body)
+            .map_err(|error| GatewayError::InvalidResponse(error.to_string()))?;
+
+        Ok(envelope.success.data)
     }
 
     pub fn absolute_url(&self, path: &str) -> Result<String, GatewayError> {
@@ -245,6 +274,23 @@ struct ClaimTargetNode {
 #[derive(Debug, Deserialize)]
 struct ReportEnvelope {
     job: JobStatus,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperationTokenVerificationEnvelope {
+    success: OperationTokenVerificationSuccess,
+}
+
+#[derive(Debug, Deserialize)]
+struct OperationTokenVerificationSuccess {
+    data: OperationTokenVerification,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub struct OperationTokenVerification {
+    pub allowed: bool,
+    pub reason: Option<String>,
+    pub operation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -657,6 +703,19 @@ impl HttpAgentGateway {
             }
             Err(error) => Err(GatewayError::Transport(error.to_string())),
         }
+    }
+
+    pub fn verify_operation_token(
+        &self,
+        operation_token: &str,
+        command: &str,
+    ) -> Result<OperationTokenVerification, GatewayError> {
+        let body = self.send(
+            self.client
+                .build_verify_operation_token_request(operation_token, command),
+        )?;
+
+        self.client.parse_verify_operation_token_response(&body)
     }
 }
 
@@ -1298,6 +1357,55 @@ bearer_token = "dev-token-placeholder"
         assert_eq!(request.path, "/api/orbit-agent/jobs/job_123/events");
         assert_eq!(body["event"], "running");
         assert_eq!(body["payload"]["message"], "orbit agent running");
+    }
+
+    #[test]
+    fn builds_operation_token_verification_request() {
+        let client = GatewayClient::new(config_fixture());
+
+        let request = client.build_verify_operation_token_request(
+            "signed-operation-token",
+            "internal:fleet-update:install-cli",
+        );
+        let body: Value = serde_json::from_str(request.body.as_deref().expect("body should exist"))
+            .expect("request body should be json");
+
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/api/internal-executor/token/verify");
+        assert_eq!(
+            request.bearer_token,
+            Some("dev-token-placeholder".to_string())
+        );
+        assert_eq!(body["operation_token"], "signed-operation-token");
+        assert_eq!(body["command"], "internal:fleet-update:install-cli");
+    }
+
+    #[test]
+    fn parses_operation_token_verification_response_envelope() {
+        let client = GatewayClient::new(config_fixture());
+
+        let verification = client
+            .parse_verify_operation_token_response(
+                r#"{
+  "success": {
+    "data": {
+      "allowed": true,
+      "reason": null,
+      "operation_id": "operation-123"
+    }
+  }
+}"#,
+            )
+            .expect("verification response should parse");
+
+        assert_eq!(
+            verification,
+            OperationTokenVerification {
+                allowed: true,
+                reason: None,
+                operation_id: Some("operation-123".to_string()),
+            }
+        );
     }
 
     #[test]
