@@ -32,6 +32,8 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Apps\AppRuntimeContainerManager;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
@@ -2427,6 +2429,12 @@ final readonly class DoctorReportRunner
             return null;
         }
 
+        $managedRuntimeAction = $this->restoreManagedFrankenPhpProcessRuntime($node, $key, $process);
+
+        if ($managedRuntimeAction !== null) {
+            return $managedRuntimeAction;
+        }
+
         $app = $process->ownerApp();
 
         if (! $app instanceof App) {
@@ -2477,6 +2485,168 @@ final readonly class DoctorReportRunner
             'details' => [
                 'app' => $app->name,
                 'process' => $process->name,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function restoreManagedFrankenPhpProcessRuntime(Node $node, string $key, Process $process): ?array
+    {
+        $process->loadMissing('owner');
+
+        $config = $process->runtime_config;
+        $hashLabel = is_string($config['container_spec_hash_label'] ?? null)
+            ? trim($config['container_spec_hash_label'])
+            : '';
+
+        if ($hashLabel === '') {
+            return null;
+        }
+
+        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
+            return $this->restoreManagedFrankenPhpAppRuntime($node, $key, $process, $process->owner);
+        }
+
+        if ($hashLabel === WorkspaceRuntimeContainer::SpecHashLabel && $process->owner instanceof Workspace) {
+            return $this->restoreManagedFrankenPhpWorkspaceRuntime($node, $key, $process, $process->owner);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function restoreManagedFrankenPhpAppRuntime(Node $node, string $key, Process $process, App $app): array
+    {
+        $app->loadMissing('node');
+
+        if (! $app->node instanceof Node || $app->node->id !== $node->id) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'app' => $app->name,
+                    'process' => $process->name,
+                    'error' => 'Process app has no active parent node.',
+                ],
+            ];
+        }
+
+        try {
+            app(EnsureFrankenPhpRuntimeProcess::class)->forApp($app);
+            $this->ensureAppRuntimeTlsMaterial($app, $node);
+
+            $container = app(AppRuntimeContainerRenderer::class)->render($app);
+            $outcome = app(AppRuntimeContainerManager::class)->apply($node, $container);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'app' => $app->name,
+                    'process' => $process->name,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Restored managed FrankenPHP runtime container for {$app->name}.",
+            'details' => [
+                'app' => $app->name,
+                'process' => $process->name,
+                'container' => $container->name(),
+                'outcome' => $outcome->value,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function restoreManagedFrankenPhpWorkspaceRuntime(
+        Node $node,
+        string $key,
+        Process $process,
+        Workspace $workspace,
+    ): array {
+        $workspace->loadMissing('app.node');
+        $app = $workspace->app;
+
+        if (! $app instanceof App || ! $app->node instanceof Node || $app->node->id !== $node->id) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'workspace' => $workspace->name,
+                    'process' => $process->name,
+                    'error' => 'Process workspace has no active parent app node.',
+                ],
+            ];
+        }
+
+        try {
+            app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
+            $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $node);
+
+            $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
+            $outcome = app(WorkspaceRuntimeContainerManager::class)->apply($node, $container);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'app' => $app->name,
+                    'workspace' => $workspace->name,
+                    'process' => $process->name,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Restored managed FrankenPHP runtime container for workspace {$workspace->name}.",
+            'details' => [
+                'app' => $app->name,
+                'workspace' => $workspace->name,
+                'process' => $process->name,
+                'container' => $container->name(),
+                'outcome' => $outcome->value,
             ],
         ];
     }
@@ -3855,6 +4025,20 @@ final readonly class DoctorReportRunner
                 'outcome' => $outcome->value,
             ],
         ];
+    }
+
+    private function ensureAppRuntimeTlsMaterial(App $app, Node $node): void
+    {
+        $innerTlsPolicy = app(AppDevelopmentInnerTlsPolicy::class);
+
+        if (! $innerTlsPolicy->appliesToApp($app)) {
+            return;
+        }
+
+        app(SiteCertificateInstaller::class)->ensureFor(
+            $node,
+            $innerTlsPolicy->appRouteDomain($app),
+        );
     }
 
     private function ensureWorkspaceRuntimeTlsMaterial(Workspace $workspace, Node $node): void

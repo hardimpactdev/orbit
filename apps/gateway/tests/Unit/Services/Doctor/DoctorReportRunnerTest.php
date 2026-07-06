@@ -1682,35 +1682,148 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: json_encode([
-                    'State' => ['Status' => 'running'],
+                    'State' => ['Running' => true, 'Status' => 'running'],
                     'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $expectedHash]],
                 ], JSON_THROW_ON_ERROR),
                 stderr: '',
                 durationMs: 1,
             ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Running' => true, 'Status' => 'running'],
+                    'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $expectedHash]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(
+            \App\Services\Apps\AppRuntimeContainerManager::class,
+            new \App\Services\Apps\AppRuntimeContainerManager(
+                app(RemoteShell::class),
+                app(\App\Services\Runtime\DockerCommandBuilder::class),
+                doctor_runner_fake_ca(),
+            ),
+        );
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
 
-        expect($report['healthy'])
-            ->toBeTrue()
-            ->and($report['actions'][0])
+        expect($report['actions'][0])
             ->toMatchArray([
                 'family' => 'process',
                 'node' => 'app-1',
                 'key' => 'process.runtime_unit_mismatch',
                 'mode' => 'restore',
                 'status' => 'completed',
-                'details' => ['app' => 'docs', 'process' => 'frankenphp-docs'],
+                'details' => [
+                    'app' => 'docs',
+                    'process' => 'frankenphp-docs',
+                    'container' => 'orbit-app-docs',
+                    'outcome' => 'unchanged',
+                ],
             ])
+            ->and($report['healthy'])
+            ->toBeTrue()
             ->and($process->refresh()->runtime_config)
             ->toMatchArray([
                 'container_name' => 'orbit-app-docs',
                 'container_spec_hash' => $expectedHash,
                 'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
                 'php_ini_path' => '/etc/orbit/apps/docs.ini',
+            ]);
+    });
+
+    it('reapplies stale managed FrankenPHP app runtime containers during process restore', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
+        \App\Models\Process::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'frankenphp-docs',
+                'command' => 'frankenphp',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'container_name' => 'orbit-app-docs',
+                    'container_spec_hash' => $expectedHash,
+                    'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+                ],
+            ]);
+        $staleContainer = json_encode([
+            'State' => ['Running' => true, 'Status' => 'running'],
+            'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => 'stale']],
+        ], JSON_THROW_ON_ERROR);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: $staleContainer, stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $staleContainer, stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(
+            \App\Services\Apps\AppRuntimeContainerManager::class,
+            new \App\Services\Apps\AppRuntimeContainerManager(
+                app(RemoteShell::class),
+                app(\App\Services\Runtime\DockerCommandBuilder::class),
+                doctor_runner_fake_ca(),
+            ),
+        );
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['actions'][0])
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'app' => 'docs',
+                    'process' => 'frankenphp-docs',
+                    'container' => 'orbit-app-docs',
+                    'outcome' => 'recreated',
+                ],
+            ])
+            ->and($report['healthy'])
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, 'docker run -d')))
+            ->toBeTrue()
+            ->and(
+                App::query()
+                    ->where('name', 'docs')
+                    ->first()
+                    ?->processes()
+                    ->first()
+                    ?->runtime_config,
+            )
+            ->toMatchArray([
+                'container_spec_hash' => $expectedHash,
             ]);
     });
 
@@ -1749,15 +1862,36 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: json_encode([
-                    'State' => ['Status' => 'running'],
+                    'State' => ['Running' => true, 'Status' => 'running'],
                     'Config' => ['Labels' => [WorkspaceRuntimeContainer::SpecHashLabel => $expectedHash]],
                 ], JSON_THROW_ON_ERROR),
                 stderr: '',
                 durationMs: 1,
             ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Running' => true, 'Status' => 'running'],
+                    'Config' => ['Labels' => [WorkspaceRuntimeContainer::SpecHashLabel => $expectedHash]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+        app()->instance(
+            \App\Services\Workspaces\WorkspaceRuntimeContainerManager::class,
+            new \App\Services\Workspaces\WorkspaceRuntimeContainerManager(
+                app(RemoteShell::class),
+                app(\App\Services\Runtime\DockerCommandBuilder::class),
+                doctor_runner_fake_ca(),
+            ),
+        );
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
 
@@ -1770,7 +1904,13 @@ describe('DoctorReportRunner', function (): void {
                 'key' => 'process.runtime_unit_mismatch',
                 'mode' => 'restore',
                 'status' => 'completed',
-                'details' => ['app' => 'docs', 'process' => 'frankenphp-docs-feature-a'],
+                'details' => [
+                    'app' => 'docs',
+                    'workspace' => 'feature-a',
+                    'process' => 'frankenphp-docs-feature-a',
+                    'container' => 'orbit-ws-docs-feature-a',
+                    'outcome' => 'unchanged',
+                ],
             ])
             ->and($process->refresh()->runtime_config)
             ->toMatchArray([
