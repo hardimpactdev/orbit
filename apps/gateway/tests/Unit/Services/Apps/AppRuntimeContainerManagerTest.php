@@ -174,7 +174,7 @@ it('creates the orbit network, writes php.ini, and runs the app runtime containe
         ->and($scripts[3])
         ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($scripts[4])
-        ->toContain('/etc/orbit/apps/docs.ini')
+        ->toContain('/home/orbit/.config/orbit/apps/docs.ini')
         ->and($scripts[4])
         ->not->toContain('/home/orbit/apps/docs/.orbit/frankenphp')->and($scripts[4])->toContain('docker run -d')->and(
             $scripts[4],
@@ -271,18 +271,22 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
     app_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
+    $hostTrustPool = '/home/nckrtl/.config/orbit/ca/root.crt';
 
     expect($script)
-        ->toContain("sudo install -d -m 0755 '/etc/orbit/ca'")
-        ->toContain("sudo tee '/etc/orbit/ca/root.crt'")
+        ->toContain("install -d -m 0755 '/home/nckrtl/.config/orbit/ca'")
+        ->toContain("> '{$hostTrustPool}'")
         ->toContain(
             "--mount 'type=bind,source="
-            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+            .$hostTrustPool
             .',target='
             .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
             .",readonly'",
         )
-        ->and(strpos(haystack: $script, needle: "sudo tee '/etc/orbit/ca/root.crt'"))
+        ->and($script)
+        ->not
+        ->toContain('sudo tee')
+        ->and(strpos(haystack: $script, needle: "> '{$hostTrustPool}'"))
         ->toBeLessThan(strpos(haystack: $script, needle: 'docker run -d'));
 });
 
@@ -339,7 +343,7 @@ it('rejects unsafe app-dev packages bind mount sources before running the app ru
         environment: ['SERVER_NAME' => ':8080'],
         mounts: [
             [
-                'source' => '/etc/orbit/apps/docs.ini',
+                'source' => '/home/orbit/.config/orbit/apps/docs.ini',
                 'target' => AppRuntimeContainer::PhpIniMountTarget,
                 'read_only' => true,
             ],
@@ -627,13 +631,13 @@ it('returns tri-state outcomes for managed runtime config file removal', functio
         ->and($absentShell->calls)
         ->toHaveCount(1)
         ->and($absentShell->calls[0]['script'])
-        ->toContain("sudo test -e '/etc/orbit/apps/docs.ini'")
+        ->toContain("[ -e '/home/orbit/.config/orbit/apps/docs.ini' ]")
         ->and($absentShell->calls[0]['script'])
         ->toContain('orbit-container-config-probe:absent')
         ->and($removedOutcome)
         ->toBe(AppRuntimeArtifactRemovalOutcome::Removed)
         ->and($removedShell->calls[1]['script'])
-        ->toContain("sudo rm -f '/etc/orbit/apps/docs.ini'")
+        ->toContain("rm -f '/home/orbit/.config/orbit/apps/docs.ini'")
         ->and($failedOutcome)
         ->toBe(AppRuntimeArtifactRemovalOutcome::FailedRemaining);
 });
@@ -680,14 +684,14 @@ it('returns AlreadyAbsent only when docker inspect reports "No such object"', fu
     expect($outcome)->toBe(AppRuntimeArtifactRemovalOutcome::AlreadyAbsent)->and(count($shell->calls))->toBe(1);
 });
 
-it('returns FailedRemaining when the sudo runtime config probe fails for an unknown reason', function (): void {
+it('returns FailedRemaining when the runtime config probe reports an unknown state', function (): void {
     [$_, $node] = appAndNodeForManagerTest();
 
     $shell = new AppRuntimeRecordingShell(
         new RemoteShellResult(
             exitCode: 0,
             stdout: "orbit-container-config-probe:error\n",
-            stderr: 'sudo: a terminal is required to read the password',
+            stderr: 'permission denied',
             durationMs: 1,
         ),
     );
@@ -699,7 +703,7 @@ it('returns FailedRemaining when the sudo runtime config probe fails for an unkn
         ->and(count($shell->calls))
         ->toBe(1)
         ->and($shell->calls[0]['script'])
-        ->toContain("sudo test -e '/etc/orbit/apps/docs.ini'");
+        ->toContain("[ -e '/home/orbit/.config/orbit/apps/docs.ini' ]");
 });
 
 it('returns FailedRemaining when the runtime config probe shell call itself fails (SSH or remote error)', function (): void {
@@ -746,7 +750,7 @@ it('writes the managed runtime config file via writeRuntimeConfigFile', function
     expect($shell->calls)
         ->toHaveCount(1)
         ->and($shell->calls[0]['script'])
-        ->toContain('/etc/orbit/apps/docs.ini')
+        ->toContain('/home/orbit/.config/orbit/apps/docs.ini')
         ->and($shell->calls[0]['script'])
         ->toContain('base64 -d');
 });

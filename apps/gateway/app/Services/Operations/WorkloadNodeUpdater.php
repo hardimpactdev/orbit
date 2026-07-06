@@ -137,6 +137,7 @@ final readonly class WorkloadNodeUpdater
             "Installing CLI {$plan->target_version}",
         );
 
+        /** @var array{timeout: int, input: string, metadata: array<string, string>} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
             'input' => json_encode($this->installPayload($operationRun, $plan, $node), JSON_THROW_ON_ERROR),
@@ -182,7 +183,7 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
-     * @param  array<string, mixed>  $transportOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
      */
     private function runCliInstall(Node $node, array $transportOptions): RemoteShellResult
     {

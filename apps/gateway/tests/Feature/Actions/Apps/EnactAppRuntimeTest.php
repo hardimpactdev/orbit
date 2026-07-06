@@ -182,7 +182,7 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
         ->and($runtimeScripts[4])
         ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($runtimeScripts[4])
-        ->toContain("'/etc/orbit/apps/docs.ini'")
+        ->toContain("'/home/orbit/.config/orbit/apps/docs.ini'")
         ->and(base64DecodedPhpIni($runtimeScripts[4]))
         ->toContain('opcache.enable=1')
         ->and(base64DecodedPhpIni($runtimeScripts[4]))
@@ -195,7 +195,7 @@ function base64DecodedPhpIni(string $script): string
 {
     if (
         preg_match(
-            "/printf %s\\s+'([A-Za-z0-9+\\/=]+)' \\| base64 -d \\| sudo tee '\\/etc\\/orbit\\/apps\\/docs\\.ini'/",
+            "/printf %s\\s+'([A-Za-z0-9+\\/=]+)' \\| base64 -d > '\\/home\\/orbit\\/\\.config\\/orbit\\/apps\\/docs\\.ini'/",
             $script,
             $match,
         ) !== 1
@@ -576,7 +576,7 @@ function expectAppFrankenPhpRuntimeProcess(App $app): void
         ->and($process?->runtime_config)
         ->toMatchArray([
             'container_name' => 'orbit-app-docs',
-            'php_ini_path' => '/etc/orbit/apps/docs.ini',
+            'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
             'container_spec_hash_label' => 'orbit.app.spec_hash',
         ]);
 }

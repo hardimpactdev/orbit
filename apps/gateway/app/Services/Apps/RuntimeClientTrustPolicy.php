@@ -7,16 +7,12 @@ namespace App\Services\Apps;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
+use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeHostPaths;
 
 final readonly class RuntimeClientTrustPolicy
 {
-    private const array TRUST_POOL_MOUNT = [
-        'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
-        'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
-        'read_only' => true,
-    ];
-
     private const array PHP_INI = [
         'openssl.cafile' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
         'curl.cainfo' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
@@ -27,6 +23,10 @@ final readonly class RuntimeClientTrustPolicy
         'CURL_CA_BUNDLE' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
     ];
 
+    public function __construct(
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+    ) {}
+
     /**
      * @return list<array{source: string, target: string, read_only: bool}>
      */
@@ -36,7 +36,19 @@ final readonly class RuntimeClientTrustPolicy
             return [];
         }
 
-        return [self::TRUST_POOL_MOUNT];
+        $app->loadMissing('node');
+
+        if (! $app->node instanceof Node) {
+            return [];
+        }
+
+        return [
+            [
+                'source' => $this->nodeHostPaths->runtimeTrustPoolPath($app->node),
+                'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                'read_only' => true,
+            ],
+        ];
     }
 
     /**

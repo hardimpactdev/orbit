@@ -30,6 +30,7 @@ final readonly class AppRuntimeContainerManager
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private mixed $localExecutor = null,
     ) {}
 
@@ -387,12 +388,14 @@ final readonly class AppRuntimeContainerManager
      */
     private function runtimeTrustPoolPayload(AppRuntimeContainer $container): ?array
     {
-        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+        $hostPath = $this->runtimeTrustPoolHostPath($container);
+
+        if ($hostPath === null) {
             return null;
         }
 
         return [
-            'path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'path' => $hostPath,
             'content_base64' => base64_encode($this->ca->rootCert()),
         ];
     }
@@ -624,20 +627,20 @@ final readonly class AppRuntimeContainerManager
     /**
      * Tri-state managed runtime config file removal. The php.ini snippet
      * mounted into the FrankenPHP container lives at
-     * `/etc/orbit/apps/<slug>.ini` on the node. AlreadyAbsent is only
-     * returned when the probe proves the file is missing; sudo/SSH/probe
-     * errors are reported as FailedRemaining.
+     * `~/.config/orbit/apps/<slug>.ini` on the node. AlreadyAbsent is only
+     * returned when the probe proves the file is missing; SSH/probe errors
+     * are reported as FailedRemaining.
      */
     public function removeRuntimeConfigFile(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
         if ($this->localExecutor instanceof RemoteLocalExecutor) {
             return $this->removeRuntimeConfigFileThroughLocalExecutor(
                 $node,
-                $this->runtimeConfigPath($appSlug),
+                $this->runtimeConfigPath($node, $appSlug),
             );
         }
 
-        $path = $this->runtimeConfigPath($appSlug);
+        $path = $this->runtimeConfigPath($node, $appSlug);
 
         $existence = $this->probeRuntimeConfigExistence($node, $path);
 
@@ -649,7 +652,7 @@ final readonly class AppRuntimeContainerManager
             return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
         }
 
-        $remove = $this->run($node, 'sudo rm -f '.escapeshellarg($path));
+        $remove = $this->run($node, 'rm -f '.escapeshellarg($path));
 
         if (! $remove->successful()) {
             return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
@@ -662,18 +665,16 @@ final readonly class AppRuntimeContainerManager
 
     /**
      * Probe a remote path for existence and distinguish proven absence from
-     * sudo / SSH / remote shell errors. Returns one of `present`, `absent`,
-     * or `error` (unknown state).
+     * SSH / remote shell errors. Returns one of `present`, `absent`, or
+     * `error` (unknown state).
      */
     private function probeRuntimeConfigExistence(Node $node, string $path): string
     {
         $script = sprintf(
             <<<'SH'
-                err="$(sudo test -e %1$s 2>&1)"
-                ec=$?
-                if [ "$ec" = "0" ]; then
+                if [ -e %1$s ]; then
                     printf 'orbit-container-config-probe:present\n'
-                elif [ "$ec" = "1" ] && [ -z "$err" ]; then
+                elif [ ! -e %1$s ]; then
                     printf 'orbit-container-config-probe:absent\n'
                 else
                     printf 'orbit-container-config-probe:error\n'
@@ -726,9 +727,9 @@ final readonly class AppRuntimeContainerManager
         );
     }
 
-    public function runtimeConfigPath(string $appSlug): string
+    public function runtimeConfigPath(Node $node, string $appSlug): string
     {
-        return "/etc/orbit/apps/{$appSlug}.ini";
+        return $this->nodeHostPaths->appRuntimeConfigPath($node, $appSlug);
     }
 
     private function ensureNetwork(Node $node, AppRuntimeContainer $container): void
@@ -801,14 +802,16 @@ final readonly class AppRuntimeContainerManager
             <<<'SH'
                 set -e
                 %s
-                sudo install -d -m 0755 %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                install -d -m 0755 %s
+                printf %%s %s | base64 -d > %s
+                chmod 0644 %s
                 %s
                 %s
                 SH,
             $trustPoolInstallScript,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
+            escapeshellarg($phpIniHostPath),
             escapeshellarg($phpIniHostPath),
             $packagesMountScript,
             $configuredMountScript,
@@ -817,24 +820,29 @@ final readonly class AppRuntimeContainerManager
 
     private function renderRuntimeTrustPoolInstallScript(AppRuntimeContainer $container): string
     {
-        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+        $hostPath = $this->runtimeTrustPoolHostPath($container);
+
+        if ($hostPath === null) {
             return '';
         }
 
         return (
             $this->innerTlsPolicy->trustPoolInstallScript(
-                AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                $hostPath,
                 $this->ca->rootCert(),
             )."\n"
         );
     }
 
-    private function containerRequiresRuntimeTrustPool(AppRuntimeContainer $container): bool
+    private function runtimeTrustPoolHostPath(AppRuntimeContainer $container): ?string
     {
-        return array_any(
-            $container->mounts(),
-            static fn (array $mount): bool => $mount['target'] === AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
-        );
+        foreach ($container->mounts() as $mount) {
+            if ($mount['target'] === AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath) {
+                return $mount['source'];
+            }
+        }
+
+        return null;
     }
 
     private function renderPackagesMountDirectoryScript(AppRuntimeContainer $container): string

@@ -472,10 +472,10 @@ describe('managed runtime config reality', function (): void {
         expect(issue($drift, 'app.runtime_config_mismatch'))->toBeNull();
     });
 
-    it('lists orphan /etc/orbit/apps/*.ini files via the node config scan when the directory probe is present', function (): void {
+    it('lists orphan user config runtime ini files via the node config scan when the directory probe is present', function (): void {
         $node = appsProbeAgentNode();
         fakeAppsRuntimeConfigsProbe(
-            "orbit-config-dir:present\n/etc/orbit/apps/docs.ini\n/etc/orbit/apps/marketing.ini\n",
+            "orbit-config-dir:present\n/home/orbit/.config/orbit/apps/docs.ini\n/home/orbit/.config/orbit/apps/marketing.ini\n",
         );
 
         $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
@@ -490,14 +490,14 @@ describe('managed runtime config reality', function (): void {
             ->toContain('marketing')
             ->and($probe->configs->get('docs'))
             ->toBe([
-                'path' => '/etc/orbit/apps/docs.ini',
+                'path' => '/home/orbit/.config/orbit/apps/docs.ini',
                 'app_slug' => 'docs',
             ])
             ->and(appsRuntimeConfigsProbeWasSent())
             ->toBeTrue();
     });
 
-    it('reports the runtime config directory as proven-absent when sudo test -d exits 1 cleanly', function (): void {
+    it('reports the runtime config directory as proven-absent when the local probe proves it is missing', function (): void {
         $node = appsProbeAgentNode();
         fakeAppsRuntimeConfigsProbe("orbit-config-dir:absent\n");
 
@@ -511,13 +511,13 @@ describe('managed runtime config reality', function (): void {
             ->toBeTrue();
     });
 
-    it('reports unknown sudo/probe failures distinctly (does NOT silently hide stale runtime_config_extra artifacts)', function (): void {
+    it('reports unknown probe failures distinctly (does NOT silently hide stale runtime_config_extra artifacts)', function (): void {
         $node = appsProbeAgentNode();
         // Even if find emits artifact lines after an error sentinel, we must
         // not surface them — they are not trustworthy. The status carries
         // forward as Error and the configs snapshot is intentionally empty.
         fakeAppsRuntimeConfigsProbe(
-            "orbit-config-dir:error sudo: a terminal is required to read the password\n/etc/orbit/apps/stale.ini\n",
+            "orbit-config-dir:error sudo: a terminal is required to read the password\n/home/orbit/.config/orbit/apps/stale.ini\n",
         );
 
         $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
@@ -531,7 +531,7 @@ describe('managed runtime config reality', function (): void {
     });
 
     it(
-        'reports as error (not clean empty) when sudo test -d succeeds but sudo find itself fails (would otherwise hide stale runtime_config_extra)',
+        'reports as error (not clean empty) when the config scan itself fails (would otherwise hide stale runtime_config_extra)',
         function (): void {
             $node = appsProbeAgentNode();
             // Probe script must distinguish a successful directory check followed
@@ -539,7 +539,7 @@ describe('managed runtime config reality', function (): void {
             // The internal agent probe emits `orbit-config-dir:error <stderr>` so the orchestrator
             // does not treat this as a clean empty snapshot.
             fakeAppsRuntimeConfigsProbe(
-                "orbit-config-dir:error find: '/etc/orbit/apps': Permission denied\n",
+                "orbit-config-dir:error find: '/home/orbit/.config/orbit/apps': Permission denied\n",
             );
 
             $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
@@ -557,14 +557,14 @@ describe('managed runtime config reality', function (): void {
         $node = appsProbeAgentNode();
         // Simulate: internal agent probe emits error sentinel because find exited non-zero
         // with no stderr text (the script falls back to a synthesized message).
-        fakeAppsRuntimeConfigsProbe("orbit-config-dir:error sudo find failed (ec=2)\n");
+        fakeAppsRuntimeConfigsProbe("orbit-config-dir:error runtime config scan failed\n");
 
         $probe = new AppsProbe()->introspectNodeRuntimeConfigs($node);
 
         expect($probe->status->value)
             ->toBe('error')
             ->and($probe->error)
-            ->toContain('sudo find failed')
+            ->toContain('runtime config scan failed')
             ->and($probe->configs->isEmpty())
             ->toBeTrue();
     });

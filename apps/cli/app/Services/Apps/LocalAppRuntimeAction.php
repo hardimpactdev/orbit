@@ -13,9 +13,7 @@ use Symfony\Component\Process\Process;
  */
 final readonly class LocalAppRuntimeAction
 {
-    private const string RUNTIME_CONFIG_PATH_PATTERN = '#^/etc/orbit/(?:apps|workspaces)/[A-Za-z0-9][A-Za-z0-9_.-]*\.ini$#';
-
-    private const string RUNTIME_TRUST_POOL_PATH = '/etc/orbit/ca/root.crt';
+    private const string RUNTIME_CONFIG_BASENAME_PATTERN = '#^[A-Za-z0-9][A-Za-z0-9_.-]*\.ini$#';
 
     private const string USER_PATH_PATTERN = '#^/(?:home|Users)/(?<user>(?!\.{1,2}(?:/|$))[A-Za-z0-9._-]+)/(?<path>(?!\.{1,2}$)(?!\.{1,2}/)(?!.*(?:^|/)\.\.(?:/|$)).+)$#';
 
@@ -148,29 +146,21 @@ final readonly class LocalAppRuntimeAction
     private function removeRuntimeConfig(array $payload): array
     {
         $path = $this->runtimeConfigPath($payload['path'] ?? null, 'runtime_config.path');
-        $inspect = $this->runProcess(['sudo', '-n', 'test', '-e', $path]);
 
-        if (! $inspect->isSuccessful()) {
-            if (trim($inspect->getErrorOutput()) === '') {
-                return [
-                    'action' => 'runtime-config:remove',
-                    'path' => $path,
-                    'changed' => false,
-                ];
-            }
-
-            throw $this->failure('runtime_config_probe_failed', "Failed to inspect {$path}.", [
+        if (! file_exists($path) && ! is_link($path)) {
+            return [
+                'action' => 'runtime-config:remove',
                 'path' => $path,
-                'stderr' => trim($inspect->getErrorOutput()),
-            ]);
+                'changed' => false,
+            ];
         }
 
-        $remove = $this->runProcess(['sudo', '-n', 'rm', '-f', $path]);
+        $remove = $this->runFilesystemOperation(static fn (): bool => unlink($path));
 
-        if (! $remove->isSuccessful()) {
+        if (! $remove['successful']) {
             throw $this->failure('runtime_config_remove_failed', "Failed to remove {$path}.", [
                 'path' => $path,
-                'stderr' => trim($remove->getErrorOutput()),
+                'error' => $remove['error'],
             ]);
         }
 
@@ -379,8 +369,8 @@ final readonly class LocalAppRuntimeAction
                 'owner' => null,
                 'group' => null,
             ]);
-            $this->writeSudoFile($trustPoolPath, $runtimeConfig['trust_pool']['content']);
-            $this->mustRun(['sudo', '-n', 'chmod', '0644', $trustPoolPath], 'chmod trust pool');
+            $this->writeRuntimeFile($trustPoolPath, $runtimeConfig['trust_pool']['content']);
+            $this->chmodRuntimeFile($trustPoolPath, '0644');
         }
 
         $this->installDirectory([
@@ -389,8 +379,8 @@ final readonly class LocalAppRuntimeAction
             'owner' => null,
             'group' => null,
         ]);
-        $this->writeSudoFile($runtimeConfig['path'], $runtimeConfig['content']);
-        $this->mustRun(['sudo', '-n', 'chmod', '0644', $runtimeConfig['path']], 'chmod runtime config');
+        $this->writeRuntimeFile($runtimeConfig['path'], $runtimeConfig['content']);
+        $this->chmodRuntimeFile($runtimeConfig['path'], '0644');
     }
 
     /**
@@ -398,6 +388,12 @@ final readonly class LocalAppRuntimeAction
      */
     private function installDirectory(array $directory): void
     {
+        if ($this->isOrbitRuntimeConfigDirectory($directory['path'])) {
+            $this->installRuntimeDirectory($directory['path'], $directory['mode']);
+
+            return;
+        }
+
         $command = ['sudo', '-n', 'install', '-d', '-m', $directory['mode']];
 
         if ($directory['owner'] !== null) {
@@ -415,17 +411,55 @@ final readonly class LocalAppRuntimeAction
         $this->mustRun($command, "install {$directory['path']}");
     }
 
-    private function writeSudoFile(string $path, string $content): void
+    private function installRuntimeDirectory(string $path, string $mode): void
     {
-        $process = $this->runProcess(['sudo', '-n', 'tee', $path], $content);
+        $modeValue = $this->modeValue($mode);
 
-        if ($process->isSuccessful()) {
+        $created = is_dir($path)
+            ? ['successful' => true, 'error' => '']
+            : $this->runFilesystemOperation(static fn (): bool => mkdir($path, $modeValue, recursive: true));
+
+        if (! $created['successful'] && ! is_dir($path)) {
+            throw $this->failure('runtime_config_write_failed', "Failed to install {$path}.", [
+                'path' => $path,
+                'error' => $created['error'],
+            ]);
+        }
+
+        $chmod = $this->runFilesystemOperation(static fn (): bool => chmod($path, $modeValue));
+
+        if (! $chmod['successful']) {
+            throw $this->failure('runtime_config_write_failed', "Failed to chmod {$path}.", [
+                'path' => $path,
+                'error' => $chmod['error'],
+            ]);
+        }
+    }
+
+    private function writeRuntimeFile(string $path, string $content): void
+    {
+        if (file_put_contents($path, $content, LOCK_EX) !== false) {
             return;
         }
 
         throw $this->failure('runtime_config_write_failed', "Failed to write {$path}.", [
             'path' => $path,
-            'stderr' => trim($process->getErrorOutput()),
+            'error' => $this->lastErrorMessage(),
+        ]);
+    }
+
+    private function chmodRuntimeFile(string $path, string $mode): void
+    {
+        $modeValue = $this->modeValue($mode);
+        $chmod = $this->runFilesystemOperation(static fn (): bool => chmod($path, $modeValue));
+
+        if ($chmod['successful']) {
+            return;
+        }
+
+        throw $this->failure('runtime_config_write_failed', "Failed to chmod {$path}.", [
+            'path' => $path,
+            'error' => $chmod['error'],
         ]);
     }
 
@@ -537,7 +571,7 @@ final readonly class LocalAppRuntimeAction
     {
         $path = $this->absolutePath($value, $field);
 
-        if (preg_match(self::RUNTIME_CONFIG_PATH_PATTERN, $path) === 1) {
+        if ($this->isOrbitRuntimeConfigPath($path)) {
             return $path;
         }
 
@@ -548,7 +582,7 @@ final readonly class LocalAppRuntimeAction
     {
         $path = $this->absolutePath($value, 'runtime_config.trust_pool.path');
 
-        if ($path === self::RUNTIME_TRUST_POOL_PATH) {
+        if ($this->isOrbitRuntimeTrustPoolPath($path)) {
             return $path;
         }
 
@@ -587,9 +621,98 @@ final readonly class LocalAppRuntimeAction
     {
         return in_array(
             needle: $path,
-            haystack: ['/etc/orbit/apps', '/etc/orbit/workspaces', '/etc/orbit/ca'],
+            haystack: [
+                "{$this->userConfigRoot()}/apps",
+                "{$this->userConfigRoot()}/workspaces",
+                "{$this->userConfigRoot()}/ca",
+            ],
             strict: true,
         );
+    }
+
+    private function isOrbitRuntimeConfigPath(string $path): bool
+    {
+        $root = $this->userConfigRoot();
+
+        if (! in_array(dirname($path), ["{$root}/apps", "{$root}/workspaces"], strict: true)) {
+            return false;
+        }
+
+        return preg_match(self::RUNTIME_CONFIG_BASENAME_PATTERN, basename($path)) === 1;
+    }
+
+    private function isOrbitRuntimeTrustPoolPath(string $path): bool
+    {
+        return $path === "{$this->userConfigRoot()}/ca/root.crt";
+    }
+
+    private function userConfigRoot(): string
+    {
+        return $this->homeDirectory().'/.config/orbit';
+    }
+
+    private function homeDirectory(): string
+    {
+        $home = $_SERVER['HOME'] ?? $_ENV['HOME'] ?? getenv('HOME');
+        $home = is_string($home) ? rtrim($home, characters: '/') : '';
+
+        if ($home !== '' && $this->isSafeAbsolutePath($home)) {
+            return $home;
+        }
+
+        throw $this->failure('validation_failed', 'App runtime HOME is invalid.', ['field' => 'HOME']);
+    }
+
+    private function isSafeAbsolutePath(string $path): bool
+    {
+        return (
+            str_starts_with($path, '/')
+            && preg_match('/[\x00-\x1F\x7F]/', $path) !== 1
+            && preg_match('#(?:^|/)\.\.(?:/|$)#', $path) !== 1
+        );
+    }
+
+    private function modeValue(string $mode): int
+    {
+        return match ($mode) {
+            '0644' => 0o644,
+            '0775' => 0o775,
+            default => 0o755,
+        };
+    }
+
+    /**
+     * @param  callable(): bool  $operation
+     * @return array{successful: bool, error: string}
+     */
+    private function runFilesystemOperation(callable $operation): array
+    {
+        $error = '';
+
+        set_error_handler(static function (int $severity, string $message) use (&$error): bool {
+            $error = $message;
+
+            return true;
+        });
+
+        try {
+            $successful = $operation();
+        } finally {
+            restore_error_handler();
+        }
+
+        return [
+            'successful' => $successful,
+            'error' => $error !== '' ? $error : $this->lastErrorMessage(),
+        ];
+    }
+
+    private function lastErrorMessage(): string
+    {
+        $error = error_get_last();
+        $message = is_array($error) ? $error['message'] ?? '' : '';
+
+        return is_string($message) && trim($message) !== '' ? trim($message) : 'unknown error';
     }
 
     private function safeUserPathOwner(string $path): ?string

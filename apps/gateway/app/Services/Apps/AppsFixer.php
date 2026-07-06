@@ -83,7 +83,8 @@ final readonly class AppsFixer
     }
 
     /**
-     * Remove an orphan managed runtime config file (/etc/orbit/apps/<slug>.ini)
+     * Remove an orphan managed runtime config file
+     * (~/.config/orbit/apps/<slug>.ini)
      * whose encoded app identity no longer maps to an active app record on
      * the node.
      *
@@ -107,7 +108,7 @@ final readonly class AppsFixer
             'summary' => "Removed extra app runtime config for {$appSlug}.",
             'details' => [
                 'app' => $appSlug,
-                'path' => $this->appRuntimeContainerManager->runtimeConfigPath($appSlug),
+                'path' => $this->appRuntimeContainerManager->runtimeConfigPath($node, $appSlug),
                 'outcome' => $outcome->value,
             ],
         ];
@@ -177,7 +178,7 @@ final readonly class AppsFixer
             'summary' => "Re-applied managed runtime config for {$app->name}.",
             'details' => [
                 'app' => $app->name,
-                'path' => $this->appRuntimeContainerManager->runtimeConfigPath($app->name),
+                'path' => $this->appRuntimeContainerManager->runtimeConfigPath($node, $app->name),
             ],
         ];
     }

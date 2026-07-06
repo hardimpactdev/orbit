@@ -6,10 +6,16 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
+use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class AppRuntimeContainerRenderer
 {
     public const int InternalPort = 8080;
@@ -36,6 +42,7 @@ final readonly class AppRuntimeContainerRenderer
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -128,7 +135,13 @@ final readonly class AppRuntimeContainerRenderer
 
     public function phpIniHostPath(App $app): string
     {
-        return "/etc/orbit/apps/{$app->name}.ini";
+        $app->loadMissing('node');
+
+        if (! $app->node instanceof Node) {
+            throw new RuntimeException("App '{$app->name}' has no owning node; cannot render runtime config path.");
+        }
+
+        return $this->nodeHostPaths->appRuntimeConfigPath($app->node, $app->name);
     }
 
     public function upstreamUrl(App $app): string

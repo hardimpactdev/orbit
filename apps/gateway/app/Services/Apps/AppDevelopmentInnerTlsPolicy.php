@@ -9,6 +9,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeHostPaths;
 use RuntimeException;
 
 final readonly class AppDevelopmentInnerTlsPolicy
@@ -20,6 +21,10 @@ final readonly class AppDevelopmentInnerTlsPolicy
     public const string RuntimeTlsKeyContainerPath = '/etc/orbit/runtime-tls/tls.key';
 
     public const string RuntimeTrustPoolPath = '/etc/orbit/ca/root.crt';
+
+    public function __construct(
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+    ) {}
 
     public function appliesToApp(App $app): bool
     {
@@ -93,9 +98,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function nodeHome(Node $node): string
     {
-        $user = $node->user ?: 'orbit';
-
-        return $user === 'root' ? '/root' : "/home/{$user}";
+        return $this->nodeHostPaths->homeDirectory($node);
     }
 
     /**
@@ -164,9 +167,9 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
         return sprintf(
             <<<'SH'
-                sudo install -d -m 0755 %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
+                install -d -m 0755 %s
+                printf %%s %s | base64 -d > %s
+                chmod 0644 %s
                 SH,
             escapeshellarg(dirname($caPath)),
             escapeshellarg(base64_encode($rootCertificate)),

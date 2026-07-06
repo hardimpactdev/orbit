@@ -125,7 +125,12 @@ describe('AppStoreController', function (): void {
             ->toBeTrue()
             ->and(collect($remoteShell->runs)
                 ->pluck('script')
-                ->contains(fn (string $script): bool => str_contains($script, "sudo tee '/etc/orbit/ca/root.crt'")))
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        "> '/home/orbit/.config/orbit/ca/root.crt'",
+                    ),
+                ))
             ->toBeTrue();
     });
 

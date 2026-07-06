@@ -14,14 +14,23 @@ describe('internal app runtime configs probe command', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
-        $this->originalPath = getenv('PATH') ?: '';
+        $home = getenv('HOME');
+        $this->originalHome = is_string($home) ? $home : null;
+        $this->originalServerHome = $_SERVER['HOME'] ?? null;
+        $this->originalEnvHome = $_ENV['HOME'] ?? null;
     });
 
     afterEach(function (): void {
-        putenv("PATH={$this->originalPath}");
+        app_runtime_configs_probe_restore_home(
+            $this->originalHome,
+            $this->originalServerHome,
+            $this->originalEnvHome,
+        );
 
-        foreach (glob(sys_get_temp_dir().'/orbit-runtime-configs-sudo-*') ?: [] as $dir) {
-            delete_runtime_configs_fake_sudo($dir);
+        $homeDirectories = glob(sys_get_temp_dir().'/orbit-runtime-configs-home-*');
+
+        foreach ($homeDirectories === false ? [] : $homeDirectories as $dir) {
+            delete_runtime_configs_probe_home($dir);
         }
     });
 
@@ -40,7 +49,7 @@ describe('internal app runtime configs probe command', function (): void {
     });
 
     it('reports proven-absent runtime config directory', function (): void {
-        install_runtime_configs_fake_sudo(testExit: 1);
+        app_runtime_configs_probe_home();
 
         [$exitCode, $output] = run_internal_app_runtime_configs_probe_command([
             '--operation-token' => app_runtime_configs_probe_signed_operation_token(),
@@ -59,7 +68,11 @@ describe('internal app runtime configs probe command', function (): void {
     });
 
     it('reports present runtime config paths', function (): void {
-        install_runtime_configs_fake_sudo(findOutput: "/etc/orbit/apps/docs.ini\n/etc/orbit/apps/blog.ini\n");
+        $home = app_runtime_configs_probe_home();
+        $directory = "{$home}/.config/orbit/apps";
+        mkdir($directory, recursive: true);
+        file_put_contents("{$directory}/docs.ini", data: 'memory_limit=512M');
+        file_put_contents("{$directory}/marketing.ini", data: 'memory_limit=256M');
 
         [$exitCode, $output] = run_internal_app_runtime_configs_probe_command([
             '--operation-token' => app_runtime_configs_probe_signed_operation_token(),
@@ -72,16 +85,18 @@ describe('internal app runtime configs probe command', function (): void {
             ->toBe(JsonEnvelope::success([
                 'status' => 'present',
                 'paths' => [
-                    '/etc/orbit/apps/docs.ini',
-                    '/etc/orbit/apps/blog.ini',
+                    "{$home}/.config/orbit/apps/docs.ini",
+                    "{$home}/.config/orbit/apps/marketing.ini",
                 ],
                 'error' => '',
-                'stdout' => "orbit-config-dir:present\n/etc/orbit/apps/docs.ini\n/etc/orbit/apps/blog.ini\n",
+                'stdout' => "orbit-config-dir:present\n{$home}/.config/orbit/apps/docs.ini\n{$home}/.config/orbit/apps/marketing.ini\n",
             ]));
     });
 
-    it('reports find failures as error sentinels', function (): void {
-        install_runtime_configs_fake_sudo(findExit: 2, findError: 'find: Permission denied');
+    it('reports invalid runtime config paths as error sentinels', function (): void {
+        $home = app_runtime_configs_probe_home();
+        mkdir("{$home}/.config/orbit", recursive: true);
+        file_put_contents("{$home}/.config/orbit/apps", data: 'not a directory');
 
         [$exitCode, $output] = run_internal_app_runtime_configs_probe_command([
             '--operation-token' => app_runtime_configs_probe_signed_operation_token(),
@@ -94,8 +109,8 @@ describe('internal app runtime configs probe command', function (): void {
             ->toBe(JsonEnvelope::success([
                 'status' => 'error',
                 'paths' => [],
-                'error' => 'find: Permission denied',
-                'stdout' => "orbit-config-dir:error find: Permission denied\n",
+                'error' => "{$home}/.config/orbit/apps is not a directory",
+                'stdout' => "orbit-config-dir:error {$home}/.config/orbit/apps is not a directory\n",
             ]));
     });
 });
@@ -134,52 +149,59 @@ function run_internal_app_runtime_configs_probe_command(array $parameters): arra
     return [$exitCode, trim($output->fetch())];
 }
 
-function install_runtime_configs_fake_sudo(
-    int $testExit = 0,
-    string $testError = '',
-    int $findExit = 0,
-    string $findOutput = '',
-    string $findError = '',
-): void {
-    $dir = sys_get_temp_dir().'/orbit-runtime-configs-sudo-'.bin2hex(random_bytes(8));
-    mkdir($dir);
-    $testError = var_export($testError, true);
-    $findOutput = var_export($findOutput, true);
-    $findError = var_export($findError, true);
+function app_runtime_configs_probe_home(): string
+{
+    $home = sys_get_temp_dir().'/orbit-runtime-configs-home-'.bin2hex(random_bytes(8));
+    mkdir($home);
+    putenv("HOME={$home}");
+    $_SERVER['HOME'] = $home;
+    $_ENV['HOME'] = $home;
 
-    $script = <<<PHP
-        #!/usr/bin/env php
-        <?php
-
-        \$args = array_slice(\$argv, 1);
-
-        if ((\$args[0] ?? null) === '-n') {
-            array_shift(\$args);
-        }
-
-        if (\$args === ['test', '-d', '/etc/orbit/apps']) {
-            fwrite(STDERR, {$testError});
-            exit({$testExit});
-        }
-
-        if (\$args === ['find', '/etc/orbit/apps', '-maxdepth', '1', '-type', 'f', '-name', '*.ini', '-print']) {
-            fwrite(STDOUT, {$findOutput});
-            fwrite(STDERR, {$findError});
-            exit({$findExit});
-        }
-
-        fwrite(STDERR, 'unexpected sudo invocation: '.implode(' ', \$args));
-        exit(99);
-        PHP;
-
-    file_put_contents("{$dir}/sudo", $script);
-    chmod("{$dir}/sudo", 0o755);
-
-    putenv("PATH={$dir}:".(getenv('PATH') ?: ''));
+    return $home;
 }
 
-function delete_runtime_configs_fake_sudo(string $path): void
+function app_runtime_configs_probe_restore_home(?string $home, ?string $serverHome, ?string $envHome): void
 {
-    @unlink("{$path}/sudo");
-    @rmdir($path);
+    $home === null ? putenv('HOME') : putenv("HOME={$home}");
+
+    if ($serverHome === null) {
+        unset($_SERVER['HOME']);
+    }
+
+    if ($serverHome !== null) {
+        $_SERVER['HOME'] = $serverHome;
+    }
+
+    if ($envHome === null) {
+        unset($_ENV['HOME']);
+    }
+
+    if ($envHome !== null) {
+        $_ENV['HOME'] = $envHome;
+    }
+}
+
+function delete_runtime_configs_probe_home(string $path): void
+{
+    if (! is_dir($path)) {
+        if (file_exists($path) || is_link($path)) {
+            unlink($path);
+        }
+
+        return;
+    }
+
+    $entries = scandir($path);
+
+    foreach ($entries === false ? [] : $entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        delete_runtime_configs_probe_home("{$path}/{$entry}");
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
 }

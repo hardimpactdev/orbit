@@ -82,7 +82,7 @@ describe('AppRemoveController', function (): void {
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'container_name' => 'orbit-app-docs',
-                    'php_ini_path' => '/etc/orbit/apps/docs.ini',
+                    'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
                 ],
             ]);
 
@@ -132,7 +132,12 @@ describe('AppRemoveController', function (): void {
                 ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))
             ->toBeTrue()
             ->and(collect($shell->scripts)
-                ->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/apps/docs.ini'")))
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        "rm -f '/home/orbit/.config/orbit/apps/docs.ini'",
+                    ),
+                ))
             ->toBeTrue()
             ->and(collect($shell->scripts)
                 ->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))

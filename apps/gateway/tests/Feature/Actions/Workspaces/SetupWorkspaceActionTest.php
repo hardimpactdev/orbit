@@ -168,7 +168,7 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
         ->and($runScript)
         ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($runScript)
-        ->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
+        ->toContain('/home/gateway/.config/orbit/workspaces/demo-feature-a.ini')
         ->and(collect($shell->scripts)
             ->contains(
                 fn (string $script): bool => str_contains(
@@ -1020,7 +1020,7 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
         ->and($process?->runtime_config)
         ->toMatchArray([
             'container_name' => 'orbit-ws-demo-feature-a',
-            'php_ini_path' => '/etc/orbit/workspaces/demo-feature-a.ini',
+            'php_ini_path' => '/home/gateway/.config/orbit/workspaces/demo-feature-a.ini',
             'container_spec_hash_label' => 'orbit.workspace.spec_hash',
         ]);
 }

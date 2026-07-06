@@ -88,7 +88,7 @@ describe('WorkspaceRemoveController', function (): void {
                 'runtime' => ProcessRuntime::Docker,
                 'runtime_config' => [
                     'container_name' => 'orbit-ws-docs-feature-api',
-                    'php_ini_path' => '/etc/orbit/workspaces/docs-feature-api.ini',
+                    'php_ini_path' => '/home/orbit/.config/orbit/workspaces/docs-feature-api.ini',
                 ],
             ]);
 
@@ -147,7 +147,7 @@ describe('WorkspaceRemoveController', function (): void {
                 ->contains(
                     fn (string $script): bool => str_contains(
                         $script,
-                        "sudo rm -f '/etc/orbit/workspaces/docs-feature-api.ini'",
+                        "rm -f '/home/orbit/.config/orbit/workspaces/docs-feature-api.ini'",
                     ),
                 ))
             ->toBeTrue();

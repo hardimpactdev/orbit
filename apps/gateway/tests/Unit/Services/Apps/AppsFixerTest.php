@@ -243,7 +243,7 @@ it('refreshes the managed FrankenPHP process intent when re-applying an app runt
             'container_name' => 'orbit-app-docs',
             'container_spec_hash' => $expectedHash,
             'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
-            'php_ini_path' => '/etc/orbit/apps/docs.ini',
+            'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
         ]);
 });
 
@@ -398,11 +398,11 @@ it('removes an orphan managed runtime config file when handed an app slug withou
         ->and($result['key'])
         ->toBe('app.runtime_config_extra')
         ->and($result['details']['path'])
-        ->toBe('/etc/orbit/apps/orphan-docs.ini')
+        ->toBe('/home/orbit/.config/orbit/apps/orphan-docs.ini')
         ->and($result['details']['outcome'])
         ->toBe('removed')
         ->and($shell->scripts[1])
-        ->toContain("sudo rm -f '/etc/orbit/apps/orphan-docs.ini'");
+        ->toContain("rm -f '/home/orbit/.config/orbit/apps/orphan-docs.ini'");
 });
 
 it('reports already_absent without throwing when the orphan runtime config is already gone', function (): void {
@@ -486,9 +486,9 @@ it('rewrites the managed runtime config when handed app.runtime_config_missing',
         ->and($result['key'])
         ->toBe('app.runtime_config_missing')
         ->and($result['details']['path'])
-        ->toBe('/etc/orbit/apps/docs.ini')
+        ->toBe('/home/orbit/.config/orbit/apps/docs.ini')
         ->and($shell->scripts[0])
-        ->toContain('/etc/orbit/apps/docs.ini')
+        ->toContain('/home/orbit/.config/orbit/apps/docs.ini')
         ->and($shell->scripts[0])
         ->toContain('base64 -d');
 });

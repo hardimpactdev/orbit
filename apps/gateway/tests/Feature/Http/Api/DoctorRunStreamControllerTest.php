@@ -836,7 +836,7 @@ final class DoctorRunStreamRemoteShell implements RemoteShell
             return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
         }
 
-        if (str_contains($script, "dir='/etc/orbit/apps'")) {
+        if (str_contains($script, "dir='/home/orbit/.config/orbit/apps'")) {
             return new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:absent\n", stderr: '', durationMs: 1);
         }
 

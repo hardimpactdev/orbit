@@ -114,7 +114,7 @@ it('describes runtime client trust for app-dev PHP apps that are not production'
 
     expect($policy->mountsForApp($appDevPhp))
         ->toBe([[
-            'source' => '/etc/orbit/ca/root.crt',
+            'source' => '/home/nckrtl/.config/orbit/ca/root.crt',
             'target' => '/etc/orbit/ca/root.crt',
             'read_only' => true,
         ]])

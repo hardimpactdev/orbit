@@ -375,13 +375,13 @@ describe('DoctorReportRunner app family extra container detection', function ():
             ]);
     });
 
-    it('emits app.runtime_config_extra when an orphan /etc/orbit/apps/<slug>.ini exists without an active app record', function (): void {
+    it('emits app.runtime_config_extra when an orphan user config runtime ini exists without an active app record', function (): void {
         $node = createDoctorRunnerAppHostNode();
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit-config-dir:present\n/etc/orbit/apps/orphan-docs.ini\n",
+                stdout: "orbit-config-dir:present\n/home/orbit/.config/orbit/apps/orphan-docs.ini\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -401,7 +401,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             ->and($issue['detail'])
             ->toMatchArray([
                 'app' => 'orphan-docs',
-                'path' => '/etc/orbit/apps/orphan-docs.ini',
+                'path' => '/home/orbit/.config/orbit/apps/orphan-docs.ini',
             ]);
     });
 
@@ -411,7 +411,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             new RemoteShellResult(exitCode: 0, stdout: "orbit-container-scan:absent\n", stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit-config-dir:present\n/etc/orbit/apps/orphan-docs.ini\n",
+                stdout: "orbit-config-dir:present\n/home/orbit/.config/orbit/apps/orphan-docs.ini\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -446,11 +446,13 @@ describe('DoctorReportRunner app family extra container detection', function ():
             ->and($action['details'])
             ->toMatchArray([
                 'app' => 'orphan-docs',
-                'path' => '/etc/orbit/apps/orphan-docs.ini',
+                'path' => '/home/orbit/.config/orbit/apps/orphan-docs.ini',
                 'outcome' => 'removed',
             ])
             ->and(collect($shell->scripts)
-                ->contains(fn (string $s): bool => str_contains($s, "sudo rm -f '/etc/orbit/apps/orphan-docs.ini'")))
+                ->contains(
+                    fn (string $s): bool => str_contains($s, "rm -f '/home/orbit/.config/orbit/apps/orphan-docs.ini'"),
+                ))
             ->toBeTrue();
     });
 
@@ -462,7 +464,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
                 new RemoteShellResult(exitCode: 0, stdout: "orbit-container-scan:absent\n", stderr: '', durationMs: 1),
                 new RemoteShellResult(
                     exitCode: 0,
-                    stdout: "orbit-config-dir:present\n/etc/orbit/apps/orphan-docs.ini\n",
+                    stdout: "orbit-config-dir:present\n/home/orbit/.config/orbit/apps/orphan-docs.ini\n",
                     stderr: '',
                     durationMs: 1,
                 ),
@@ -674,7 +676,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
-                stdout: "orbit-config-dir:present\n/etc/orbit/apps/marketing.ini\n",
+                stdout: "orbit-config-dir:present\n/home/orbit/.config/orbit/apps/marketing.ini\n",
                 stderr: '',
                 durationMs: 1,
             ),
@@ -691,7 +693,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             ->and($issue['detail'])
             ->toMatchArray([
                 'app' => 'marketing',
-                'path' => '/etc/orbit/apps/marketing.ini',
+                'path' => '/home/orbit/.config/orbit/apps/marketing.ini',
             ]);
     });
 
@@ -907,7 +909,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
 
             expect($issue)
                 ->not->toBeNull()->and($issue['kind'])->toBe('unverifiable')->and($issue['detail']['path'])->toBe(
-                    '/etc/orbit/apps',
+                    '/home/orbit/.config/orbit/apps',
                 )->and($issue['detail']['error'])->toContain('terminal')->and($issue['restorable'] ?? false)->toBeTrue()
                 // Must NOT silently absorb the error as a clean empty list.
                 ->and(collect($report['issues'])->pluck('key')->all())
@@ -1750,7 +1752,7 @@ describe('DoctorReportRunner', function (): void {
                 'container_name' => 'orbit-app-docs',
                 'container_spec_hash' => $expectedHash,
                 'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
-                'php_ini_path' => '/etc/orbit/apps/docs.ini',
+                'php_ini_path' => '/home/orbit/.config/orbit/apps/docs.ini',
             ]);
     });
 
@@ -1942,7 +1944,7 @@ describe('DoctorReportRunner', function (): void {
                 'container_name' => 'orbit-ws-docs-feature-a',
                 'container_spec_hash' => $expectedHash,
                 'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
-                'php_ini_path' => '/etc/orbit/workspaces/docs-feature-a.ini',
+                'php_ini_path' => '/home/orbit/.config/orbit/workspaces/docs-feature-a.ini',
             ]);
     });
 
@@ -4017,7 +4019,7 @@ function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService
 function doctor_runner_script_creates_trusted_runtime(string $script, string $containerName): bool
 {
     return (
-        str_contains($script, "sudo tee '/etc/orbit/ca/root.crt'")
+        str_contains($script, "> '/home/orbit/.config/orbit/ca/root.crt'")
         && str_contains($script, 'docker run')
         && str_contains($script, "'{$containerName}'")
     );

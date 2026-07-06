@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Node;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -20,13 +21,24 @@ function makePhpApp(array $overrides = []): App
 {
     $node = createTestAppHostNode(['user' => 'orbit']);
 
-    return App::factory()->for($node, 'node')->create(array_merge([
+    return makeRuntimeRendererApp($node, array_merge([
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ], $overrides));
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function makeRuntimeRendererApp(Node $node, array $attributes): App
+{
+    $app = App::factory()->for($node, 'node')->create($attributes);
+    assert($app instanceof App);
+
+    return $app;
 }
 
 function rendererForTest(): AppRuntimeContainerRenderer
@@ -87,7 +99,7 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
 
 it('mounts the owning app-dev node user packages directory at /packages', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
@@ -106,7 +118,7 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
 
 it('mounts the macos app-dev node user packages directory at /packages', function (): void {
     $node = createTestAppHostNode(['platform' => 'macos_14', 'user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'nckrtl',
         'path' => '/Users/nckrtl/apps/nckrtl',
         'document_root' => 'public',
@@ -125,7 +137,7 @@ it('mounts the macos app-dev node user packages directory at /packages', functio
 
 it('renders configured app runtime mounts after built-in mounts', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
@@ -156,7 +168,7 @@ it('renders configured app runtime mounts after built-in mounts', function (): v
 
 it('does not mount the packages directory for app-prod PHP app runtimes', function (): void {
     $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -178,7 +190,7 @@ it('does not mount the packages directory for app-prod PHP app runtimes', functi
 
 it('renders a production app runtime user from the app source owner but leaves development containers on the node user', function (): void {
     $productionNode = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $productionApp = App::factory()->for($productionNode, 'node')->create([
+    $productionApp = makeRuntimeRendererApp($productionNode, [
         'name' => 'docs-prod',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -240,7 +252,7 @@ it('changes the spec hash when php_version changes so the manager recreates the 
 it('changes the spec hash when the app-dev packages mount policy changes', function (): void {
     $renderer = rendererForTest();
     $node = createTestAppHostNode(['user' => 'orbit']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-dev',
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
@@ -349,7 +361,7 @@ it('uses the internal app-dev runtime upstream on HTTP port 8080 by default', fu
 
 it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'craft-starterkit-react',
         'path' => '/home/nckrtl/apps/craft-starterkit-react',
         'document_root' => 'public',
@@ -361,7 +373,7 @@ it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client t
 
     expect($container->mounts())
         ->toContain([
-            'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'source' => '/home/nckrtl/.config/orbit/ca/root.crt',
             'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
             'read_only' => true,
         ])
@@ -379,7 +391,7 @@ it('renders app-dev PHP runtimes with Orbit CA trust pool mount and PHP client t
 
 it('does not render runtime client trust for app-prod PHP runtimes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -405,7 +417,7 @@ it('does not render runtime client trust for app-prod PHP runtimes', function ()
 
 it('renders app-dev PHP runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'docs',
         'path' => '/home/nckrtl/apps/docs',
         'document_root' => 'public',
@@ -439,7 +451,7 @@ it('renders app-dev PHP runtimes with inner HTTPS on 8443, site cert mounts, and
 
 it('keeps app-prod PHP runtimes on plain HTTP port 8080 without inner TLS mounts', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
         'environment' => 'production',
         'path' => '/home/docs/app',
@@ -522,7 +534,7 @@ it('does not include any FRANKENPHP_CONFIG worker directive in the docker run co
 
 it('does not render app-dev FrankenPHP thread pool settings for app-prod classic runtimes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeRuntimeRendererApp($node, [
         'name' => 'docs-prod',
         'environment' => 'production',
         'path' => '/home/docs/app',

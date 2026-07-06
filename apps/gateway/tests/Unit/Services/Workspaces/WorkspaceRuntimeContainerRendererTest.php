@@ -22,7 +22,7 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
 {
     $node = createTestAppHostNode(['user' => 'orbit']);
 
-    $app = App::factory()->for($node, 'node')->create(array_merge([
+    $app = makeWorkspaceRendererApp($node, array_merge([
         'name' => 'demo',
         'path' => '/home/orbit/apps/demo',
         'document_root' => 'public',
@@ -30,13 +30,35 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
         'runtime' => AppRuntimeKind::Php,
     ], $appOverrides));
 
-    $workspace = Workspace::factory()->for($app, 'app')->create(array_merge([
+    $workspace = makeWorkspaceRendererWorkspace($app, array_merge([
         'name' => 'feature-a',
         'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
         'php_version' => null,
     ], $workspaceOverrides));
 
     $workspace->setRelation('app', $app);
+
+    return $workspace;
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function makeWorkspaceRendererApp(Node $node, array $attributes): App
+{
+    $app = App::factory()->for($node, 'node')->create($attributes);
+    assert($app instanceof App);
+
+    return $app;
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function makeWorkspaceRendererWorkspace(App $app, array $attributes): Workspace
+{
+    $workspace = Workspace::factory()->for($app, 'app')->create($attributes);
+    assert($workspace instanceof Workspace);
 
     return $workspace;
 }
@@ -92,14 +114,14 @@ it(
 
 it('mounts the owning app-dev node user packages directory at /packages', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
         'php_version' => null,
@@ -116,7 +138,7 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
 
 it('inherits configured app runtime mounts from the parent app', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
@@ -128,7 +150,7 @@ it('inherits configured app runtime mounts from the parent app', function (): vo
         'target' => '/home/nckrtl/packages',
         'read_only' => true,
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
         'php_version' => null,
@@ -152,7 +174,7 @@ it('inherits configured app runtime mounts from the parent app', function (): vo
 
 it('does not mount the packages directory for app-prod PHP workspace runtimes', function (): void {
     $node = createTestAppHostNode(attributes: ['user' => 'orbit'], role: 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'demo-prod',
         'environment' => 'production',
         'path' => '/home/demo/app',
@@ -160,7 +182,7 @@ it('does not mount the packages directory for app-prod PHP workspace runtimes', 
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/demo/app/.worktrees/feature-a',
         'php_version' => null,
@@ -300,7 +322,7 @@ it('renders app-dev FrankenPHP thread pool settings for classic workspace runtim
 
 it('does not render app-dev FrankenPHP thread pool settings for app-prod workspace runtimes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'demo-prod',
         'environment' => 'production',
         'path' => '/home/demo/app',
@@ -308,7 +330,7 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod workspa
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/demo/app/.worktrees/feature-a',
         'php_version' => null,
@@ -386,14 +408,14 @@ it('exposes ORBIT_APP, ORBIT_WORKSPACE, and ORBIT_PHP_VERSION env to the contain
 
 it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP client trust ini', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'demo',
         'path' => '/home/nckrtl/apps/demo',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'php_version' => null,
@@ -403,7 +425,7 @@ it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP cl
 
     expect($container->mounts())
         ->toContain([
-            'source' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'source' => '/home/nckrtl/.config/orbit/ca/root.crt',
             'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
             'read_only' => true,
         ])
@@ -421,7 +443,7 @@ it('renders app-dev workspace runtimes with Orbit CA trust pool mount and PHP cl
 
 it('does not render runtime client trust for app-prod workspace runtimes', function (): void {
     $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'demo-prod',
         'environment' => 'production',
         'path' => '/home/demo/app',
@@ -429,7 +451,7 @@ it('does not render runtime client trust for app-prod workspace runtimes', funct
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/demo/app/.worktrees/feature-a',
         'php_version' => null,
@@ -452,7 +474,7 @@ it('does not render runtime client trust for app-prod workspace runtimes', funct
 
 it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
+    $app = makeWorkspaceRendererApp($node, [
         'name' => 'demo',
         'path' => '/home/nckrtl/apps/demo',
         'document_root' => 'public',
@@ -460,7 +482,7 @@ it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mount
         'runtime' => AppRuntimeKind::Php,
         'runtime_config' => ['proxy_transport' => 'https'],
     ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
+    $workspace = makeWorkspaceRendererWorkspace($app, [
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
         'php_version' => null,

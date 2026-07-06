@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use Symfony\Component\Process\Process;
-
 final readonly class LocalAppRuntimeConfigsProbe
 {
-    private const string DIRECTORY = '/etc/orbit/apps';
-
     /**
      * @return array<string, mixed>
      */
     public function probe(): array
     {
-        $directoryCheck = new Process(['sudo', '-n', 'test', '-d', self::DIRECTORY]);
-        $directoryCheck->setTimeout(10);
-        $directoryCheck->run();
+        $root = $this->userConfigRoot();
 
-        if ($directoryCheck->getExitCode() === 1 && trim($directoryCheck->getErrorOutput()) === '') {
+        if ($root === null) {
+            return $this->error('HOME is invalid');
+        }
+
+        $directory = "{$root}/apps";
+
+        if (! file_exists($directory)) {
             return [
                 'status' => 'absent',
                 'paths' => [],
@@ -28,40 +28,20 @@ final readonly class LocalAppRuntimeConfigsProbe
             ];
         }
 
-        if ($directoryCheck->getExitCode() !== 0) {
-            $error = trim($directoryCheck->getErrorOutput());
-            $error = $error !== '' ? $error : 'sudo test failed';
-
-            return $this->error($error);
+        if (! is_dir($directory)) {
+            return $this->error("{$directory} is not a directory");
         }
 
-        $find = new Process([
-            'sudo',
-            '-n',
-            'find',
-            self::DIRECTORY,
-            '-maxdepth',
-            '1',
-            '-type',
-            'f',
-            '-name',
-            '*.ini',
-            '-print',
-        ]);
-        $find->setTimeout(15);
-        $find->run();
-
-        if ($find->getExitCode() !== 0) {
-            $error = trim($find->getErrorOutput());
-            $error = $error !== '' ? $error : "sudo find failed (ec={$find->getExitCode()})";
-
-            return $this->error($error);
+        if (! is_readable($directory)) {
+            return $this->error("{$directory} is not readable");
         }
 
+        $globbedPaths = glob("{$directory}/*.ini");
         $paths = array_values(array_filter(
-            array_map(trim(...), explode("\n", trim($find->getOutput()))),
-            static fn (string $path): bool => $path !== '',
+            $globbedPaths === false ? [] : $globbedPaths,
+            is_file(...),
         ));
+        sort($paths);
 
         return [
             'status' => 'present',
@@ -69,6 +49,23 @@ final readonly class LocalAppRuntimeConfigsProbe
             'error' => '',
             'stdout' => "orbit-config-dir:present\n".$this->pathOutput($paths),
         ];
+    }
+
+    private function userConfigRoot(): ?string
+    {
+        $home = $_SERVER['HOME'] ?? $_ENV['HOME'] ?? getenv('HOME');
+        $home = is_string($home) ? rtrim($home, characters: '/') : '';
+
+        if (
+            $home !== ''
+            && str_starts_with($home, '/')
+            && preg_match('/[\x00-\x1F\x7F]/', $home) !== 1
+            && preg_match('#(?:^|/)\.\.(?:/|$)#', $home) !== 1
+        ) {
+            return "{$home}/.config/orbit";
+        }
+
+        return null;
     }
 
     /**

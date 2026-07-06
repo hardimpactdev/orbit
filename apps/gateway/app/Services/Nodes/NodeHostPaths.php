@@ -6,6 +6,9 @@ namespace App\Services\Nodes;
 
 use App\Models\Node;
 
+/**
+ * @mago-expect lint:too-many-methods
+ */
 final class NodeHostPaths
 {
     private const string USER_PATH_PATTERN = '#^/(?:home|Users)/(?<user>(?!\.{1,2}(?:/|$))[A-Za-z0-9._-]+)/(?<path>(?!\.{1,2}$)(?!\.{1,2}/)(?!.*(?:^|/)\.\.(?:/|$)).+)$#';
@@ -23,6 +26,21 @@ final class NodeHostPaths
     public function userConfigRoot(Node $node): string
     {
         return $this->homeDirectory($node).'/.config/orbit';
+    }
+
+    public function appRuntimeConfigPath(Node $node, string $appSlug): string
+    {
+        return "{$this->userConfigRoot($node)}/apps/{$appSlug}.ini";
+    }
+
+    public function workspaceRuntimeConfigPath(Node $node, string $appSlug, string $workspaceSlug): string
+    {
+        return "{$this->userConfigRoot($node)}/workspaces/{$appSlug}-{$workspaceSlug}.ini";
+    }
+
+    public function runtimeTrustPoolPath(Node $node): string
+    {
+        return "{$this->userConfigRoot($node)}/ca/root.crt";
     }
 
     public function processDataRoot(Node $node, string $processName): string

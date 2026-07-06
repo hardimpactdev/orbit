@@ -32,6 +32,7 @@ final readonly class WorkspaceRuntimeContainerManager
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private mixed $localExecutor = null,
     ) {}
 
@@ -378,12 +379,14 @@ final readonly class WorkspaceRuntimeContainerManager
      */
     private function runtimeTrustPoolPayload(WorkspaceRuntimeContainer $container): ?array
     {
-        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+        $hostPath = $this->runtimeTrustPoolHostPath($container);
+
+        if ($hostPath === null) {
             return null;
         }
 
         return [
-            'path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'path' => $hostPath,
             'content_base64' => base64_encode($this->ca->rootCert()),
         ];
     }
@@ -552,7 +555,7 @@ final readonly class WorkspaceRuntimeContainerManager
     /**
      * Tri-state managed runtime config file removal. The php.ini snippet
      * mounted into the FrankenPHP workspace container lives at
-     * `/etc/orbit/workspaces/<app>-<workspace>.ini` on the node.
+     * `~/.config/orbit/workspaces/<app>-<workspace>.ini` on the node.
      */
     public function removeRuntimeConfigFile(
         Node $node,
@@ -562,11 +565,11 @@ final readonly class WorkspaceRuntimeContainerManager
         if ($this->localExecutor instanceof RemoteLocalExecutor) {
             return $this->removeRuntimeConfigFileThroughLocalExecutor(
                 $node,
-                $this->runtimeConfigPath($appSlug, $workspaceSlug),
+                $this->runtimeConfigPath($node, $appSlug, $workspaceSlug),
             );
         }
 
-        $path = $this->runtimeConfigPath($appSlug, $workspaceSlug);
+        $path = $this->runtimeConfigPath($node, $appSlug, $workspaceSlug);
 
         $existence = $this->probeRuntimeConfigExistence($node, $path);
 
@@ -578,7 +581,7 @@ final readonly class WorkspaceRuntimeContainerManager
             return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
         }
 
-        $remove = $this->run($node, 'sudo rm -f '.escapeshellarg($path));
+        $remove = $this->run($node, 'rm -f '.escapeshellarg($path));
 
         if (! $remove->successful()) {
             return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
@@ -593,11 +596,9 @@ final readonly class WorkspaceRuntimeContainerManager
     {
         $script = sprintf(
             <<<'SH'
-                err="$(sudo test -e %1$s 2>&1)"
-                ec=$?
-                if [ "$ec" = "0" ]; then
+                if [ -e %1$s ]; then
                     printf 'orbit-container-config-probe:present\n'
-                elif [ "$ec" = "1" ] && [ -z "$err" ]; then
+                elif [ ! -e %1$s ]; then
                     printf 'orbit-container-config-probe:absent\n'
                 else
                     printf 'orbit-container-config-probe:error\n'
@@ -645,9 +646,9 @@ final readonly class WorkspaceRuntimeContainerManager
         );
     }
 
-    public function runtimeConfigPath(string $appSlug, string $workspaceSlug): string
+    public function runtimeConfigPath(Node $node, string $appSlug, string $workspaceSlug): string
     {
-        return "/etc/orbit/workspaces/{$appSlug}-{$workspaceSlug}.ini";
+        return $this->nodeHostPaths->workspaceRuntimeConfigPath($node, $appSlug, $workspaceSlug);
     }
 
     public function containerName(string $appSlug, string $workspaceSlug): string
@@ -725,14 +726,16 @@ final readonly class WorkspaceRuntimeContainerManager
             <<<'SH'
                 set -e
                 %s
-                sudo install -d -m 0755 %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                install -d -m 0755 %s
+                printf %%s %s | base64 -d > %s
+                chmod 0644 %s
                 %s
                 %s
                 SH,
             $trustPoolInstallScript,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
+            escapeshellarg($phpIniHostPath),
             escapeshellarg($phpIniHostPath),
             $packagesMountScript,
             $configuredMountScript,
@@ -741,24 +744,29 @@ final readonly class WorkspaceRuntimeContainerManager
 
     private function renderRuntimeTrustPoolInstallScript(WorkspaceRuntimeContainer $container): string
     {
-        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+        $hostPath = $this->runtimeTrustPoolHostPath($container);
+
+        if ($hostPath === null) {
             return '';
         }
 
         return (
             $this->innerTlsPolicy->trustPoolInstallScript(
-                AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                $hostPath,
                 $this->ca->rootCert(),
             )."\n"
         );
     }
 
-    private function containerRequiresRuntimeTrustPool(WorkspaceRuntimeContainer $container): bool
+    private function runtimeTrustPoolHostPath(WorkspaceRuntimeContainer $container): ?string
     {
-        return array_any(
-            $container->mounts(),
-            static fn (array $mount): bool => $mount['target'] === AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
-        );
+        foreach ($container->mounts() as $mount) {
+            if ($mount['target'] === AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath) {
+                return $mount['source'];
+            }
+        }
+
+        return null;
     }
 
     private function renderPackagesMountDirectoryScript(WorkspaceRuntimeContainer $container): string

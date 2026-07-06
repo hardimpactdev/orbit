@@ -113,6 +113,7 @@ class GatewayServiceUpdater
             return null;
         }
 
+        /** @var array{timeout: int, input: string, metadata: array<string, string>} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
             'input' => json_encode(
@@ -140,7 +141,7 @@ class GatewayServiceUpdater
     }
 
     /**
-     * @param  array<string, mixed>  $transportOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
      */
     private function runCliInstall(Node $gatewayNode, array $transportOptions): RemoteShellResult
     {

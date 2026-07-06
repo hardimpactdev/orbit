@@ -167,7 +167,7 @@ it('creates the orbit network, writes php.ini, and runs the workspace runtime co
         ->and($scripts[3])
         ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($scripts[4])
-        ->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
+        ->toContain('/home/orbit/.config/orbit/workspaces/demo-feature-a.ini')
         ->and($scripts[4])
         ->toContain('docker run -d')
         ->and($scripts[4])
@@ -312,18 +312,22 @@ it('installs the Orbit runtime trust pool on the node and mounts it into app-dev
     workspace_runtime_manager_for_test($shell)->apply($node, $container);
 
     $script = $shell->calls[3]['script'];
+    $hostTrustPool = '/home/nckrtl/.config/orbit/ca/root.crt';
 
     expect($script)
-        ->toContain("sudo install -d -m 0755 '/etc/orbit/ca'")
-        ->toContain("sudo tee '/etc/orbit/ca/root.crt'")
+        ->toContain("install -d -m 0755 '/home/nckrtl/.config/orbit/ca'")
+        ->toContain("> '{$hostTrustPool}'")
         ->toContain(
             "--mount 'type=bind,source="
-            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
+            .$hostTrustPool
             .',target='
             .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
             .",readonly'",
         )
-        ->and(strpos(haystack: $script, needle: "sudo tee '/etc/orbit/ca/root.crt'"))
+        ->and($script)
+        ->not
+        ->toContain('sudo tee')
+        ->and(strpos(haystack: $script, needle: "> '{$hostTrustPool}'"))
         ->toBeLessThan(strpos(haystack: $script, needle: 'docker run -d'));
 });
 
@@ -386,7 +390,7 @@ it('rejects unsafe app-dev packages bind mount sources before running the worksp
         environment: ['SERVER_NAME' => ':80'],
         mounts: [
             [
-                'source' => '/etc/orbit/workspaces/demo-feature-a.ini',
+                'source' => '/home/orbit/.config/orbit/workspaces/demo-feature-a.ini',
                 'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
                 'read_only' => true,
             ],
@@ -593,11 +597,11 @@ it('returns tri-state outcomes for managed workspace runtime config file removal
     expect($absentOutcome)
         ->toBe(WorkspaceRuntimeArtifactRemovalOutcome::AlreadyAbsent)
         ->and($absentShell->calls[0]['script'])
-        ->toContain("sudo test -e '/etc/orbit/workspaces/demo-feature-a.ini'")
+        ->toContain("[ -e '/home/orbit/.config/orbit/workspaces/demo-feature-a.ini' ]")
         ->and($removedOutcome)
         ->toBe(WorkspaceRuntimeArtifactRemovalOutcome::Removed)
         ->and($removedShell->calls[1]['script'])
-        ->toContain("sudo rm -f '/etc/orbit/workspaces/demo-feature-a.ini'")
+        ->toContain("rm -f '/home/orbit/.config/orbit/workspaces/demo-feature-a.ini'")
         ->and($failedOutcome)
         ->toBe(WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining);
 });
@@ -639,7 +643,7 @@ it('writes the managed workspace runtime config file via writeRuntimeConfigFile'
     expect($shell->calls)
         ->toHaveCount(1)
         ->and($shell->calls[0]['script'])
-        ->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
+        ->toContain('/home/orbit/.config/orbit/workspaces/demo-feature-a.ini')
         ->and($shell->calls[0]['script'])
         ->toContain('base64 -d');
 });

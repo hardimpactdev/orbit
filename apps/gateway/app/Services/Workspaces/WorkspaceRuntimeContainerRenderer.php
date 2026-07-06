@@ -6,6 +6,7 @@ namespace App\Services\Workspaces;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
@@ -13,10 +14,15 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\FrankenPhpRuntimeConfigRenderer;
 use App\Services\Apps\RuntimeClientTrustPolicy;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
 use InvalidArgumentException;
+use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class WorkspaceRuntimeContainerRenderer
 {
     public function __construct(
@@ -27,6 +33,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -140,10 +147,16 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
     public function runtimeConfigPath(Workspace $workspace): string
     {
-        $workspace->loadMissing('app');
-        $appSlug = $workspace->app?->name;
+        $workspace->loadMissing('app.node');
+        $app = $workspace->app;
 
-        return "/etc/orbit/workspaces/{$appSlug}-{$workspace->name}.ini";
+        if (! $app instanceof App || ! $app->node instanceof Node) {
+            throw new RuntimeException(
+                "Workspace '{$workspace->name}' has no owning app node; cannot render runtime config path.",
+            );
+        }
+
+        return $this->nodeHostPaths->workspaceRuntimeConfigPath($app->node, $app->name, $workspace->name);
     }
 
     public function upstreamUrl(Workspace $workspace): string

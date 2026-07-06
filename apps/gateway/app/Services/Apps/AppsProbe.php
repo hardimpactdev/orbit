@@ -69,7 +69,7 @@ final readonly class AppsProbe
                 $renderedContainer = $this->appRuntimeContainerRenderer()->render($app);
                 $expectedSpecHash = $renderedContainer->specHash();
                 $expectedRuntimeConfigHash = hash('sha256', $renderedContainer->phpIniContent());
-                $runtimeConfigPath = "/etc/orbit/apps/{$app->name}.ini";
+                $runtimeConfigPath = $this->appRuntimeContainerRenderer()->phpIniHostPath($app);
                 $expectedImage = $renderedContainer->image();
             } catch (\Throwable) {
                 $expectedSpecHash = '';
@@ -134,7 +134,7 @@ final readonly class AppsProbe
 
     /**
      * Probe the node for Orbit-managed runtime config files
-     * (`/etc/orbit/apps/<slug>.ini`). Returns a tri-state probe result so the
+     * (`~/.config/orbit/apps/<slug>.ini`). Returns a tri-state probe result so the
      * orchestrator can distinguish proven-absent (no orphan scan needed) from
      * sudo/SSH/probe failure (must NOT be reported as a clean empty snapshot,
      * because stale `runtime_config_extra` artifacts could be hidden).
@@ -471,7 +471,7 @@ final readonly class AppsProbe
             return [];
         }
 
-        $expectedPath = "/etc/orbit/apps/{$app->name}.ini";
+        $expectedPath = $this->appRuntimeContainerRenderer()->phpIniHostPath($app);
 
         if (($observed['runtime_config_exists'] ?? null) === false) {
             return [

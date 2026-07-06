@@ -15,6 +15,24 @@ describe('internal app runtime command', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
+        $home = getenv('HOME');
+        $this->originalHome = is_string($home) ? $home : null;
+        $this->originalServerHome = $_SERVER['HOME'] ?? null;
+        $this->originalEnvHome = $_ENV['HOME'] ?? null;
+    });
+
+    afterEach(function (): void {
+        app_runtime_command_restore_home(
+            $this->originalHome,
+            $this->originalServerHome,
+            $this->originalEnvHome,
+        );
+
+        $homeDirectories = glob(sys_get_temp_dir().'/orbit-app-runtime-home-*');
+
+        foreach ($homeDirectories === false ? [] : $homeDirectories as $dir) {
+            delete_app_runtime_command_home($dir);
+        }
     });
 
     it('rejects a missing operation token before reading stdin', function (): void {
@@ -96,6 +114,8 @@ describe('internal app runtime command', function (): void {
     });
 
     it('rejects arbitrary privileged runtime config directories', function (): void {
+        $home = app_runtime_command_home();
+
         [$exitCode, $output] = run_internal_app_runtime_command(
             'runtime-config:write',
             [
@@ -104,7 +124,7 @@ describe('internal app runtime command', function (): void {
             ],
             stdin: json_encode([
                 'runtime_config' => [
-                    'path' => '/etc/orbit/apps/docs.ini',
+                    'path' => "{$home}/.config/orbit/apps/docs.ini",
                     'content_base64' => base64_encode('memory_limit=512M'),
                     'directories' => [
                         [
@@ -127,6 +147,53 @@ describe('internal app runtime command', function (): void {
                 'App runtime config directory is invalid.',
                 ['field' => 'runtime_config.directories.path'],
             ));
+    });
+
+    it('writes user-owned runtime config files under the Orbit config root', function (): void {
+        $home = app_runtime_command_home();
+
+        [$exitCode, $output] = run_internal_app_runtime_command(
+            'runtime-config:write',
+            [
+                '--operation-token' => app_runtime_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'runtime_config' => [
+                    'path' => "{$home}/.config/orbit/apps/docs.ini",
+                    'content_base64' => base64_encode("memory_limit=512M\n"),
+                    'directories' => [
+                        [
+                            'path' => "{$home}/.config/orbit/apps",
+                            'mode' => '0755',
+                            'owner' => null,
+                            'group' => null,
+                        ],
+                    ],
+                    'trust_pool' => [
+                        'path' => "{$home}/.config/orbit/ca/root.crt",
+                        'content_base64' => base64_encode("test-root\n"),
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::success([
+                'action' => 'runtime-config:write',
+                'path' => "{$home}/.config/orbit/apps/docs.ini",
+                'changed' => true,
+            ]))
+            ->and(file_get_contents("{$home}/.config/orbit/apps/docs.ini"))
+            ->toBe("memory_limit=512M\n")
+            ->and(file_get_contents("{$home}/.config/orbit/ca/root.crt"))
+            ->toBe("test-root\n")
+            ->and(substr(sprintf('%o', fileperms("{$home}/.config/orbit/apps/docs.ini")), -4))
+            ->toBe('0644')
+            ->and(substr(sprintf('%o', fileperms("{$home}/.config/orbit/ca/root.crt")), -4))
+            ->toBe('0644');
     });
 });
 
@@ -178,4 +245,61 @@ function run_internal_app_runtime_command(string $action, array $parameters = []
     $exitCode = $command->run($input, $output);
 
     return [$exitCode, trim($output->fetch())];
+}
+
+function app_runtime_command_home(): string
+{
+    $home = sys_get_temp_dir().'/orbit-app-runtime-home-'.bin2hex(random_bytes(8));
+    mkdir($home);
+    putenv("HOME={$home}");
+    $_SERVER['HOME'] = $home;
+    $_ENV['HOME'] = $home;
+
+    return $home;
+}
+
+function app_runtime_command_restore_home(?string $home, ?string $serverHome, ?string $envHome): void
+{
+    $home === null ? putenv('HOME') : putenv("HOME={$home}");
+
+    if ($serverHome === null) {
+        unset($_SERVER['HOME']);
+    }
+
+    if ($serverHome !== null) {
+        $_SERVER['HOME'] = $serverHome;
+    }
+
+    if ($envHome === null) {
+        unset($_ENV['HOME']);
+    }
+
+    if ($envHome !== null) {
+        $_ENV['HOME'] = $envHome;
+    }
+}
+
+function delete_app_runtime_command_home(string $path): void
+{
+    if (! is_dir($path)) {
+        if (file_exists($path) || is_link($path)) {
+            unlink($path);
+        }
+
+        return;
+    }
+
+    $entries = scandir($path);
+
+    foreach ($entries === false ? [] : $entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        delete_app_runtime_command_home("{$path}/{$entry}");
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
 }

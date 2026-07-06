@@ -44,6 +44,7 @@ use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodeConverger;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
@@ -177,6 +178,7 @@ final readonly class DoctorReportRunner
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
         private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
+        private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
 
     /**
@@ -1612,7 +1614,7 @@ final readonly class DoctorReportRunner
                 'kind' => DriftKind::Unverifiable->value,
                 'summary' => "Managed runtime config directory probe failed on node '{$node->name}'; stale orphan configs cannot be detected.",
                 'detail' => [
-                    'path' => '/etc/orbit/apps',
+                    'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
                     'error' => $configProbe->error,
                 ],
             ]);
@@ -1625,7 +1627,7 @@ final readonly class DoctorReportRunner
                 $observed = $configSnapshot->get($appSlug) ?? [];
                 $path = is_string($observed['path'] ?? null)
                     ? $observed['path']
-                    : "/etc/orbit/apps/{$appSlug}.ini";
+                    : $this->nodeHostPaths->appRuntimeConfigPath($node, $appSlug);
 
                 $issues[] = $this->annotateIssue([
                     'family' => 'app',
@@ -3127,7 +3129,7 @@ final readonly class DoctorReportRunner
                 'status' => 'failed',
                 'summary' => "Managed runtime config directory probe still failing on {$node->name}.",
                 'details' => [
-                    'path' => '/etc/orbit/apps',
+                    'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
                     'error' => $probe->error,
                 ],
             ];
@@ -3142,7 +3144,7 @@ final readonly class DoctorReportRunner
             'status' => 'completed',
             'summary' => "Re-probed managed runtime config directory on {$node->name}.",
             'details' => [
-                'path' => '/etc/orbit/apps',
+                'path' => "{$this->nodeHostPaths->userConfigRoot($node)}/apps",
                 'status' => $probe->status->value,
             ],
         ];
