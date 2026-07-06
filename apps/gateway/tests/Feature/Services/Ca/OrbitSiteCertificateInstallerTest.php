@@ -155,6 +155,45 @@ it('installs site TLS material under the macOS user home on Darwin nodes', funct
     );
 });
 
+it('uses the macOS user home for plain Darwin platform records', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.97:9477/v1/commands' => site_certificate_install_agent_response(),
+    ]);
+    $appNode = createTestAppHostNode([
+        'name' => 'mini',
+        'platform' => 'darwin',
+        'user' => 'nckrtl',
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.44.0.97',
+    ]);
+
+    $paths = new OrbitSiteCertificateInstaller(site_certificate_test_ca())->ensureFor($appNode, 'happie.mini');
+
+    $certPath = '/Users/nckrtl/.config/orbit/certs/happie.mini.crt';
+    $keyPath = '/Users/nckrtl/.config/orbit/certs/happie.mini.key';
+
+    expect($paths)
+        ->toBe([
+            'cert' => $certPath,
+            'key' => $keyPath,
+        ]);
+
+    Http::assertSent(
+        fn (Request $request): bool => site_certificate_install_request_matches(
+            request: $request,
+            url: 'http://10.44.0.97:9477/v1/commands',
+            expectedInput: [
+                'cert_path' => $certPath,
+                'key_path' => $keyPath,
+                'cert' => 'test-cert',
+                'key' => 'test-key',
+                'owner' => 'nckrtl',
+            ],
+        ),
+    );
+});
+
 function site_certificate_test_ca(): OrbitCaService
 {
     return new readonly class extends OrbitCaService {

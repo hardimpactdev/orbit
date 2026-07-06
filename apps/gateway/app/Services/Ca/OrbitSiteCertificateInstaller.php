@@ -6,6 +6,7 @@ namespace App\Services\Ca;
 
 use App\Contracts\SiteCertificateInstaller;
 use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
@@ -87,13 +88,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
 
     private function nodeHome(Node $node): string
     {
-        $user = $node->user ?: 'orbit';
-
-        if (is_string($node->platform) && str_starts_with($node->platform, 'macos_')) {
-            return $user === 'root' ? '/var/root' : "/Users/{$user}";
-        }
-
-        return $user === 'root' ? '/root' : "/home/{$user}";
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
     }
 
     private function assertSafeHost(string $host): void
