@@ -117,6 +117,58 @@ it('accepts nullable exit codes from the target node agent listener', function (
     expect($result->frames)->toHaveCount(1);
 });
 
+it('pushes runtime cwd and environment context to the target node agent listener', function (): void {
+    Http::preventStrayRequests();
+
+    Http::fake([
+        'http://10.6.0.23:9477/v1/commands' => Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => 'op_gateway_test_context',
+            'binary' => 'orbit',
+            'status' => 'succeeded',
+            'exit_code' => 0,
+            'frames' => [],
+        ]),
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'mini',
+        'host' => 'mini.local',
+        'wireguard_address' => '10.6.0.23',
+        'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
+    ]);
+
+    new NodeAgentPushClient()->execute(
+        node: $node,
+        envelope: NodeCommandEnvelope::agentPushBinary(
+            operationId: 'op_gateway_test_context',
+            binary: 'orbit',
+            argv: ['internal:fleet-update:install-cli', '--json'],
+            input: '{"version":"0.1.180"}',
+            cwd: '/home/orbit/orbit',
+            environment: [
+                'APP_KEY' => 'base64:test',
+                'HOME' => '/home/orbit',
+                'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+            ],
+        ),
+        operationToken: agent_push_client_test_operation_token(),
+    );
+
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request['cwd'] === '/home/orbit/orbit'
+            && $request['input'] === '{"version":"0.1.180"}'
+            && $request['environment'] === [
+                'APP_KEY' => 'base64:test',
+                'HOME' => '/home/orbit',
+                'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+            ]
+        ),
+    );
+});
+
 it('uses the envelope command timeout with a small HTTP buffer', function (): void {
     $method = new ReflectionMethod(NodeAgentPushClient::class, 'requestTimeoutSeconds');
     $method->setAccessible(true);

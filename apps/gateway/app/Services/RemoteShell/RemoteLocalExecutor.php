@@ -953,6 +953,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             binary: 'orbit',
             argv: $dispatch['argv'],
             input: $this->input($transportOptions),
+            cwd: $this->cwd($transportOptions),
+            environment: $this->transportEnvironment($transportOptions),
             timeoutSeconds: $this->timeoutSeconds($transportOptions),
         );
         $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
@@ -1068,6 +1070,22 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         throw new RuntimeException('input must be a string.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function cwd(array $transportOptions): ?string
+    {
+        if (! array_key_exists('cwd', $transportOptions)) {
+            return null;
+        }
+
+        if (is_string($transportOptions['cwd'])) {
+            return $transportOptions['cwd'];
+        }
+
+        throw new RuntimeException('cwd must be a string.');
     }
 
     /**

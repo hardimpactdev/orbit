@@ -17,16 +17,7 @@ final readonly class NodeCommandEnvelope
      */
     public array $payload;
 
-    public ?string $operationId;
-
-    public ?string $binary;
-
-    /**
-     * @var list<string>
-     */
-    public array $argv;
-
-    public ?string $input;
+    public ?NodeAgentPushCommand $agentPushCommand;
 
     public int $timeoutSeconds;
 
@@ -38,10 +29,7 @@ final readonly class NodeCommandEnvelope
      *     requires_node_execution: bool,
      *     supports_agent_push_transport: bool,
      *     payload?: array<string, mixed>,
-     *     operation_id?: string|null,
-     *     binary?: string|null,
-     *     argv?: list<string>,
-     *     input?: string|null,
+     *     agent_push_command?: NodeAgentPushCommand|null,
      *     timeout_seconds?: int,
      *     stream?: bool,
      * }  $attributes
@@ -52,10 +40,7 @@ final readonly class NodeCommandEnvelope
         $this->requiresNodeExecution = $attributes['requires_node_execution'];
         $this->supportsAgentPushTransport = $attributes['supports_agent_push_transport'];
         $this->payload = $attributes['payload'] ?? [];
-        $this->operationId = $attributes['operation_id'] ?? null;
-        $this->binary = $attributes['binary'] ?? null;
-        $this->argv = $attributes['argv'] ?? [];
-        $this->input = $attributes['input'] ?? null;
+        $this->agentPushCommand = $attributes['agent_push_command'] ?? null;
         $this->timeoutSeconds = $attributes['timeout_seconds'] ?? 30;
         $this->stream = $attributes['stream'] ?? true;
     }
@@ -87,12 +72,15 @@ final readonly class NodeCommandEnvelope
 
     /**
      * @param  list<string>  $argv
+     * @param  array<string, string>  $environment
      */
     public static function agentPushBinary(
         string $operationId,
         string $binary,
         array $argv,
         ?string $input = null,
+        ?string $cwd = null,
+        array $environment = [],
         int $timeoutSeconds = 30,
         bool $stream = true,
     ): self {
@@ -100,10 +88,16 @@ final readonly class NodeCommandEnvelope
             'command_id' => 'orbit.agent.binary',
             'requires_node_execution' => true,
             'supports_agent_push_transport' => true,
-            'operation_id' => $operationId,
-            'binary' => $binary,
-            'argv' => $argv,
-            'input' => $input,
+            'agent_push_command' => new NodeAgentPushCommand(
+                operationId: $operationId,
+                binary: $binary,
+                argv: $argv,
+                input: $input,
+                executionContext: new NodeCommandExecutionContext(
+                    cwd: $cwd,
+                    environment: $environment,
+                ),
+            ),
             'timeout_seconds' => $timeoutSeconds,
             'stream' => $stream,
         ]);

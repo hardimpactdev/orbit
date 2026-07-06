@@ -54,7 +54,7 @@ final readonly class NodeAgentPushClient
             $envelope->commandId === self::AGENT_PUSH_BINARY_COMMAND_ID
             && $envelope->requiresNodeExecution
             && $envelope->supportsAgentPushTransport
-            && $envelope->binary === self::AGENT_PUSH_BINARY_ALLOWLISTED_BINARY;
+            && $envelope->agentPushCommand?->binary === self::AGENT_PUSH_BINARY_ALLOWLISTED_BINARY;
 
         if ($isAllowlisted) {
             return;
@@ -103,6 +103,8 @@ final readonly class NodeAgentPushClient
      *     binary: string,
      *     argv: list<string>,
      *     input?: string,
+     *     cwd?: string,
+     *     environment?: array<string, string>,
      *     operation_token: string,
      *     timeout_seconds: int,
      *     stream: bool,
@@ -113,17 +115,29 @@ final readonly class NodeAgentPushClient
         #[SensitiveParameter]
         string $operationToken,
     ): array {
+        $command = $envelope->agentPushCommand ?? throw new InvalidArgumentException(
+            'Agent-push envelopes require binary command details.',
+        );
+
         $payload = [
-            'operation_id' => (string) $envelope->operationId,
-            'binary' => (string) $envelope->binary,
-            'argv' => $envelope->argv,
+            'operation_id' => $command->operationId,
+            'binary' => $command->binary,
+            'argv' => $command->argv,
             'operation_token' => $operationToken,
             'timeout_seconds' => $envelope->timeoutSeconds,
             'stream' => $envelope->stream,
         ];
 
-        if ($envelope->input !== null) {
-            $payload['input'] = $envelope->input;
+        if ($command->input !== null) {
+            $payload['input'] = $command->input;
+        }
+
+        if ($command->executionContext->cwd !== null) {
+            $payload['cwd'] = $command->executionContext->cwd;
+        }
+
+        if ($command->executionContext->environment !== []) {
+            $payload['environment'] = $command->executionContext->environment;
         }
 
         return $payload;
