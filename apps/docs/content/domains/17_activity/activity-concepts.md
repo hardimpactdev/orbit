@@ -125,12 +125,11 @@ Activity covers the following categories of operations.
   `read`. Default-on for consistent activity visibility.
 - CLI commands that perform CLI-only state changes (e.g. local gateway
   connection setup) emit through the CLI helper.
-- Orbit Agent job lifecycle events are recorded through the existing gateway
-  activity and operation history surfaces. The gateway records accepted/running,
-  privilege-requested, success, and failure events as gateway history entries,
-  not a separate Orbit Agent log product surface. The external Orbit Agent
-  runtime remains deferred. Lifecycle entries still follow the no raw command,
-  no-secret properties rule.
+- Orbit Agent push operations are recorded through the existing gateway activity
+  and operation history surfaces. The gateway records command dispatch, success,
+  and failure as gateway history entries, not a separate Orbit Agent log product
+  surface. Activity entries still follow the no raw command, no-secret
+  properties rule.
 
 Never logged:
 

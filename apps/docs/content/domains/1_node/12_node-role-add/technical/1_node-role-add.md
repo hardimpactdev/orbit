@@ -66,16 +66,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
-- When the added role is `app-dev` and the target node has
-  `orbit_agent_capable=true` (supported on Ubuntu and macOS/Darwin platforms),
-  the gateway queues a typed Orbit Agent job with `type=app-dev-convergence`.
-  The job payload is fixed by the gateway and contains `operation=app_dev_convergence`,
-  `role=app-dev`, the app-dev TLD, and the dependency-ordered catalog tools
-  `docker`, `php-cli`, `composer`, `laravel-installer`, and `caddy`.
-- Orbit Agent jobs are not queued for `app-dev` role additions until the node
-  has explicitly opted in through `node:update <node> --orbit-agent-capable`.
-  The `agent` workload role and platform alone do not imply Orbit Agent
-  capability.
+- `node role:add` does not queue Orbit Agent pull jobs. App-dev convergence over
+  Orbit Agent remains deferred until it can run as a direct gateway-pushed
+  command envelope.
+- `orbit_agent_capable=true` marks a node eligible for explicit agent-push
+  operations. The `agent` workload role and platform alone do not imply Orbit
+  Agent capability.
 - If synchronous convergence leaves the assignment in `error`, return a failure
   envelope and leave the errored assignment for `doctor --family=node --restore`.
 
@@ -99,8 +95,8 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Node/NodeWriteCommandTest.php` | CLI role:add post, render, and validation before gateway contact. |
-| `apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php` | Gateway role add, reconverge behavior, gateway-role rejection, and opt-in Orbit Agent app-dev job queueing. |
-| `apps/gateway/tests/Feature/Http/Api/OrbitAgentJobProtocolControllerTest.php` | Typed Orbit Agent app-dev convergence payload and lifecycle protocol boundaries. |
+| `apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php` | Gateway role add, reconverge behavior, gateway-role rejection, and omission of Orbit Agent pull-job metadata. |
+| `apps/gateway/tests/Feature/Http/Api/OrbitAgentJobProtocolControllerTest.php` | Guard that Orbit Agent claim/event endpoints are not exposed. |
 
 Input-mode-specific test mapping lives in:
 

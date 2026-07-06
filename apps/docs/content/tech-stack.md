@@ -298,9 +298,10 @@ flow.
 
 #### Orbit Agent lane and gateway protocol skeleton
 
-Orbit Agent is the node-local executor lane for gateway-owned typed jobs on
-supported nodes. The gateway remains authoritative for intent, authorization,
-release manifests, immutable update plans, operation history, and activity logs.
+Orbit Agent is the node-local executor lane for gateway-owned typed command
+envelopes on supported nodes. The gateway remains authoritative for intent,
+authorization, release manifests, immutable update plans, operation history,
+and activity logs.
 The gateway owns a minimal protocol skeleton: structured `binary + argv`
 envelopes, authenticated Agent listener delivery over Orbit/WireGuard, scoped
 operation tokens, lifecycle reporting, and operation/activity recording. The
@@ -326,9 +327,9 @@ V1 is scoped narrowly:
 - menu icon state belongs to the UI process, with UI Restart and Quit actions
   managing only the UI process and any embedded service it started itself;
 - no menu job history;
-- `app-dev-convergence` may run fixed sudo-protected installer steps and rely
-  on the operating system prompt, but there is no arbitrary privileged shell or
-  separate approval UI in this bootstrap;
+- app-dev convergence over Orbit Agent remains deferred until it can run as a
+  direct gateway-pushed command envelope; `node role:add` does not queue Agent
+  pull jobs;
 - no production packaging, autostart, signing, notarization, or self-update.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent

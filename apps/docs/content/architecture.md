@@ -330,7 +330,8 @@ plane or arbitrary shell transport. The gateway owns structured binary argv
 envelopes, a hidden `orbit version --json` proof envelope, authenticated Agent
 listener delivery, scoped operation tokens, lifecycle reporting, and
 operation/activity recording. Poll/claim semantics are not part of the managed
-Agent transport.
+Agent transport, and the gateway does not expose Orbit Agent job claim/event
+endpoints in the normal API.
 
 The local Orbit Agent service lives in `apps/agent` as a headless Rust/Axum
 binary. It loads local config, exposes an authenticated Agent listener reachable
@@ -346,10 +347,9 @@ this service binary.
 The bootstrap is not production packaged, autostarted, signed, notarized, or
 self-updating. V1 agent-push requests are structured Orbit CLI invocations
 submitted by the gateway, with transitional SSH fallback only when explicitly
-selected for migration or break-glass use. The `app-dev-convergence` job executes
-only fixed local installer steps for Orbit's approved app-dev tool catalog and
-may rely on the operating system's sudo prompt. It is not an arbitrary shell
-transport and does not add a separate Orbit approval queue.
+selected for migration or break-glass use. App-dev convergence over Orbit Agent
+remains deferred until it can be sent as a direct gateway-pushed command
+envelope; `node role:add` does not create queued Agent pull jobs.
 
 The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
 it can show service/gateway status, refresh status on menu open or Refresh, and

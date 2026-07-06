@@ -12,7 +12,6 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\AddNodeRoleApiRequest;
 use App\Models\Node;
-use App\Services\Nodes\Roles\NodeRoleAgentJobQueuer;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleSettingsResolver;
@@ -27,7 +26,6 @@ final class NodeRoleAddController implements Loggable
 
     public function __construct(
         private readonly NodeRoleAssignmentService $service,
-        private readonly NodeRoleAgentJobQueuer $agentJobs,
         private readonly NodeRoleSettingsResolver $settingsResolver,
     ) {}
 
@@ -122,12 +120,6 @@ final class NodeRoleAddController implements Loggable
             'node' => $node->name,
             'assignment' => NodeRoleAssignmentPayload::fromModel($assignment),
         ];
-
-        $agentJob = $this->agentJobs->queueForAssignment($node->refresh(), $assignment, $request->role());
-
-        if ($agentJob !== null) {
-            $data['agent_job'] = $this->agentJobs->toResponsePayload($agentJob);
-        }
 
         return response()->json([
             'success' => [

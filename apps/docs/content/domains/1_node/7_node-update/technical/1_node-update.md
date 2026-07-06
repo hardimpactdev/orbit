@@ -41,7 +41,7 @@ This command follows the shared
 | `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
-| `orbit_agent_capable` | `--orbit-agent-capable` or `--no-orbit-agent-capable` | Optional. | Never. | Omitted/unchanged; stored default is `false`. | Explicit boolean opt-in/out for Orbit Agent typed-job delivery. Both flags in one invocation fail validation. |
+| `orbit_agent_capable` | `--orbit-agent-capable` or `--no-orbit-agent-capable` | Optional. | Never. | Omitted/unchanged; stored default is `false`. | Explicit boolean opt-in/out for Orbit Agent agent-push delivery. Both flags in one invocation fail validation. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 Each field flag may be supplied at most once per invocation. Supplying the same
@@ -96,10 +96,10 @@ advertised endpoint metadata used by future peer configs.
 
 `node:update --orbit-agent-capable` and
 `node:update --no-orbit-agent-capable` toggle the node registry's
-`orbit_agent_capable` flag. The flag is explicit opt-in state for typed Orbit
-Agent jobs on supported nodes. It does not install the agent, start a menu-bar
-process, grant a role, create credentials, or prove that the node-local agent is
-currently reachable.
+`orbit_agent_capable` flag. The flag is explicit opt-in state for agent-push
+operations on supported nodes. It does not install the agent, start a menu-bar
+process, grant a role, create credentials, or prove that the node-local agent
+is currently reachable.
 
 Role-conditional validity is enforced after the target node is resolved.
 Incompatible fields fail with `node.field_role_incompatible` before any
@@ -184,9 +184,9 @@ Input mode behavior is split out of the canonical command contract:
 - Changing `public_ipv4` on an `app-dev` node may change the managed
   `orbit-caddy` HTTP/HTTPS bindings when the value is an RFC1918 caller-facing
   LAN address. The private backend port remains WireGuard-only.
-- Changing `orbit_agent_capable` records whether the gateway may queue typed
-  Orbit Agent jobs for the node. The changed field appears in `changed` when
-  the supplied boolean differs from the stored value.
+- Changing `orbit_agent_capable` records whether the gateway may send explicit
+  agent-push operations to the node. The changed field appears in `changed`
+  when the supplied boolean differs from the stored value.
 
 ### Artifact Re-applying Rules
 

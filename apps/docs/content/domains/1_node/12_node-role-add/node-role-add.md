@@ -26,10 +26,10 @@ This command validates the role assignment, applies role-local options, and repo
   agent` fails with `validation_failed` and the explanation that
   `node:new --template=agent` is the preferred path that may create it.
 - `app-dev` requires `--tld`.
-- On an opted-in macOS/Darwin `app-dev` node, the gateway queues a fixed
-  `app-dev-convergence` Orbit Agent job after the role assignment is stored.
-  Nodes remain opt-in: no Orbit Agent job is queued until
-  `node:update <node> --orbit-agent-capable` has marked the node capable.
+- `node role:add` does not queue Orbit Agent pull jobs. Future app-dev
+  convergence over Orbit Agent must use a direct gateway-pushed command
+  envelope after the node has explicitly been marked capable with
+  `node:update <node> --orbit-agent-capable`.
 - `websocket` requires `--redis-node`; the selected node must have an active
   `database` role and Redis expected or installed.
 - `analytics` requires `--postgres-node` and `--clickhouse-node`; the selected

@@ -10,7 +10,6 @@ use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Models\OrbitAgentJob;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
@@ -19,6 +18,7 @@ use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -238,7 +238,7 @@ describe('NodeRoleAddController', function (): void {
         'macos database' => ['macos_14', 'database', []],
     ]);
 
-    it('queues typed app-dev convergence for opted-in macos agent-capable nodes', function (): void {
+    it('does not queue pull jobs for opted-in macos agent-capable nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'darwin',
@@ -254,27 +254,12 @@ describe('NodeRoleAddController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.assignment.role', 'app-dev')
-            ->assertJsonPath('success.data.agent_job.type', 'app-dev-convergence')
-            ->assertJsonPath('success.data.agent_job.status', 'queued');
+            ->assertJsonMissingPath('success.data.agent_job');
 
-        $job = OrbitAgentJob::query()->sole();
-
-        expect($job->target_node_id)
-            ->toBe($target->id)
-            ->and($job->type)
-            ->toBe('app-dev-convergence')
-            ->and($job->status)
-            ->toBe('queued')
-            ->and($job->payload)
-            ->toMatchArray([
-                'operation' => 'app_dev_convergence',
-                'role' => 'app-dev',
-                'tld' => 'test',
-                'tools' => ['docker', 'php-cli', 'composer', 'laravel-installer', 'caddy'],
-            ]);
+        expect(DB::table('orbit_agent_jobs')->count())->toBe(0);
     });
 
-    it('queues typed app-dev convergence for opted-in linux agent-capable nodes', function (): void {
+    it('does not queue pull jobs for opted-in linux agent-capable nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'ubuntu',
@@ -290,27 +275,12 @@ describe('NodeRoleAddController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.assignment.role', 'app-dev')
-            ->assertJsonPath('success.data.agent_job.type', 'app-dev-convergence')
-            ->assertJsonPath('success.data.agent_job.status', 'queued');
+            ->assertJsonMissingPath('success.data.agent_job');
 
-        $job = OrbitAgentJob::query()->sole();
-
-        expect($job->target_node_id)
-            ->toBe($target->id)
-            ->and($job->type)
-            ->toBe('app-dev-convergence')
-            ->and($job->status)
-            ->toBe('queued')
-            ->and($job->payload)
-            ->toMatchArray([
-                'operation' => 'app_dev_convergence',
-                'role' => 'app-dev',
-                'tld' => 'test',
-                'tools' => ['docker', 'php-cli', 'composer', 'laravel-installer', 'caddy'],
-            ]);
+        expect(DB::table('orbit_agent_jobs')->count())->toBe(0);
     });
 
-    it('does not queue app-dev convergence jobs for macos nodes until agent capability is opted in', function (): void {
+    it('does not return app-dev convergence jobs for macos nodes without agent capability', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'macos_14',
@@ -327,7 +297,7 @@ describe('NodeRoleAddController', function (): void {
             ->assertOk()
             ->assertJsonMissingPath('success.data.agent_job');
 
-        expect(OrbitAgentJob::query()->exists())->toBeFalse();
+        expect(DB::table('orbit_agent_jobs')->count())->toBe(0);
     });
 
     it('keeps ubuntu-only roles unsupported on macos workload nodes', function (): void {

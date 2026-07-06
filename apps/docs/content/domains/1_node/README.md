@@ -82,8 +82,8 @@ command never dispatches to gateway Artisan.
 Nodes do not own fleet state or run a local control plane. They run workload
 services, call the gateway when a local command is invoked, and currently
 receive gateway-applied changes over explicit SSH fallback paths. The Orbit
-Agent runs on the node and lets supported nodes receive typed jobs pushed by
-the gateway, but it does not make the node a source of truth.
+Agent runs on the node and lets supported nodes receive typed command envelopes
+pushed by the gateway, but it does not make the node a source of truth.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
@@ -332,14 +332,14 @@ Node transport has different rules before and after bootstrap:
   receives gateway-pushed `binary + argv` command envelopes over the node-local
   Agent listener; it is not arbitrary shell transport, not a WebSocket
   requirement, and not an HTTP capability API on the node.
-- The current runtime bootstrap does not implement privileged jobs. Later
-  privileged Orbit Agent job slices may use the OS prompt when the gateway
-  submits protected local work. V1 has no separate Orbit approval UI or
-  pending/approve flow. The macOS menu icon only means the process is running;
+- The current runtime bootstrap does not implement privileged pull jobs. Later
+  privileged Orbit Agent slices may use the OS prompt when the gateway submits
+  protected local work through direct agent-push. V1 has no separate Orbit
+  approval UI or pending/approve flow. The macOS menu icon only means the
+  process is running;
   opening the menu may perform a one-shot gateway ping that shows Connected or
   Disconnected, node name, and gateway name/host, plus Restart and Quit actions.
-  It does not show job history; job history remains in gateway
-  operation/activity history.
+  It does not show Agent job history.
 - Orbit Agent is distinct from the existing `agent` workload role and from
   Agent IDE adapters.
 

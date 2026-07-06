@@ -71,13 +71,13 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
 - `--public-ipv6=<address>`: public IPv6 metadata supplied by the operator.
   Valid for `gateway` and workload-role-bearing nodes. Forbidden on
   operator-identity nodes.
-- `--orbit-agent-capable`: Opt the node into the Orbit Agent typed-job lane.
+- `--orbit-agent-capable`: Opt the node into the Orbit Agent agent-push lane.
   Defaults to off for every node until explicitly enabled. This only changes
   gateway registry capability; it does not install, start, or update the local
   Orbit Agent process.
-- `--no-orbit-agent-capable`: Opt the node out of the Orbit Agent typed-job
-  lane. New gateway operations that require Orbit Agent delivery do not queue
-  for the node while this is disabled.
+- `--no-orbit-agent-capable`: Opt the node out of the Orbit Agent agent-push
+  lane. New gateway operations that require Orbit Agent delivery do not target
+  the node while this is disabled.
 - `--json`: Output JSON.
 
 Each field flag may be supplied at most once per invocation. Supplying the

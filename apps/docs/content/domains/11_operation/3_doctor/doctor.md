@@ -120,7 +120,7 @@ requires `doctor:verify`; resolution actions require `doctor:restore` or
 On future macOS Orbit Agent-capable nodes, a restore or adopt action that needs
 protected local work may trigger the OS privilege prompt through the
 node-local Orbit Agent. V1 has no separate Orbit approval UI or pending/approve
-flow; the prompt is the operating system prompt, and job lifecycle events remain
+flow; the prompt is the operating system prompt, and agent-push results remain
 in gateway operation/activity history.
 
 ## Output

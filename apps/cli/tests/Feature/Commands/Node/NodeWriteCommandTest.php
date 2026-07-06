@@ -980,15 +980,10 @@ describe('node write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
-    it('preserves queued Orbit Agent app-dev convergence metadata in node role:add JSON output', function (): void {
+    it('does not synthesize Orbit Agent job metadata in node role:add JSON output', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'node' => 'app-1',
             'assignment' => ['role' => 'app-dev', 'status' => 'active'],
-            'agent_job' => [
-                'id' => 'job-123',
-                'type' => 'app-dev-convergence',
-                'status' => 'queued',
-            ],
         ]));
 
         [$exitCode, $output] = runCommand($this, 'node role:add', [
@@ -1002,12 +997,8 @@ describe('node write commands', function (): void {
 
         expect($exitCode)
             ->toBe(0)
-            ->and($decoded['success']['data']['agent_job'])
-            ->toBe([
-                'id' => 'job-123',
-                'type' => 'app-dev-convergence',
-                'status' => 'queued',
-            ]);
+            ->and($decoded['success']['data'])
+            ->not->toHaveKey('agent_job');
     });
 
     it('renders node role:add human output as a progress tree with a success footer', function (): void {
