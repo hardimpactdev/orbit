@@ -66,11 +66,18 @@ final class AppRegistrar
             ->where('name', $input['name'])
             ->first();
 
-        $requiredRole = $input['domain'] !== null ? 'app-prod' : 'app-dev';
-        $node = $this->resolveTargetNode($input['node'], $existingApp, $requiredRole);
+        $node = $this->resolveTargetNode($input['node'], $existingApp);
 
         if (is_int($node)) {
             return $node;
+        }
+
+        $environment = $this->registrationEnvironment($input['domain'], $node);
+        $requiredRole = $environment === 'production' ? 'app-prod' : 'app-dev';
+        $eligibleNode = $this->ensureEligibleNode($node, $requiredRole);
+
+        if (is_int($eligibleNode)) {
+            return $eligibleNode;
         }
 
         $path = $input['path'] ?? $existingApp?->path;
@@ -162,7 +169,7 @@ final class AppRegistrar
         }
 
         $action = $this->registrationAction($existingApp, $explicitMove);
-        $app = $this->registerAppRecord($input, $node, $path, $existingApp);
+        $app = $this->registerAppRecord($input, $node, $path, $existingApp, $environment);
         $warnings = $enactAppRuntime->handle($app);
 
         return $this->successCommand(
@@ -189,7 +196,8 @@ final class AppRegistrar
             $existingApp,
             $this->isExplicitMove($input, $path, $node, $existingApp),
         );
-        $app = $this->registerAppRecord($input, $node, $path, $existingApp);
+        $environment = $this->registrationEnvironment($input['domain'], $node);
+        $app = $this->registerAppRecord($input, $node, $path, $existingApp, $environment);
         $warnings = $enactAppRuntime->handle($app);
 
         return $this->successCommand(
@@ -230,11 +238,16 @@ final class AppRegistrar
     /**
      * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
-    private function registerAppRecord(array $input, Node $node, string $path, ?App $existingApp): App
-    {
+    private function registerAppRecord(
+        array $input,
+        Node $node,
+        string $path,
+        ?App $existingApp,
+        string $environment,
+    ): App {
         $attributes = [
             'node_id' => $node->id,
-            'environment' => $input['domain'] !== null ? 'production' : 'development',
+            'environment' => $environment,
             'domain' => $input['domain'] ?? $existingApp?->domain,
             'path' => $path,
             'document_root' => $input['root'],
@@ -358,14 +371,14 @@ final class AppRegistrar
         return $config->toArray();
     }
 
-    private function resolveTargetNode(?string $nodeName, ?App $existingApp, string $requiredRole): Node|int
+    private function resolveTargetNode(?string $nodeName, ?App $existingApp): Node|int
     {
         if ($nodeName === null && $existingApp instanceof App) {
             $existingApp->loadMissing('node');
             $node = $existingApp->node;
 
             if ($node instanceof Node) {
-                return $this->ensureEligibleNode($node, $requiredRole);
+                return $node;
             }
         }
 
@@ -416,7 +429,7 @@ final class AppRegistrar
             return $this->failValidation('node', "Node '{$nodeName}' was not found.");
         }
 
-        return $this->ensureEligibleNode($node, $requiredRole);
+        return $node;
     }
 
     private function ensureEligibleNode(Node $node, string $requiredRole): Node|int
@@ -434,6 +447,30 @@ final class AppRegistrar
                 'status' => $node->status->value,
             ],
         );
+    }
+
+    private function registrationEnvironment(?string $domain, Node $node): string
+    {
+        if ($domain === null) {
+            return 'development';
+        }
+
+        if ($this->isDevelopmentDomainForNode($domain, $node)) {
+            return 'development';
+        }
+
+        return 'production';
+    }
+
+    private function isDevelopmentDomainForNode(string $domain, Node $node): bool
+    {
+        if (! app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-dev')) {
+            return false;
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
+
+        return $tld !== '' && str_ends_with($domain, ".{$tld}");
     }
 
     /**

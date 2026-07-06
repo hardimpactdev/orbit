@@ -108,7 +108,7 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             return $this->renderFailure(
                 'local_resolver_write_failed',
                 'Failed to update local DNS resolver configuration.',
-                ['tld' => $tld, 'resolver_backend' => $resolver->backend()],
+                $this->resolverFailureMeta($resolver, $tld, $result),
             );
         }
 
@@ -138,14 +138,33 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             && $resolver->existingTarget($tld) === $target;
 
         if ($alreadyResolved) {
+            $result = null;
             $outcome = $this->runStepOperation(
                 'Configuring Local DNS',
                 [
                     ['label' => "Validate .{$tld}"],
                     ['label' => 'Check resolver override'],
                 ],
-                work: fn (): bool => true,
-                doneFooter: ".{$tld} already resolves to {$target}.",
+                work: function () use ($resolver, $tld, $target, &$result): void {
+                    $result = $resolver->resolve($tld, $target);
+
+                    if ($result['status'] === 'write_failed') {
+                        throw new RuntimeException('Failed to update local DNS resolver configuration.');
+                    }
+
+                    if ($result['status'] === 'refresh_failed') {
+                        throw new RuntimeException(
+                            'Local DNS resolver configuration changed, but the resolver could not be refreshed.',
+                        );
+                    }
+                },
+                doneFooter: function () use ($tld, $target, &$result): string {
+                    if (is_array($result) && ($result['changed'] ?? false) === true) {
+                        return ".{$tld} resolves to {$target}.";
+                    }
+
+                    return ".{$tld} already resolves to {$target}.";
+                },
             );
 
             return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
@@ -246,7 +265,7 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
             return $this->renderFailure(
                 'local_resolver_write_failed',
                 'Failed to update local DNS resolver configuration.',
-                ['tld' => $tld, 'resolver_backend' => $resolver->backend()],
+                $this->resolverFailureMeta($resolver, $tld, $result),
             );
         }
 

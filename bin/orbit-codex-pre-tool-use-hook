@@ -409,7 +409,7 @@ function session_archive_problem(string $root, string $branch): ?string
 
         $name = $entry->getFilename();
 
-        if ($name === $slug || preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-'.preg_quote($slug, '/').'$/', $name) === 1) {
+        if (preg_match('/^\d{4}-\d{2}-\d{2}-\d{6}-'.preg_quote($slug, '/').'$/', $name) === 1) {
             $candidates[] = $entry->getPathname();
         }
     }

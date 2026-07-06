@@ -12,8 +12,8 @@
   - Slice 2: Gateway `/api/solo/tools` and `/api/solo/projects` proxy foundation with gateway extension gate, `solo:*` authorization, activity logging, loopback-only upstream abstraction, docs, and quality gate passed.
   - Slice 3: CLI read-only Solo commands call gateway `/api/solo/**`, support `--json`, render human output, preserve local disabled-extension behavior, map gateway/upstream errors, docs, and quality gate passed.
 - Archived sessions:
-  - Slice 1: /Users/nckrtl/orbit/.orbit/sessions/20260628T185531Z-solo-extension-slice-1
-  - Slice 2: /Users/nckrtl/orbit/.orbit/sessions/20260628T194009Z-solo-extension-slice-2
+  - Slice 1: /Users/nckrtl/orbit/.orbit/sessions/2026-06-28-205531-solo-extension-slice-1
+  - Slice 2: /Users/nckrtl/orbit/.orbit/sessions/2026-06-28-214009-solo-extension-slice-2
 - Current slice: Slice 3, CLI read-only Solo command execution
 
 ## Done Contract
@@ -22,7 +22,7 @@
   - Multi-slice feature roadmap scratchpad exists before worker dispatch: yes, `solo://proj/4/scratchpad/orbit-solo-extension--211`.
   - `.orbit/loop.md` links the feature roadmap and names the current slice: yes.
   - If the source scratchpad lives in another Solo project, execution-project scratchpad links back to it and mirrors the roadmap substance: not applicable, project 4 owns the scratchpad and execution.
-  - Completed previous active `.orbit/` session archived before rewriting this file: yes, `/Users/nckrtl/orbit/.orbit/sessions/20260628T194009Z-solo-extension-slice-2`.
+  - Completed previous active `.orbit/` session archived before rewriting this file: yes, `/Users/nckrtl/orbit/.orbit/sessions/2026-06-28-214009-solo-extension-slice-2`.
 - Parallelization scan:
   - Candidate parallel lanes: CLI command plumbing/tests, gateway read-only endpoint expansion/tests, product docs.
   - Serialized lanes, with required dependency/shared-state/provider-capacity/merge-order reason: keep in process for initial TDD design because the CLI command shape depends on the gateway read-only endpoint catalog and existing Slice 1 placeholder command registration. Reconsider fresh-context review after implementation evidence exists.
@@ -55,7 +55,7 @@
 ## Progress
 
 - Tried: Archived completed Slice 2 `.orbit/` state before rewriting active loop.
-  Result: Archived to `/Users/nckrtl/orbit/.orbit/sessions/20260628T194009Z-solo-extension-slice-2`.
+  Result: Archived to `/Users/nckrtl/orbit/.orbit/sessions/2026-06-28-214009-solo-extension-slice-2`.
   Next: Append scratchpad transition note and start Slice 3 TDD.
 - Tried: Appended feature scratchpad transition note.
   Result: `solo://proj/4/scratchpad/orbit-solo-extension--211` revision 5 records Slice 3 start.
@@ -88,7 +88,7 @@
 
 - Checkout proof: `/Users/nckrtl/orbit/.worktrees/codex-solo-extension-slice-1`, branch `codex/solo-extension-slice-1`, accumulated Slice 1 and Slice 2 diff preserved.
 - Solo identity proof: process 698 running in project 4.
-- Slice 2 archive: `/Users/nckrtl/orbit/.orbit/sessions/20260628T194009Z-solo-extension-slice-2`.
+- Slice 2 archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-28-214009-solo-extension-slice-2`.
 - Feature scratchpad update: `solo://proj/4/scratchpad/orbit-solo-extension--211`, revision 5.
 - Slice 3 focused CLI Pest: `bin/orbit-cli-pest --compact tests/Feature/Commands/Solo/SoloReadOnlyCommandTest.php tests/Feature/Commands/Extension/ExtensionCommandTest.php` passed 37 tests / 283 assertions.
 - Slice 3 focused gateway Pest: `bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php` passed 9 tests / 43 assertions.

@@ -303,7 +303,7 @@ feature-cleanup boundaries. It blocks when:
 - on merge, the feature worktree (found via `git worktree list`) has
   uncommitted tracked changes;
 - on cleanup, `git worktree remove` or `git branch -d`/`-D` runs without a
-  primary-checkout `.orbit/sessions/` archive for the branch named `<slug>` or
+  primary-checkout `.orbit/sessions/` archive named
   `YYYY-MM-DD-HHMMSS-<slug>` that contains `loop.md` and
   `agent-sessions/manifest.json`; create it with `bin/orbit-session-archive`.
 

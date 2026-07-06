@@ -97,7 +97,7 @@
 - Narrow regression fix: `bin/orbit-gateway-pest --compact tests/Feature/Architecture/McpConfigurationTest.php` passed (`15` tests, `157` assertions) after preserving the exact architecture-test phrase in `HARNESS_SIGNALS.md`.
 - `composer quality-check`: passed with `.orbit/quality-gates/quality-check-2026-06-26T122730Z-3095c1df45e7.json` after the narrow architecture-test fix.
 - `composer quality-gate:final-check`: passed with no warnings after docs-lint and quality-check artifacts matched current HEAD `c099d96a8`.
-- Session archive: created at `/Users/nckrtl/orbit/.orbit/sessions/20260626T122115Z-session-archive-contract/` in the primary checkout before cleanup or loop rewrite.
+- Session archive: created at `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-122115-session-archive-contract/` in the primary checkout before cleanup or loop rewrite.
 
 ## Harness Signals
 
@@ -119,7 +119,7 @@
   - Includes objective/final diff: yes - seven-file harness/session-archive contract diff across `HARNESS.md`, `LOOP.md.example`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.agents/skills/handling-feature-requests/SKILL.md`, `.agents/skills/implementing-features/SKILL.md`, and `.agents/review-personas/post-feature-analyzer.md`
   - Includes worker/reviewer/terminal/evidence pointers: yes - Solo processes 2032, 2033, 2034, 2035; docs-lint artifacts; boundary search; no retained terminal/topology required
   - Includes orchestrator steering notes: yes - replaced stalled worker 2032 with worker 2033; tightened archive-home wording; accepted reviewer/analyzer pointers for implementation and analyzer discoverability; fixed the exact-phrase architecture-test regression; committed feature branch at `c099d96a8`; merged to primary `main` at `20c88f279`
-  - Session archive: created at `/Users/nckrtl/orbit/.orbit/sessions/20260626T122115Z-session-archive-contract/` before cleanup or loop rewrite
+  - Session archive: created at `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-122115-session-archive-contract/` before cleanup or loop rewrite
 - Fresh analyzer:
   - Persona: `.agents/review-personas/post-feature-analyzer.md`
   - Solo process or analyzer: Solo process 2035 (`post-feature-session-archive-analyzer`)

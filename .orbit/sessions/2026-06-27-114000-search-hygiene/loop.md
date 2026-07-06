@@ -104,7 +104,7 @@
     -> `1581903`.
 - Quality artifacts:
   - Worktree docs-lint artifacts archived under
-    `/Users/nckrtl/orbit/.orbit/sessions/20260627T1140Z-search-hygiene/quality-gates/`.
+    `/Users/nckrtl/orbit/.orbit/sessions/2026-06-27-114000-search-hygiene/quality-gates/`.
   - Post-merge docs-lint:
     `/Users/nckrtl/orbit/.orbit/quality-gates/docs-lint-2026-06-27T114036Z-697e2d40ada7.json`.
   - Post-merge failed aggregate gate isolated to `gateway_pest`:

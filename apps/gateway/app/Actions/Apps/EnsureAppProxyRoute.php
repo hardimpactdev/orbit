@@ -56,6 +56,12 @@ final readonly class EnsureAppProxyRoute
                 'source_hash' => hash('sha256', $content),
             ],
         );
+        ProxyRoute::query()
+            ->where('app_id', $app->id)
+            ->where('owner_type', 'app')
+            ->where('kind', 'app')
+            ->where('domain', '!=', $domain)
+            ->delete();
 
         try {
             $this->siteCertificateInstaller->ensureFor($servingNode, $domain);

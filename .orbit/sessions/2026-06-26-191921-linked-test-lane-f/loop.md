@@ -12,7 +12,7 @@
   - `tool:install` linked-test mapping: stale command-test paths replaced with current CLI/gateway/unit coverage and verified.
   - Workspace-family linked-test drift: 0 missing in scoped families.
   - Gateway/process/proxy/update linked-test drift: 0 missing in scoped families.
-  - Lane A (`node`, `agent-ide`, `cf-zone`, `doctor`, `cf-cache`): 70 missing refs -> 0 missing refs; archived at `/Users/nckrtl/orbit/.orbit/sessions/20260626174315-linked-test-lane-a`.
+  - Lane A (`node`, `agent-ide`, `cf-zone`, `doctor`, `cf-cache`): 70 missing refs -> 0 missing refs; archived at `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-174315-linked-test-lane-a`.
 - Current slice: Lane F linked-test drift (`schedule`, `firewall`, `tool`, `vpn-client`, `cf-ssl`, `vpn-web-ui`).
 
 ## Done Contract
@@ -45,7 +45,7 @@
   - Lane F before/after: `.orbit/evidence/linked-test-drift-before-slice-4-lane-f.json` (75 missing) and `.orbit/evidence/linked-test-drift-after-slice-4-lane-f.json` (0 missing).
   - Whole-catalog after slice 4: `.orbit/evidence/linked-test-drift-after-slice-4.json` (131 missing across 35 commands).
   - Lane F source report: `.orbit/evidence/grok-lane-f-schedule-tool-vpn-report.md`.
-  - Prior Lane A archive: `/Users/nckrtl/orbit/.orbit/sessions/20260626174315-linked-test-lane-a`.
+  - Prior Lane A archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-174315-linked-test-lane-a`.
 - Reviewer checks:
   - Run `.agents/review-personas/docs-librarian.md` through Solo Claude Opus after implementation evidence exists.
   - Reviewer must specifically inspect the changed Lane F docs, generated catalog entries, `CommandCatalogTest` family allowlist, stale path removal, and whether deferred rows are honest.
@@ -141,7 +141,7 @@
   - Good. No E2E was run or needed; generated catalog churn traces back to docs changes; reviewer accepted the changed linked-test mappings.
 - Distillation packet:
   - Location: `.orbit/loop.md`
-  - Archive location: `/Users/nckrtl/orbit/.orbit/sessions/20260626191921-linked-test-lane-f`.
+  - Archive location: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-191921-linked-test-lane-f`.
   - Includes objective/final diff: yes.
   - Includes worker/reviewer/terminal/evidence pointers: yes.
   - Includes orchestrator steering notes: yes.

@@ -1222,6 +1222,35 @@ it('allows worktree removal when a matching session archive with loop and manife
     }
 });
 
+it('blocks cleanup when the matching session archive uses only the branch slug', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'harness-signals/2026-07-02-example.md',
+        contents: "# Example\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'docs-lint',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+    write_finalization_gate_session_archive(repo: $repo, slug: 'feature', timestamped: false);
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('no session archive matching slug `feature` was found')
+            ->toContain('bin/orbit-session-archive');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
 it('blocks cleanup when the matching session archive is missing the agent-sessions manifest', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
 
@@ -1630,9 +1659,10 @@ function remove_finalization_lint_dir(string $packetDir): void
     new Process(['rm', '-rf', $packetDir])->run();
 }
 
-function write_finalization_gate_session_archive(string $repo, string $slug): string
+function write_finalization_gate_session_archive(string $repo, string $slug, bool $timestamped = true): string
 {
-    $archiveDir = "{$repo}/.orbit/sessions/2026-07-02-101500-{$slug}";
+    $archiveName = $timestamped ? "2026-07-02-101500-{$slug}" : $slug;
+    $archiveDir = "{$repo}/.orbit/sessions/{$archiveName}";
 
     mkdir("{$archiveDir}/agent-sessions", recursive: true);
     file_put_contents(filename: "{$archiveDir}/loop.md", data: "# Archived loop\n");

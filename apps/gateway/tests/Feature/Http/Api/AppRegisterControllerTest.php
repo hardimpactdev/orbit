@@ -340,6 +340,80 @@ describe('AppRegisterController', function (): void {
             ->toContainAppRegisterSourcePathProbe('/srv/docs');
     });
 
+    it('allows an app-dev node to re-register an existing app with a domain under its development tld', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createAppRegisterCallerNode();
+        $targetNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'nmbp',
+            'status' => 'active',
+        ], settings: ['tld' => 'nmbp']);
+        grantAppRegisterAccess($caller, $targetNode);
+
+        App::factory()->for($targetNode, 'node')->create([
+            'name' => 'happie-nmbp',
+            'path' => '/Users/nckrtl/apps/happie',
+            'document_root' => 'public',
+            'domain' => 'happie-nmbp.nmbp',
+            'environment' => 'development',
+            'runtime_config' => ['proxy_transport' => 'https'],
+            'adopted' => true,
+        ]);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => [
+                        'data' => [
+                            'path' => '/Users/nckrtl/apps/happie',
+                            'exists' => true,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'happie-nmbp',
+                'node' => 'app-1',
+                'path' => '/Users/nckrtl/apps/happie',
+                'domain' => 'happie.nmbp',
+                'runtime_proxy_transport' => 'https',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.result.action', 'converged')
+            ->assertJsonPath('success.data.app.url', 'https://happie.nmbp');
+
+        $app = App::query()->where('name', 'happie-nmbp')->firstOrFail();
+
+        expect($app->environment)
+            ->toBe('development')
+            ->and($app->domain)
+            ->toBe('happie.nmbp')
+            ->and($remoteShell->scripts[0])
+            ->toContain("internal:app-source-path:probe '/Users/nckrtl/apps/happie'");
+    });
+
     it('rejects registration when the caller lacks app:register on the target app node', function (): void {
         createTestGatewayNode([
             'name' => 'gateway-1',

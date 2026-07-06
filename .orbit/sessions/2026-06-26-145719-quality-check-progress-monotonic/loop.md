@@ -78,7 +78,7 @@
 - Read-only final check: `composer quality-gate:final-check` exited 0; warnings were timing-baseline warning-only entries; final-check did not rerun quality-check or E2E lanes.
 - Primary merged-main PTY capture: `/Users/nckrtl/orbit/.orbit/evidence/quality-check-progress-main-pty/summary.txt`, `/Users/nckrtl/orbit/.orbit/evidence/quality-check-progress-main-pty/chunks.jsonl`, `/Users/nckrtl/orbit/.orbit/evidence/quality-check-progress-main-pty/transcript.txt`.
 - Primary merged-main quality-check artifact: `/Users/nckrtl/orbit/.orbit/quality-gates/quality-check-2026-06-26T125929Z-babbe0ce6306.json`.
-- Session archive: `/Users/nckrtl/orbit/.orbit/sessions/20260626T125719Z-quality-check-progress-monotonic`.
+- Session archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-145719-quality-check-progress-monotonic`.
 - Merge: primary `main` fast-forwarded to `2932f154c74a1b5165428d94323801d116073363`.
 
 ## Harness Signals

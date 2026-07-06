@@ -10,7 +10,7 @@
 - Completed slices:
   - Slice 1: Solo command catalog contract, core registry, local CLI discovery gating, disabled invocation, docs, and quality gate passed.
 - Archived sessions:
-  - Slice 1: /Users/nckrtl/orbit/.orbit/sessions/20260628T185531Z-solo-extension-slice-1
+  - Slice 1: /Users/nckrtl/orbit/.orbit/sessions/2026-06-28-205531-solo-extension-slice-1
 - Current slice: Slice 2, Gateway Solo Proxy Foundation
 
 ## Done Contract
@@ -19,7 +19,7 @@
   - Multi-slice feature roadmap scratchpad exists before worker dispatch: yes, `solo://proj/4/scratchpad/orbit-solo-extension--211`.
   - `.orbit/loop.md` links the feature roadmap and names the current slice: yes.
   - If the source scratchpad lives in another Solo project, execution-project scratchpad links back to it and mirrors the roadmap substance: not applicable, project 4 owns the scratchpad and execution.
-  - Completed previous active `.orbit/` session archived before rewriting this file: yes, `/Users/nckrtl/orbit/.orbit/sessions/20260628T185531Z-solo-extension-slice-1`.
+  - Completed previous active `.orbit/` session archived before rewriting this file: yes, `/Users/nckrtl/orbit/.orbit/sessions/2026-06-28-205531-solo-extension-slice-1`.
 - Parallelization scan:
   - Candidate parallel lanes: gateway API tests/code, Solo upstream abstraction, product docs.
   - Serialized lanes, with required dependency/shared-state/provider-capacity/merge-order reason: keep in process initially because this is a narrow vertical route/auth/activity/proxy foundation and the tests should drive the exact controller/service boundaries. Reconsider a docs reviewer after implementation evidence exists.
@@ -51,7 +51,7 @@
 ## Progress
 
 - Tried: Archived completed Slice 1 `.orbit/` state before rewriting active loop.
-  Result: Archived to `/Users/nckrtl/orbit/.orbit/sessions/20260628T185531Z-solo-extension-slice-1`.
+  Result: Archived to `/Users/nckrtl/orbit/.orbit/sessions/2026-06-28-205531-solo-extension-slice-1`.
   Next: Append scratchpad transition note and create Slice 2 Done Contract.
 - Tried: Appended feature scratchpad transition note.
   Result: `solo://proj/4/scratchpad/orbit-solo-extension--211` revision 3 records Slice 1 completion and Slice 2 start.
@@ -87,7 +87,7 @@
 
 - Checkout proof: `/Users/nckrtl/orbit/.worktrees/codex-solo-extension-slice-1`, branch `codex/solo-extension-slice-1`, Slice 1 dirty files preserved for ongoing feature work.
 - Solo identity proof: process 698 running in project 4.
-- Slice 1 archive: `/Users/nckrtl/orbit/.orbit/sessions/20260628T185531Z-solo-extension-slice-1`.
+- Slice 1 archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-28-205531-solo-extension-slice-1`.
 - Feature scratchpad update: `solo://proj/4/scratchpad/orbit-solo-extension--211`, revision 3.
 - Slice 2 completion scratchpad update: `solo://proj/4/scratchpad/orbit-solo-extension--211`, revision 4.
 - Focused gateway test: `bin/orbit-gateway-pest --compact tests/Feature/Http/Api/SoloProxyControllerTest.php tests/Unit/Services/Nodes/Access/NodePermissionRegistryTest.php` passed 25 tests / 177 assertions.

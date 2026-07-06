@@ -26,6 +26,9 @@ final class DnsResolveFakeResolver implements ResolvesLocalDns
     /** @var array{status: string, changed: bool, error?: string} */
     public array $resetResult = ['status' => 'reset', 'changed' => true];
 
+    /** @var list<array{tld: string, target: string}> */
+    public array $resolveCalls = [];
+
     public function platform(): string
     {
         return $this->platformValue;
@@ -69,6 +72,8 @@ final class DnsResolveFakeResolver implements ResolvesLocalDns
      */
     public function resolve(string $tld, string $target): array
     {
+        $this->resolveCalls[] = ['tld' => $tld, 'target' => $target];
+
         return $this->resolveResult;
     }
 
@@ -185,7 +190,9 @@ describe('dns:resolve-tld', function (): void {
                 ->and($decoded['error']['meta']['tld'])
                 ->toBe('test')
                 ->and($decoded['error']['meta']['resolver_backend'])
-                ->toBe('dnsmasq');
+                ->toBe('dnsmasq')
+                ->and($decoded['error']['meta']['diagnostics'])
+                ->toContain('Process timed out while running sudo -n mkdir');
         });
 
         it('returns valid JSON write failure when resolver write_failed lacks cached sudo credentials', function (): void {
@@ -218,7 +225,9 @@ describe('dns:resolve-tld', function (): void {
                 ->and($decoded['error']['meta']['tld'])
                 ->toBe('test')
                 ->and($decoded['error']['meta']['resolver_backend'])
-                ->toBe('dnsmasq');
+                ->toBe('dnsmasq')
+                ->and($decoded['error']['meta']['diagnostics'])
+                ->toBe('sudo: a password is required');
         });
     });
 
@@ -366,6 +375,35 @@ describe('dns:resolve-tld', function (): void {
                 ->toContain('.test already resolves to 10.6.0.7.')
                 ->and($output)
                 ->not->toContain('Write resolver override');
+
+            expect($this->resolver->resolveCalls)->toBe([
+                ['tld' => 'test', 'target' => '10.6.0.7'],
+            ]);
+        });
+
+        it('repairs resolver drift when the dnsmasq override already points at the requested target', function (): void {
+            $this->resolver->existingTargetValue = '192.168.1.150';
+            $this->resolver->resolveResult = ['status' => 'resolved', 'changed' => true];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                'target' => '192.168.1.150',
+            ]);
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Configuring Local DNS')
+                ->and($output)
+                ->toContain('Check resolver override')
+                ->and($output)
+                ->toContain('.test resolves to 192.168.1.150.')
+                ->and($output)
+                ->not->toContain('Write resolver override');
+
+            expect($this->resolver->resolveCalls)->toBe([
+                ['tld' => 'test', 'target' => '192.168.1.150'],
+            ]);
         });
 
         it('renders the reset progress tree with a removed success line', function (): void {

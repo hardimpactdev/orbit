@@ -143,7 +143,7 @@
   - Meets Lane E acceptance: 67 missing refs reduced to 0, cited Lane E test paths exist, semantic reviewer found no blockers, and unsupported behavior is recorded as coverage-gap prose instead of stale linked-test rows.
 - Distillation packet:
   - Location: `.orbit/loop.md`
-  - Archived to: `/Users/nckrtl/orbit/.orbit/sessions/20260626T180840Z-linked-test-lane-e`
+  - Archived to: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-180840-linked-test-lane-e`
   - Includes objective/final diff: yes -
     Lane E linked-test drift for `database`, `deploy`, `cf-dns`, and `cf-cache-rule`; generated catalog and catalog-wide path guard updated.
   - Includes worker/reviewer/terminal/evidence pointers: yes -

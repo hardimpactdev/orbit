@@ -281,6 +281,34 @@ it('installs app-dev runtime trust pool through the managed file agent path', fu
         ->toContain('tls_server_name api.test');
 });
 
+it('removes stale app-owned proxy routes for the same app when its domain changes', function (): void {
+    $node = Node::factory()->appDev(['tld' => 'nmbp'])->create(['tld' => 'nmbp']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'happie-nmbp',
+        'document_root' => 'public',
+        'domain' => 'happie.nmbp',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    ProxyRoute::factory()->create([
+        'node_id' => $node->id,
+        'app_id' => $app->id,
+        'owner_type' => 'app',
+        'kind' => 'app',
+        'domain' => 'happie-nmbp.nmbp',
+    ]);
+
+    $shell = new EnsureAppProxyRouteTestShell;
+    $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
+
+    app(EnsureAppProxyRoute::class)->handle($app);
+
+    expect(ProxyRoute::query()->where('app_id', $app->id)->pluck('domain')->all())
+        ->toBe(['happie.nmbp']);
+});
+
 /**
  * @param  array<string, mixed>  $data
  * @return array<string, mixed>

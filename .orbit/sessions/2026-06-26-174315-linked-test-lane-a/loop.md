@@ -147,7 +147,7 @@
   - `composer quality-check`: passed, all subgates exit 0.
   - `composer quality-gate:final-check`: passed, no warnings, did not rerun quality-check or E2E lanes.
   - Roadmap scratchpad updated to revision 21: `solo://proj/2/scratchpad/llm-usefulness-impro--389`.
-  - Lane A session archive: `/Users/nckrtl/orbit/.orbit/sessions/20260626174315-linked-test-lane-a`.
+  - Lane A session archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-174315-linked-test-lane-a`.
 
 ## Harness Signals
 
@@ -163,7 +163,7 @@
   - Local evidence helper `.orbit/evidence/measure-catalog-drift.php` corrected for dynamic Lane A measurement.
   - Roadmap scratchpad `solo://proj/2/scratchpad/llm-usefulness-impro--389` revision pending after Lane A append.
 - Lane C archive:
-  - `/Users/nckrtl/orbit/.orbit/sessions/20260626171601-linked-test-lane-c`.
+  - `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-171601-linked-test-lane-c`.
 - Deferred follow-up:
   - Lane F linked-test remediation (`schedule`, `firewall`, `tool`, `vpn-client`, `cf-ssl`, `vpn-web-ui`).
   - Fresh-agent before/after eval after more catalog drift is remediated.
@@ -207,4 +207,4 @@
 - No-new-signal rationale:
   - Existing worktree-proof guidance, docs-librarian review, docs-lint, focused `CommandCatalogTest`, dynamic measurement, full `composer quality-check`, and post-feature analyzer coverage caught the observed issues before final reporting. The only durable regression gate still missing is intentionally deferred because 206 known stale refs remain outside the remediated families.
   - Packet gaps recorded by analyzer: no Codex/Solo session transcript pointer in `.orbit/loop.md`; `linked-test-drift-lane-a-before.json` remains an asserted historical baseline because the pre-edit catalog state is no longer reproducible; branch diff remains uncommitted as expected for the active slice.
-  - Session archive: `/Users/nckrtl/orbit/.orbit/sessions/20260626174315-linked-test-lane-a`.
+  - Session archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-174315-linked-test-lane-a`.

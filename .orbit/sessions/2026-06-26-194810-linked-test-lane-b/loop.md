@@ -12,8 +12,8 @@
   - `tool:install` linked-test mapping: stale command-test paths replaced with current CLI/gateway/unit coverage and verified.
   - Workspace-family linked-test drift: 0 missing in scoped families.
   - Gateway/process/proxy/update linked-test drift: 0 missing in scoped families.
-  - Lane A (`node`, `agent-ide`, `cf-zone`, `doctor`, `cf-cache`): 70 missing refs -> 0 missing refs; archived at `/Users/nckrtl/orbit/.orbit/sessions/20260626174315-linked-test-lane-a`.
-  - Lane F (`schedule`, `firewall`, `tool`, `vpn-client`, `cf-ssl`, `vpn-web-ui`): 75 missing refs -> 0 missing refs; archived at `/Users/nckrtl/orbit/.orbit/sessions/20260626191921-linked-test-lane-f`.
+  - Lane A (`node`, `agent-ide`, `cf-zone`, `doctor`, `cf-cache`): 70 missing refs -> 0 missing refs; archived at `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-174315-linked-test-lane-a`.
+  - Lane F (`schedule`, `firewall`, `tool`, `vpn-client`, `cf-ssl`, `vpn-web-ui`): 75 missing refs -> 0 missing refs; archived at `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-191921-linked-test-lane-f`.
 - Current slice: Lane B linked-test drift (`app`, `activity`, `php`).
 
 ## Done Contract
@@ -52,7 +52,7 @@
 - Evidence:
   - Lane B baseline: `.orbit/evidence/linked-test-drift-before-slice-5-lane-b.json` (131 whole-catalog missing refs; Lane B contributes 64).
   - Lane B source report: `.orbit/evidence/grok-lane-b-app-report.md`.
-  - Prior Lane F archive: `/Users/nckrtl/orbit/.orbit/sessions/20260626191921-linked-test-lane-f`.
+  - Prior Lane F archive: `/Users/nckrtl/orbit/.orbit/sessions/2026-06-26-191921-linked-test-lane-f`.
 - Reviewer checks:
   - Run `.agents/review-personas/docs-librarian.md` through Solo Claude Opus after implementation evidence exists.
   - Reviewer must specifically inspect changed Lane B docs, generated catalog entries, `CommandCatalogTest` family allowlist, stale path removal, E2E-only link removal, under-claiming, and whether deferred rows are honest.
