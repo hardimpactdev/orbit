@@ -143,7 +143,6 @@ final readonly class WorkloadNodeUpdater
             [],
             [],
             [
-                'cwd' => $node->orbit_path,
                 'timeout' => 300,
                 'input' => json_encode($this->installPayload($operationRun, $plan, $node), JSON_THROW_ON_ERROR),
                 'metadata' => $this->remoteShellMetadata($operationRun, $node),

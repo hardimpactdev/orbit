@@ -261,6 +261,9 @@ it('runs workload updates through the typed local executor without ssh fallback 
         ->toBe(['app-dev-1'])
         ->and($shell->calls[0]['script'])
         ->toBe('internal:fleet-update:install-cli')
+        ->and($shell->calls[0]['options'])
+        ->not
+        ->toHaveKey('cwd')
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0');
 });
