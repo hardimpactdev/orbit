@@ -31,15 +31,10 @@ final readonly class LocalSiteCertificateInstallAction
             );
         }
 
-        $this->mustRun(['sudo', 'install', '-d', '-m', '0755', dirname($certPath)]);
-        $this->writeFile($certPath, $cert);
-        $this->writeFile($keyPath, $key);
-        $this->mustRun(['sudo', 'chmod', '0644', $certPath]);
-        $this->mustRun(['sudo', 'chmod', '0600', $keyPath]);
-
-        if ($owner !== null) {
-            $this->chown($owner, $certPath);
-            $this->chown($owner, $keyPath);
+        if ($this->shouldInstallAsCurrentUser($certPath, $owner)) {
+            $this->installAsCurrentUser($certPath, $keyPath, $cert, $key);
+        } else {
+            $this->installWithSudo($certPath, $keyPath, $cert, $key, $owner);
         }
 
         return [
@@ -51,9 +46,80 @@ final readonly class LocalSiteCertificateInstallAction
         ];
     }
 
-    private function writeFile(string $path, string $contents): void
+    private function installAsCurrentUser(string $certPath, string $keyPath, string $cert, string $key): void
     {
-        $process = new Process(['sudo', 'tee', $path]);
+        $directory = dirname($certPath);
+
+        if (! is_dir($directory) && ! mkdir($directory, permissions: 0o755, recursive: true) && ! is_dir($directory)) {
+            throw new LocalSiteCertificateInstallFailure(
+                errorCode: 'site_certificate.directory_failed',
+                message: 'Site certificate directory could not be created.',
+                meta: ['path' => $directory],
+            );
+        }
+
+        $this->writeLocalFile($certPath, $cert);
+        $this->writeLocalFile($keyPath, $key);
+        $this->chmodLocal($certPath, 0o644);
+        $this->chmodLocal($keyPath, 0o600);
+    }
+
+    private function installWithSudo(
+        string $certPath,
+        string $keyPath,
+        string $cert,
+        string $key,
+        ?string $owner,
+    ): void {
+        $this->mustRun(['sudo', '-n', 'install', '-d', '-m', '0755', dirname($certPath)]);
+        $this->writeSudoFile($certPath, $cert);
+        $this->writeSudoFile($keyPath, $key);
+        $this->mustRun(['sudo', '-n', 'chmod', '0644', $certPath]);
+        $this->mustRun(['sudo', '-n', 'chmod', '0600', $keyPath]);
+
+        if ($owner !== null) {
+            $this->chown($owner, $certPath);
+            $this->chown($owner, $keyPath);
+        }
+    }
+
+    private function writeLocalFile(string $path, string $contents): void
+    {
+        if (file_put_contents($path, $contents) !== false) {
+            return;
+        }
+
+        throw new LocalSiteCertificateInstallFailure(
+            errorCode: 'site_certificate.write_failed',
+            message: 'Site certificate file could not be written.',
+            meta: [
+                'path' => $path,
+                'exit_code' => null,
+                'output' => 'file_put_contents failed',
+            ],
+        );
+    }
+
+    private function chmodLocal(string $path, int $permissions): void
+    {
+        if (chmod($path, $permissions)) {
+            return;
+        }
+
+        throw new LocalSiteCertificateInstallFailure(
+            errorCode: 'site_certificate.command_failed',
+            message: 'Site certificate install command failed.',
+            meta: [
+                'command' => 'chmod',
+                'exit_code' => null,
+                'output' => "chmod failed for {$path}",
+            ],
+        );
+    }
+
+    private function writeSudoFile(string $path, string $contents): void
+    {
+        $process = new Process(['sudo', '-n', 'tee', $path]);
         $process->setInput($contents);
         $process->setTimeout(10);
         $process->run();
@@ -75,13 +141,44 @@ final readonly class LocalSiteCertificateInstallAction
 
     private function chown(string $owner, string $path): void
     {
-        $result = $this->runProcess(['sudo', 'chown', "{$owner}:{$owner}", $path]);
+        $result = $this->runProcess(['sudo', '-n', 'chown', "{$owner}:{$owner}", $path]);
 
         if ($result->isSuccessful()) {
             return;
         }
 
-        $this->mustRun(['sudo', 'chown', $owner, $path]);
+        $this->mustRun(['sudo', '-n', 'chown', $owner, $path]);
+    }
+
+    private function shouldInstallAsCurrentUser(string $certPath, ?string $owner): bool
+    {
+        if ($owner === null || str_starts_with($certPath, '/etc/orbit/certs/')) {
+            return false;
+        }
+
+        return $owner === $this->currentUser();
+    }
+
+    private function currentUser(): string
+    {
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $entry = posix_getpwuid(posix_geteuid());
+            $user = is_array($entry) ? $entry['name'] ?? null : null;
+
+            if (is_string($user) && $user !== '') {
+                return $user;
+            }
+        }
+
+        foreach (['USER', 'LOGNAME'] as $key) {
+            $user = getenv($key);
+
+            if (is_string($user) && $user !== '') {
+                return $user;
+            }
+        }
+
+        return '';
     }
 
     /**

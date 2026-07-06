@@ -15,7 +15,7 @@ final readonly class LocalAppRuntimeConfigsProbe
      */
     public function probe(): array
     {
-        $directoryCheck = new Process(['sudo', 'test', '-d', self::DIRECTORY]);
+        $directoryCheck = new Process(['sudo', '-n', 'test', '-d', self::DIRECTORY]);
         $directoryCheck->setTimeout(10);
         $directoryCheck->run();
 
@@ -37,6 +37,7 @@ final readonly class LocalAppRuntimeConfigsProbe
 
         $find = new Process([
             'sudo',
+            '-n',
             'find',
             self::DIRECTORY,
             '-maxdepth',

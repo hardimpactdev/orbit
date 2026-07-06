@@ -151,14 +151,14 @@ final readonly class LocalAppIntrospectProbe
             return $snapshot;
         }
 
-        $exists = $this->successful(['sudo', 'test', '-e', $input['runtime_config_path']], 10);
+        $exists = $this->successful(['sudo', '-n', 'test', '-e', $input['runtime_config_path']], 10);
         $snapshot['runtime_config_exists'] = $exists;
 
         if (! $exists) {
             return $snapshot;
         }
 
-        $hash = trim($this->run(['sudo', 'sha256sum', $input['runtime_config_path']], 10)->getOutput());
+        $hash = trim($this->run(['sudo', '-n', 'sha256sum', $input['runtime_config_path']], 10)->getOutput());
         $parts = preg_split('/\s+/', trim($hash));
         $parts = is_array($parts) ? $parts : [];
         $hash = is_string($parts[0] ?? null) ? $parts[0] : '';

@@ -153,6 +153,10 @@ function install_runtime_configs_fake_sudo(
 
         \$args = array_slice(\$argv, 1);
 
+        if ((\$args[0] ?? null) === '-n') {
+            array_shift(\$args);
+        }
+
         if (\$args === ['test', '-d', '/etc/orbit/apps']) {
             fwrite(STDERR, {$testError});
             exit({$testExit});

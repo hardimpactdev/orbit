@@ -34,6 +34,12 @@ describe('internal site certificate install command', function (): void {
         foreach ($fakeBinPaths as $dir) {
             delete_site_certificate_fake_bin($dir);
         }
+
+        $fixturePaths = glob(sys_get_temp_dir().'/orbit-site-certificate-home-*');
+
+        foreach (is_array($fixturePaths) ? $fixturePaths : [] as $dir) {
+            delete_site_certificate_path($dir);
+        }
     });
 
     it('rejects a missing operation token before installing certificate material', function (): void {
@@ -71,12 +77,12 @@ describe('internal site certificate install command', function (): void {
                 'key_bytes' => 8,
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
-            ->toContain('sudo install -d -m 0755 /home/deploy/.config/orbit/certs')
-            ->toContain('sudo tee /home/deploy/.config/orbit/certs/cta.example.test.crt')
-            ->toContain('sudo tee /home/deploy/.config/orbit/certs/cta.example.test.key')
-            ->toContain('sudo chmod 0644 /home/deploy/.config/orbit/certs/cta.example.test.crt')
-            ->toContain('sudo chmod 0600 /home/deploy/.config/orbit/certs/cta.example.test.key')
-            ->toContain('sudo chown deploy:deploy /home/deploy/.config/orbit/certs/cta.example.test.crt')
+            ->toContain('sudo -n install -d -m 0755 /home/deploy/.config/orbit/certs')
+            ->toContain('sudo -n tee /home/deploy/.config/orbit/certs/cta.example.test.crt')
+            ->toContain('sudo -n tee /home/deploy/.config/orbit/certs/cta.example.test.key')
+            ->toContain('sudo -n chmod 0644 /home/deploy/.config/orbit/certs/cta.example.test.crt')
+            ->toContain('sudo -n chmod 0600 /home/deploy/.config/orbit/certs/cta.example.test.key')
+            ->toContain('sudo -n chown deploy:deploy /home/deploy/.config/orbit/certs/cta.example.test.crt')
             ->and(file_get_contents("{$bin}/writes.log"))
             ->toContain('/home/deploy/.config/orbit/certs/cta.example.test.crt=test-cert')
             ->toContain('/home/deploy/.config/orbit/certs/cta.example.test.key=test-key');
@@ -104,16 +110,52 @@ describe('internal site certificate install command', function (): void {
                 'key_bytes' => 13,
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
-            ->toContain('sudo install -d -m 0755 /etc/orbit/certs')
-            ->toContain('sudo tee /etc/orbit/certs/10.6.0.44.crt')
-            ->toContain('sudo tee /etc/orbit/certs/10.6.0.44.key')
-            ->toContain('sudo chmod 0644 /etc/orbit/certs/10.6.0.44.crt')
-            ->toContain('sudo chmod 0600 /etc/orbit/certs/10.6.0.44.key')
+            ->toContain('sudo -n install -d -m 0755 /etc/orbit/certs')
+            ->toContain('sudo -n tee /etc/orbit/certs/10.6.0.44.crt')
+            ->toContain('sudo -n tee /etc/orbit/certs/10.6.0.44.key')
+            ->toContain('sudo -n chmod 0644 /etc/orbit/certs/10.6.0.44.crt')
+            ->toContain('sudo -n chmod 0600 /etc/orbit/certs/10.6.0.44.key')
             ->not
             ->toContain('sudo chown')
             ->and(file_get_contents("{$bin}/writes.log"))
             ->toContain('/etc/orbit/certs/10.6.0.44.crt=websocket-cert')
             ->toContain('/etc/orbit/certs/10.6.0.44.key=websocket-key');
+    });
+
+    it('installs current-user certificate material without sudo', function (): void {
+        $bin = install_site_certificate_fake_bin();
+        $root = sys_get_temp_dir().'/orbit-site-certificate-home-'.bin2hex(random_bytes(8));
+        $certDir = "{$root}/.config/orbit/certs";
+        mkdir($certDir, recursive: true);
+
+        $payload = [
+            'cert_path' => "{$certDir}/happie-nmbp.test.crt",
+            'key_path' => "{$certDir}/happie-nmbp.test.key",
+            'cert' => 'user-cert',
+            'key' => 'user-key',
+            'owner' => site_certificate_current_user(),
+        ];
+
+        [$exitCode, $output] = run_site_certificate_install_command($payload);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(site_certificate_success_data($output))
+            ->toMatchArray([
+                'cert_path' => "{$certDir}/happie-nmbp.test.crt",
+                'key_path' => "{$certDir}/happie-nmbp.test.key",
+                'owner' => site_certificate_current_user(),
+                'cert_bytes' => 9,
+                'key_bytes' => 8,
+            ])
+            ->and(file_get_contents("{$certDir}/happie-nmbp.test.crt"))
+            ->toBe('user-cert')
+            ->and(file_get_contents("{$certDir}/happie-nmbp.test.key"))
+            ->toBe('user-key')
+            ->and(substr(sprintf('%o', fileperms("{$certDir}/happie-nmbp.test.key")), -4))
+            ->toBe('0600')
+            ->and(file_exists("{$bin}/calls.log"))
+            ->toBeFalse();
     });
 });
 
@@ -204,6 +246,9 @@ function install_site_certificate_fake_bin(): string
         <?php
         file_put_contents(__DIR__.'/calls.log', basename($argv[0]).' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
         $args = array_slice($argv, 1);
+        if (($args[0] ?? null) === '-n') {
+            array_shift($args);
+        }
         if (($args[0] ?? null) === 'tee') {
             file_put_contents(__DIR__.'/writes.log', ($args[1] ?? '').'='.stream_get_contents(STDIN).PHP_EOL, FILE_APPEND);
         }
@@ -230,4 +275,47 @@ function delete_site_certificate_fake_bin(string $path): void
     if (is_dir($path)) {
         rmdir($path);
     }
+}
+
+function site_certificate_current_user(): string
+{
+    if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+        $entry = posix_getpwuid(posix_geteuid());
+        $user = is_array($entry) ? $entry['name'] ?? null : null;
+
+        if (is_string($user) && $user !== '') {
+            return $user;
+        }
+    }
+
+    $user = getenv('USER') ?: getenv('LOGNAME');
+
+    if (is_string($user) && $user !== '') {
+        return $user;
+    }
+
+    throw new RuntimeException('Unable to resolve current test user.');
+}
+
+function delete_site_certificate_path(string $path): void
+{
+    if (is_file($path) || is_link($path)) {
+        unlink($path);
+
+        return;
+    }
+
+    if (! is_dir($path)) {
+        return;
+    }
+
+    foreach (scandir($path) ?: [] as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        delete_site_certificate_path("{$path}/{$entry}");
+    }
+
+    rmdir($path);
 }
