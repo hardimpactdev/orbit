@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\NodeRoleAssignment;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -111,6 +112,43 @@ describe('InternalExecutorTokenController', function (): void {
             ->assertJsonPath('success.data.operation_id', 'operation-123');
     });
 
+    it('accepts gateway self verification over loopback for runtime backend probes', function (): void {
+        internal_executor_gateway_node();
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'gateway',
+            command: 'internal:runtime-backend:probe',
+        );
+
+        internal_executor_verify_token_loopback_request([
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:runtime-backend:probe',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
+    it('does not use loopback token verification as identity for non-gateway nodes', function (): void {
+        internalExecutorCallerNode();
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'app-dev',
+            command: 'internal:executor:verify',
+        );
+
+        internal_executor_verify_token_loopback_request([
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:executor:verify',
+        ])
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.message', 'Peer identity unknown.');
+    });
+
     it('rejects non-internal commands at validation time', function (): void {
         internalExecutorCallerNode();
 
@@ -156,6 +194,25 @@ function internalExecutorCallerNode(array $overrides = []): Node
     ], $overrides));
 }
 
+function internal_executor_gateway_node(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'gateway',
+        'status' => 'active',
+        'wireguard_address' => '10.6.0.1',
+    ]);
+
+    foreach (['gateway', 'metrics'] as $role) {
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => $role,
+            'status' => 'active',
+        ]);
+    }
+
+    return $node;
+}
+
 /**
  * @param  array<string, mixed>  $payload
  */
@@ -166,5 +223,18 @@ function internalExecutorVerifyTokenRequest(array $payload)
 
     return $test
         ->withHeader('X-Orbit-WireGuard-Ip', INTERNAL_EXECUTOR_TOKEN_CALLER_WG_IP)
+        ->postJson('/api/internal-executor/token/verify', $payload);
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ */
+function internal_executor_verify_token_loopback_request(array $payload)
+{
+    /** @var TestCase $test */
+    $test = test();
+
+    return $test
+        ->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
         ->postJson('/api/internal-executor/token/verify', $payload);
 }

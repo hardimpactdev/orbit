@@ -6,6 +6,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
+use App\Services\Operations\InternalExecutorLoopbackIdentityResolver;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 final readonly class WireGuardIdentity
 {
+    public function __construct(
+        private InternalExecutorLoopbackIdentityResolver $internalExecutorLoopbackIdentityResolver,
+    ) {}
+
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
@@ -23,13 +28,19 @@ final readonly class WireGuardIdentity
             return $next($request);
         }
 
+        $peerAddress = $this->peerAddress($request);
+
         $node = Node::query()
-            ->where('wireguard_address', $this->peerAddress($request))
+            ->where('wireguard_address', $peerAddress)
             ->where('status', NodeStatus::Active->value)
             ->first();
 
         if (! $node instanceof Node) {
-            return $this->forbidden();
+            $node = $this->internalExecutorLoopbackIdentityResolver->resolve($request, $peerAddress);
+
+            if (! $node instanceof Node) {
+                return $this->forbidden();
+            }
         }
 
         $request->setUserResolver(static fn (): Node => $node);
