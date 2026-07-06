@@ -113,22 +113,22 @@ class GatewayServiceUpdater
             return null;
         }
 
-        $result = $this->localExecutor()->runInternal(
-            node: $gatewayNode,
-            commandName: 'internal:fleet-update:install-cli',
-            arguments: [],
-            commandOptions: [],
-            transportOptions: [
-                'timeout' => 300,
-                'input' => json_encode(
-                    $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode),
-                    JSON_THROW_ON_ERROR,
-                ),
-                'metadata' => [
-                    'ORBIT_OPERATION_ID' => $operationRun->id,
-                ],
+        $transportOptions = [
+            'timeout' => 300,
+            'input' => json_encode(
+                $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode),
+                JSON_THROW_ON_ERROR,
+            ),
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => $operationRun->id,
             ],
-        );
+        ];
+
+        $result = $this->runCliInstall($gatewayNode, $transportOptions);
+
+        if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
+            $result = $this->runCliInstall($gatewayNode, $transportOptions);
+        }
 
         if (! $result->successful()) {
             throw new RuntimeException('Gateway host CLI install failed: '.$this->output($result));
@@ -137,6 +137,25 @@ class GatewayServiceUpdater
         $this->recordInstalledGatewayHostCli($operationRun, $plan, $gatewayNode);
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function runCliInstall(Node $gatewayNode, array $transportOptions): RemoteShellResult
+    {
+        return $this->localExecutor()->runInternal(
+            node: $gatewayNode,
+            commandName: 'internal:fleet-update:install-cli',
+            arguments: [],
+            commandOptions: [],
+            transportOptions: $transportOptions,
+        );
+    }
+
+    private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool
+    {
+        return $result->exitCode === 255 && trim($result->stdout) === '' && trim($result->stderr) === '';
     }
 
     /**
@@ -465,6 +484,8 @@ class GatewayServiceUpdater
 
     private function output(RemoteShellResult $result): string
     {
-        return trim($result->errorOutput() !== '' ? $result->errorOutput() : $result->output());
+        $output = trim($result->errorOutput() !== '' ? $result->errorOutput() : $result->output());
+
+        return $output !== '' ? $output : "exit code {$result->exitCode}";
     }
 }

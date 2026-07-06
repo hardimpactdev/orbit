@@ -140,6 +140,57 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->not->toContain('bearer_token');
 });
 
+it('retries gateway host CLI install when the previous launcher exits during self update', function (): void {
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $localExecutor = gateway_service_updater_fake_local_executor([
+        new RemoteShellResult(exitCode: 255, stdout: '', stderr: '', durationMs: 3),
+        new RemoteShellResult(exitCode: 0, stdout: "updated\n", stderr: '', durationMs: 20),
+    ]);
+    app()->instance(RunsInternalCommands::class, $localExecutor);
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('migrate', ['--force' => true, '--no-interaction' => true])
+        ->andReturn(0);
+
+    Process::fake(function ($process) use ($plan, $previousImage) {
+        $command = (string) $process->command;
+
+        return match ($command) {
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
+                => Process::result(output: "{$previousImage}\n"),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
+                => Process::result(),
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
+                => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    app(GatewayServiceUpdater::class)->update($run, $plan);
+
+    expect($localExecutor->calls)
+        ->toHaveCount(2)
+        ->and($localExecutor->payloads()[0])
+        ->toEqual($localExecutor->payloads()[1])
+        ->and($gateway->fresh()->installed_cli?->version)
+        ->toBe('1.2.3');
+});
+
 it('restores the scheduler previous image and replica when gateway migrations fail', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
@@ -417,13 +468,23 @@ function gatewayServiceUpdaterPreviousImage(): string
     return 'ghcr.io/hardimpactdev/orbit-gateway:1.2.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 }
 
-function gateway_service_updater_fake_local_executor(): RunsInternalCommands
+/**
+ * @param  list<RemoteShellResult>  $responses
+ */
+function gateway_service_updater_fake_local_executor(array $responses = []): RunsInternalCommands
 {
-    return new class implements RunsInternalCommands {
+    return new class($responses) implements RunsInternalCommands {
         /**
          * @var list<array{node: string, command: string, options: array<string, mixed>}>
          */
         public array $calls = [];
+
+        /**
+         * @param  list<RemoteShellResult>  $responses
+         */
+        public function __construct(
+            private array $responses,
+        ) {}
 
         /**
          * @param  array<int|string, mixed>  $arguments
@@ -444,11 +505,13 @@ function gateway_service_updater_fake_local_executor(): RunsInternalCommands
                 'options' => $transportOptions,
             ];
 
-            return new RemoteShellResult(
-                exitCode: 0,
-                stdout: "updated\n",
-                stderr: '',
-                durationMs: 20,
+            return (
+                array_shift($this->responses) ?? new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "updated\n",
+                    stderr: '',
+                    durationMs: 20,
+                )
             );
         }
 

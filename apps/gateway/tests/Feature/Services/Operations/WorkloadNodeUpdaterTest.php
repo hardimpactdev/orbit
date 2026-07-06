@@ -268,6 +268,45 @@ it('runs workload updates through the typed local executor without ssh fallback 
         ->toBe('2.0.0');
 });
 
+it('retries workload CLI installs when the previous launcher exits during self update', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => [
+            new RemoteShellResult(exitCode: 255, stdout: '', stderr: '', durationMs: 3),
+            new RemoteShellResult(exitCode: 0, stdout: "updated\n", stderr: '', durationMs: 20),
+        ],
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(2)
+        ->and($shell->calls[0]['options']['input'])
+        ->toBe($shell->calls[1]['options']['input'])
+        ->and($node->fresh()->installed_cli?->version)
+        ->toBe('2.0.0');
+});
+
 it('does not send role images to macos workload cli installers', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
@@ -1105,7 +1144,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
     public array $activeLeases = [];
 
     /**
-     * @param  array<string, RemoteShellResult>  $failures  Keyed by node name; applied to the remote update script call.
+     * @param  array<string, RemoteShellResult|list<RemoteShellResult>>  $failures  Keyed by node name; applied to the remote update script call.
      * @param  array<string, string>  $versions  Probed version output keyed by node name (defaults to the target).
      * @param  array<string, int>  $doctorIssues  Per-node doctor issue counts keyed by node name.
      * @param  array<string, Throwable>  $doctorFailures  Per-node doctor exceptions keyed by node name.
@@ -1174,14 +1213,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
             ->map(fn (UpdateLease $lease): string => "{$lease->resource_type}:{$lease->resource_key}")
             ->all();
 
-        return (
-            $this->failures[$node->name] ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: "updated\n",
-                stderr: '',
-                durationMs: 20,
-            )
-        );
+        return $this->updateResultFor($node);
     }
 
     /**
@@ -1212,13 +1244,31 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
             ->map(fn (UpdateLease $lease): string => "{$lease->resource_type}:{$lease->resource_key}")
             ->all();
 
-        return (
-            $this->failures[$node->name] ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: "updated\n",
-                stderr: '',
-                durationMs: 20,
-            )
+        return $this->updateResultFor($node);
+    }
+
+    private function updateResultFor(Node $node): RemoteShellResult
+    {
+        $failure = $this->failures[$node->name] ?? null;
+
+        if ($failure instanceof RemoteShellResult) {
+            return $failure;
+        }
+
+        if (is_array($failure) && $failure !== []) {
+            $result = array_shift($failure);
+            $this->failures[$node->name] = $failure;
+
+            if ($result instanceof RemoteShellResult) {
+                return $result;
+            }
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: "updated\n",
+            stderr: '',
+            durationMs: 20,
         );
     }
 

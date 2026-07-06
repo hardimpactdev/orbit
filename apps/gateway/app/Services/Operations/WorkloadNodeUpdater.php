@@ -137,17 +137,17 @@ final readonly class WorkloadNodeUpdater
             "Installing CLI {$plan->target_version}",
         );
 
-        $result = $this->localExecutor->runInternal(
-            $node,
-            'internal:fleet-update:install-cli',
-            [],
-            [],
-            [
-                'timeout' => 300,
-                'input' => json_encode($this->installPayload($operationRun, $plan, $node), JSON_THROW_ON_ERROR),
-                'metadata' => $this->remoteShellMetadata($operationRun, $node),
-            ],
-        );
+        $transportOptions = [
+            'timeout' => 300,
+            'input' => json_encode($this->installPayload($operationRun, $plan, $node), JSON_THROW_ON_ERROR),
+            'metadata' => $this->remoteShellMetadata($operationRun, $node),
+        ];
+
+        $result = $this->runCliInstall($node, $transportOptions);
+
+        if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
+            $result = $this->runCliInstall($node, $transportOptions);
+        }
 
         if (! $result->successful()) {
             return [
@@ -179,6 +179,25 @@ final readonly class WorkloadNodeUpdater
             'status' => 'completed',
             'doctor_issues' => $this->runNodeDoctor($operationRun, $node),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function runCliInstall(Node $node, array $transportOptions): RemoteShellResult
+    {
+        return $this->localExecutor->runInternal(
+            $node,
+            'internal:fleet-update:install-cli',
+            [],
+            [],
+            $transportOptions,
+        );
+    }
+
+    private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool
+    {
+        return $result->exitCode === 255 && trim($result->stdout) === '' && trim($result->stderr) === '';
     }
 
     /**
@@ -341,7 +360,9 @@ final readonly class WorkloadNodeUpdater
 
     private function output(RemoteShellResult $result): string
     {
-        return trim($result->errorOutput() !== '' ? $result->errorOutput() : $result->output());
+        $output = trim($result->errorOutput() !== '' ? $result->errorOutput() : $result->output());
+
+        return $output !== '' ? $output : "exit code {$result->exitCode}";
     }
 
     private function ownerToken(OperationRun $operationRun, Node $node): string
