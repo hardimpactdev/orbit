@@ -113,6 +113,24 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         ))->toContain('internal:managed-file');
     });
 
+    it('allows gateway host CLI installs on gateway-only nodes', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
+        $argv = localExecutorCommandBuilder()->buildArgv(
+            targetNode: localExecutorTargetNode(['gateway']),
+            commandName: 'internal:fleet-update:install-cli',
+            arguments: [],
+            options: [],
+            operationToken: $operationToken,
+        );
+
+        expect($argv)->toBe([
+            'internal:fleet-update:install-cli',
+            "--operation-token={$operationToken}",
+            '--json',
+        ]);
+    });
+
     it('uses the configured local executor binary path only for gateway nodes', function (): void {
         $operationToken = local_executor_test_operation_token();
 
@@ -350,6 +368,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'analytics',
             ],
             'internal:fleet-update:install-cli' => [
+                'gateway',
                 'vpn',
                 'router',
                 'app-dev',

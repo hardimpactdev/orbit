@@ -99,6 +99,7 @@ final readonly class LocalExecutorCommandBuilder
             'analytics',
         ],
         'internal:fleet-update:install-cli' => [
+            'gateway',
             'vpn',
             'router',
             'app-dev',

@@ -114,6 +114,59 @@ describe('internal fleet update install cli command', function (): void {
     });
 });
 
+describe('internal fleet update install cli launcher isolation', function (): void {
+    beforeEach(function (): void {
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+        $originalPath = getenv('PATH');
+        $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] = $originalPath === false ? '' : $originalPath;
+    });
+
+    afterEach(function (): void {
+        $path = $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '';
+
+        putenv('PATH='.$path);
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+    });
+
+    it('does not relink a path-resolved orbit launcher outside the payload paths', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $sha256 = hash_file('sha256', $artifactPath);
+        $shadowLauncher = make_fleet_update_install_cli_shadow_launcher($workspace);
+        $path = dirname($shadowLauncher).PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(is_link($shadowLauncher))
+            ->toBeFalse()
+            ->and(file_get_contents($shadowLauncher))
+            ->toContain('Orbit shadow');
+    });
+});
+
 function fleet_update_install_cli_signed_operation_token(
     string $id = 'fleet-update-install-cli',
     string $node = 'app-dev',
@@ -243,4 +296,21 @@ function make_fleet_update_install_cli_path_without_docker(string $workspace): s
     }
 
     return $bin;
+}
+
+function make_fleet_update_install_cli_shadow_launcher(string $workspace): string
+{
+    $bin = "{$workspace}/shadow-bin";
+
+    mkdir($bin, recursive: true);
+
+    $launcher = "{$bin}/orbit";
+
+    file_put_contents($launcher, <<<'SH'
+        #!/usr/bin/env sh
+        echo "Orbit shadow"
+        SH);
+    chmod(filename: $launcher, permissions: 0o755);
+
+    return $launcher;
 }

@@ -137,19 +137,6 @@ final readonly class LocalFleetUpdateInstallCliAction
 
             link_binary "$link_target" "$bin_path"
 
-            echo reconcile_launcher
-            resolved="$(command -v orbit 2>/dev/null || true)"
-            case "$resolved" in
-                /*)
-                    resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf %s "$resolved")"
-                    link_target_resolved="$(readlink -f "$link_target" 2>/dev/null || printf %s "$link_target")"
-
-                    if [ "$resolved" != "$bin_path" ] && [ "$resolved_target" != "$link_target_resolved" ]; then
-                        link_binary "$link_target" "$resolved" || true
-                    fi
-                    ;;
-            esac
-
             echo verify_cli
             check_sha256 "$install_root/bin/orbit-binary"
             check_sha256 "$link_target"
