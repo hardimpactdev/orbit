@@ -14,12 +14,16 @@ it('renders the router-colocated gateway Caddy route', function (): void {
         ->toContain('10.6.0.1 gateway.orbit.test {')
         ->toContain('tls /run/orbit-gateway-certs/gateway.crt /run/orbit-gateway-certs/gateway.key')
         ->toContain('@notWireGuard')
-        ->toContain('remote_ip 10.6.0.0/24')
+        ->toContain('remote_ip 10.6.0.0/24 127.0.0.0/8 ::1 172.16.0.0/12')
         ->not->toContain('client_ip')->toContain('abort @notWireGuard')->toContain(
             'request_header -X-Forwarded-For',
         )->toContain('request_header -X-Real-IP')->toContain('request_header -Forwarded')->toContain(
             'request_header -X-Orbit-WireGuard-Ip',
-        )->toContain('reverse_proxy http://orbit-gateway:8080')->toContain('flush_interval -1')->toContain(
+        )->toContain('@dockerBridgeSelf remote_ip 172.16.0.0/12')->toContain(
+            'reverse_proxy @dockerBridgeSelf http://orbit-gateway:8080',
+        )->toContain('header_up X-Orbit-WireGuard-Ip 127.0.0.1')->toContain(
+            'reverse_proxy http://orbit-gateway:8080',
+        )->toContain('flush_interval -1')->toContain(
             'header_up X-Orbit-WireGuard-Ip {remote_host}',
         )->toContain('header_up X-Forwarded-Proto https')
         ->not->toContain('encode gzip');

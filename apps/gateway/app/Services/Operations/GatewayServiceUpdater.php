@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Nodes\InstalledGatewayImage;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayHostAgentConfigWriter;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmManager;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Sleep;
 use RuntimeException;
@@ -74,7 +78,14 @@ class GatewayServiceUpdater
                 'gateway.agent-config',
                 'Writing gateway host agent config',
                 'Gateway host agent config written',
-                fn (): null => $this->writeGatewayHostAgentConfig(),
+                $this->writeGatewayHostAgentConfig(...),
+            );
+            $this->runStep(
+                $operationRun,
+                'gateway.host-cli',
+                'Installing gateway host CLI',
+                'Gateway host CLI installed',
+                fn (): null => $this->installGatewayHostCli($operationRun, $plan),
             );
 
             $this->recordInstalledGatewayImage($operationRun, $plan, $targetImage);
@@ -92,6 +103,123 @@ class GatewayServiceUpdater
         $this->swarm()->scaleService(self::SchedulerService, 0);
 
         return null;
+    }
+
+    private function installGatewayHostCli(OperationRun $operationRun, OperationUpdatePlan $plan): null
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        if (! $gatewayNode instanceof Node) {
+            return null;
+        }
+
+        $result = $this->localExecutor()->runInternal(
+            node: $gatewayNode,
+            commandName: 'internal:fleet-update:install-cli',
+            arguments: [],
+            commandOptions: [],
+            transportOptions: [
+                'cwd' => $this->gatewayInstallRoot($gatewayNode),
+                'timeout' => 300,
+                'input' => json_encode(
+                    $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode),
+                    JSON_THROW_ON_ERROR,
+                ),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => $operationRun->id,
+                ],
+            ],
+        );
+
+        if (! $result->successful()) {
+            throw new RuntimeException('Gateway host CLI install failed: '.$this->output($result));
+        }
+
+        $this->recordInstalledGatewayHostCli($operationRun, $plan, $gatewayNode);
+
+        return null;
+    }
+
+    /**
+     * @return array{
+     *     artifact_url: string,
+     *     sha256: string,
+     *     install_root: string,
+     *     bin_path: string,
+     *     shared_binary_path: string|null,
+     *     role_images: list<string>,
+     * }
+     */
+    private function gatewayHostCliInstallPayload(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $gatewayNode,
+    ): array {
+        $artifact = $this->gatewayHostCliArtifact($operationRun, $plan, $gatewayNode);
+        $installRoot = $this->gatewayInstallRoot($gatewayNode);
+
+        return [
+            'artifact_url' => $artifact['url'],
+            'sha256' => $artifact['sha256'],
+            'install_root' => $installRoot,
+            'bin_path' => FleetUpdateNodeCliLauncher::binPath($gatewayNode),
+            'shared_binary_path' => null,
+            'role_images' => [],
+        ];
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string}
+     */
+    private function gatewayHostCliArtifact(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $gatewayNode,
+    ): array {
+        return $this->artifactRelay()->artifactFor(
+            operationRun: $operationRun,
+            plan: $plan,
+            platform: CliArtifactPlatform::forNode($gatewayNode),
+        );
+    }
+
+    private function gatewayInstallRoot(Node $gatewayNode): string
+    {
+        $installRoot = rtrim($gatewayNode->orbit_path, characters: '/');
+
+        return $installRoot !== '' ? $installRoot : '/home/orbit/orbit';
+    }
+
+    private function recordInstalledGatewayHostCli(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $gatewayNode,
+    ): void {
+        $platform = CliArtifactPlatform::forNode($gatewayNode);
+        $artifact = $plan->cli_artifacts[$platform] ?? null;
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+        ) {
+            throw new RuntimeException("Update plan does not contain a CLI artifact for platform [{$platform}].");
+        }
+
+        $installRoot = $this->gatewayInstallRoot($gatewayNode);
+
+        $gatewayNode->forceFill([
+            'installed_cli' => InstalledCliArtifact::record(
+                version: $plan->target_version,
+                platform: $platform,
+                sha256: $artifact['sha256'],
+                source: $plan->manifest_source,
+                buildId: $this->manifestBuildId($plan),
+                artifactUrl: $artifact['url'],
+                installedPath: "{$installRoot}/bin/orbit-binary",
+                operationRunId: $operationRun->id,
+            ),
+        ])->save();
     }
 
     private function runMigrations(): null
@@ -319,5 +447,20 @@ class GatewayServiceUpdater
     private function gatewayHostAgentConfigs(): GatewayHostAgentConfigWriter
     {
         return $this->gatewayHostAgentConfigs ?? app(GatewayHostAgentConfigWriter::class);
+    }
+
+    private function artifactRelay(): GatewayCliArtifactRelay
+    {
+        return app(GatewayCliArtifactRelay::class);
+    }
+
+    private function localExecutor(): RunsInternalCommands
+    {
+        return app(RunsInternalCommands::class);
+    }
+
+    private function output(RemoteShellResult $result): string
+    {
+        return trim($result->errorOutput() !== '' ? $result->errorOutput() : $result->output());
     }
 }

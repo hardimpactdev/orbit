@@ -362,10 +362,14 @@ it('converges router-colocated Caddy as the only host 80 443 and udp 443 listene
             $gatewayRoute,
         )->toContain('10.6.0.2 :443 {')->and($gatewayRoute)->toContain(
             'tls /etc/orbit/certs/gateway.crt /etc/orbit/certs/gateway.key',
-        )->and($gatewayRoute)->toContain('remote_ip 10.6.0.0/24')->and($gatewayRoute)
+        )->and($gatewayRoute)->toContain('remote_ip 10.6.0.0/24 127.0.0.0/8 ::1 172.16.0.0/12')->and($gatewayRoute)
         ->not->toContain('client_ip')->and($gatewayRoute)->toContain('abort @notWireGuard')->and(
             $gatewayRoute,
-        )->toContain('reverse_proxy http://orbit-gateway:8080')->and($gatewayRoute)->toContain('flush_interval -1');
+        )->toContain('reverse_proxy @dockerBridgeSelf http://orbit-gateway:8080')->and($gatewayRoute)->toContain(
+            'header_up X-Orbit-WireGuard-Ip 127.0.0.1',
+        )->and($gatewayRoute)->toContain('reverse_proxy http://orbit-gateway:8080')->and($gatewayRoute)->toContain(
+            'flush_interval -1',
+        );
 
     Process::assertRan('sudo tee /etc/caddy/orbit/orbit-gateway.caddy > /dev/null');
     Process::assertRan($certReadableCommand);

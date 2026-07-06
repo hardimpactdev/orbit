@@ -35,6 +35,8 @@ it('writes gateway host agent config and converges the systemd service', functio
             'orbit_agent_capable' => false,
         ]);
     File::ensureDirectoryExists("{$this->configRoot}/ca");
+    File::put("{$this->configRoot}/config.json", '{"schema_version":1}');
+    chmod("{$this->configRoot}/config.json", 0o600);
     File::put("{$this->configRoot}/ca/root.crt", 'root-ca');
 
     Process::fake(function ($process) use (&$systemdUnit) {
@@ -50,7 +52,7 @@ it('writes gateway host agent config and converges the systemd service', functio
     expect($path)
         ->toBe("{$this->configRoot}/agent.toml")
         ->and(File::get($path))
-        ->toContain('gateway_url = "https://10.6.0.2"')
+        ->toContain('gateway_url = "https://gateway"')
         ->toContain('node_name = "gateway-1"')
         ->toContain('ca_pem_path = "'.$this->configRoot.'/ca/root.crt"')
         ->not
@@ -65,6 +67,8 @@ it('writes gateway host agent config and converges the systemd service', functio
     expect(substr(sprintf('%o', fileperms($this->configRoot)), -4))
         ->toBe('0711')
         ->and(substr(sprintf('%o', fileperms($path)), -4))
+        ->toBe('0644')
+        ->and(substr(sprintf('%o', fileperms("{$this->configRoot}/config.json")), -4))
         ->toBe('0644')
         ->and(substr(sprintf('%o', fileperms("{$this->configRoot}/ca")), -4))
         ->toBe('0711')

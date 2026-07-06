@@ -35,7 +35,7 @@ final readonly class GatewayCaddyRouteRenderer
                 tls {$certPath} {$keyPath}
 
                 @notWireGuard {
-                    not remote_ip {$wireguardCidr}
+                    not remote_ip {$wireguardCidr} 127.0.0.0/8 ::1 172.16.0.0/12
                 }
                 abort @notWireGuard
 
@@ -43,6 +43,16 @@ final readonly class GatewayCaddyRouteRenderer
                 request_header -X-Real-IP
                 request_header -Forwarded
                 request_header -X-Orbit-WireGuard-Ip
+
+                @dockerBridgeSelf remote_ip 172.16.0.0/12
+                reverse_proxy @dockerBridgeSelf {$upstream} {
+                    flush_interval -1
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto https
+                    header_up X-Real-IP {remote_host}
+                    header_up X-Orbit-WireGuard-Ip 127.0.0.1
+                }
 
                 reverse_proxy {$upstream} {
                     flush_interval -1

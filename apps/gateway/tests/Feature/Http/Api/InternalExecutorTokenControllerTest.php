@@ -131,6 +131,25 @@ describe('InternalExecutorTokenController', function (): void {
             ->assertJsonPath('success.data.operation_id', 'operation-123');
     });
 
+    it('accepts gateway self verification over alternate IPv4 loopback addresses', function (): void {
+        internal_executor_gateway_node();
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'gateway',
+            command: 'internal:runtime-backend:probe',
+        );
+
+        internal_executor_verify_token_loopback_request([
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:runtime-backend:probe',
+        ], '127.0.1.1')
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
     it('does not use loopback token verification as identity for non-gateway nodes', function (): void {
         internalExecutorCallerNode();
 
@@ -229,12 +248,12 @@ function internalExecutorVerifyTokenRequest(array $payload)
 /**
  * @param  array<string, mixed>  $payload
  */
-function internal_executor_verify_token_loopback_request(array $payload)
+function internal_executor_verify_token_loopback_request(array $payload, string $remoteAddress = '127.0.0.1')
 {
     /** @var TestCase $test */
     $test = test();
 
     return $test
-        ->withServerVariables(['REMOTE_ADDR' => '127.0.0.1'])
+        ->withServerVariables(['REMOTE_ADDR' => $remoteAddress])
         ->postJson('/api/internal-executor/token/verify', $payload);
 }

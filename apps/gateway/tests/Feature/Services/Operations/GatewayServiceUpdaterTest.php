@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -34,11 +36,15 @@ it('updates gateway and scheduler services to the plan image after in-process mi
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
+    $localExecutor = gateway_service_updater_fake_local_executor();
+    app()->instance(RunsInternalCommands::class, $localExecutor);
     $gateway = Node::factory()
         ->gateway()
         ->create([
             'name' => 'gateway-1',
             'wireguard_address' => '10.6.0.2',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
             'orbit_agent_capable' => false,
         ]);
 
@@ -100,12 +106,31 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->and($gateway->fresh()->installed_gateway_image?->operationRunId)
         ->toBe($run->id)
         ->and($gateway->fresh()->orbit_agent_capable)
-        ->toBeTrue();
+        ->toBeTrue()
+        ->and($gateway->fresh()->installed_cli?->version)
+        ->toBe('1.2.3')
+        ->and($gateway->fresh()->installed_cli?->sha256)
+        ->toBe(str_repeat('c', 64))
+        ->and($localExecutor->calls)
+        ->toHaveCount(1)
+        ->and($localExecutor->calls[0]['node'])
+        ->toBe('gateway-1')
+        ->and($localExecutor->calls[0]['command'])
+        ->toBe('internal:fleet-update:install-cli')
+        ->and($localExecutor->payloads()[0])
+        ->toMatchArray([
+            'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
+            'sha256' => str_repeat('c', 64),
+            'install_root' => '/home/orbit/orbit',
+            'bin_path' => '/usr/local/bin/orbit',
+            'shared_binary_path' => null,
+            'role_images' => [],
+        ]);
 
     $agentConfig = File::get("{$this->configRoot}/agent.toml");
 
     expect($agentConfig)
-        ->toContain('gateway_url = "https://10.6.0.2"')
+        ->toContain('gateway_url = "https://gateway"')
         ->toContain('node_name = "gateway-1"')
         ->toContain('gateway_name = "gateway-1"')
         ->toContain('ca_pem_path = "'.$this->configRoot.'/ca/root.crt"')
@@ -357,6 +382,10 @@ function gatewayServiceUpdaterRun(): OperationRun
 function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
 {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    $cliArtifact = [
+        'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
+        'sha256' => str_repeat('c', 64),
+    ];
 
     return OperationUpdatePlan::query()->create([
         'operation_run_id' => $run->id,
@@ -369,8 +398,13 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
             'images' => [
                 'gateway' => $gatewayImage,
             ],
+            'cli_artifacts' => [
+                'linux-amd64' => $cliArtifact,
+            ],
         ],
-        'cli_artifacts' => [],
+        'cli_artifacts' => [
+            'linux-amd64' => $cliArtifact,
+        ],
         'role_images' => [],
     ]);
 }
@@ -378,4 +412,59 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
 function gatewayServiceUpdaterPreviousImage(): string
 {
     return 'ghcr.io/hardimpactdev/orbit-gateway:1.2.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+}
+
+function gateway_service_updater_fake_local_executor(): RunsInternalCommands
+{
+    return new class implements RunsInternalCommands {
+        /**
+         * @var list<array{node: string, command: string, options: array<string, mixed>}>
+         */
+        public array $calls = [];
+
+        /**
+         * @param  array<int|string, mixed>  $arguments
+         * @param  array<int|string, mixed>  $commandOptions
+         * @param  array<string, mixed>  $transportOptions
+         */
+        #[Override]
+        public function runInternal(
+            Node $node,
+            string $commandName,
+            array $arguments = [],
+            array $commandOptions = [],
+            array $transportOptions = [],
+        ): RemoteShellResult {
+            $this->calls[] = [
+                'node' => $node->name,
+                'command' => $commandName,
+                'options' => $transportOptions,
+            ];
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "updated\n",
+                stderr: '',
+                durationMs: 20,
+            );
+        }
+
+        /**
+         * @return list<array<string, mixed>>
+         */
+        public function payloads(): array
+        {
+            return array_map(static function (array $call): array {
+                $input = $call['options']['input'] ?? null;
+
+                if (! is_string($input)) {
+                    return [];
+                }
+
+                $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+                return is_array($payload) ? $payload : [];
+            }, $this->calls);
+        }
+    };
 }

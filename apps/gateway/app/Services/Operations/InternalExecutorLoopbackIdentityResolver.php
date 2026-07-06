@@ -55,7 +55,7 @@ final readonly class InternalExecutorLoopbackIdentityResolver
 
     private function isLoopbackAddress(string $peerAddress): bool
     {
-        return in_array($peerAddress, ['127.0.0.1', '::1'], strict: true);
+        return $peerAddress === '::1' || str_starts_with($peerAddress, '127.');
     }
 
     private function stringInput(Request $request, string $key): ?string

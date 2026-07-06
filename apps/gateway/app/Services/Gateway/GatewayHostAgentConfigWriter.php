@@ -14,25 +14,30 @@ class GatewayHostAgentConfigWriter
     {
         $configRoot = $this->configRoot();
         $path = "{$configRoot}/agent.toml";
+        $cliConfigPath = "{$configRoot}/config.json";
         $caDir = "{$configRoot}/ca";
         $caPath = "{$configRoot}/ca/root.crt";
 
         File::ensureDirectoryExists($configRoot, 0o711);
         File::put($path, $this->contents($gatewayNode));
 
-        if (! chmod($configRoot, 0o711)) {
+        if (! chmod(filename: $configRoot, permissions: 0o711)) {
             throw new RuntimeException("Unable to set traversable permissions on {$configRoot}.");
         }
 
-        if (! chmod($path, 0o644)) {
+        if (! chmod(filename: $path, permissions: 0o644)) {
             throw new RuntimeException("Unable to set host-readable permissions on {$path}.");
         }
 
-        if (File::isDirectory($caDir) && ! chmod($caDir, 0o711)) {
+        if (File::exists($cliConfigPath) && ! chmod(filename: $cliConfigPath, permissions: 0o644)) {
+            throw new RuntimeException("Unable to set host-readable permissions on {$cliConfigPath}.");
+        }
+
+        if (File::isDirectory($caDir) && ! chmod(filename: $caDir, permissions: 0o711)) {
             throw new RuntimeException("Unable to set traversable permissions on {$caDir}.");
         }
 
-        if (File::exists($caPath) && ! chmod($caPath, 0o644)) {
+        if (File::exists($caPath) && ! chmod(filename: $caPath, permissions: 0o644)) {
             throw new RuntimeException("Unable to set host-readable permissions on {$caPath}.");
         }
 
@@ -47,12 +52,19 @@ class GatewayHostAgentConfigWriter
             return '/home/orbit/.config/orbit';
         }
 
-        return rtrim($configuredRoot, '/');
+        return rtrim($configuredRoot, characters: '/');
     }
 
     private function contents(Node $gatewayNode): string
     {
-        $gatewayAddress = $gatewayNode->wireguard_address ?: $gatewayNode->host;
+        if ($gatewayNode->hasActiveRole('gateway')) {
+            $gatewayAddress = 'gateway';
+        } else {
+            $wireguardAddress = is_string($gatewayNode->wireguard_address)
+                ? trim($gatewayNode->wireguard_address)
+                : '';
+            $gatewayAddress = $wireguardAddress !== '' ? $wireguardAddress : $gatewayNode->host;
+        }
 
         if (! is_string($gatewayAddress) || trim($gatewayAddress) === '') {
             throw new RuntimeException("Gateway node [{$gatewayNode->name}] must have a WireGuard address or host.");

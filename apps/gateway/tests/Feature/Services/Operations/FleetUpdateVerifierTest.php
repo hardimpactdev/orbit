@@ -314,6 +314,8 @@ it('emits terminal success only after runner verification passes', function (): 
             ['scheduler.start',      'done'],
             ['gateway.agent-config', 'running'],
             ['gateway.agent-config', 'done'],
+            ['gateway.host-cli',     'running'],
+            ['gateway.host-cli',     'done'],
             ['gateway',              'done'],
             ['workload-nodes',       'running'],
             ['workload.app-dev-1',   'running'],
