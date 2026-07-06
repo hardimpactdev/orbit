@@ -7,6 +7,7 @@ namespace App\Services\Operations;
 use App\Data\Nodes\InstalledGatewayImage;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Gateway\GatewayHostAgentConfigWriter;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmManager;
 use Illuminate\Support\Facades\Artisan;
@@ -28,6 +29,7 @@ class GatewayServiceUpdater
         private readonly ?GatewaySwarmManager $swarm = null,
         private readonly ?OperationRunRecorder $operationRuns = null,
         private readonly ?FleetUpdateTargetSelector $targets = null,
+        private readonly ?GatewayHostAgentConfigWriter $gatewayHostAgentConfigs = null,
     ) {}
 
     public function update(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -66,6 +68,13 @@ class GatewayServiceUpdater
                 'Starting orbit-scheduler service',
                 'orbit-scheduler service running',
                 fn (): null => $this->updateAndStartScheduler($targetImage),
+            );
+            $this->runStep(
+                $operationRun,
+                'gateway.agent-config',
+                'Writing gateway host agent config',
+                'Gateway host agent config written',
+                fn (): null => $this->writeGatewayHostAgentConfig(),
             );
 
             $this->recordInstalledGatewayImage($operationRun, $plan, $targetImage);
@@ -252,6 +261,20 @@ class GatewayServiceUpdater
         ])->save();
     }
 
+    private function writeGatewayHostAgentConfig(): null
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        if ($gatewayNode === null) {
+            return null;
+        }
+
+        $this->gatewayHostAgentConfigs()->write($gatewayNode);
+        $gatewayNode->forceFill(['orbit_agent_capable' => true])->save();
+
+        return null;
+    }
+
     private function manifestBuildId(OperationUpdatePlan $plan): ?string
     {
         $buildId = $plan->manifest_snapshot['build_id'] ?? null;
@@ -291,5 +314,10 @@ class GatewayServiceUpdater
     private function targets(): FleetUpdateTargetSelector
     {
         return $this->targets ?? app(FleetUpdateTargetSelector::class);
+    }
+
+    private function gatewayHostAgentConfigs(): GatewayHostAgentConfigWriter
+    {
+        return $this->gatewayHostAgentConfigs ?? app(GatewayHostAgentConfigWriter::class);
     }
 }

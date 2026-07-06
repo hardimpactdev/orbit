@@ -10,6 +10,7 @@ use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
@@ -18,6 +19,14 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    $this->configRoot = sys_get_temp_dir().'/orbit-gateway-service-updater-'.Str::random(8);
+    config()->set('orbit.paths.config_root', $this->configRoot);
+});
+
+afterEach(function (): void {
+    if (isset($this->configRoot) && is_dir($this->configRoot)) {
+        File::deleteDirectory($this->configRoot);
+    }
 });
 
 it('updates gateway and scheduler services to the plan image after in-process migrations and gateway health', function (): void {
@@ -25,7 +34,13 @@ it('updates gateway and scheduler services to the plan image after in-process mi
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
-    $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1']);
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'orbit_agent_capable' => false,
+        ]);
 
     Artisan::shouldReceive('call')
         ->once()
@@ -83,7 +98,17 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->and($gateway->fresh()->installed_gateway_image?->digest)
         ->toBe('sha256:'.str_repeat('a', 64))
         ->and($gateway->fresh()->installed_gateway_image?->operationRunId)
-        ->toBe($run->id);
+        ->toBe($run->id)
+        ->and($gateway->fresh()->orbit_agent_capable)
+        ->toBeTrue();
+
+    $agentConfig = File::get("{$this->configRoot}/agent.toml");
+
+    expect($agentConfig)
+        ->toContain('gateway_url = "https://10.6.0.2"')
+        ->toContain('node_name = "gateway-1"')
+        ->toContain('gateway_name = "gateway-1"')
+        ->not->toContain('bearer_token');
 });
 
 it('restores the scheduler previous image and replica when gateway migrations fail', function (): void {

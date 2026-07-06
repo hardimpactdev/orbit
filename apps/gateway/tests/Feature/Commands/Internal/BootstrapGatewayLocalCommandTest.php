@@ -9,6 +9,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\GatewayHostAgentConverger;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
@@ -42,6 +43,26 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                 return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
             }
         });
+
+        $this->gatewayHostAgentConverger = new class extends GatewayHostAgentConverger {
+            /** @var list<array{id: int|string|null, name: string, wireguardAddress: string|null}> */
+            public array $nodes = [];
+
+            public function __construct() {}
+
+            public function converge(Node $gatewayNode): string
+            {
+                $this->nodes[] = [
+                    'id' => $gatewayNode->getKey(),
+                    'name' => $gatewayNode->name,
+                    'wireguardAddress' => $gatewayNode->wireguard_address,
+                ];
+
+                $gatewayNode->forceFill(['orbit_agent_capable' => true])->save();
+
+                return '/home/orbit/.config/orbit/agent.toml';
+            }
+        };
 
         $this->gatewaySwarmInstaller = new class extends GatewaySwarmInstaller {
             /**
@@ -147,6 +168,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         };
 
         app()->instance(GatewaySwarmInstaller::class, $this->gatewaySwarmInstaller);
+        app()->instance(GatewayHostAgentConverger::class, $this->gatewayHostAgentConverger);
         app()->instance(VpnDnsSwarmInstaller::class, $this->vpnDnsSwarmInstaller);
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
     });
@@ -220,7 +242,17 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                     'wireguardInterface' => 'wg-orbit',
                     'imageArchive' => null,
                 ],
-            ]);
+            ])
+            ->and($this->gatewayHostAgentConverger->nodes)
+            ->toMatchArray([
+                [
+                    'id' => 1,
+                    'name' => 'gateway-1',
+                    'wireguardAddress' => '10.6.0.2',
+                ],
+            ])
+            ->and(Node::query()->where('name', 'gateway-1')->value('orbit_agent_capable'))
+            ->toBeTrue();
     });
 
     it('can skip gateway service installation for container topology preparation', function (): void {
@@ -235,6 +267,8 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->and(Node::query()->where('name', 'gateway-1')->exists())
             ->toBeTrue()
             ->and($this->gatewaySwarmInstaller->installs)
+            ->toBe([])
+            ->and($this->gatewayHostAgentConverger->nodes)
             ->toBe([])
             ->and($this->vpnDnsSwarmInstaller->invocations)
             ->toBe([]);

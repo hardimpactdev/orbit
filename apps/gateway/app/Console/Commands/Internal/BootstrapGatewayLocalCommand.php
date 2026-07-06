@@ -14,6 +14,7 @@ use App\Models\NodeAccess;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\GatewayHostAgentConverger;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Security\SshHostKeyPinner;
@@ -46,6 +47,7 @@ class BootstrapGatewayLocalCommand extends Command
         OrbitCaService $caService,
         WireGuardInterfaceInstaller $wireGuard,
         GatewaySwarmInstaller $gatewaySwarmInstaller,
+        GatewayHostAgentConverger $gatewayHostAgent,
         VpnDnsSwarmInstaller $vpnDnsSwarmInstaller,
     ): int {
         $name = $this->stringArgument('name');
@@ -246,6 +248,10 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         if (! (bool) $this->option('skip-gateway-service-install')) {
+            $gateway = Node::query()->where('name', $name)->firstOrFail();
+
+            $gatewayHostAgent->converge($gateway);
+
             $gatewaySwarmInstaller->install(
                 wireguardAddress: $wireguardAddress,
                 image: $this->gatewayImage(),
