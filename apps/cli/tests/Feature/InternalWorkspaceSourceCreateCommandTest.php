@@ -42,7 +42,7 @@ describe('internal workspace source create command', function (): void {
     it('creates a git worktree through fixed argv operations', function (): void {
         $appPath = "{$this->workspaceSourceCreateTemp}/app";
         mkdir($appPath);
-        workspaceSourceCreateRunProcess(['git', 'init', '-q'], $appPath);
+        workspaceSourceCreateRunProcess(['git', 'init', '-q', '--initial-branch=main'], $appPath);
         workspaceSourceCreateRunProcess(['git', 'config', 'user.email', 'orbit@example.test'], $appPath);
         workspaceSourceCreateRunProcess(['git', 'config', 'user.name', 'Orbit Test'], $appPath);
         file_put_contents("{$appPath}/README.md", "test\n");

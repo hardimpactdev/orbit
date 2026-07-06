@@ -587,4 +587,13 @@ bearer_token = "dev-token-placeholder"
         assert!(path.starts_with(&launchd_safe_path()));
         assert!(path.ends_with(":/usr/bin:/bin"));
     }
+
+    #[test]
+    fn agent_source_has_no_job_claim_retrieval_surface() {
+        let source = include_str!("lib.rs");
+
+        assert!(!source.contains(&["/api/orbit-agent/jobs", "/claim"].concat()));
+        assert!(!source.contains(&["Polling", "Worker"].concat()));
+        assert!(!source.contains(&["claim_next", "_job"].concat()));
+    }
 }
