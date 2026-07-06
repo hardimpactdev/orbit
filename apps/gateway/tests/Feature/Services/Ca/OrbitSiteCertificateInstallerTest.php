@@ -116,6 +116,45 @@ it('grants the node service user ownership of site TLS material for Vite dev ser
     );
 });
 
+it('installs site TLS material under the macOS user home on Darwin nodes', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.96:9477/v1/commands' => site_certificate_install_agent_response(),
+    ]);
+    $appNode = createTestAppHostNode([
+        'name' => 'nmbp',
+        'platform' => 'macos_15-4',
+        'user' => 'nckrtl',
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.44.0.96',
+    ]);
+
+    $paths = new OrbitSiteCertificateInstaller(site_certificate_test_ca())->ensureFor($appNode, 'happie.nmbp');
+
+    $certPath = '/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt';
+    $keyPath = '/Users/nckrtl/.config/orbit/certs/happie.nmbp.key';
+
+    expect($paths)
+        ->toBe([
+            'cert' => $certPath,
+            'key' => $keyPath,
+        ]);
+
+    Http::assertSent(
+        fn (Request $request): bool => site_certificate_install_request_matches(
+            request: $request,
+            url: 'http://10.44.0.96:9477/v1/commands',
+            expectedInput: [
+                'cert_path' => $certPath,
+                'key_path' => $keyPath,
+                'cert' => 'test-cert',
+                'key' => 'test-key',
+                'owner' => 'nckrtl',
+            ],
+        ),
+    );
+});
+
 function site_certificate_test_ca(): OrbitCaService
 {
     return new readonly class extends OrbitCaService {

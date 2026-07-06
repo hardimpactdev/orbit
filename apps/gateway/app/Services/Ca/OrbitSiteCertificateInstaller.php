@@ -89,6 +89,10 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
     {
         $user = $node->user ?: 'orbit';
 
+        if (is_string($node->platform) && str_starts_with($node->platform, 'macos_')) {
+            return $user === 'root' ? '/var/root' : "/Users/{$user}";
+        }
+
         return $user === 'root' ? '/root' : "/home/{$user}";
     }
 
