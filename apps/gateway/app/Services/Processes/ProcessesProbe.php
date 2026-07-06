@@ -699,9 +699,11 @@ final readonly class ProcessesProbe
 
         $isDocker = in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true);
         $runtimeUnitPrefix = $this->runtimeUnitPrefix($process);
+        $expectedRuntimeUnitsForApp = $this->expectedRuntimeUnitsForApp($process);
 
         return collect($observed['runtime_unit_extras'])
             ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
+            ->reject(fn (string $runtimeUnit): bool => in_array($runtimeUnit, $expectedRuntimeUnitsForApp, true))
             ->filter(
                 fn (string $runtimeUnit): bool => $runtimeUnitPrefix === null
                 || str_starts_with($runtimeUnit, $runtimeUnitPrefix),
@@ -726,6 +728,43 @@ final readonly class ProcessesProbe
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function expectedRuntimeUnitsForApp(Process $process): array
+    {
+        $app = $process->ownerApp();
+        $node = $this->processNode($process);
+
+        if (! $app instanceof App || ! $node instanceof Node) {
+            return [];
+        }
+
+        $runtimeUnits = [];
+
+        Process::query()
+            ->with('owner')
+            ->where('node_id', $node->id)
+            ->each(function (Process $candidate) use ($app, &$runtimeUnits): void {
+                $candidateApp = $candidate->ownerApp();
+
+                if (! $candidateApp instanceof App || ! $candidateApp->is($app)) {
+                    return;
+                }
+
+                try {
+                    $runtimeUnits = [
+                        ...$runtimeUnits,
+                        ...$this->expectedRuntimeUnits($candidate),
+                    ];
+                } catch (InvalidArgumentException) {
+                    return;
+                }
+            });
+
+        return array_values(array_unique($runtimeUnits));
     }
 
     private function runtimeUnitPrefix(Process $process): ?string

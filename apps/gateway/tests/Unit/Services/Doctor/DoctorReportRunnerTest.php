@@ -14,6 +14,7 @@ use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -1778,6 +1779,62 @@ describe('DoctorReportRunner', function (): void {
                 'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
                 'php_ini_path' => '/etc/orbit/workspaces/docs-feature-a.ini',
             ]);
+    });
+
+    it('restores divergent process event notifier material', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        \App\Models\Process::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'vite',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+                'runtime' => ProcessRuntime::Systemd,
+                'crash_notification' => 'agent_ide',
+            ]);
+        LocalGatewaySettings::query()->create([
+            'gateway_url' => 'https://gateway.test',
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_docs_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t0\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])
+            ->toBeTrue()
+            ->and($report['actions'][0])
+            ->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.event_notifier_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'script' => '/usr/local/bin/orbit-notify-exit',
+                    'gateway_endpoint' => '/etc/orbit/gateway-endpoint',
+                ],
+            ])
+            ->and($shell->scripts[2])
+            ->toContain('orbit-notify-exit')
+            ->toContain('https://gateway.test');
     });
 
     it('restores missing PHP workspace runtime containers through workspace restore mode', function (): void {

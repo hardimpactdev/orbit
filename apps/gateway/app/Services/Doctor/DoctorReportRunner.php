@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
+use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
@@ -44,6 +45,7 @@ use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessesProbe;
+use App\Services\Processes\ProcessEventNotifierRenderer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessServiceCatalog;
@@ -2411,6 +2413,10 @@ final readonly class DoctorReportRunner
             return $this->restoreUnrenderableProcessIssue($node, $key, $detail);
         }
 
+        if (in_array($key, ['process.event_notifier_missing', 'process.event_notifier_mismatch'], true)) {
+            return $this->restoreProcessEventNotifierIssue($node, $key);
+        }
+
         if (! in_array($key, ['process.runtime_unit_missing', 'process.runtime_unit_mismatch'], true)) {
             return null;
         }
@@ -2471,6 +2477,82 @@ final readonly class DoctorReportRunner
             'details' => [
                 'app' => $app->name,
                 'process' => $process->name,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function restoreProcessEventNotifierIssue(Node $node, string $key): array
+    {
+        $renderer = app(ProcessEventNotifierRenderer::class);
+        $gatewayEndpoint = $renderer->expectedGatewayEndpoint();
+
+        if ($gatewayEndpoint === null) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'error' => 'Gateway endpoint is not configured.',
+                ],
+            ];
+        }
+
+        $script = implode(PHP_EOL, [
+            'set -eu',
+            'tmp="$(mktemp)"',
+            'base64 -d > "$tmp" <<\'ORBIT_EVENT_NOTIFIER\'',
+            base64_encode($renderer->content()),
+            'ORBIT_EVENT_NOTIFIER',
+            'sudo install -D -m 0755 "$tmp" '.escapeshellarg($renderer->installPath()),
+            'rm -f "$tmp"',
+            'sudo install -d -m 0755 '.escapeshellarg(dirname($renderer->gatewayEndpointPath())),
+            'printf \'%s\n\' '
+                .escapeshellarg($gatewayEndpoint)
+                .' | sudo tee '
+                .escapeshellarg($renderer->gatewayEndpointPath())
+                .' >/dev/null',
+            'sudo chmod 0644 '.escapeshellarg($renderer->gatewayEndpointPath()),
+            '',
+        ]);
+
+        $result = app(RemoteShell::class)->run($node, $script, ['throw' => false]);
+
+        if (! $result->successful()) {
+            return [
+                'family' => 'process',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$key}.",
+                'details' => [
+                    'script' => $renderer->installPath(),
+                    'gateway_endpoint' => $renderer->gatewayEndpointPath(),
+                    'exit_code' => $result->exitCode,
+                    'stderr' => trim($result->stderr),
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'process',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => 'Restored process crash event notifier material.',
+            'details' => [
+                'script' => $renderer->installPath(),
+                'gateway_endpoint' => $renderer->gatewayEndpointPath(),
             ],
         ];
     }
@@ -3372,6 +3454,8 @@ final readonly class DoctorReportRunner
             'process.runtime_unit_missing',
             'process.runtime_unit_mismatch',
             'process.runtime_unit_unrenderable',
+            'process.event_notifier_missing',
+            'process.event_notifier_mismatch',
             'tool.capability_missing',
             'tool.agent_route_missing',
             'tool.container_missing',

@@ -451,6 +451,47 @@ describe('stale systemd unit reality', function (): void {
         expect(issue($drift, 'process.runtime_unit_extra'))->toBeNull();
     });
 
+    it('ignores systemd units owned by sibling workspace process intent for the same app', function (): void {
+        $app = processableApp(['name' => 'docs']);
+        $currentWorkspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create(['name' => 'feature-docs']);
+        $siblingWorkspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create(['name' => 'copy-review']);
+        $process = Process::factory()
+            ->forOwner($currentWorkspace)
+            ->create([
+                'name' => 'vite',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+                'restart_policy' => ProcessRestartPolicy::Never,
+                'crash_notification' => ProcessCrashNotification::None,
+                'runtime' => ProcessRuntime::Systemd,
+                'sort_order' => 1,
+            ]);
+        Process::factory()
+            ->forOwner($siblingWorkspace)
+            ->create([
+                'name' => 'vite',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+                'restart_policy' => ProcessRestartPolicy::Never,
+                'crash_notification' => ProcessCrashNotification::None,
+                'runtime' => ProcessRuntime::Systemd,
+                'sort_order' => 1,
+            ]);
+
+        $snapshot = new ProbeSnapshot([
+            'vite' => [
+                'runtime_backend_available' => true,
+                'runtime_unit_extras' => ['orbit_docs_copy-review_vite'],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($process, $snapshot);
+
+        expect(issue($drift, 'process.runtime_unit_extra'))->toBeNull();
+    });
+
     it('ignores app-owned stale systemd units for node-owned host processes', function (): void {
         $node = Node::factory()
             ->database()
