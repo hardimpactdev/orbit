@@ -1,0 +1,68 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-06T07:32:19+00:00",
+    "archive_dir": ".orbit/sessions/2026-07-06-093219-agent-transport-hardening/agent-sessions",
+    "providers": {
+        "unknown": {
+            "solo_process_not_found": 4
+        }
+    },
+    "sessions": [
+        {
+            "schema_version": 1,
+            "provider": "unknown",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "slug": "unknown-779",
+            "relative_dir": "unknown/unknown-779",
+            "solo_process_id": 779,
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "unknown",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "slug": "unknown-780",
+            "relative_dir": "unknown/unknown-780",
+            "solo_process_id": 780,
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "unknown",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "slug": "unknown-781",
+            "relative_dir": "unknown/unknown-781",
+            "solo_process_id": 781,
+            "raw_files": []
+        },
+        {
+            "schema_version": 1,
+            "provider": "unknown",
+            "status": "solo_process_not_found",
+            "reason": "solo_process_not_found",
+            "checked": [
+                "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+                "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+            ],
+            "slug": "unknown-782",
+            "relative_dir": "unknown/unknown-782",
+            "solo_process_id": 782,
+            "raw_files": []
+        }
+    ]
+}

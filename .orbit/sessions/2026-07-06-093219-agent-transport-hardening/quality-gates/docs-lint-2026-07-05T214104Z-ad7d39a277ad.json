@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-05T21:40:59Z",
+    "ended_at": "2026-07-05T21:41:04Z",
+    "duration_seconds": 5,
+    "exit_code": 0,
+    "git": {
+        "branch": "agent-transport-hardening",
+        "commit": "f9af0e63ec6cf6b47b5d5d7a7244df195943b358"
+    },
+    "subgates": []
+}

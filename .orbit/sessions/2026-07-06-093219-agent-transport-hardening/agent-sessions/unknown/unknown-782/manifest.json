@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "unknown",
+    "status": "solo_process_not_found",
+    "reason": "solo_process_not_found",
+    "checked": [
+        "solo_cli: /Applications/Solo.app/Contents/MacOS/solo-cli",
+        "solo_db: /Users/nckrtl/.config/soloterm/solo.db"
+    ],
+    "slug": "unknown-782",
+    "relative_dir": "unknown/unknown-782",
+    "solo_process_id": 782,
+    "raw_files": []
+}
