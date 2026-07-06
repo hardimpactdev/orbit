@@ -253,7 +253,7 @@ final readonly class WorkloadNodeUpdater
                 source: $plan->manifest_source,
                 buildId: $this->manifestBuildId($plan),
                 artifactUrl: $artifact['url'],
-                installedPath: "{$installRoot}/bin/orbit-binary",
+                installedPath: "{$installRoot}/bin/orbit-binary-{$this->shaPrefix($artifact['sha256'])}",
                 operationRunId: $operationRun->id,
             ),
         ])->save();
@@ -315,6 +315,11 @@ final readonly class WorkloadNodeUpdater
         $buildId = $plan->manifest_snapshot['build_id'] ?? null;
 
         return is_string($buildId) && $buildId !== '' ? $buildId : null;
+    }
+
+    private function shaPrefix(string $sha256): string
+    {
+        return substr(strtolower($sha256), offset: 0, length: 12);
     }
 
     /**

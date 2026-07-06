@@ -118,16 +118,17 @@ final readonly class LocalFleetUpdateInstallCliAction
             install_root="${ORBIT_INSTALL_PATH:-/home/orbit/orbit}"
             bin_path="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
             shared_binary_path="${ORBIT_SHARED_BINARY_PATH:-}"
+            sha_prefix="${ORBIT_CLI_SHA256:0:12}"
 
             echo install_cli
-            install_binary "$tmp/orbit" "$install_root/bin/orbit-binary"
-            link_target="$install_root/bin/orbit-binary"
+            install_binary "$tmp/orbit" "$install_root/bin/orbit-binary-$sha_prefix"
+            link_target="$install_root/bin/orbit-binary-$sha_prefix"
 
             case "$bin_path" in
                 /usr/local/bin/*)
                     if [ -z "$shared_binary_path" ]; then
                         link_name="$(basename "$bin_path")"
-                        shared_binary_path="/usr/local/lib/orbit/${link_name}-binary"
+                        shared_binary_path="/usr/local/lib/orbit/${link_name}-binary-$sha_prefix"
                     fi
 
                     install_binary "$tmp/orbit" "$shared_binary_path"
@@ -138,7 +139,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             link_binary "$link_target" "$bin_path"
 
             echo verify_cli
-            check_sha256 "$install_root/bin/orbit-binary"
+            check_sha256 "$install_root/bin/orbit-binary-$sha_prefix"
             check_sha256 "$link_target"
             resolved_binary="$(readlink -f "$bin_path" 2>/dev/null || printf %s "$bin_path")"
             check_sha256 "$resolved_binary"

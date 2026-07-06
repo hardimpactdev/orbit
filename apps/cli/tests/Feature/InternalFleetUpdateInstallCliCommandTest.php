@@ -73,7 +73,7 @@ describe('internal fleet update install cli command', function (): void {
             ])
             ->and(is_link("{$workspace}/bin/orbit"))
             ->toBeTrue()
-            ->and(hash_file('sha256', "{$workspace}/install-root/bin/orbit-binary"))
+            ->and(hash_file('sha256', fleet_update_install_cli_binary_path($workspace, $sha256)))
             ->toBe($sha256)
             ->and(shell_exec(escapeshellarg("{$workspace}/bin/orbit").' --version --local'))
             ->toBe("Orbit 9.9.9\n");
@@ -109,7 +109,7 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe(0)
             ->and($data['stdout'] ?? '')
             ->toContain('skip_required_image')
-            ->and(hash_file('sha256', "{$workspace}/install-root/bin/orbit-binary"))
+            ->and(hash_file('sha256', fleet_update_install_cli_binary_path($workspace, $sha256)))
             ->toBe($sha256);
     });
 });
@@ -313,4 +313,9 @@ function make_fleet_update_install_cli_shadow_launcher(string $workspace): strin
     chmod(filename: $launcher, permissions: 0o755);
 
     return $launcher;
+}
+
+function fleet_update_install_cli_binary_path(string $workspace, string $sha256): string
+{
+    return "{$workspace}/install-root/bin/orbit-binary-".substr($sha256, offset: 0, length: 12);
 }
