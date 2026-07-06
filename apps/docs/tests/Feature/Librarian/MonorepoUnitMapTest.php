@@ -97,7 +97,7 @@ it('maps the Orbit Agent service and macOS UI to separate Cargo verification', f
             'Run Cargo/Tauri-compatible Rust checks from apps/agent; do not route them through root Composer, Laravel Artisan, Pest, or Mago wrappers.',
         )
         ->and($agent['do_not_start_when'][1])
-        ->toContain('gateway claim/report endpoint')
+        ->toContain('gateway-side Agent command dispatch')
         ->and($macos)
         ->toHaveKey('type', 'tauri-macos-agent-ui')
         ->toHaveKey('facts.tooling.cargo_toml', 'apps/macos/Cargo.toml')

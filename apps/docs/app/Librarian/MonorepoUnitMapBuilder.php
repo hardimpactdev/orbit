@@ -63,14 +63,14 @@ final readonly class MonorepoUnitMapBuilder
         ],
         'apps-agent' => [
             'type' => 'rust-agent-service',
-            'purpose' => 'Headless Rust/Axum Orbit Agent service binary. It owns local agent config loading, gateway ping/status, polling/claim/report client behavior, fixed typed job execution, the node-local background service loop, and app-local Rust tests.',
+            'purpose' => 'Headless Rust/Axum Orbit Agent service binary. It owns local agent config loading, gateway ping/status, the Agent listener HTTP surface, gateway-pushed command execution, and app-local Rust tests.',
             'start_when' => [
-                'Changing the headless Orbit Agent service, local agent config, health/status HTTP surface, gateway ping, polling worker, or typed agent job execution.',
+                'Changing the headless Orbit Agent service, local agent config, health/status HTTP surface, gateway ping, Agent listener, or pushed command execution.',
                 'Verifying Orbit Agent Rust service build, formatting, linting, or focused unit tests.',
             ],
             'do_not_start_when' => [
                 'Changing macOS menu-bar runtime, tray/menu status behavior, Tauri config, or native macOS UI packaging; use apps/macos.',
-                'Changing gateway claim/report endpoint implementation instead of the local agent client boundary.',
+                'Changing gateway-side Agent command dispatch or operation-token verification endpoint implementation instead of the local Agent listener boundary.',
                 'Adding autostart installers, signing, notarization, DMG packaging, self-update, arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior.',
             ],
             'owning_paths' => [
@@ -115,8 +115,8 @@ final readonly class MonorepoUnitMapBuilder
                 'Verifying Orbit Agent macOS Rust/Tauri build, formatting, linting, or focused unit tests.',
             ],
             'do_not_start_when' => [
-                'Changing the headless service polling loop, gateway claim/report client, typed job execution, or Axum health/status service; use apps/agent.',
-                'Changing gateway claim/report endpoint implementation instead of the local agent client boundary.',
+                'Changing the headless service Agent listener, pushed command execution, or Axum health/status service; use apps/agent.',
+                'Changing gateway-side Agent command dispatch or operation-token verification endpoint implementation instead of the local Agent listener boundary.',
                 'Adding launchd packaging, signing, notarization, DMG packaging, self-update, arbitrary privileged shell execution, approval UI, WebSocket presence, or SSH/RemoteShell replacement behavior.',
             ],
             'owning_paths' => [

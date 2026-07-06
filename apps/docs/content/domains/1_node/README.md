@@ -81,9 +81,9 @@ command never dispatches to gateway Artisan.
 
 Nodes do not own fleet state or run a local control plane. They run workload
 services, call the gateway when a local command is invoked, and currently
-receive gateway-applied changes over SSH. The future Orbit Agent runs on the
-node and lets supported nodes receive typed jobs owned by the gateway through
-polling, but it does not make the node a source of truth.
+receive gateway-applied changes over explicit SSH fallback paths. The Orbit
+Agent runs on the node and lets supported nodes receive typed jobs pushed by
+the gateway, but it does not make the node a source of truth.
 
 Node-side CLI availability is not general write permission. Any node-side
 write that follows the standard `node → gateway → SSH-back-via-RemoteShell`
@@ -328,10 +328,10 @@ Node transport has different rules before and after bootstrap:
   as file writes, service control, log access, package installation, and shell
   execution is explicit over SSH.
 - The Orbit Agent lane is reserved for supported nodes, starting with macOS
-  `app-dev` and self-managed workload nodes. The bootstrap runtime in
-  `apps/agent` polls the gateway for typed Orbit jobs; it is not arbitrary shell
-  transport, not a WebSocket requirement, and not an HTTP capability API on the
-  node.
+  `app-dev` and self-managed workload nodes. The runtime in `apps/agent`
+  receives gateway-pushed `binary + argv` command envelopes over the node-local
+  Agent listener; it is not arbitrary shell transport, not a WebSocket
+  requirement, and not an HTTP capability API on the node.
 - The current runtime bootstrap does not implement privileged jobs. Later
   privileged Orbit Agent job slices may use the OS prompt when the gateway
   submits protected local work. V1 has no separate Orbit approval UI or
@@ -346,11 +346,9 @@ Node transport has different rules before and after bootstrap:
 The current steady-state paths are therefore:
 
 1. CLI caller to gateway over HTTPS through WireGuard;
-2. gateway to node over SSH when node-side work is required.
-
-On agent-capable nodes, the second path may become dispatch of typed jobs owned
-by the gateway through the polling Orbit Agent lane, with SSH retained for
-bootstrap, recovery, and fallback.
+2. gateway to node through gateway-pushed Agent HTTP for supported node-local
+   execution, with explicit transitional SSH fallback retained only for
+   bootstrap, recovery, and migration.
 
 ## Role Bootstrap Network Policy
 

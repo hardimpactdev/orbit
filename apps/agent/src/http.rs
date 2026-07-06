@@ -45,11 +45,6 @@ pub fn run_agent_service_blocking() {
         .block_on(run_agent_service());
 }
 
-#[cfg(test)]
-fn starts_polling_worker_by_default() -> bool {
-    false
-}
-
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
@@ -738,11 +733,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_service_does_not_start_polling_worker_by_default() {
-        assert!(!starts_polling_worker_by_default());
-    }
-
-    #[test]
     fn execute_binary_writes_request_input_to_stdin() {
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
@@ -805,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_binary_does_not_quantize_fast_completion_to_poll_interval() {
+    fn execute_binary_does_not_quantize_fast_completion_to_scheduler_delay() {
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
             binary: "/usr/bin/true".to_string(),

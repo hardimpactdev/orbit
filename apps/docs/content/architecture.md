@@ -299,8 +299,9 @@ Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
 operation token, receives stdout/stderr/status/exit frames back, and keeps SSH
 as bootstrap, recovery, and explicit transitional fallback during migration.
 The default `auto` selection path does not silently choose SSH when agent-push
-is unavailable. Reachable Agent nodes use gateway push only; the Agent does not
-run a background polling claim loop. V1 has no WebSocket requirement.
+is unavailable. Reachable Agent nodes use gateway push only; the gateway is the
+sole initiator and the Agent runs no background retrieval loop. V1 has no
+WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 
@@ -328,8 +329,8 @@ Orbit Agent is reserved as a node-local execution lane. It is not a new control
 plane or arbitrary shell transport. The gateway owns structured binary argv
 envelopes, a hidden `orbit version --json` proof envelope, authenticated Agent
 listener delivery, scoped operation tokens, lifecycle reporting, and
-operation/activity recording. Poll/claim semantics are fallback or deferred
-compatibility, not the primary transport.
+operation/activity recording. Poll/claim semantics are not part of the managed
+Agent transport.
 
 The local Orbit Agent service lives in `apps/agent` as a headless Rust/Axum
 binary. It loads local config, exposes an authenticated Agent listener reachable
