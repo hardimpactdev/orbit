@@ -92,6 +92,25 @@ describe('InternalExecutorTokenController', function (): void {
             ->assertJsonPath('success.data.operation_id', 'operation-123');
     });
 
+    it('accepts the agent binary version proof command', function (): void {
+        internalExecutorCallerNode();
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'app-dev',
+            command: 'version',
+        );
+
+        internalExecutorVerifyTokenRequest([
+            'operation_token' => $operationToken->toString(),
+            'command' => 'version',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
     it('rejects non-internal commands at validation time', function (): void {
         internalExecutorCallerNode();
 
