@@ -78,7 +78,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Runtime language | PHP 8.5 inside Orbit-managed containers |
 | Persistent state | Gateway SQLite at `ORBIT_CONFIG_ROOT/gateway.sqlite`, mounted into `orbit-gateway` and `orbit-scheduler` |
 | Gateway API | `router-colocated`: router-owned `orbit-caddy` to `orbit-gateway` over `orbit-network`; `gateway-direct`: `orbit-gateway` publishes HTTPS directly; both are restricted to Orbit/WireGuard access |
-| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` selects `agent-push` when the node is active + capable + the envelope supports it and fails clearly otherwise; it does not silently fall back to SSH. `transitional-ssh-fallback` is an explicit operator-selected break-glass or migration preference. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Polling is fallback or deferred compatibility, not the primary target architecture. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
+| Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` selects `agent-push` when the node is active + capable + the envelope supports it and fails clearly otherwise; it does not silently fall back to SSH. `transitional-ssh-fallback` is an explicit operator-selected break-glass or migration preference. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Reachable Agent nodes use gateway push only; the Agent does not run a background polling claim loop. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
 | Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
@@ -319,8 +319,8 @@ that service and does not manage its lifetime.
 V1 is scoped narrowly:
 
 - gateway-built `binary + argv` requests only, not arbitrary shell transport;
-- gateway-pushed HTTP delivery over Orbit/WireGuard, with polling only as a
-  fallback or deferred compatibility path and no WebSocket requirement;
+- gateway-pushed HTTP delivery over Orbit/WireGuard, with no background
+  Agent polling claim loop and no WebSocket requirement;
 - one-shot gateway/status refresh when the macOS menu opens, showing Connected
   or Disconnected plus node name and gateway name/host;
 - menu icon state belongs to the UI process, with UI Restart and Quit actions

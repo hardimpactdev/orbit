@@ -299,8 +299,8 @@ Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
 operation token, receives stdout/stderr/status/exit frames back, and keeps SSH
 as bootstrap, recovery, and explicit transitional fallback during migration.
 The default `auto` selection path does not silently choose SSH when agent-push
-is unavailable. Polling is only a fallback or deferred compatibility path, not
-the primary target architecture. V1 has no WebSocket requirement.
+is unavailable. Reachable Agent nodes use gateway push only; the Agent does not
+run a background polling claim loop. V1 has no WebSocket requirement.
 
 The HTTPS choice for the caller→gateway edge is intentional. A CLI caller talks to the gateway over a typed API; it does not need shell access to any node. That limits what every caller can do to what Orbit explicitly exposes: no arbitrary shell commands, no SSH key sprawl, no hand-tuning a production host.
 

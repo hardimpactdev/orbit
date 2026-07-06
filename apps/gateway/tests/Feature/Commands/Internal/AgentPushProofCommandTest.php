@@ -29,6 +29,13 @@ it('runs an agent-push binary argv proof against a named node and returns struct
                     'message' => '{"version":"0.1.0"}',
                 ],
             ],
+            'timings' => [
+                'gateway_post_ms' => 42,
+                'authorization_ms' => 3,
+                'process_spawn_ms' => 4,
+                'process_wait_ms' => 5,
+                'result_serialization_ms' => 1,
+            ],
         ]),
     ]);
 
@@ -59,6 +66,22 @@ it('runs an agent-push binary argv proof against a named node and returns struct
     ]);
     expect($payload['operation_id'])->toBeString()->toStartWith('op_');
     expect($payload['frames'])->toHaveCount(1);
+    expect($payload['verified_binary'])->toMatchArray([
+        'binary' => 'orbit',
+        'argv' => ['version', '--json'],
+    ]);
+    expect($payload['timings'])
+        ->toHaveKey('gateway_post_ms')
+        ->and($payload['timings']['gateway_post_ms'])
+        ->toBeGreaterThanOrEqual(0)
+        ->and($payload['timings'])
+        ->toMatchArray([
+            'authorization_ms' => 3,
+            'process_spawn_ms' => 4,
+            'process_wait_ms' => 5,
+            'result_serialization_ms' => 1,
+        ]);
+    expect(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain($operationToken);
 
     Http::assertSent(
         fn (Request $request): bool => (
