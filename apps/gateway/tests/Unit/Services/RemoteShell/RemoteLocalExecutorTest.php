@@ -98,7 +98,10 @@ describe(RemoteLocalExecutor::class, function (): void {
                 && str_starts_with((string) $request['argv'][4], '--operation-token=')
                 && $request['argv'][5] === '--json'
                 && $request['input'] === '{"probe":true}'
+                && $request['command_id'] === 'orbit.agent.binary'
                 && $request['operation_id'] === '00000000-0000-4000-8000-000000000406'
+                && $request['payload']['operation_id'] === '00000000-0000-4000-8000-000000000406'
+                && $request['payload']['argv'] === $request['argv']
                 && $request['timeout_seconds'] === 45
             ),
         );

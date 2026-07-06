@@ -99,7 +99,9 @@ final readonly class NodeAgentPushClient
 
     /**
      * @return array{
+     *     command_id: string,
      *     operation_id: string,
+     *     payload: array<string, mixed>,
      *     binary: string,
      *     argv: list<string>,
      *     input?: string,
@@ -120,6 +122,7 @@ final readonly class NodeAgentPushClient
         );
 
         $payload = [
+            'command_id' => $envelope->commandId,
             'operation_id' => $command->operationId,
             'binary' => $command->binary,
             'argv' => $command->argv,
@@ -139,6 +142,8 @@ final readonly class NodeAgentPushClient
         if ($command->executionContext->environment !== []) {
             $payload['environment'] = $command->executionContext->environment;
         }
+
+        $payload['payload'] = array_diff_key($payload, ['command_id' => true, 'payload' => true]);
 
         return $payload;
     }
