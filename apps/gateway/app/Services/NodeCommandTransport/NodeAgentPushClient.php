@@ -29,10 +29,14 @@ final readonly class NodeAgentPushClient
             throw new InvalidArgumentException('Agent-push operation token is required.');
         }
 
+        $gatewayPostStartedAt = $this->monotonicNanoseconds();
+
         $response = Http::timeout($this->requestTimeoutSeconds($envelope))
             ->acceptJson()
             ->withToken($operationToken)
             ->post($this->urlFor($node), $this->payloadForTransport($envelope, $operationToken));
+
+        $gatewayPostMs = $this->elapsedMilliseconds($gatewayPostStartedAt);
 
         if (! $response->successful()) {
             throw new RuntimeException("Orbit Agent push request failed with HTTP {$response->status()}.");
@@ -41,7 +45,7 @@ final readonly class NodeAgentPushClient
         /** @var array<string, mixed> $payload */
         $payload = $response->json();
 
-        return NodeAgentPushResult::fromAgentPayload($payload);
+        return NodeAgentPushResult::fromAgentPayload($payload, $gatewayPostMs);
     }
 
     private function assertAllowlisted(NodeCommandEnvelope $envelope): void
@@ -75,6 +79,22 @@ final readonly class NodeAgentPushClient
     private function requestTimeoutSeconds(NodeCommandEnvelope $envelope): int
     {
         return max(10, $envelope->timeoutSeconds + 5);
+    }
+
+    private function elapsedMilliseconds(int $startedAt): int
+    {
+        return max(0, (int) round(($this->monotonicNanoseconds() - $startedAt) / 1_000_000));
+    }
+
+    private function monotonicNanoseconds(): int
+    {
+        $now = hrtime(true);
+
+        if (! is_int($now)) {
+            throw new RuntimeException('Could not read monotonic clock.');
+        }
+
+        return $now;
     }
 
     /**

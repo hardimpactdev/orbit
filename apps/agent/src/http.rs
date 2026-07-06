@@ -1,6 +1,6 @@
 use crate::{
-    build_service_status_snapshot, default_http_bind_addr, run_polling_worker_loop, AgentConfig,
-    HttpAgentGateway, ServiceStatusSnapshot,
+    build_service_status_snapshot, default_http_bind_addr, AgentConfig, HttpAgentGateway,
+    ServiceStatusSnapshot,
 };
 use axum::{
     extract::State,
@@ -14,14 +14,12 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
 pub async fn run_agent_service() {
-    spawn_polling_worker();
-
     let app = app();
 
     let bind_addr = default_http_bind_addr();
@@ -46,8 +44,9 @@ pub fn run_agent_service_blocking() {
         .block_on(run_agent_service());
 }
 
-fn spawn_polling_worker() {
-    std::thread::spawn(|| run_polling_worker_loop(Duration::from_secs(15)));
+#[cfg(test)]
+fn starts_polling_worker_by_default() -> bool {
+    false
 }
 
 async fn health() -> Json<HealthResponse> {
@@ -61,7 +60,7 @@ async fn status() -> Json<ServiceStatusSnapshot> {
 }
 
 fn app() -> Router {
-    app_with_authorizer(Arc::new(GatewayCommandAuthorizer))
+    app_with_authorizer(Arc::new(GatewayCommandAuthorizer::new()))
 }
 
 fn app_with_authorizer(authorizer: Arc<dyn CommandAuthorizer>) -> Router {
@@ -81,7 +80,71 @@ trait CommandAuthorizer: Send + Sync {
     fn authorize(&self, request: &CommandPushRequest) -> Result<(), String>;
 }
 
-struct GatewayCommandAuthorizer;
+trait TokenVerifier: Send + Sync {
+    fn verify_operation_token(
+        &self,
+        operation_token: &str,
+        command: &str,
+    ) -> Result<crate::OperationTokenVerification, String>;
+}
+
+impl TokenVerifier for HttpAgentGateway {
+    fn verify_operation_token(
+        &self,
+        operation_token: &str,
+        command: &str,
+    ) -> Result<crate::OperationTokenVerification, String> {
+        HttpAgentGateway::verify_operation_token(self, operation_token, command)
+            .map_err(|error| format!("{error:?}"))
+    }
+}
+
+struct GatewayCommandAuthorizer {
+    verifier: Mutex<Option<Arc<dyn TokenVerifier>>>,
+    factory: Arc<dyn Fn() -> Result<Arc<dyn TokenVerifier>, String> + Send + Sync>,
+}
+
+impl GatewayCommandAuthorizer {
+    fn new() -> Self {
+        Self::with_factory(Arc::new(|| {
+            AgentConfig::load_default()
+                .map(|config| {
+                    let g: HttpAgentGateway = HttpAgentGateway::new(config);
+                    Arc::new(g) as Arc<dyn TokenVerifier>
+                })
+                .map_err(|error| error.to_string())
+        }))
+    }
+
+    fn with_factory(
+        factory: Arc<dyn Fn() -> Result<Arc<dyn TokenVerifier>, String> + Send + Sync>,
+    ) -> Self {
+        Self {
+            verifier: Mutex::new(None),
+            factory,
+        }
+    }
+
+    fn verify_operation_token(
+        &self,
+        operation_token: &str,
+        command: &str,
+    ) -> Result<crate::OperationTokenVerification, String> {
+        let mut verifier = self
+            .verifier
+            .lock()
+            .map_err(|_| "gateway client lock poisoned".to_string())?;
+
+        if verifier.is_none() {
+            *verifier = Some((self.factory)()?);
+        }
+
+        verifier
+            .as_ref()
+            .expect("gateway client initialized")
+            .verify_operation_token(operation_token, command)
+    }
+}
 
 impl CommandAuthorizer for GatewayCommandAuthorizer {
     fn authorize(&self, request: &CommandPushRequest) -> Result<(), String> {
@@ -89,11 +152,7 @@ impl CommandAuthorizer for GatewayCommandAuthorizer {
             .argv
             .first()
             .ok_or_else(|| "agent-push argv must include an Orbit command".to_string())?;
-        let config = AgentConfig::load_default().map_err(|error| error.to_string())?;
-        let gateway = HttpAgentGateway::new(config);
-        let verification = gateway
-            .verify_operation_token(&request.operation_token, command)
-            .map_err(|error| format!("{error:?}"))?;
+        let verification = self.verify_operation_token(&request.operation_token, command)?;
 
         if verification.allowed {
             return Ok(());
@@ -123,12 +182,16 @@ fn command_push_blocking(
     state: AgentHttpState,
     request: CommandPushRequest,
 ) -> Result<CommandPushResponse, (StatusCode, String)> {
+    let authorization_start = Instant::now();
+
     if let Err(reason) = state.authorizer.authorize(&request) {
         return Err((
             StatusCode::UNAUTHORIZED,
             format!("agent-push operation token was rejected: {reason}"),
         ));
     }
+
+    let authorization_ms = elapsed_millis(authorization_start);
 
     if request.binary != "orbit" {
         return Err((
@@ -146,6 +209,12 @@ fn command_push_blocking(
         status: execution.status,
         frames: execution.frames,
         exit_code: execution.exit_code,
+        timings: CommandPushTimings {
+            authorization_ms,
+            process_spawn_ms: execution.timings.process_spawn_ms,
+            process_wait_ms: execution.timings.process_wait_ms,
+            result_serialization_ms: execution.timings.result_serialization_ms,
+        },
     })
 }
 
@@ -177,6 +246,7 @@ fn execute_binary_once(
     timeout_seconds: u64,
     deadline: Instant,
 ) -> CommandExecution {
+    let spawn_start = Instant::now();
     let mut command = Command::new(command_binary(request));
     command
         .args(argv)
@@ -192,17 +262,26 @@ fn execute_binary_once(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
+            let serialization_start = Instant::now();
+            let frames = vec![CommandPushFrame {
+                frame_type: "stderr".to_string(),
+                message: format!("failed to execute allowlisted binary: {error}"),
+            }];
+
             return CommandExecution {
                 status: "failed".to_string(),
                 exit_code: None,
-                frames: vec![CommandPushFrame {
-                    frame_type: "stderr".to_string(),
-                    message: format!("failed to execute allowlisted binary: {error}"),
-                }],
+                frames,
+                timings: CommandExecutionTimings {
+                    process_spawn_ms: elapsed_millis(spawn_start),
+                    process_wait_ms: 0,
+                    result_serialization_ms: elapsed_millis(serialization_start),
+                },
             };
         }
     };
 
+    let process_spawn_ms = elapsed_millis(spawn_start);
     let stdout = child.stdout.take().map(spawn_output_drain);
     let stderr = child.stderr.take().map(spawn_output_drain);
 
@@ -218,45 +297,116 @@ fn execute_binary_once(
                     exit_code: None,
                     frames: output
                         .with_error_frame(format!("failed to write binary stdin: {error}")),
+                    timings: CommandExecutionTimings {
+                        process_spawn_ms,
+                        process_wait_ms: 0,
+                        result_serialization_ms: 0,
+                    },
                 };
             }
         }
     }
 
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let output = collect_drained_output(stdout, stderr);
+    let wait_start = Instant::now();
+    let child_id = child.id();
+    let (wait_sender, wait_receiver) = std::sync::mpsc::channel();
 
-                return command_output_to_execution(status, output.stdout, output.stderr);
+    thread::spawn(move || {
+        let _ = wait_sender.send(child.wait());
+    });
+
+    match wait_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(Ok(status)) => {
+            let process_wait_ms = elapsed_millis(wait_start);
+            let output = collect_drained_output(stdout, stderr);
+
+            command_output_to_execution(
+                status,
+                output.stdout,
+                output.stderr,
+                CommandExecutionTimings {
+                    process_spawn_ms,
+                    process_wait_ms,
+                    result_serialization_ms: 0,
+                },
+            )
+        }
+        Ok(Err(error)) => {
+            let process_wait_ms = elapsed_millis(wait_start);
+            let output = collect_drained_output(stdout, stderr);
+            let serialization_start = Instant::now();
+            let frames =
+                output.with_error_frame(format!("failed to wait for allowlisted binary: {error}"));
+
+            CommandExecution {
+                status: "failed".to_string(),
+                exit_code: None,
+                frames,
+                timings: CommandExecutionTimings {
+                    process_spawn_ms,
+                    process_wait_ms,
+                    result_serialization_ms: elapsed_millis(serialization_start),
+                },
             }
-            Ok(None) if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let output = collect_drained_output(stdout, stderr);
-
-                return CommandExecution {
-                    status: "failed".to_string(),
-                    exit_code: None,
-                    frames: output.with_error_frame(format!(
-                        "binary execution timed out after {timeout_seconds} seconds"
-                    )),
-                };
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            terminate_process(child_id);
+            if wait_receiver.recv_timeout(Duration::from_secs(2)).is_err() {
+                force_terminate_process(child_id);
+                let _ = wait_receiver.recv_timeout(Duration::from_secs(2));
             }
-            Ok(None) => thread::sleep(Duration::from_millis(25)),
-            Err(error) => {
-                let output = collect_drained_output(stdout, stderr);
+            let process_wait_ms = elapsed_millis(wait_start);
+            let output = collect_drained_output(stdout, stderr);
+            let serialization_start = Instant::now();
+            let frames = output.with_error_frame(format!(
+                "binary execution timed out after {timeout_seconds} seconds"
+            ));
 
-                return CommandExecution {
-                    status: "failed".to_string(),
-                    exit_code: None,
-                    frames: output.with_error_frame(format!(
-                        "failed to wait for allowlisted binary: {error}"
-                    )),
-                };
+            CommandExecution {
+                status: "failed".to_string(),
+                exit_code: None,
+                frames,
+                timings: CommandExecutionTimings {
+                    process_spawn_ms,
+                    process_wait_ms,
+                    result_serialization_ms: elapsed_millis(serialization_start),
+                },
+            }
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            let process_wait_ms = elapsed_millis(wait_start);
+            let output = collect_drained_output(stdout, stderr);
+            let serialization_start = Instant::now();
+            let frames = output.with_error_frame(
+                "failed to wait for allowlisted binary: wait worker disconnected".to_string(),
+            );
+
+            CommandExecution {
+                status: "failed".to_string(),
+                exit_code: None,
+                frames,
+                timings: CommandExecutionTimings {
+                    process_spawn_ms,
+                    process_wait_ms,
+                    result_serialization_ms: elapsed_millis(serialization_start),
+                },
             }
         }
     }
+}
+
+fn terminate_process(pid: u32) {
+    let _ = Command::new("kill")
+        .arg("-TERM")
+        .arg(pid.to_string())
+        .status();
+}
+
+fn force_terminate_process(pid: u32) {
+    let _ = Command::new("kill")
+        .arg("-KILL")
+        .arg(pid.to_string())
+        .status();
 }
 
 fn spawn_output_drain<R>(mut reader: R) -> thread::JoinHandle<Result<Vec<u8>, String>>
@@ -388,7 +538,9 @@ fn command_output_to_execution(
     status: ExitStatus,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+    mut timings: CommandExecutionTimings,
 ) -> CommandExecution {
+    let serialization_start = Instant::now();
     let mut frames = output_bytes_to_frames(stdout, stderr);
     let exit_code = status.code();
 
@@ -407,7 +559,15 @@ fn command_output_to_execution(
         },
         exit_code,
         frames,
+        timings: {
+            timings.result_serialization_ms = elapsed_millis(serialization_start);
+            timings
+        },
     }
+}
+
+fn elapsed_millis(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 fn output_bytes_to_frames(stdout: Vec<u8>, stderr: Vec<u8>) -> Vec<CommandPushFrame> {
@@ -467,6 +627,7 @@ struct CommandPushResponse {
     status: String,
     frames: Vec<CommandPushFrame>,
     exit_code: Option<i32>,
+    timings: CommandPushTimings,
 }
 
 #[derive(Debug, Clone)]
@@ -474,6 +635,22 @@ struct CommandExecution {
     status: String,
     frames: Vec<CommandPushFrame>,
     exit_code: Option<i32>,
+    timings: CommandExecutionTimings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct CommandPushTimings {
+    authorization_ms: u64,
+    process_spawn_ms: u64,
+    process_wait_ms: u64,
+    result_serialization_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandExecutionTimings {
+    process_spawn_ms: u64,
+    process_wait_ms: u64,
+    result_serialization_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -494,10 +671,31 @@ mod tests {
     use axum::body::to_bytes;
     use axum::http::{header, Method, Request, StatusCode};
     use serde_json::Value;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use tower::ServiceExt;
 
     struct StaticCommandAuthorizer {
         allowed: bool,
+    }
+
+    struct CountingTokenVerifier {
+        count: Arc<AtomicUsize>,
+    }
+
+    impl TokenVerifier for CountingTokenVerifier {
+        fn verify_operation_token(
+            &self,
+            _operation_token: &str,
+            _command: &str,
+        ) -> Result<crate::OperationTokenVerification, String> {
+            self.count.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::OperationTokenVerification {
+                allowed: true,
+                reason: None,
+                operation_id: None,
+            })
+        }
     }
 
     impl CommandAuthorizer for StaticCommandAuthorizer {
@@ -524,8 +722,13 @@ mod tests {
     }
 
     #[test]
-    fn default_bind_addr_targets_loopback_agent_port() {
-        assert_eq!(default_http_bind_addr(), "127.0.0.1:9477");
+    fn default_bind_addr_targets_reachable_agent_port() {
+        assert_eq!(default_http_bind_addr(), "0.0.0.0:9477");
+    }
+
+    #[test]
+    fn agent_service_does_not_start_polling_worker_by_default() {
+        assert!(!starts_polling_worker_by_default());
     }
 
     #[test]
@@ -549,6 +752,25 @@ mod tests {
                 message: "agent stdin".to_string(),
             })
         );
+        let _ = execution.timings.process_spawn_ms;
+        let _ = execution.timings.process_wait_ms;
+        let _ = execution.timings.result_serialization_ms;
+    }
+
+    #[test]
+    fn execute_binary_does_not_quantize_fast_completion_to_poll_interval() {
+        let execution = execute_binary(&CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "/usr/bin/true".to_string(),
+            argv: vec![],
+            input: None,
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        });
+
+        assert_eq!(execution.status, "succeeded");
+        assert!(execution.timings.process_wait_ms < 25);
     }
 
     #[test]
@@ -579,6 +801,39 @@ mod tests {
     }
 
     #[test]
+    fn execute_binary_times_out_with_bounded_wait_and_timeout_frame() {
+        let start = Instant::now();
+        let execution = execute_binary(&CommandPushRequest {
+            operation_id: "op_timeout_test".to_string(),
+            binary: "/bin/sleep".to_string(),
+            argv: vec!["5".to_string()],
+            input: None,
+            operation_token: "op_test".to_string(),
+            timeout_seconds: 1,
+            stream: true,
+        });
+        let elapsed = start.elapsed();
+
+        assert_eq!(execution.status, "failed");
+        assert_eq!(execution.exit_code, None);
+        let has_timeout_frame = execution
+            .frames
+            .iter()
+            .any(|f| f.frame_type == "stderr" && f.message.contains("timed out after 1 seconds"));
+        assert!(
+            has_timeout_frame,
+            "expected timeout stderr frame, got frames: {:?}",
+            execution.frames
+        );
+        assert!(
+            elapsed.as_millis() < 3000,
+            "timeout path should be bounded, took {} ms",
+            elapsed.as_millis()
+        );
+        assert!(execution.timings.process_wait_ms < 3000);
+    }
+
+    #[test]
     fn retry_without_legacy_flags_is_used_for_stale_fleet_update_cli() {
         let request = CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
@@ -600,6 +855,7 @@ mod tests {
                 frame_type: "stderr".to_string(),
                 message: "The \"--operation-token\" option does not exist.".to_string(),
             }],
+            timings: zero_execution_timings(),
         };
 
         assert!(should_retry_stale_fleet_update_without_legacy_flags(
@@ -629,6 +885,7 @@ mod tests {
                 frame_type: "stdout".to_string(),
                 message: "updated".to_string(),
             }],
+            timings: zero_execution_timings(),
         };
 
         assert!(!should_retry_stale_fleet_update_without_legacy_flags(
@@ -658,6 +915,7 @@ mod tests {
                 frame_type: "stderr".to_string(),
                 message: "The \"--operation-token\" option does not exist.".to_string(),
             }],
+            timings: zero_execution_timings(),
         };
 
         assert!(!should_retry_stale_fleet_update_without_legacy_flags(
@@ -687,6 +945,7 @@ mod tests {
                 frame_type: "stderr".to_string(),
                 message: "The \"--json\" option does not exist.".to_string(),
             }],
+            timings: zero_execution_timings(),
         };
 
         assert!(should_retry_stale_fleet_update_without_legacy_flags(
@@ -748,6 +1007,10 @@ mod tests {
             .as_array()
             .is_some_and(|frames| !frames.is_empty()));
         assert!(payload["exit_code"].is_i64());
+        assert!(payload["timings"]["authorization_ms"].is_u64());
+        assert!(payload["timings"]["process_spawn_ms"].is_u64());
+        assert!(payload["timings"]["process_wait_ms"].is_u64());
+        assert!(payload["timings"]["result_serialization_ms"].is_u64());
     }
 
     #[tokio::test]
@@ -802,5 +1065,72 @@ mod tests {
             .expect("response");
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn gateway_command_authorizer_reuses_client_factory() {
+        let factory_invocations = Arc::new(AtomicUsize::new(0));
+        let verify_invocations = Arc::new(AtomicUsize::new(0));
+
+        let factory = {
+            let factory_invocations = factory_invocations.clone();
+            let verify_invocations = verify_invocations.clone();
+            Arc::new(move || {
+                factory_invocations.fetch_add(1, Ordering::SeqCst);
+                let verifier: Arc<dyn TokenVerifier> = Arc::new(CountingTokenVerifier {
+                    count: verify_invocations.clone(),
+                });
+                Ok(verifier)
+            }) as Arc<dyn Fn() -> Result<Arc<dyn TokenVerifier>, String> + Send + Sync>
+        };
+
+        let authorizer = Arc::new(GatewayCommandAuthorizer::with_factory(factory));
+        let app = app_with_authorizer(authorizer);
+
+        for i in 0..2 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/v1/commands")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(
+                            serde_json::json!({
+                                "operation_id": format!("op_reuse_{}", i),
+                                "binary": "orbit",
+                                "argv": ["version", "--json"],
+                                "operation_token": format!("op_token_{}", i),
+                                "timeout_seconds": 30,
+                                "stream": true,
+                            })
+                            .to_string(),
+                        ))
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        assert_eq!(
+            factory_invocations.load(Ordering::SeqCst),
+            1,
+            "gateway/client factory must be invoked exactly once"
+        );
+        assert_eq!(
+            verify_invocations.load(Ordering::SeqCst),
+            2,
+            "token verification must be invoked twice"
+        );
+    }
+
+    fn zero_execution_timings() -> CommandExecutionTimings {
+        CommandExecutionTimings {
+            process_spawn_ms: 0,
+            process_wait_ms: 0,
+            result_serialization_ms: 0,
+        }
     }
 }

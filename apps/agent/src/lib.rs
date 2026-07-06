@@ -640,24 +640,6 @@ pub fn build_service_status_snapshot() -> ServiceStatusSnapshot {
     }
 }
 
-pub fn poll_once_from_default_config() {
-    if let Ok(config) = AgentConfig::load_default() {
-        let gateway = HttpAgentGateway::new(config);
-        let mut worker = PollingWorker::new(gateway);
-
-        if let Err(error) = worker.poll_once() {
-            eprintln!("Orbit Agent poll failed: {error:?}");
-        }
-    }
-}
-
-pub fn run_polling_worker_loop(poll_interval: Duration) {
-    loop {
-        poll_once_from_default_config();
-        std::thread::sleep(poll_interval);
-    }
-}
-
 pub fn default_http_bind_addr() -> String {
     if let Ok(addr) = std::env::var("ORBIT_AGENT_HTTP_BIND") {
         if !addr.trim().is_empty() {
@@ -665,7 +647,7 @@ pub fn default_http_bind_addr() -> String {
         }
     }
 
-    "127.0.0.1:9477".to_string()
+    "0.0.0.0:9477".to_string()
 }
 
 pub trait AgentGateway {

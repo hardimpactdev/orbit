@@ -94,6 +94,11 @@ class AgentPushProofCommand extends Command
             'binary' => $result->binary,
             'exit_code' => $result->exitCode,
             'frames' => $result->frames,
+            'timings' => $result->timings,
+            'verified_binary' => [
+                'binary' => $envelope->binary,
+                'argv' => $envelope->argv,
+            ],
         ]);
 
         return $result->status === 'succeeded' ? self::SUCCESS : self::FAILURE;

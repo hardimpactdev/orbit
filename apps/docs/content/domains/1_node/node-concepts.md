@@ -429,8 +429,8 @@ Agent-push V1 carries `operation_id`, `binary`, `argv`, `operation_token`,
 `timeout_seconds`, and `stream`. The node Agent is the final local protection
 point: it allows only known binaries, initially `orbit`, executes them through
 no-shell process APIs, and returns collected stdout, stderr, status, and exit
-frames. Polling is fallback or deferred compatibility, not the primary
-architecture for reachable workload nodes.
+frames. Reachable workload nodes use gateway push only; the Agent does not run
+a background polling claim loop.
 
 The local runtime is split between `apps/agent`, the headless Rust/Axum service
 binary that owns the Agent listener and execution loop (Linux and macOS), and

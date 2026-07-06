@@ -24,9 +24,20 @@ final readonly class NodeAgentPushResult
     public ?int $exitCode;
 
     /**
+     * @var array{
+     *     gateway_post_ms: int,
+     *     authorization_ms: int,
+     *     process_spawn_ms: int,
+     *     process_wait_ms: int,
+     *     result_serialization_ms: int,
+     * }
+     */
+    public array $timings;
+
+    /**
      * @param  array<string, mixed>  $payload
      */
-    public static function fromAgentPayload(array $payload): self
+    public static function fromAgentPayload(array $payload, int $gatewayPostMs = 0): self
     {
         return new self([
             'transport' => self::stringValue($payload, 'transport'),
@@ -35,6 +46,7 @@ final readonly class NodeAgentPushResult
             'status' => self::stringValue($payload, 'status'),
             'frames' => self::frames($payload),
             'exit_code' => self::intValue($payload, 'exit_code'),
+            'timings' => self::timings($payload, $gatewayPostMs),
         ]);
     }
 
@@ -46,6 +58,13 @@ final readonly class NodeAgentPushResult
      *     status: string,
      *     frames: list<array<array-key, mixed>>,
      *     exit_code?: int|null,
+     *     timings: array{
+     *         gateway_post_ms: int,
+     *         authorization_ms: int,
+     *         process_spawn_ms: int,
+     *         process_wait_ms: int,
+     *         result_serialization_ms: int,
+     *     },
      * }  $attributes
      */
     public function __construct(array $attributes)
@@ -56,6 +75,7 @@ final readonly class NodeAgentPushResult
         $this->binary = $attributes['binary'];
         $this->status = $attributes['status'];
         $this->exitCode = $attributes['exit_code'] ?? null;
+        $this->timings = $attributes['timings'];
     }
 
     /**
@@ -102,5 +122,42 @@ final readonly class NodeAgentPushResult
         }
 
         return $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{
+     *     gateway_post_ms: int,
+     *     authorization_ms: int,
+     *     process_spawn_ms: int,
+     *     process_wait_ms: int,
+     *     result_serialization_ms: int,
+     * }
+     */
+    private static function timings(array $payload, int $gatewayPostMs): array
+    {
+        $timings = is_array($payload['timings'] ?? null) ? $payload['timings'] : [];
+
+        return [
+            'gateway_post_ms' => $gatewayPostMs,
+            'authorization_ms' => self::timingValue($timings, 'authorization_ms'),
+            'process_spawn_ms' => self::timingValue($timings, 'process_spawn_ms'),
+            'process_wait_ms' => self::timingValue($timings, 'process_wait_ms'),
+            'result_serialization_ms' => self::timingValue($timings, 'result_serialization_ms'),
+        ];
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $timings
+     */
+    private static function timingValue(array $timings, string $key): int
+    {
+        $value = $timings[$key] ?? 0;
+
+        if (! is_int($value)) {
+            throw new RuntimeException("Orbit Agent push response timing '{$key}' must be an integer.");
+        }
+
+        return max(0, $value);
     }
 }
