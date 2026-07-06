@@ -54,8 +54,8 @@ class AgentPushProofCommand extends Command
                 'node' => $node->name,
                 'transport' => NodeTransport::AgentPush->value,
                 'status' => 'failed',
-                'operation_id' => $envelope->operationId,
-                'binary' => $envelope->binary,
+                'operation_id' => $envelope->agentPushCommand?->operationId,
+                'binary' => $envelope->agentPushCommand?->binary,
                 'error' => 'agent-push transport is unavailable for the target node; RemoteShell requires explicit --transport=transitional-ssh-fallback break-glass opt-in when this command supports it',
             ]);
 
@@ -67,8 +67,8 @@ class AgentPushProofCommand extends Command
                 'node' => $node->name,
                 'transport' => $transport->value,
                 'status' => 'failed',
-                'operation_id' => $envelope->operationId,
-                'binary' => $envelope->binary,
+                'operation_id' => $envelope->agentPushCommand?->operationId,
+                'binary' => $envelope->agentPushCommand?->binary,
                 'error' => 'agent-push transport is unavailable for the target node',
             ]);
 
@@ -96,8 +96,8 @@ class AgentPushProofCommand extends Command
             'frames' => $result->frames,
             'timings' => $result->timings,
             'verified_binary' => [
-                'binary' => $envelope->binary,
-                'argv' => $envelope->argv,
+                'binary' => $envelope->agentPushCommand?->binary,
+                'argv' => $envelope->agentPushCommand?->argv,
             ],
         ]);
 

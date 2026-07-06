@@ -11,6 +11,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
@@ -252,6 +253,14 @@ fn execute_binary_once(
         .args(argv)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    if let Some(cwd) = &request.cwd {
+        command.current_dir(cwd);
+    }
+
+    if let Some(environment) = &request.environment {
+        command.envs(environment);
+    }
 
     if request.input.is_some() {
         command.stdin(Stdio::piped());
@@ -613,6 +622,8 @@ struct CommandPushRequest {
     binary: String,
     argv: Vec<String>,
     input: Option<String>,
+    cwd: Option<String>,
+    environment: Option<HashMap<String, String>>,
     operation_token: String,
     timeout_seconds: u64,
     #[allow(dead_code)]
@@ -738,6 +749,8 @@ mod tests {
             binary: "/bin/cat".to_string(),
             argv: vec![],
             input: Some("agent stdin\n".to_string()),
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -758,12 +771,48 @@ mod tests {
     }
 
     #[test]
+    fn execute_binary_applies_request_cwd_and_environment() {
+        let cwd = std::env::temp_dir()
+            .canonicalize()
+            .expect("temp dir should canonicalize");
+        let execution = execute_binary(&CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "/bin/sh".to_string(),
+            argv: vec![
+                "-c".to_string(),
+                "printf '%s:%s' \"$PWD\" \"$ORBIT_AGENT_TEST_VALUE\"".to_string(),
+            ],
+            input: None,
+            cwd: Some(cwd.to_string_lossy().to_string()),
+            environment: Some(HashMap::from([(
+                "ORBIT_AGENT_TEST_VALUE".to_string(),
+                "from-env".to_string(),
+            )])),
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        });
+
+        assert_eq!(execution.status, "succeeded");
+        assert_eq!(execution.exit_code, Some(0));
+        assert_eq!(
+            execution.frames.first(),
+            Some(&CommandPushFrame {
+                frame_type: "stdout".to_string(),
+                message: format!("{}:from-env", cwd.to_string_lossy()),
+            })
+        );
+    }
+
+    #[test]
     fn execute_binary_does_not_quantize_fast_completion_to_poll_interval() {
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
             binary: "/usr/bin/true".to_string(),
             argv: vec![],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -784,6 +833,8 @@ mod tests {
                     .to_string(),
             ],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 5,
             stream: true,
@@ -808,6 +859,8 @@ mod tests {
             binary: "/bin/sleep".to_string(),
             argv: vec!["5".to_string()],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test".to_string(),
             timeout_seconds: 1,
             stream: true,
@@ -844,6 +897,8 @@ mod tests {
                 "--json".to_string(),
             ],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -874,6 +929,8 @@ mod tests {
                 "--json".to_string(),
             ],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -904,6 +961,8 @@ mod tests {
                 "--json".to_string(),
             ],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -934,6 +993,8 @@ mod tests {
                 "--json".to_string(),
             ],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -960,6 +1021,8 @@ mod tests {
             binary: "/bin/cat".to_string(),
             argv: vec![],
             input: None,
+            cwd: None,
+            environment: None,
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
