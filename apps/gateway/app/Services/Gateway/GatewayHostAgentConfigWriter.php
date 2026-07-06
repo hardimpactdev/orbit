@@ -14,12 +14,26 @@ class GatewayHostAgentConfigWriter
     {
         $configRoot = $this->configRoot();
         $path = "{$configRoot}/agent.toml";
+        $caDir = "{$configRoot}/ca";
+        $caPath = "{$configRoot}/ca/root.crt";
 
-        File::ensureDirectoryExists($configRoot, 0o700);
+        File::ensureDirectoryExists($configRoot, 0o711);
         File::put($path, $this->contents($gatewayNode));
 
-        if (! chmod($path, 0o600)) {
-            throw new RuntimeException("Unable to set private permissions on {$path}.");
+        if (! chmod($configRoot, 0o711)) {
+            throw new RuntimeException("Unable to set traversable permissions on {$configRoot}.");
+        }
+
+        if (! chmod($path, 0o644)) {
+            throw new RuntimeException("Unable to set host-readable permissions on {$path}.");
+        }
+
+        if (File::isDirectory($caDir) && ! chmod($caDir, 0o711)) {
+            throw new RuntimeException("Unable to set traversable permissions on {$caDir}.");
+        }
+
+        if (File::exists($caPath) && ! chmod($caPath, 0o644)) {
+            throw new RuntimeException("Unable to set host-readable permissions on {$caPath}.");
         }
 
         return $path;
@@ -51,8 +65,14 @@ class GatewayHostAgentConfigWriter
             'node_id = "'.$this->tomlString((string) $gatewayNode->getKey()).'"',
             'node_name = "'.$this->tomlString($gatewayNode->name).'"',
             'gateway_name = "'.$this->tomlString($gatewayNode->name).'"',
+            'ca_pem_path = "'.$this->tomlString($this->caPemPath()).'"',
             '',
         ]);
+    }
+
+    private function caPemPath(): string
+    {
+        return $this->configRoot().'/ca/root.crt';
     }
 
     private function tomlString(string $value): string

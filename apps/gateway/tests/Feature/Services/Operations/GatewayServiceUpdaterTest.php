@@ -108,6 +108,7 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->toContain('gateway_url = "https://10.6.0.2"')
         ->toContain('node_name = "gateway-1"')
         ->toContain('gateway_name = "gateway-1"')
+        ->toContain('ca_pem_path = "'.$this->configRoot.'/ca/root.crt"')
         ->not->toContain('bearer_token');
 });
 

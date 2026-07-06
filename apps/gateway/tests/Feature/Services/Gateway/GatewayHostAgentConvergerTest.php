@@ -34,6 +34,8 @@ it('writes gateway host agent config and converges the systemd service', functio
             'wireguard_address' => '10.6.0.2',
             'orbit_agent_capable' => false,
         ]);
+    File::ensureDirectoryExists("{$this->configRoot}/ca");
+    File::put("{$this->configRoot}/ca/root.crt", 'root-ca');
 
     Process::fake(function ($process) use (&$systemdUnit) {
         if ($process->command === 'sudo tee /etc/systemd/system/orbit-agent.service > /dev/null') {
@@ -50,6 +52,7 @@ it('writes gateway host agent config and converges the systemd service', functio
         ->and(File::get($path))
         ->toContain('gateway_url = "https://10.6.0.2"')
         ->toContain('node_name = "gateway-1"')
+        ->toContain('ca_pem_path = "'.$this->configRoot.'/ca/root.crt"')
         ->not
         ->toContain('bearer_token')
         ->and($systemdUnit)
@@ -58,6 +61,15 @@ it('writes gateway host agent config and converges the systemd service', functio
         ->toContain('ExecStart=/usr/local/bin/orbit-agent')
         ->and($gateway->fresh()->orbit_agent_capable)
         ->toBeTrue();
+
+    expect(substr(sprintf('%o', fileperms($this->configRoot)), -4))
+        ->toBe('0711')
+        ->and(substr(sprintf('%o', fileperms($path)), -4))
+        ->toBe('0644')
+        ->and(substr(sprintf('%o', fileperms("{$this->configRoot}/ca")), -4))
+        ->toBe('0711')
+        ->and(substr(sprintf('%o', fileperms("{$this->configRoot}/ca/root.crt")), -4))
+        ->toBe('0644');
 
     Process::assertRan('test -x \'/usr/local/bin/orbit-agent\'');
     Process::assertRan('sudo systemctl daemon-reload');

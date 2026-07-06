@@ -104,9 +104,11 @@ impl GatewayCommandAuthorizer {
     fn new() -> Self {
         Self::with_factory(Arc::new(|| {
             AgentConfig::load_default()
-                .map(|config| {
-                    let g: HttpAgentGateway = HttpAgentGateway::new(config);
-                    Arc::new(g) as Arc<dyn TokenVerifier>
+                .and_then(|config| {
+                    let g = HttpAgentGateway::new(config)
+                        .map_err(|error| crate::ConfigError::InvalidConfig(format!("{error:?}")))?;
+
+                    Ok(Arc::new(g) as Arc<dyn TokenVerifier>)
                 })
                 .map_err(|error| error.to_string())
         }))

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fs;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
@@ -16,6 +19,7 @@ pub struct AgentConfig {
     pub node_id: String,
     pub node_name: String,
     pub gateway_name: String,
+    pub ca_pem_path: Option<PathBuf>,
     pub bearer_token: Option<String>,
 }
 
@@ -104,6 +108,7 @@ struct AgentConfigFile {
     node_id: String,
     node_name: String,
     gateway_name: String,
+    ca_pem_path: Option<String>,
     bearer_token: Option<String>,
 }
 
@@ -135,6 +140,15 @@ impl TryFrom<AgentConfigFile> for AgentConfig {
             node_id: value.node_id,
             node_name: value.node_name,
             gateway_name: value.gateway_name,
+            ca_pem_path: value.ca_pem_path.and_then(|path| {
+                let path = path.trim();
+
+                if path.is_empty() {
+                    return None;
+                }
+
+                Some(PathBuf::from(path))
+            }),
             bearer_token,
         })
     }
@@ -298,7 +312,12 @@ pub fn ping_gateway_connection(config: &AgentConfig) -> ConnectionStatus {
         Err(error) => return ConnectionStatus::Disconnected(format!("{error:?}")),
     };
 
-    let mut ping = ureq::get(&url);
+    let agent = match ureq_agent(config) {
+        Ok(agent) => agent,
+        Err(error) => return ConnectionStatus::Disconnected(format!("{error:?}")),
+    };
+
+    let mut ping = agent.get(&url);
     ping = ping.timeout(GATEWAY_TIMEOUT);
 
     if let Some(token) = request.bearer_token {
@@ -368,15 +387,11 @@ pub struct HttpAgentGateway {
 }
 
 impl HttpAgentGateway {
-    pub fn new(config: AgentConfig) -> Self {
-        Self {
+    pub fn new(config: AgentConfig) -> Result<Self, GatewayError> {
+        Ok(Self {
+            agent: ureq_agent(&config)?,
             client: GatewayClient::new(config),
-            agent: ureq::AgentBuilder::new()
-                .timeout_connect(GATEWAY_TIMEOUT)
-                .timeout_read(GATEWAY_TIMEOUT)
-                .timeout_write(GATEWAY_TIMEOUT)
-                .build(),
-        }
+        })
     }
 
     fn send(&self, request: RequestSpec) -> Result<String, GatewayError> {
@@ -442,6 +457,55 @@ impl HttpAgentGateway {
     }
 }
 
+fn ureq_agent(config: &AgentConfig) -> Result<ureq::Agent, GatewayError> {
+    let mut builder = ureq::AgentBuilder::new()
+        .timeout_connect(GATEWAY_TIMEOUT)
+        .timeout_read(GATEWAY_TIMEOUT)
+        .timeout_write(GATEWAY_TIMEOUT);
+
+    if let Some(ca_pem_path) = &config.ca_pem_path {
+        let pem = fs::read(ca_pem_path).map_err(|error| {
+            GatewayError::Transport(format!(
+                "could not read CA PEM at {}: {error}",
+                ca_pem_path.display(),
+            ))
+        })?;
+        let certificates = rustls_pemfile::certs(&mut BufReader::new(pem.as_slice()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| {
+                GatewayError::Transport(format!(
+                    "could not parse CA PEM at {}: {error}",
+                    ca_pem_path.display(),
+                ))
+            })?;
+
+        if certificates.is_empty() {
+            return Err(GatewayError::Transport(format!(
+                "CA PEM at {} did not contain any certificates",
+                ca_pem_path.display(),
+            )));
+        }
+
+        let mut root_store = rustls::RootCertStore::empty();
+        let (valid, invalid) = root_store.add_parsable_certificates(certificates);
+
+        if valid == 0 {
+            return Err(GatewayError::Transport(format!(
+                "CA PEM at {} did not contain a valid certificate; invalid={invalid}",
+                ca_pem_path.display(),
+            )));
+        }
+
+        let config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        builder = builder.tls_connector(Arc::new(Arc::new(config)));
+    }
+
+    Ok(builder.build())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,6 +518,7 @@ mod tests {
             node_id: "node_123".to_string(),
             node_name: "NMBP".to_string(),
             gateway_name: "dev-gateway".to_string(),
+            ca_pem_path: Some(PathBuf::from("/home/orbit/.config/orbit/ca/root.crt")),
             bearer_token: Some("dev-token-placeholder".to_string()),
         }
     }
@@ -478,6 +543,7 @@ gateway_url = "https://gateway.test"
 node_id = "node_123"
 node_name = "NMBP"
 gateway_name = "dev-gateway"
+ca_pem_path = "/home/orbit/.config/orbit/ca/root.crt"
 bearer_token = "dev-token-placeholder"
 "#,
         )
