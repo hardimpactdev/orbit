@@ -195,6 +195,76 @@ describe('internal app runtime command', function (): void {
             ->and(substr(sprintf('%o', fileperms("{$home}/.config/orbit/ca/root.crt")), -4))
             ->toBe('0644');
     });
+
+    it('creates same-user runtime mount directories without sudo', function (): void {
+        $safeHome = app_runtime_command_safe_user_home($this->originalHome);
+
+        if ($safeHome === null) {
+            $this->markTestSkipped('Current HOME is not a safe /home or /Users path.');
+        }
+
+        assert($safeHome !== null, description: 'Safe user home is required after skip guard.');
+
+        $home = app_runtime_command_home();
+        $mountDirectory = $safeHome['home'].'/orbit-app-runtime-mount-'.bin2hex(random_bytes(8));
+        $fakeBin = "{$home}/bin";
+        $originalPath = getenv('PATH');
+
+        mkdir($fakeBin);
+        file_put_contents("{$fakeBin}/sudo", data: "#!/bin/sh\nexit 99\n");
+        chmod("{$fakeBin}/sudo", permissions: 0o755);
+        putenv('PATH='.$fakeBin.($originalPath === false ? '' : ":{$originalPath}"));
+
+        try {
+            [$exitCode, $output] = run_internal_app_runtime_command(
+                'runtime-config:write',
+                [
+                    '--operation-token' => app_runtime_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'runtime_config' => [
+                        'path' => "{$home}/.config/orbit/apps/docs.ini",
+                        'content_base64' => base64_encode("memory_limit=512M\n"),
+                        'directories' => [
+                            [
+                                'path' => "{$home}/.config/orbit/apps",
+                                'mode' => '0755',
+                                'owner' => null,
+                                'group' => null,
+                            ],
+                            [
+                                'path' => $mountDirectory,
+                                'mode' => '0775',
+                                'owner' => $safeHome['user'],
+                                'group' => $safeHome['user'],
+                            ],
+                        ],
+                        'trust_pool' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            );
+        } finally {
+            $originalPath === false ? putenv('PATH') : putenv("PATH={$originalPath}");
+        }
+
+        try {
+            expect($exitCode)
+                ->toBe(0)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+                ->toBe(JsonEnvelope::success([
+                    'action' => 'runtime-config:write',
+                    'path' => "{$home}/.config/orbit/apps/docs.ini",
+                    'changed' => true,
+                ]))
+                ->and(is_dir($mountDirectory))
+                ->toBeTrue()
+                ->and(substr(sprintf('%o', fileperms($mountDirectory)), -4))
+                ->toBe('0775');
+        } finally {
+            delete_app_runtime_command_home($mountDirectory);
+        }
+    });
 });
 
 function app_runtime_signed_operation_token(
@@ -277,6 +347,36 @@ function app_runtime_command_restore_home(?string $home, ?string $serverHome, ?s
     if ($envHome !== null) {
         $_ENV['HOME'] = $envHome;
     }
+}
+
+/**
+ * @return array{home: string, user: string}|null
+ */
+function app_runtime_command_safe_user_home(?string $home): ?array
+{
+    if (! is_string($home)) {
+        return null;
+    }
+
+    $home = rtrim($home, characters: '/');
+    $matches = [];
+
+    if (preg_match('#^/(?:home|Users)/(?<user>[A-Za-z0-9][A-Za-z0-9._-]*)$#', $home, $matches) !== 1) {
+        return null;
+    }
+
+    if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+        $user = \posix_getpwuid(\posix_geteuid());
+
+        if (is_array($user) && $user['name'] !== $matches['user']) {
+            return null;
+        }
+    }
+
+    return [
+        'home' => $home,
+        'user' => $matches['user'],
+    ];
 }
 
 function delete_app_runtime_command_home(string $path): void

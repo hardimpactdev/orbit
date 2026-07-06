@@ -388,7 +388,7 @@ final readonly class LocalAppRuntimeAction
      */
     private function installDirectory(array $directory): void
     {
-        if ($this->isOrbitRuntimeConfigDirectory($directory['path'])) {
+        if ($this->isOrbitRuntimeConfigDirectory($directory['path']) || $this->isCurrentUserDirectory($directory)) {
             $this->installRuntimeDirectory($directory['path'], $directory['mode']);
 
             return;
@@ -409,6 +409,51 @@ final readonly class LocalAppRuntimeAction
         $command[] = $directory['path'];
 
         $this->mustRun($command, "install {$directory['path']}");
+    }
+
+    /**
+     * @param  array{path: string, mode: string, owner: string|null, group: string|null}  $directory
+     */
+    private function isCurrentUserDirectory(array $directory): bool
+    {
+        $owner = $this->safeUserPathOwner($directory['path']);
+
+        if ($owner === null || $owner !== $directory['owner'] || $owner !== $directory['group']) {
+            return false;
+        }
+
+        return $owner === $this->currentUserName();
+    }
+
+    private function currentUserName(): ?string
+    {
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $user = \posix_getpwuid(\posix_geteuid());
+
+            if (is_array($user) && $this->isValidUserName($user['name'])) {
+                return $user['name'];
+            }
+        }
+
+        $user = getenv('USER');
+
+        if (is_string($user) && $this->isValidUserName($user)) {
+            return $user;
+        }
+
+        $home = $this->homeDirectory();
+        $matches = [];
+
+        if (preg_match('#^/(?:home|Users)/(?<user>[A-Za-z0-9][A-Za-z0-9._-]*)$#', $home, $matches) === 1) {
+            return $matches['user'];
+        }
+
+        return null;
+    }
+
+    private function isValidUserName(string $user): bool
+    {
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*$/', $user) === 1;
     }
 
     private function installRuntimeDirectory(string $path, string $mode): void
@@ -710,9 +755,14 @@ final readonly class LocalAppRuntimeAction
     private function lastErrorMessage(): string
     {
         $error = error_get_last();
-        $message = is_array($error) ? $error['message'] ?? '' : '';
 
-        return is_string($message) && trim($message) !== '' ? trim($message) : 'unknown error';
+        if (! is_array($error)) {
+            return 'unknown error';
+        }
+
+        $message = trim($error['message']);
+
+        return $message !== '' ? $message : 'unknown error';
     }
 
     private function safeUserPathOwner(string $path): ?string
@@ -837,6 +887,8 @@ final readonly class LocalAppRuntimeAction
 
     private function phpVersionFromImage(string $image): string
     {
+        $matches = [];
+
         if (preg_match('/php(?<version>\d+\.\d+)/', $image, $matches) === 1) {
             return $matches['version'];
         }
