@@ -14,22 +14,33 @@ use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Runtime\DockerCommandBuilder;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
 final readonly class WorkspaceRuntimeContainerManager
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private RemoteShell $remoteShell,
         private DockerCommandBuilder $commands,
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
+        private mixed $localExecutor = null,
     ) {}
 
     public function apply(Node $node, WorkspaceRuntimeContainer $container): WorkspaceRuntimeContainerApplyOutcome
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            return $this->applyThroughLocalExecutor($node, $container);
+        }
+
         $this->ensureNetwork($node, $container);
 
         // Container inspect runs before the image preflight so we know whether
@@ -86,6 +97,376 @@ final readonly class WorkspaceRuntimeContainerManager
                 previous: $exception,
             );
         }
+    }
+
+    private function applyThroughLocalExecutor(
+        Node $node,
+        WorkspaceRuntimeContainer $container,
+    ): WorkspaceRuntimeContainerApplyOutcome {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'container:apply',
+            payload: [
+                'spec' => $this->runtimeContainerSpec($container),
+                'runtime_config' => $this->runtimeConfigPayload($container),
+            ],
+            operation: 'workspace-runtime-container-apply',
+        );
+
+        if ($result->successful()) {
+            $data = $this->runtimeSuccessData($result);
+            $outcome = $data['outcome'] ?? null;
+
+            if (is_string($outcome)) {
+                return WorkspaceRuntimeContainerApplyOutcome::from($outcome);
+            }
+
+            throw new WorkspaceRuntimeContainerApplyException(
+                hadExistingContainer: false,
+                message: 'Workspace runtime container apply response is missing an outcome.',
+            );
+        }
+
+        $failure = $this->runtimeFailure($result);
+        $code = $failure['code'];
+        $meta = $failure['meta'];
+
+        if ($code === 'app_runtime.image_unavailable') {
+            throw new WorkspaceRuntimeImageUnavailableException(
+                image: $this->stringMeta($meta, 'image') ?? $container->image(),
+                phpVersion: $this->stringMeta($meta, 'php_version') ?? $this->phpVersionFromImage($container->image()),
+                message: $failure['message'],
+            );
+        }
+
+        throw new WorkspaceRuntimeContainerApplyException(
+            hadExistingContainer: $this->boolMeta($meta, 'had_existing_container'),
+            message: $failure['message'],
+        );
+    }
+
+    private function removeThroughLocalExecutor(
+        Node $node,
+        string $containerName,
+    ): WorkspaceRuntimeArtifactRemovalOutcome {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'container:remove',
+            payload: [
+                'container' => $containerName,
+            ],
+            operation: 'workspace-runtime-container-remove',
+        );
+
+        if (! $result->successful()) {
+            return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
+
+        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+
+        return $changed === true
+            ? WorkspaceRuntimeArtifactRemovalOutcome::Removed
+            : WorkspaceRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+    }
+
+    private function removeRuntimeConfigFileThroughLocalExecutor(
+        Node $node,
+        string $path,
+    ): WorkspaceRuntimeArtifactRemovalOutcome {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'runtime-config:remove',
+            payload: [
+                'path' => $path,
+            ],
+            operation: 'workspace-runtime-config-remove',
+        );
+
+        if (! $result->successful()) {
+            return WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
+
+        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+
+        return $changed === true
+            ? WorkspaceRuntimeArtifactRemovalOutcome::Removed
+            : WorkspaceRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+    }
+
+    private function writeRuntimeConfigFileThroughLocalExecutor(
+        Node $node,
+        WorkspaceRuntimeContainer $container,
+    ): void {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'runtime-config:write',
+            payload: [
+                'runtime_config' => $this->runtimeConfigPayload($container),
+            ],
+            operation: 'workspace-runtime-config-write',
+        );
+
+        if ($result->successful()) {
+            return;
+        }
+
+        $failure = $this->runtimeFailure($result);
+
+        throw new RuntimeException(
+            "Failed to write managed runtime config for {$container->appSlug()}/{$container->workspaceSlug()} on {$node->name}: {$failure['message']}",
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function runRuntimeAction(Node $node, string $action, array $payload, string $operation): RemoteShellResult
+    {
+        if (! $this->localExecutor instanceof RemoteLocalExecutor) {
+            throw new RuntimeException('Workspace runtime local executor is unavailable.');
+        }
+
+        try {
+            return $this->localExecutor->runInternal(
+                node: $node,
+                commandName: 'internal:app-runtime-container',
+                arguments: [$action],
+                transportOptions: [
+                    'throw' => false,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operation,
+                    ],
+                    'input' => json_encode($payload, JSON_THROW_ON_ERROR),
+                    'strict' => false,
+                    'timeout' => 120,
+                ],
+            );
+        } catch (Throwable $exception) {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: $exception->getMessage(),
+                durationMs: 0,
+            );
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runtimeContainerSpec(WorkspaceRuntimeContainer $container): array
+    {
+        return [
+            ...$container->spec(),
+            'kind' => 'workspace',
+            'runtime_user' => null,
+            'docker_user' => null,
+            'expected_hash' => $container->specHash(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runtimeConfigPayload(WorkspaceRuntimeContainer $container): array
+    {
+        $phpIniHostPath = $this->findPhpIniMountSource($container);
+
+        return [
+            'path' => $phpIniHostPath,
+            'content_base64' => base64_encode($container->phpIniContent()),
+            'directories' => [
+                [
+                    'path' => dirname($phpIniHostPath),
+                    'mode' => '0755',
+                    'owner' => null,
+                    'group' => null,
+                ],
+                ...$this->runtimeMountDirectories($container),
+            ],
+            'trust_pool' => $this->runtimeTrustPoolPayload($container),
+        ];
+    }
+
+    /**
+     * @return list<array{path: string, mode: string, owner: string|null, group: string|null}>
+     */
+    private function runtimeMountDirectories(WorkspaceRuntimeContainer $container): array
+    {
+        $directories = [];
+
+        foreach ($this->packagesMountDirectories($container) as $path => $user) {
+            $directories[$path] = [
+                'path' => $path,
+                'mode' => '0775',
+                'owner' => $user,
+                'group' => $user,
+            ];
+        }
+
+        foreach ($this->configuredMountDirectories($container) as $path => $user) {
+            $directories[$path] = [
+                'path' => $path,
+                'mode' => '0775',
+                'owner' => $user,
+                'group' => $user,
+            ];
+        }
+
+        return array_values($directories);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function packagesMountDirectories(WorkspaceRuntimeContainer $container): array
+    {
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($mount['target'] !== AppDevelopmentPackagesMount::Target) {
+                continue;
+            }
+
+            $sourceUser = AppDevelopmentPackagesMount::userForSafeSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException(
+                    "Workspace runtime container {$container->name()} has an unsafe packages mount source.",
+                );
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        return $sources;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function configuredMountDirectories(WorkspaceRuntimeContainer $container): array
+    {
+        $builtInSources = $this->builtInMountSources($container);
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($this->isBuiltInRuntimeMountTarget($mount['target'])) {
+                continue;
+            }
+
+            if (in_array($mount['source'], $builtInSources, true)) {
+                continue;
+            }
+
+            $sourceUser = $this->userForSafeConfiguredMountSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException(
+                    "Workspace runtime container {$container->name()} has an unsafe configured runtime mount source.",
+                );
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        return $sources;
+    }
+
+    /**
+     * @return array{path: string, content_base64: string}|null
+     */
+    private function runtimeTrustPoolPayload(WorkspaceRuntimeContainer $container): ?array
+    {
+        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+            return null;
+        }
+
+        return [
+            'path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'content_base64' => base64_encode($this->ca->rootCert()),
+        ];
+    }
+
+    /**
+     * @return array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function runtimeFailure(RemoteShellResult $result): array
+    {
+        $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+        $code = $error['code'] ?? null;
+        $message = $error['message'] ?? null;
+        $meta = $this->stringKeyedArray($error['meta'] ?? []);
+
+        if (! is_string($message) || trim($message) === '') {
+            $output = trim($result->errorOutput().' '.$result->stdout);
+            $message = $output !== '' ? $output : 'unknown error';
+        }
+
+        return [
+            'code' => is_string($code) ? $code : 'workspace_runtime.failed',
+            'message' => $message,
+            'meta' => $meta,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value) || ! array_all(array_keys($value), static fn ($key) => is_string($key))) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runtimeSuccessData(RemoteShellResult $result): array
+    {
+        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+
+        if ($data !== []) {
+            return $data;
+        }
+
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
+
+        if (! is_array($payload) || ! array_all(array_keys($payload), static fn ($key) => is_string($key))) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $payload */
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function stringMeta(array $meta, string $key): ?string
+    {
+        $value = $meta[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function boolMeta(array $meta, string $key): bool
+    {
+        $value = $meta[$key] ?? false;
+
+        return is_bool($value) ? $value : false;
     }
 
     private function ensureImageAvailable(
@@ -145,6 +526,10 @@ final readonly class WorkspaceRuntimeContainerManager
      */
     public function remove(Node $node, string $appSlug, string $workspaceSlug): WorkspaceRuntimeArtifactRemovalOutcome
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            return $this->removeThroughLocalExecutor($node, $this->containerName($appSlug, $workspaceSlug));
+        }
+
         $name = $this->containerName($appSlug, $workspaceSlug);
 
         $inspect = $this->run($node, $this->commands->containerInspect($name));
@@ -174,6 +559,13 @@ final readonly class WorkspaceRuntimeContainerManager
         string $appSlug,
         string $workspaceSlug,
     ): WorkspaceRuntimeArtifactRemovalOutcome {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            return $this->removeRuntimeConfigFileThroughLocalExecutor(
+                $node,
+                $this->runtimeConfigPath($appSlug, $workspaceSlug),
+            );
+        }
+
         $path = $this->runtimeConfigPath($appSlug, $workspaceSlug);
 
         $existence = $this->probeRuntimeConfigExistence($node, $path);
@@ -240,6 +632,12 @@ final readonly class WorkspaceRuntimeContainerManager
 
     public function writeRuntimeConfigFile(Node $node, WorkspaceRuntimeContainer $container): void
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            $this->writeRuntimeConfigFileThroughLocalExecutor($node, $container);
+
+            return;
+        }
+
         $this->runRequired(
             $node,
             $this->renderRuntimeConfigWriteScript($container),
@@ -492,7 +890,7 @@ final readonly class WorkspaceRuntimeContainerManager
             }
         }
 
-        if (in_array($path, ['.netrc', '.npmrc', '.composer/auth.json'], true)) {
+        if (in_array(needle: $path, haystack: ['.netrc', '.npmrc', '.composer/auth.json'], strict: true)) {
             return null;
         }
 

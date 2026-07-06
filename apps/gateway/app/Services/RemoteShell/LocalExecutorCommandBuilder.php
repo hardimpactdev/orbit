@@ -34,6 +34,7 @@ final readonly class LocalExecutorCommandBuilder
         'internal:app-cache:clear' => ['app-dev', 'app-prod'],
         'internal:app-introspect:probe' => ['app-dev', 'app-prod'],
         'internal:app-runtime-configs:probe' => ['app-dev', 'app-prod'],
+        'internal:app-runtime-container' => ['app-dev', 'app-prod'],
         'internal:app-runtime-containers:probe' => ['app-dev', 'app-prod'],
         'internal:app-runtime-extensions:probe' => ['app-dev', 'app-prod'],
         'internal:app-source:create' => ['app-dev', 'app-prod'],

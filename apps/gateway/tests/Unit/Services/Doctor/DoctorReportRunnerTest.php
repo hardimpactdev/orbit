@@ -86,6 +86,13 @@ beforeEach(function (): void {
         $node = doctorRunnerNodeForAgentRequest($request);
         $result = app(RemoteShell::class)->run($node, doctorRunnerAgentPushScript($request));
 
+        if ($commandName === 'internal:app-runtime-container') {
+            return doctorRunnerAgentPushResponse(
+                $request,
+                doctor_runner_app_runtime_container_result($request, $result),
+            );
+        }
+
         return doctorRunnerAgentPushResponse($request, $result);
     });
 });
@@ -1688,7 +1695,12 @@ describe('DoctorReportRunner', function (): void {
                 stderr: '',
                 durationMs: 1,
             ),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['outcome' => 'unchanged'], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
@@ -1712,6 +1724,8 @@ describe('DoctorReportRunner', function (): void {
                 doctor_runner_fake_ca(),
             ),
         );
+
+        doctor_runner_expect_app_runtime_outcomes('unchanged');
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
 
@@ -1771,7 +1785,12 @@ describe('DoctorReportRunner', function (): void {
         ], JSON_THROW_ON_ERROR);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: $staleContainer, stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['outcome' => 'recreated'], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: $staleContainer, stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
@@ -1789,6 +1808,8 @@ describe('DoctorReportRunner', function (): void {
                 doctor_runner_fake_ca(),
             ),
         );
+
+        doctor_runner_expect_app_runtime_outcomes('recreated');
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
 
@@ -1809,10 +1830,7 @@ describe('DoctorReportRunner', function (): void {
             ->and($report['healthy'])
             ->toBeTrue()
             ->and(collect($shell->scripts)
-                ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))
-            ->toBeTrue()
-            ->and(collect($shell->scripts)
-                ->contains(fn (string $script): bool => str_contains($script, 'docker run -d')))
+                ->contains(fn (string $script): bool => doctor_runner_script_applies_app_runtime_container($script)))
             ->toBeTrue()
             ->and(
                 App::query()
@@ -1868,7 +1886,12 @@ describe('DoctorReportRunner', function (): void {
                 stderr: '',
                 durationMs: 1,
             ),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['outcome' => 'unchanged'], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 0,
@@ -1892,6 +1915,8 @@ describe('DoctorReportRunner', function (): void {
                 doctor_runner_fake_ca(),
             ),
         );
+
+        doctor_runner_expect_app_runtime_outcomes('unchanged');
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
 
@@ -2015,6 +2040,8 @@ describe('DoctorReportRunner', function (): void {
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
         app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
 
+        doctor_runner_expect_app_runtime_outcomes('created');
+
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
         $action = collect($report['actions'])->first();
 
@@ -2039,10 +2066,7 @@ describe('DoctorReportRunner', function (): void {
             ->and(
                 collect($shell->scripts)
                     ->contains(
-                        fn (string $script): bool => doctor_runner_script_creates_trusted_runtime(
-                            script: $script,
-                            containerName: 'orbit-ws-docs-feature-a',
-                        ),
+                        fn (string $script): bool => doctor_runner_script_applies_app_runtime_container($script),
                     ),
             )
             ->toBeTrue();
@@ -3600,6 +3624,13 @@ final readonly class DoctorReportRunnerRemoteExecutor implements RemoteExecutor
 
         $result = $this->remoteShell->run($node, $script, $options);
 
+        if ($commandName === 'internal:app-runtime-container') {
+            return doctor_runner_app_runtime_container_result_from_input(
+                input: is_string($options['input'] ?? null) ? doctorRunnerDecodeInput($options['input']) : [],
+                result: $result,
+            );
+        }
+
         if (! $result->successful() || $commandName === '') {
             return $result;
         }
@@ -3654,6 +3685,104 @@ function doctorRunnerAgentPushScript(Request $request): string
         ->map(static fn (string $argument): string => escapeshellarg($argument))
         ->prepend('/usr/local/bin/orbit')
         ->implode(' ');
+}
+
+function doctor_runner_app_runtime_container_result(Request $request, RemoteShellResult $result): RemoteShellResult
+{
+    return doctor_runner_app_runtime_container_result_from_input(doctorRunnerAgentPushInput($request), $result);
+}
+
+/**
+ * @param  array<string, mixed>  $input
+ */
+function doctor_runner_app_runtime_container_result_from_input(
+    array $input,
+    RemoteShellResult $result,
+): RemoteShellResult {
+    $spec = $input['spec'] ?? [];
+
+    if (! is_array($spec)) {
+        $spec = [];
+    }
+
+    $outcome = doctor_runner_app_runtime_container_outcome($spec, $result);
+
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'outcome' => $outcome,
+            'changed' => $outcome !== 'unchanged',
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: $result->durationMs,
+    );
+}
+
+/**
+ * @param  array<array-key, mixed>  $spec
+ */
+function doctor_runner_app_runtime_container_outcome(array $spec, RemoteShellResult $result): string
+{
+    $queuedOutcome = doctor_runner_next_app_runtime_outcome();
+
+    if ($queuedOutcome !== null) {
+        return $queuedOutcome;
+    }
+
+    if (! $result->successful()) {
+        $output = $result->stderr.' '.$result->stdout;
+
+        return preg_match('/No such (object|container)/i', $output) === 1 ? 'created' : 'created';
+    }
+
+    /** @var mixed $decoded */
+    $decoded = json_decode(trim($result->stdout), associative: true);
+
+    if (! is_array($decoded)) {
+        return 'created';
+    }
+
+    $explicitOutcome = $decoded['outcome'] ?? null;
+
+    if (is_string($explicitOutcome)) {
+        return $explicitOutcome;
+    }
+
+    $hashLabel = ($spec['kind'] ?? null) === 'workspace'
+        ? WorkspaceRuntimeContainer::SpecHashLabel
+        : AppRuntimeContainer::SpecHashLabel;
+    $expectedHash = $spec['expected_hash'] ?? null;
+    $labels = data_get(target: $decoded, key: 'Config.Labels');
+    $running = data_get(target: $decoded, key: 'State.Running') === true;
+
+    if (! is_array($labels) || ! is_string($expectedHash)) {
+        return 'created';
+    }
+
+    if (($labels[$hashLabel] ?? null) !== $expectedHash) {
+        return 'recreated';
+    }
+
+    return $running ? 'unchanged' : 'started';
+}
+
+function doctor_runner_expect_app_runtime_outcomes(string ...$outcomes): void
+{
+    app()->instance('doctor-runner.app-runtime-outcomes', $outcomes);
+}
+
+function doctor_runner_next_app_runtime_outcome(): ?string
+{
+    if (! app()->bound('doctor-runner.app-runtime-outcomes')) {
+        return null;
+    }
+
+    /** @var list<string> $outcomes */
+    $outcomes = app('doctor-runner.app-runtime-outcomes');
+    $outcome = array_shift($outcomes);
+    app()->instance('doctor-runner.app-runtime-outcomes', $outcomes);
+
+    return is_string($outcome) ? $outcome : null;
 }
 
 function doctorRunnerAgentPushResponse(Request $request, RemoteShellResult $result): mixed
@@ -3740,7 +3869,7 @@ function doctorRunnerInternalCommandSuccessData(string $commandName, array $inpu
 
     if ($commandName === 'internal:app-introspect:probe') {
         return [
-            'snapshot' => doctorRunnerAppIntrospectSnapshot($result->stdout),
+            'snapshot' => doctor_runner_app_introspect_snapshot($result->stdout),
         ];
     }
 
@@ -3774,7 +3903,7 @@ function doctorRunnerInternalCommandSuccessData(string $commandName, array $inpu
 /**
  * @return array<string, mixed>
  */
-function doctorRunnerAppIntrospectSnapshot(string $stdout): array
+function doctor_runner_app_introspect_snapshot(string $stdout): array
 {
     $columns = explode("\t", trim($stdout));
 
@@ -3888,10 +4017,15 @@ function doctor_runner_fake_ca(): \App\Services\Ca\OrbitCaService
 function doctor_runner_script_creates_trusted_runtime(string $script, string $containerName): bool
 {
     return (
-        str_contains(haystack: $script, needle: "sudo tee '/etc/orbit/ca/root.crt'")
-        && str_contains(haystack: $script, needle: 'docker run')
-        && str_contains(haystack: $script, needle: "'{$containerName}'")
+        str_contains($script, "sudo tee '/etc/orbit/ca/root.crt'")
+        && str_contains($script, 'docker run')
+        && str_contains($script, "'{$containerName}'")
     );
+}
+
+function doctor_runner_script_applies_app_runtime_container(string $script): bool
+{
+    return str_contains($script, 'internal:app-runtime-container') && str_contains($script, 'container:apply');
 }
 
 /**

@@ -37,6 +37,7 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
+use App\Services\Ca\OrbitCaService;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
@@ -54,7 +55,9 @@ use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
+use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\S3\S3DoctorProbe;
 use App\Services\S3\S3ProxyDoctorProbe;
 use App\Services\Schedules\SchedulesFixer;
@@ -2545,7 +2548,7 @@ final readonly class DoctorReportRunner
             $this->ensureAppRuntimeTlsMaterial($app, $node);
 
             $container = app(AppRuntimeContainerRenderer::class)->render($app);
-            $outcome = app(AppRuntimeContainerManager::class)->apply($node, $container);
+            $outcome = $this->appRuntimeContainerManagerForAgentPush()->apply($node, $container);
         } catch (\Throwable $e) {
             return [
                 'family' => 'process',
@@ -2578,6 +2581,28 @@ final readonly class DoctorReportRunner
                 'outcome' => $outcome->value,
             ],
         ];
+    }
+
+    private function appRuntimeContainerManagerForAgentPush(): AppRuntimeContainerManager
+    {
+        return new AppRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(DockerCommandBuilder::class),
+            app(OrbitCaService::class),
+            app(AppDevelopmentInnerTlsPolicy::class),
+            localExecutor: app(RemoteLocalExecutor::class),
+        );
+    }
+
+    private function workspaceRuntimeContainerManagerForAgentPush(): WorkspaceRuntimeContainerManager
+    {
+        return new WorkspaceRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(DockerCommandBuilder::class),
+            app(OrbitCaService::class),
+            app(AppDevelopmentInnerTlsPolicy::class),
+            localExecutor: app(RemoteLocalExecutor::class),
+        );
     }
 
     /**
@@ -2614,7 +2639,7 @@ final readonly class DoctorReportRunner
             $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $node);
 
             $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
-            $outcome = app(WorkspaceRuntimeContainerManager::class)->apply($node, $container);
+            $outcome = $this->workspaceRuntimeContainerManagerForAgentPush()->apply($node, $container);
         } catch (\Throwable $e) {
             return [
                 'family' => 'process',
@@ -3992,7 +4017,7 @@ final readonly class DoctorReportRunner
             $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $node);
 
             $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
-            $outcome = app(WorkspaceRuntimeContainerManager::class)->apply($node, $container);
+            $outcome = $this->workspaceRuntimeContainerManagerForAgentPush()->apply($node, $container);
         } catch (\Throwable $e) {
             return [
                 'family' => $entry->family,
@@ -4337,7 +4362,11 @@ final readonly class DoctorReportRunner
             'adopted' => count(array_filter(
                 $actions,
                 fn (array $action): bool => ($action['mode'] ?? null) === 'adopt'
-                && in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true),
+                && in_array(
+                    needle: $action['status'] ?? null,
+                    haystack: ['completed', 'created', 'updated'],
+                    strict: true,
+                ),
             )),
             'skipped' => count(array_filter(
                 $actions,

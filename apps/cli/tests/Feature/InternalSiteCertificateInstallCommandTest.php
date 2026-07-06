@@ -288,7 +288,8 @@ function site_certificate_current_user(): string
         }
     }
 
-    $user = getenv('USER') ?: getenv('LOGNAME');
+    $user = getenv('USER');
+    $user = $user !== false ? $user : getenv('LOGNAME');
 
     if (is_string($user) && $user !== '') {
         return $user;
@@ -309,7 +310,9 @@ function delete_site_certificate_path(string $path): void
         return;
     }
 
-    foreach (scandir($path) ?: [] as $entry) {
+    $entries = scandir($path);
+
+    foreach ($entries !== false ? $entries : [] as $entry) {
         if ($entry === '.' || $entry === '..') {
             continue;
         }

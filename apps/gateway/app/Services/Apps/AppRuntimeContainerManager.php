@@ -12,22 +12,33 @@ use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Runtime\DockerCommandBuilder;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
 final readonly class AppRuntimeContainerManager
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private RemoteShell $remoteShell,
         private DockerCommandBuilder $commands,
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
+        private mixed $localExecutor = null,
     ) {}
 
     public function apply(Node $node, AppRuntimeContainer $container): AppRuntimeContainerApplyOutcome
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            return $this->applyThroughLocalExecutor($node, $container);
+        }
+
         $this->ensureNetwork($node, $container);
 
         // Container inspect runs before the image preflight so we know whether
@@ -92,6 +103,379 @@ final readonly class AppRuntimeContainerManager
                 previous: $exception,
             );
         }
+    }
+
+    private function applyThroughLocalExecutor(
+        Node $node,
+        AppRuntimeContainer $container,
+    ): AppRuntimeContainerApplyOutcome {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'container:apply',
+            payload: [
+                'spec' => $this->runtimeContainerSpec($container),
+                'runtime_config' => $this->runtimeConfigPayload($container),
+            ],
+            operation: 'app-runtime-container-apply',
+        );
+
+        if ($result->successful()) {
+            $data = $this->runtimeSuccessData($result);
+            $outcome = $data['outcome'] ?? null;
+
+            if (is_string($outcome)) {
+                return AppRuntimeContainerApplyOutcome::from($outcome);
+            }
+
+            throw new AppRuntimeContainerApplyException(
+                hadExistingContainer: false,
+                message: 'App runtime container apply response is missing an outcome.',
+            );
+        }
+
+        $failure = $this->runtimeFailure($result);
+        $code = $failure['code'];
+        $meta = $failure['meta'];
+
+        if ($code === 'app_runtime.image_unavailable') {
+            throw new AppRuntimeImageUnavailableException(
+                image: $this->stringMeta($meta, 'image') ?? $container->image(),
+                phpVersion: $this->stringMeta($meta, 'php_version') ?? $this->phpVersionFromImage($container->image()),
+                message: $failure['message'],
+            );
+        }
+
+        if ($code === 'app_runtime.user_unavailable') {
+            throw new AppRuntimeUserUnavailableException(
+                runtimeUser: $container->runtimeUser() ?? '',
+                message: $failure['message'],
+            );
+        }
+
+        throw new AppRuntimeContainerApplyException(
+            hadExistingContainer: $this->boolMeta($meta, 'had_existing_container'),
+            message: $failure['message'],
+        );
+    }
+
+    private function removeThroughLocalExecutor(Node $node, string $containerName): AppRuntimeArtifactRemovalOutcome
+    {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'container:remove',
+            payload: [
+                'container' => $containerName,
+            ],
+            operation: 'app-runtime-container-remove',
+        );
+
+        if (! $result->successful()) {
+            return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
+
+        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+
+        return $changed === true
+            ? AppRuntimeArtifactRemovalOutcome::Removed
+            : AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+    }
+
+    private function removeRuntimeConfigFileThroughLocalExecutor(
+        Node $node,
+        string $path,
+    ): AppRuntimeArtifactRemovalOutcome {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'runtime-config:remove',
+            payload: [
+                'path' => $path,
+            ],
+            operation: 'app-runtime-config-remove',
+        );
+
+        if (! $result->successful()) {
+            return AppRuntimeArtifactRemovalOutcome::FailedRemaining;
+        }
+
+        $changed = $this->runtimeSuccessData($result)['changed'] ?? false;
+
+        return $changed === true
+            ? AppRuntimeArtifactRemovalOutcome::Removed
+            : AppRuntimeArtifactRemovalOutcome::AlreadyAbsent;
+    }
+
+    private function writeRuntimeConfigFileThroughLocalExecutor(Node $node, AppRuntimeContainer $container): void
+    {
+        $result = $this->runRuntimeAction(
+            node: $node,
+            action: 'runtime-config:write',
+            payload: [
+                'runtime_config' => $this->runtimeConfigPayload($container),
+            ],
+            operation: 'app-runtime-config-write',
+        );
+
+        if ($result->successful()) {
+            return;
+        }
+
+        $failure = $this->runtimeFailure($result);
+
+        throw new RuntimeException(
+            "Failed to write managed runtime config for {$container->appSlug()} on {$node->name}: {$failure['message']}",
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function runRuntimeAction(Node $node, string $action, array $payload, string $operation): RemoteShellResult
+    {
+        if (! $this->localExecutor instanceof RemoteLocalExecutor) {
+            throw new RuntimeException('App runtime local executor is unavailable.');
+        }
+
+        try {
+            return $this->localExecutor->runInternal(
+                node: $node,
+                commandName: 'internal:app-runtime-container',
+                arguments: [$action],
+                transportOptions: [
+                    'throw' => false,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operation,
+                    ],
+                    'input' => json_encode($payload, JSON_THROW_ON_ERROR),
+                    'strict' => false,
+                    'timeout' => 120,
+                ],
+            );
+        } catch (Throwable $exception) {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: $exception->getMessage(),
+                durationMs: 0,
+            );
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runtimeContainerSpec(AppRuntimeContainer $container): array
+    {
+        return [
+            ...$container->spec(),
+            'kind' => 'app',
+            'workspace_slug' => null,
+            'docker_user' => $container->dockerUser(),
+            'expected_hash' => $container->specHash(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runtimeConfigPayload(AppRuntimeContainer $container): array
+    {
+        $phpIniHostPath = $this->findPhpIniMountSource($container);
+
+        return [
+            'path' => $phpIniHostPath,
+            'content_base64' => base64_encode($container->phpIniContent()),
+            'directories' => [
+                [
+                    'path' => dirname($phpIniHostPath),
+                    'mode' => '0755',
+                    'owner' => null,
+                    'group' => null,
+                ],
+                ...$this->runtimeMountDirectories($container),
+            ],
+            'trust_pool' => $this->runtimeTrustPoolPayload($container),
+        ];
+    }
+
+    /**
+     * @return list<array{path: string, mode: string, owner: string|null, group: string|null}>
+     */
+    private function runtimeMountDirectories(AppRuntimeContainer $container): array
+    {
+        $directories = [];
+
+        foreach ($this->packagesMountDirectories($container) as $path => $user) {
+            $directories[$path] = [
+                'path' => $path,
+                'mode' => '0775',
+                'owner' => $user,
+                'group' => $user,
+            ];
+        }
+
+        foreach ($this->configuredMountDirectories($container) as $path => $user) {
+            $directories[$path] = [
+                'path' => $path,
+                'mode' => '0775',
+                'owner' => $user,
+                'group' => $user,
+            ];
+        }
+
+        return array_values($directories);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function packagesMountDirectories(AppRuntimeContainer $container): array
+    {
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($mount['target'] !== AppDevelopmentPackagesMount::Target) {
+                continue;
+            }
+
+            $sourceUser = AppDevelopmentPackagesMount::userForSafeSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException(
+                    "App runtime container {$container->name()} has an unsafe packages mount source.",
+                );
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        return $sources;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function configuredMountDirectories(AppRuntimeContainer $container): array
+    {
+        $builtInSources = $this->builtInMountSources($container);
+        $sources = [];
+
+        foreach ($container->mounts() as $mount) {
+            if ($this->isBuiltInRuntimeMountTarget($mount['target'])) {
+                continue;
+            }
+
+            if (in_array($mount['source'], $builtInSources, true)) {
+                continue;
+            }
+
+            $sourceUser = $this->userForSafeConfiguredMountSource($mount['source']);
+
+            if ($sourceUser === null) {
+                throw new RuntimeException(
+                    "App runtime container {$container->name()} has an unsafe configured runtime mount source.",
+                );
+            }
+
+            $sources[$mount['source']] = $sourceUser;
+        }
+
+        return $sources;
+    }
+
+    /**
+     * @return array{path: string, content_base64: string}|null
+     */
+    private function runtimeTrustPoolPayload(AppRuntimeContainer $container): ?array
+    {
+        if (! $this->containerRequiresRuntimeTrustPool($container)) {
+            return null;
+        }
+
+        return [
+            'path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+            'content_base64' => base64_encode($this->ca->rootCert()),
+        ];
+    }
+
+    /**
+     * @return array{code: string, message: string, meta: array<string, mixed>}
+     */
+    private function runtimeFailure(RemoteShellResult $result): array
+    {
+        $error = RemoteShellSuccessData::errorFromJsonEnvelope($result);
+        $code = $error['code'] ?? null;
+        $message = $error['message'] ?? null;
+        $meta = $this->stringKeyedArray($error['meta'] ?? []);
+
+        if (! is_string($message) || trim($message) === '') {
+            $output = trim($result->errorOutput().' '.$result->stdout);
+            $message = $output !== '' ? $output : 'unknown error';
+        }
+
+        return [
+            'code' => is_string($code) ? $code : 'app_runtime.failed',
+            'message' => $message,
+            'meta' => $meta,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value) || ! array_all(array_keys($value), static fn ($key) => is_string($key))) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $value */
+        return $value;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function runtimeSuccessData(RemoteShellResult $result): array
+    {
+        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+
+        if ($data !== []) {
+            return $data;
+        }
+
+        try {
+            /** @var mixed $payload */
+            $payload = json_decode(trim($result->stdout), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return [];
+        }
+
+        if (! is_array($payload) || ! array_all(array_keys($payload), static fn ($key) => is_string($key))) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $payload */
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function stringMeta(array $meta, string $key): ?string
+    {
+        $value = $meta[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function boolMeta(array $meta, string $key): bool
+    {
+        $value = $meta[$key] ?? false;
+
+        return is_bool($value) ? $value : false;
     }
 
     /**
@@ -169,7 +553,7 @@ final readonly class AppRuntimeContainerManager
 
         $lines = array_values(array_filter(
             array_map(trim(...), explode("\n", $result->stdout)),
-            fn (string $line): bool => $line !== '',
+            static fn (string $line): bool => $line !== '',
         ));
 
         $uid = $lines[0] ?? '';
@@ -214,6 +598,10 @@ final readonly class AppRuntimeContainerManager
      */
     public function remove(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            return $this->removeThroughLocalExecutor($node, "orbit-app-{$appSlug}");
+        }
+
         $name = "orbit-app-{$appSlug}";
 
         $inspect = $this->run($node, $this->commands->containerInspect($name));
@@ -242,6 +630,13 @@ final readonly class AppRuntimeContainerManager
      */
     public function removeRuntimeConfigFile(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            return $this->removeRuntimeConfigFileThroughLocalExecutor(
+                $node,
+                $this->runtimeConfigPath($appSlug),
+            );
+        }
+
         $path = $this->runtimeConfigPath($appSlug);
 
         $existence = $this->probeRuntimeConfigExistence($node, $path);
@@ -318,6 +713,12 @@ final readonly class AppRuntimeContainerManager
      */
     public function writeRuntimeConfigFile(Node $node, AppRuntimeContainer $container): void
     {
+        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+            $this->writeRuntimeConfigFileThroughLocalExecutor($node, $container);
+
+            return;
+        }
+
         $this->runRequired(
             $node,
             $this->renderRuntimeConfigWriteScript($container),
@@ -567,7 +968,7 @@ final readonly class AppRuntimeContainerManager
             }
         }
 
-        if (in_array($path, ['.netrc', '.npmrc', '.composer/auth.json'], true)) {
+        if (in_array(needle: $path, haystack: ['.netrc', '.npmrc', '.composer/auth.json'], strict: true)) {
             return null;
         }
 

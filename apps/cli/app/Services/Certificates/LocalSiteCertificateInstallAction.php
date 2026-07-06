@@ -8,6 +8,8 @@ use Symfony\Component\Process\Process;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ * @mago-expect lint:too-many-methods
  */
 final readonly class LocalSiteCertificateInstallAction
 {
@@ -33,10 +35,25 @@ final readonly class LocalSiteCertificateInstallAction
 
         if ($this->shouldInstallAsCurrentUser($certPath, $owner)) {
             $this->installAsCurrentUser($certPath, $keyPath, $cert, $key);
-        } else {
-            $this->installWithSudo($certPath, $keyPath, $cert, $key, $owner);
+
+            return $this->installResult($certPath, $keyPath, $owner, $cert, $key);
         }
 
+        $this->installWithSudo($certPath, $keyPath, $cert, $key, $owner);
+
+        return $this->installResult($certPath, $keyPath, $owner, $cert, $key);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function installResult(
+        string $certPath,
+        string $keyPath,
+        ?string $owner,
+        string $cert,
+        string $key,
+    ): array {
         return [
             'cert_path' => $certPath,
             'key_path' => $keyPath,
