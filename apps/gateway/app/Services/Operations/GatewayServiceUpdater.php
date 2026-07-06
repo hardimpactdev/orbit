@@ -119,7 +119,6 @@ class GatewayServiceUpdater
             arguments: [],
             commandOptions: [],
             transportOptions: [
-                'cwd' => $this->gatewayInstallRoot($gatewayNode),
                 'timeout' => 300,
                 'input' => json_encode(
                     $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode),

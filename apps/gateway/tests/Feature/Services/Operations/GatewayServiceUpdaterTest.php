@@ -117,6 +117,9 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->toBe('gateway-1')
         ->and($localExecutor->calls[0]['command'])
         ->toBe('internal:fleet-update:install-cli')
+        ->and($localExecutor->calls[0]['options'])
+        ->not
+        ->toHaveKey('cwd')
         ->and($localExecutor->payloads()[0])
         ->toMatchArray([
             'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
