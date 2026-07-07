@@ -7,6 +7,7 @@ use App\Models\OperationRun;
 use App\Models\UpdateLease;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\UpdateLeaseManager;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -140,6 +141,50 @@ it('releases an active lease and allows a later acquire', function (): void {
         ->toBe('node:worker-01')
         ->and($reacquired->owner_token)
         ->toBe('new-owner');
+});
+
+it('retries release transactions when SQLite reports the database is locked', function (): void {
+    Carbon::setTestNow('2026-06-02 10:00:00');
+
+    $run = updateLeaseOperationRun();
+    $manager = new class extends UpdateLeaseManager {
+        public bool $failNextTransaction = false;
+
+        public int $databaseLockRetries = 0;
+
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->failNextTransaction) {
+                $this->failNextTransaction = false;
+
+                throw new QueryException(
+                    'sqlite',
+                    'update "update_leases" set "active_resource_key" = ?',
+                    [],
+                    new \PDOException('SQLSTATE[HY000]: General error: 5 database is locked', 5),
+                );
+            }
+
+            return parent::runTransaction($callback);
+        }
+
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->databaseLockRetries++;
+        }
+    };
+
+    $lease = $manager->acquire('node', 'worker-01', $run, 'node-owner', 300);
+    $manager->failNextTransaction = true;
+
+    $released = $manager->release($lease, 'node-owner');
+
+    expect($released->active_resource_key)
+        ->toBeNull()
+        ->and($released->released_at?->toIso8601String())
+        ->toBe('2026-06-02T10:00:00+00:00')
+        ->and($manager->databaseLockRetries)
+        ->toBe(1);
 });
 
 it('maps insert-time unique constraint races to update lease conflicts', function (): void {
