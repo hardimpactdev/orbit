@@ -63,7 +63,7 @@ describe('internal fleet update install cli command', function (): void {
         $data = fleet_update_install_cli_success_data($output);
 
         expect($exitCode)
-            ->toBe(0)
+            ->toBe(0, $output)
             ->and($data)
             ->toMatchArray([
                 'installed' => true,
@@ -77,6 +77,42 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe($sha256)
             ->and(shell_exec(escapeshellarg("{$workspace}/bin/orbit").' --version --local'))
             ->toBe("Orbit 9.9.9\n");
+    });
+
+    it('retries transient curl failures while downloading artifacts', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $sha256 = hash_file('sha256', $artifactPath);
+        $fakeCurlBin = make_fleet_update_install_cli_fake_transient_curl_bin($workspace, $artifactPath);
+        $path = $fakeCurlBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => 'https://artifacts.test/orbit',
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        PHPUnit\Framework\Assert::assertSame(0, $exitCode, $output);
+
+        expect(file("{$workspace}/curl-attempts.log", FILE_IGNORE_NEW_LINES))
+            ->toHaveCount(2)
+            ->and(fleet_update_install_cli_success_data($output)['stdout'] ?? '')
+            ->toContain('download_retry attempt=2')
+            ->and(hash_file('sha256', fleet_update_install_cli_binary_path($workspace, $sha256)))
+            ->toBe($sha256);
     });
 
     it('installs an optional Orbit Agent artifact into the requested binary path', function (): void {
@@ -232,9 +268,9 @@ describe('internal fleet update install cli command', function (): void {
         );
         $data = fleet_update_install_cli_success_data($output);
 
-        expect($exitCode)
-            ->toBe(0)
-            ->and($data['stdout'] ?? '')
+        PHPUnit\Framework\Assert::assertSame(0, $exitCode, $output);
+
+        expect($data['stdout'] ?? '')
             ->toContain('skip_required_image')
             ->and(hash_file('sha256', fleet_update_install_cli_binary_path($workspace, $sha256)))
             ->toBe($sha256);
@@ -498,7 +534,20 @@ function make_fleet_update_install_cli_path_without_docker(string $workspace): s
 
     mkdir($bin, recursive: true);
 
-    foreach (['awk', 'bash', 'cp', 'dirname', 'install', 'ln', 'mktemp', 'mv', 'readlink', 'rm', 'sh'] as $command) {
+    foreach ([
+        'awk',
+        'basename',
+        'bash',
+        'cp',
+        'dirname',
+        'install',
+        'ln',
+        'mktemp',
+        'mv',
+        'readlink',
+        'rm',
+        'sh',
+    ] as $command) {
         $path = trim((string) shell_exec('command -v '.escapeshellarg($command)));
 
         if ($path !== '') {
@@ -515,6 +564,47 @@ function make_fleet_update_install_cli_path_without_docker(string $workspace): s
             break;
         }
     }
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_fake_transient_curl_bin(string $workspace, string $artifactPath): string
+{
+    $bin = "{$workspace}/curl-bin";
+    $attemptsPath = "{$workspace}/curl-attempts.log";
+
+    mkdir($bin, recursive: true);
+    file_put_contents($attemptsPath, '');
+
+    $artifactArgument = escapeshellarg($artifactPath);
+    $attemptsArgument = escapeshellarg($attemptsPath);
+
+    file_put_contents("{$bin}/curl", <<<SH
+        #!/usr/bin/env sh
+        artifact_path={$artifactArgument}
+        attempts_path={$attemptsArgument}
+        target=""
+
+        while [ "\$#" -gt 0 ]; do
+          if [ "\$1" = "-o" ]; then
+            shift
+            target="\$1"
+          fi
+
+          shift
+        done
+
+        attempts=\$(wc -l < "\$attempts_path" | tr -d ' ')
+        echo "curl \$*" >> "\$attempts_path"
+
+        if [ "\$attempts" -eq 0 ]; then
+          echo "curl: (22) The requested URL returned error: 503" >&2
+          exit 22
+        fi
+
+        cp "\$artifact_path" "\$target"
+        SH);
+    chmod(filename: "{$bin}/curl", permissions: 0o755);
 
     return $bin;
 }

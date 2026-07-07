@@ -20,7 +20,7 @@ final readonly class LocalFleetUpdateInstallCliAction
         $installPayload = LocalFleetUpdateInstallCliPayload::fromArray($payload);
         $path = $_SERVER['PATH'] ?? getenv('PATH');
 
-        $process = new Process(['/usr/bin/env', 'bash', '-lc', $this->installScript()]);
+        $process = new Process(['/usr/bin/env', 'bash', '-c', $this->installScript()]);
         $process->setTimeout(300);
         $agentArtifact = $installPayload->agentArtifact;
         $process->setEnv([
@@ -113,7 +113,7 @@ final readonly class LocalFleetUpdateInstallCliAction
                 run_privileged ln -sfn "$target" "$link"
             }
 
-            download_artifact() {
+            perform_download_artifact() {
                 url="$1"
                 target="$2"
 
@@ -125,6 +125,30 @@ final readonly class LocalFleetUpdateInstallCliAction
                         curl -fksSL "$url" -o "$target"
                         ;;
                 esac
+            }
+
+            download_artifact() {
+                url="$1"
+                target="$2"
+                max_attempts="${ORBIT_ARTIFACT_DOWNLOAD_ATTEMPTS:-3}"
+                retry_delay="${ORBIT_ARTIFACT_DOWNLOAD_RETRY_DELAY:-1}"
+                attempt=1
+
+                while [ "$attempt" -le "$max_attempts" ]; do
+                    if perform_download_artifact "$url" "$target"; then
+                        return
+                    else
+                        status="$?"
+                    fi
+
+                    if [ "$attempt" -ge "$max_attempts" ]; then
+                        return "$status"
+                    fi
+
+                    attempt=$((attempt + 1))
+                    echo "download_retry attempt=$attempt"
+                    sleep "$retry_delay"
+                done
             }
 
             restart_agent_service_if_present() {
