@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-07T10:20:07Z",
+    "ended_at": "2026-07-07T10:20:12Z",
+    "duration_seconds": 5,
+    "exit_code": 1,
+    "git": {
+        "branch": "codex/macos-launchd-process-runtime",
+        "commit": "ea772c8f0a1313704505331d671dae08fe063c51"
+    },
+    "subgates": []
+}

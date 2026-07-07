@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 57,
+    "record_count": 58,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -1507,6 +1507,33 @@
                 "reasoning_tokens": 15422
             },
             "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-07-140821-macos-launchd-process-runtime",
+            "slug": "macos-launchd-process-runtime",
+            "timestamp": "2026-07-07-140821",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed",
+                "Fresh post-feature analyzer": "unknown"
+            },
+            "fresh_analyzer_verdict": "flawed. The analyzer found strong implementation and verification",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 2,
+                    "defer": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
         }
     ]
 }
