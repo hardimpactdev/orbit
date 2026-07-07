@@ -109,6 +109,61 @@ describe('internal caddy config command', function (): void {
             ->toContain("docs.test {\n  respond ok\n}");
     });
 
+    it('writes and removes site material through the running orbit-caddy bind mounts', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        caddy_config_fake_container_inspect($bin, [
+            'Mounts' => [
+                [
+                    'Source' => '/Users/nckrtl/.config/orbit/agent/caddy/sites',
+                    'Destination' => '/etc/caddy/sites',
+                ],
+                [
+                    'Source' => '/Users/nckrtl/.config/orbit',
+                    'Destination' => '/etc/orbit',
+                ],
+            ],
+        ]);
+
+        [$writeExitCode, $writeOutput] = run_internal_caddy_config_command(
+            [
+                'action' => 'write-site',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.write-site'),
+                '--json' => true,
+            ],
+            json_encode([
+                'domain' => 'paseo.nmbp',
+                'content' => "paseo.nmbp {\n  reverse_proxy http://host.docker.internal:6767\n}\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+        [$removeExitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'remove-site',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.remove-site'),
+                '--json' => true,
+            ],
+            json_encode([
+                'domain' => 'paseo.nmbp',
+                'container' => 'orbit-caddy',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($writeOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($writeExitCode)
+            ->toBe(0)
+            ->and($removeExitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['path'] ?? null)
+            ->toBe('/Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy')
+            ->and($calls)
+            ->toContain('docker container inspect --format {{json .}} orbit-caddy')
+            ->toContain('tee /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy')
+            ->toContain(
+                'rm -f /Users/nckrtl/.config/orbit/agent/caddy/sites/paseo.nmbp.caddy /Users/nckrtl/.config/orbit/certs/paseo.nmbp.crt /Users/nckrtl/.config/orbit/certs/paseo.nmbp.key',
+            );
+    });
+
     it('removes site configs, orbit tls material, and reloads caddy', function (): void {
         $bin = install_caddy_config_fake_bin();
 
@@ -365,6 +420,12 @@ function install_caddy_config_fake_bin(): string
         #!/usr/bin/env php
         <?php
         file_put_contents(__DIR__.'/calls.log', 'docker '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
+        if (($argv[1] ?? null) === 'container' && ($argv[2] ?? null) === 'inspect') {
+            $inspectPath = __DIR__.'/container-inspect.json';
+            if (is_file($inspectPath)) {
+                echo file_get_contents($inspectPath);
+            }
+        }
         exit(0);
         PHP);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
@@ -374,6 +435,14 @@ function install_caddy_config_fake_bin(): string
     putenv("PATH={$dir}:".($path === false ? '' : $path));
 
     return $dir;
+}
+
+/**
+ * @param  array<string, mixed>  $inspection
+ */
+function caddy_config_fake_container_inspect(string $bin, array $inspection): void
+{
+    file_put_contents("{$bin}/container-inspect.json", json_encode($inspection, JSON_THROW_ON_ERROR));
 }
 
 function delete_caddy_config_fake_bin(string $path): void
@@ -388,6 +457,7 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/docker");
     delete_caddy_config_file("{$path}/calls.log");
     delete_caddy_config_file("{$path}/stdin.log");
+    delete_caddy_config_file("{$path}/container-inspect.json");
 
     if (is_dir($path)) {
         rmdir($path);

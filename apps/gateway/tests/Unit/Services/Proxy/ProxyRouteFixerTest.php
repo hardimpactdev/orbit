@@ -661,6 +661,70 @@ describe('ProxyRouteFixer', function (): void {
             ->not->toContain('sudo systemctl reload caddy');
     });
 
+    it('repairs custom proxy TLS material through managed caddy host mount sources', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'nmbp',
+            'platform' => 'macos_15-4',
+            'user' => 'nckrtl',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => [
+                'container' => [
+                    ...OrbitCaddyContainer::default()->spec(),
+                    'mounts' => [
+                        [
+                            'source' => '/Users/nckrtl/.config/orbit',
+                            'target' => '/etc/orbit',
+                            'read_only' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'paseo.nmbp',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:6767'],
+                'upstream' => 'http://host.docker.internal:6767',
+            ],
+        ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            $shell,
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.tls_missing',
+            kind: DriftKind::Missing,
+            summary: 'tls missing',
+        ));
+
+        expect($action['status'])
+            ->toBe('completed')
+            ->and(proxy_fixer_payload_paths($shell))
+            ->toContain(
+                '/Users/nckrtl/.config/orbit/certs/paseo.nmbp.crt',
+                '/Users/nckrtl/.config/orbit/certs/paseo.nmbp.key',
+            )
+            ->not->toContain(
+                '/etc/orbit/certs/paseo.nmbp.crt',
+                '/etc/orbit/certs/paseo.nmbp.key',
+            )
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:managed-file 'write'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeTrue();
+    });
+
     it('re-applies app proxy routes from gateway intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         $app = App::factory()->create([

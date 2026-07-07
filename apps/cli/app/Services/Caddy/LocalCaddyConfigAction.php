@@ -46,16 +46,19 @@ final readonly class LocalCaddyConfigAction
 
         if ($action === 'write-global') {
             return $this->writeFile(
-                path: self::GLOBAL_CADDYFILE,
+                path: $this->hostPathForContainerPath(self::GLOBAL_CADDYFILE, self::DEFAULT_CONTAINER),
                 content: $this->content($payload['content'] ?? null),
             );
         }
 
         if ($action === 'write-site') {
             return $this->writeFile(
-                path: $this->sitePath(
-                    domain: $payload['domain'] ?? null,
-                    suffix: ($payload['backend'] ?? null) === true ? '.backend' : '',
+                path: $this->hostPathForContainerPath(
+                    $this->sitePath(
+                        domain: $payload['domain'] ?? null,
+                        suffix: ($payload['backend'] ?? null) === true ? '.backend' : '',
+                    ),
+                    self::DEFAULT_CONTAINER,
                 ),
                 content: $this->content($payload['content'] ?? null),
             );
@@ -87,24 +90,25 @@ final readonly class LocalCaddyConfigAction
      */
     private function readGlobal(): array
     {
-        $exists = $this->runPrivilegedProcess(['test', '-f', self::GLOBAL_CADDYFILE]);
+        $path = $this->hostPathForContainerPath(self::GLOBAL_CADDYFILE, self::DEFAULT_CONTAINER);
+        $exists = $this->runPrivilegedProcess(['test', '-f', $path]);
 
         if ($exists['exit_code'] !== 0) {
             return [
-                'path' => self::GLOBAL_CADDYFILE,
+                'path' => $path,
                 'content' => '',
                 'exists' => false,
             ];
         }
 
-        $read = $this->runPrivilegedProcess(['cat', self::GLOBAL_CADDYFILE]);
+        $read = $this->runPrivilegedProcess(['cat', $path]);
 
         if ($read['exit_code'] !== 0) {
             throw new LocalCaddyConfigFailure(
                 errorCode: 'caddy_config.read_failed',
                 message: 'Caddy global config could not be read.',
                 meta: [
-                    'path' => self::GLOBAL_CADDYFILE,
+                    'path' => $path,
                     'exit_code' => $read['exit_code'],
                     'output' => $read['output'],
                 ],
@@ -112,7 +116,7 @@ final readonly class LocalCaddyConfigAction
         }
 
         return [
-            'path' => self::GLOBAL_CADDYFILE,
+            'path' => $path,
             'content' => $read['output'],
             'exists' => true,
         ];
@@ -125,14 +129,6 @@ final readonly class LocalCaddyConfigAction
     {
         $directory = dirname($path);
 
-        $this->mustRunPrivileged([
-            'install',
-            '-d',
-            '-m',
-            '0755',
-            '/etc/caddy',
-            self::SITES_DIRECTORY,
-        ], 'caddy_config.directory_failed');
         $this->mustRunPrivileged(['install', '-d', '-m', '0755', $directory], 'caddy_config.directory_failed');
         $this->mustRunPrivilegedWithInput(['tee', $path], $content, 'caddy_config.write_failed');
         $this->mustRunPrivileged(['chmod', '0644', $path], 'caddy_config.chmod_failed');
@@ -150,20 +146,21 @@ final readonly class LocalCaddyConfigAction
     private function removeSite(mixed $domain, string $container): array
     {
         $domain = $this->domain($domain);
+        $sitePath = $this->hostPathForContainerPath($this->sitePath($domain, ''), $container);
 
         $this->mustRunPrivileged([
             'rm',
             '-f',
-            $this->sitePath($domain, ''),
-            "/etc/orbit/certs/{$domain}.crt",
-            "/etc/orbit/certs/{$domain}.key",
+            $sitePath,
+            $this->hostPathForContainerPath("/etc/orbit/certs/{$domain}.crt", $container),
+            $this->hostPathForContainerPath("/etc/orbit/certs/{$domain}.key", $container),
         ], 'caddy_config.remove_failed');
 
         $this->reload($container);
 
         return [
             'domain' => $domain,
-            'path' => $this->sitePath($domain, ''),
+            'path' => $sitePath,
             'container' => $container,
         ];
     }
@@ -534,6 +531,64 @@ final readonly class LocalCaddyConfigAction
             message: 'Docker returned an invalid Caddy container inspect payload.',
             meta: ['container' => $container],
         );
+    }
+
+    private function hostPathForContainerPath(string $containerPath, string $container): string
+    {
+        $inspection = $this->inspectContainer($container);
+
+        if ($inspection === null) {
+            return $containerPath;
+        }
+
+        return $this->hostPathFromMounts($containerPath, $inspection['Mounts'] ?? null);
+    }
+
+    private function hostPathFromMounts(string $containerPath, mixed $mounts): string
+    {
+        if (! is_array($mounts)) {
+            return $containerPath;
+        }
+
+        $bestTarget = null;
+        $bestSource = null;
+
+        foreach ($mounts as $mount) {
+            if (! is_array($mount)) {
+                continue;
+            }
+
+            $source = $mount['Source'] ?? null;
+            $target = $mount['Destination'] ?? null;
+
+            if (! is_string($source) || ! is_string($target) || $source === '' || $target === '') {
+                continue;
+            }
+
+            if (! $this->pathIsWithinMount($containerPath, $target)) {
+                continue;
+            }
+
+            if ($bestTarget === null || strlen($target) > strlen($bestTarget)) {
+                $bestTarget = rtrim($target, '/');
+                $bestSource = rtrim($source, '/');
+            }
+        }
+
+        if ($bestTarget === null || $bestSource === null) {
+            return $containerPath;
+        }
+
+        $suffix = substr($containerPath, strlen($bestTarget));
+
+        return $bestSource.$suffix;
+    }
+
+    private function pathIsWithinMount(string $path, string $mountTarget): bool
+    {
+        $mountTarget = rtrim($mountTarget, '/');
+
+        return $path === $mountTarget || str_starts_with($path, "{$mountTarget}/");
     }
 
     /**

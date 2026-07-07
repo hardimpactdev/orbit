@@ -192,15 +192,16 @@ final readonly class ProxyRouteFixer
 
         $leaf = $this->ca->issueLeaf($route->domain);
         $paths = $this->tlsPaths($route);
+        $hostPaths = $this->hostPathsForCaddyContainer($route->node, $paths);
 
         $this->applyManagedFile($route->node, new ManagedFile(
-            path: $paths['cert'],
+            path: $hostPaths['cert'],
             content: (string) file_get_contents($leaf['cert']),
             mode: '0644',
             directoryMode: '0755',
         ));
         $this->applyManagedFile($route->node, new ManagedFile(
-            path: $paths['key'],
+            path: $hostPaths['key'],
             content: (string) file_get_contents($leaf['key']),
             mode: '0600',
             directoryMode: '0755',
@@ -297,7 +298,7 @@ final readonly class ProxyRouteFixer
         $caPath = $this->validatedAbsolutePath($route, $caPath, 'has an invalid router backend CA path.');
 
         $file = new ManagedFile(
-            path: $caPath,
+            path: $this->hostPathForCaddyContainerPath($node, $caPath),
             content: $this->ca->rootCert(),
             mode: '0644',
             directoryMode: '0755',
@@ -429,6 +430,68 @@ final readonly class ProxyRouteFixer
                 'has an invalid TLS key path.',
             ),
         ];
+    }
+
+    /**
+     * @param  array{cert: string, key: string}  $paths
+     * @return array{cert: string, key: string}
+     */
+    private function hostPathsForCaddyContainer(Node $node, array $paths): array
+    {
+        return [
+            'cert' => $this->hostPathForCaddyContainerPath($node, $paths['cert']),
+            'key' => $this->hostPathForCaddyContainerPath($node, $paths['key']),
+        ];
+    }
+
+    private function hostPathForCaddyContainerPath(Node $node, string $containerPath): string
+    {
+        $spec = $this->managedCaddyContainerSpec($node);
+        $mounts = is_array($spec) ? $spec['mounts'] ?? null : null;
+
+        if (! is_array($mounts)) {
+            return $containerPath;
+        }
+
+        $bestTarget = null;
+        $bestSource = null;
+
+        foreach ($mounts as $mount) {
+            if (! is_array($mount)) {
+                continue;
+            }
+
+            $source = $mount['source'] ?? null;
+            $target = $mount['target'] ?? null;
+
+            if (! is_string($source) || ! is_string($target) || $source === '' || $target === '') {
+                continue;
+            }
+
+            if (! $this->pathIsWithinMount($containerPath, $target)) {
+                continue;
+            }
+
+            if ($bestTarget === null || strlen($target) > strlen($bestTarget)) {
+                $bestTarget = rtrim($target, '/');
+                $bestSource = rtrim($source, '/');
+            }
+        }
+
+        if ($bestTarget === null || $bestSource === null) {
+            return $containerPath;
+        }
+
+        $suffix = substr($containerPath, strlen($bestTarget));
+
+        return $bestSource.$suffix;
+    }
+
+    private function pathIsWithinMount(string $path, string $mountTarget): bool
+    {
+        $mountTarget = rtrim($mountTarget, '/');
+
+        return $path === $mountTarget || str_starts_with($path, "{$mountTarget}/");
     }
 
     /**

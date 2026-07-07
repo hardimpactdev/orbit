@@ -119,36 +119,52 @@ final readonly class ProxyRouteProbe
             suffix="${ORBIT_PROXY_SUFFIX:-}"
             upstream="${ORBIT_PROXY_RUNTIME_UPSTREAM:-}"
             path="/etc/caddy/sites/${domain}${suffix}.caddy"
-            exists=0
-            hash=""
-            cert=""
-            key=""
-            cert_exists=0
-            key_exists=0
-            runtime_reachable=""
-            runtime_error=""
 
-            if [ -f "$path" ]; then
-                exists=1
-                hash=$(sha256sum "$path" | awk '{print $1}')
-                cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$path")
-                key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$path")
-                [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
-                [ -n "$key" ] && [ -f "$key" ] && key_exists=1
-
-                if [ -n "$upstream" ]; then
-                    probe_output=$(docker exec orbit-caddy wget -S -O /dev/null -T 3 "$upstream" 2>&1 || true)
-
-                    case "$probe_output" in
-                        *HTTP/*) runtime_reachable=1 ;;
-                        *) runtime_reachable=0 ;;
-                    esac
-
-                    runtime_error=$(printf '%s' "$probe_output" | tail -n 1 | base64 | tr -d '\n')
-                fi
+            if ! docker container inspect --format '{{.State.Running}}' orbit-caddy >/dev/null 2>&1; then
+                printf '0\t\t\t\t0\t0\t\t\n'
+                exit 0
             fi
 
-            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists" "$runtime_reachable" "$runtime_error"
+            docker exec orbit-caddy sh -c '
+                path="$1"
+                upstream="$2"
+                exists=0
+                hash=""
+                cert=""
+                key=""
+                cert_exists=0
+                key_exists=0
+                runtime_reachable=""
+                runtime_error=""
+
+                if [ -f "$path" ]; then
+                    exists=1
+                    hash=$(sha256sum "$path" | cut -d " " -f 1)
+                    tls_line=$(grep -m 1 -E "^[[:space:]]*tls[[:space:]]+" "$path" || true)
+                    if [ -n "$tls_line" ]; then
+                        set -- $tls_line
+                        if [ "${1:-}" = "tls" ] && [ "${2:-}" != "internal" ]; then
+                            cert="${2:-}"
+                            key="${3:-}"
+                        fi
+                    fi
+                    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
+                    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+
+                    if [ -n "$upstream" ]; then
+                        probe_output=$(wget -S -O /dev/null -T 3 "$upstream" 2>&1 || true)
+
+                        case "$probe_output" in
+                            *HTTP/*) runtime_reachable=1 ;;
+                            *) runtime_reachable=0 ;;
+                        esac
+
+                        runtime_error=$(printf "%s" "$probe_output" | tail -n 1 | base64 | tr -d "\n")
+                    fi
+                fi
+
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists" "$runtime_reachable" "$runtime_error"
+            ' sh "$path" "$upstream"
             BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
@@ -189,20 +205,33 @@ final readonly class ProxyRouteProbe
     {
         $script = <<<'BASH'
             set -euo pipefail
-            if [ ! -d /etc/caddy/sites ]; then
+            if ! docker container inspect --format '{{.State.Running}}' orbit-caddy >/dev/null 2>&1; then
                 exit 0
             fi
-            for f in /etc/caddy/sites/*.caddy; do
-                [ -e "$f" ] || continue
-                name=$(basename "$f" .caddy)
-                hash=$(sha256sum "$f" | awk '{print $1}')
-                cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$f")
-                key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$f")
-                cert_exists=0; key_exists=0
-                [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
-                [ -n "$key" ] && [ -f "$key" ] && key_exists=1
-                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
-            done
+            docker exec orbit-caddy sh -c '
+                if [ ! -d /etc/caddy/sites ]; then
+                    exit 0
+                fi
+                for f in /etc/caddy/sites/*.caddy; do
+                    [ -e "$f" ] || continue
+                    name=$(basename "$f" .caddy)
+                    hash=$(sha256sum "$f" | cut -d " " -f 1)
+                    cert=""
+                    key=""
+                    tls_line=$(grep -m 1 -E "^[[:space:]]*tls[[:space:]]+" "$f" || true)
+                    if [ -n "$tls_line" ]; then
+                        set -- $tls_line
+                        if [ "${1:-}" = "tls" ] && [ "${2:-}" != "internal" ]; then
+                            cert="${2:-}"
+                            key="${3:-}"
+                        fi
+                    fi
+                    cert_exists=0; key_exists=0
+                    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
+                    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+                    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$name" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
+                done
+            '
             BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
@@ -363,16 +392,21 @@ final readonly class ProxyRouteProbe
     {
         $script = <<<'BASH'
             set -euo pipefail
-            if [ ! -d /etc/caddy/sites ]; then
+            if ! docker container inspect --format '{{.State.Running}}' orbit-caddy >/dev/null 2>&1; then
                 exit 0
             fi
-            for f in /etc/caddy/sites/*.caddy; do
-                [ -e "$f" ] || continue
-                name=$(basename "$f" .caddy)
-                vhost_hash=$(sha256sum "$f" | awk '{print $1}')
-                body_b64=$(base64 -w0 "$f" 2>/dev/null || base64 "$f" | tr -d '\n')
-                printf '%s\t%s\t%s\n' "$name" "$vhost_hash" "$body_b64"
-            done
+            docker exec orbit-caddy sh -c '
+                if [ ! -d /etc/caddy/sites ]; then
+                    exit 0
+                fi
+                for f in /etc/caddy/sites/*.caddy; do
+                    [ -e "$f" ] || continue
+                    name=$(basename "$f" .caddy)
+                    vhost_hash=$(sha256sum "$f" | cut -d " " -f 1)
+                    body_b64=$(base64 -w0 "$f" 2>/dev/null || base64 "$f" | tr -d "\n")
+                    printf "%s\t%s\t%s\n" "$name" "$vhost_hash" "$body_b64"
+                done
+            '
             BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);

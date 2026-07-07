@@ -434,6 +434,28 @@ describe('proxy backend and TLS reality', function (): void {
             ->toBe('');
     });
 
+    it('introspects backend route artifacts through orbit-caddy container mounts', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'paseo.nmbp',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'source_hash' => str_repeat('a', 64),
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://host.docker.internal:6767'],
+                'upstream' => 'http://host.docker.internal:6767',
+            ],
+        ]);
+        $shell = new ProxyProbeRecordingRemoteShell("0\t\t\t\t0\t0\t\t\n");
+
+        new ProxyRouteProbe($shell)->introspect($route);
+
+        expect($shell->scripts[0])
+            ->toContain('docker exec orbit-caddy sh')
+            ->toContain('/etc/caddy/sites/${domain}${suffix}.caddy');
+    });
+
     it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
         $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
