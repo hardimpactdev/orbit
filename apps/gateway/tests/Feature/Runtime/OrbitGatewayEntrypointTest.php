@@ -11,6 +11,9 @@ it('serves the gateway API through bundled FrankenPHP and Caddy', function (): v
         ->toContain('exec frankenphp run --config /etc/caddy/Caddyfile --adapter caddyfile')
         ->toContain('serve)')
         ->and($caddyfile)
+        ->toContain('frankenphp {')
+        ->toContain('num_threads 4')
+        ->toContain('max_threads auto')
         ->toContain(':8080')
         ->toContain('php_server')
         ->toContain('root * /srv/orbit/apps/gateway/public');
