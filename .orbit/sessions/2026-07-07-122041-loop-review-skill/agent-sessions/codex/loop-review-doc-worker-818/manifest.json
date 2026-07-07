@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "loop-review-doc-worker-818",
+    "solo_process_id": 818,
+    "kind": "agent",
+    "started_at": "2026-07-07 10:08:18",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T12-08-19-019f3c0c-cafb-7b21-8b29-05a8ca9341fc.jsonl",
+    "source": "codex_exact_marker"
+}
