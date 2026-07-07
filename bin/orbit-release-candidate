@@ -245,19 +245,74 @@ cmd_build() {
     ORBIT_CANDIDATE_DIR="$work_dir" \
     ORBIT_CANDIDATE_CHANNEL="$candidate_channel" \
         "${repo_root}/bin/orbit-gateway-artisan" tinker --execute='
-            $disk = Illuminate\Support\Facades\Storage::disk(config("orbit.artifacts.disk"));
+            $diskConfig = config("filesystems.disks.".config("orbit.artifacts.disk"));
             $prefix = trim((string) getenv("ORBIT_CANDIDATE_PREFIX"), "/");
             $dir = rtrim((string) getenv("ORBIT_CANDIDATE_DIR"), "/");
             $channel = trim((string) getenv("ORBIT_CANDIDATE_CHANNEL"), "/");
+            $s3Config = [
+                "version" => "latest",
+                "region" => $diskConfig["region"],
+                "use_path_style_endpoint" => (bool) ($diskConfig["use_path_style_endpoint"] ?? false),
+                "credentials" => [
+                    "key" => $diskConfig["key"],
+                    "secret" => $diskConfig["secret"],
+                ],
+            ];
 
-            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
-                $disk->put("{$prefix}/{$asset}", file_get_contents("{$dir}/{$asset}"), "public");
+            if (filled($diskConfig["endpoint"] ?? null)) {
+                $s3Config["endpoint"] = $diskConfig["endpoint"];
             }
 
-            $disk->put(
+            $client = new Aws\S3\S3Client($s3Config);
+            $bucket = $diskConfig["bucket"];
+            $acl = ($diskConfig["visibility"] ?? "private") === "public" ? "public-read" : "private";
+
+            $upload = function (string $target, string $source) use ($client, $bucket, $acl): void {
+                $stream = fopen($source, "rb");
+
+                if ($stream === false) {
+                    throw new RuntimeException("Unable to open candidate artifact [{$source}] for upload.");
+                }
+
+                try {
+                    $client->putObject([
+                        "Bucket" => $bucket,
+                        "Key" => $target,
+                        "ACL" => $acl,
+                        "Body" => $stream,
+                    ]);
+                } finally {
+                    fclose($stream);
+                }
+            };
+
+            $retryingUpload = function (string $target, string $source) use ($upload): void {
+                $lastThrowable = null;
+
+                for ($attempt = 1; $attempt <= 5; $attempt++) {
+                    try {
+                        $upload($target, $source);
+
+                        return;
+                    } catch (Throwable $throwable) {
+                        $lastThrowable = $throwable;
+
+                        if ($attempt < 5) {
+                            usleep(min(1_000_000 * $attempt, 5_000_000));
+                        }
+                    }
+                }
+
+                throw $lastThrowable;
+            };
+
+            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
+                $retryingUpload("{$prefix}/{$asset}", "{$dir}/{$asset}");
+            }
+
+            $retryingUpload(
                 "channels/{$channel}/orbit-release-manifest.json",
-                file_get_contents("{$dir}/orbit-release-manifest.candidate.json"),
-                "public",
+                "{$dir}/orbit-release-manifest.candidate.json",
             );
         '
 
