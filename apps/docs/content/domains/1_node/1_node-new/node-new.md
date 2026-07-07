@@ -350,7 +350,7 @@ generated WireGuard peer configs. Public IP metadata, when needed, is recorded
 explicitly with [`node:update`](../7_node-update/node-update.md) and is not drift-checked
 by node doctor.
 
-`node:new` does not set the local default development node. Run
+`node:new` does not set the local default node. Run
 [`node:default`](../9_node-default/node-default.md) explicitly when the operator wants that
 local targeting preference.
 

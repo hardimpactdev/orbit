@@ -48,7 +48,7 @@ This command follows the shared
 2. **Resolve Target Node**:
    - Explicit `--node`.
    - Existing app owner if `name` is already registered.
-   - The CLI's stored `node:default` development node.
+   - The CLI's stored `node:default` node.
    - Interactive prompt or non-interactive failure.
 3. **Resolve Path**:
    - Explicit `--path`.

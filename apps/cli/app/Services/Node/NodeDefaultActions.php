@@ -21,7 +21,7 @@ final readonly class NodeDefaultActions
     ) {}
 
     /**
-     * @return array{action: string, default_node: array{name: string, role: string}|null}
+     * @return array{action: string, default_node: array{name: string, role: string|null}|null}
      */
     public function show(): array
     {
@@ -30,28 +30,47 @@ final readonly class NodeDefaultActions
         return [
             'action' => 'show',
             'default_node' => $name !== null
-                ? ['name' => $name, 'role' => 'app-dev']
+                ? ['name' => $name, 'role' => null]
                 : null,
         ];
     }
 
     /**
-     * @return array{action: string, default_node: array{name: string, role: string}, meta: array<string, mixed>}|array{code: string, message: string, meta: array<string, mixed>}
+     * @return array{action: string, default_node: array{name: string, role: string|null}, meta: array<string, mixed>}|array{code: string, message: string, meta: array<string, mixed>}
      */
     public function set(string $name): array
     {
-        $validation = $this->validateNode($name);
+        $nodesOrError = $this->fetchVisibleNodes();
 
-        if ($validation !== null) {
-            return $validation;
+        if (array_key_exists('code', $nodesOrError)) {
+            /** @var array{code: string, message: string, meta: array<string, mixed>} $nodesOrError */
+            return $nodesOrError;
         }
 
-        $this->configStore->setDefaultNode($name);
+        /** @var list<array{name: string, role: string|null}> $visibleNodes */
+        $visibleNodes = $nodesOrError;
+
+        foreach ($visibleNodes as $node) {
+            if ($node['name'] !== $name) {
+                continue;
+            }
+
+            $this->configStore->setDefaultNode($name);
+
+            return [
+                'action' => 'set',
+                'default_node' => [
+                    'name' => $node['name'],
+                    'role' => $node['role'],
+                ],
+                'meta' => [],
+            ];
+        }
 
         return [
-            'action' => 'set',
-            'default_node' => ['name' => $name, 'role' => 'app-dev'],
-            'meta' => [],
+            'code' => 'node.not_found',
+            'message' => "Node '{$name}' not found or not visible.",
+            'meta' => ['name' => $name],
         ];
     }
 
@@ -70,14 +89,12 @@ final readonly class NodeDefaultActions
     }
 
     /**
-     * @return list<array{name: string, role: string}>|array{code: string, message: string, meta: array<string, mixed>}
+     * @return list<array{name: string, role: string|null}>|array{code: string, message: string, meta: array<string, mixed>}
      */
-    public function fetchDevelopmentNodes(): array
+    public function fetchVisibleNodes(): array
     {
         try {
-            $response = $this->gatewayClient->get('/api/nodes', [
-                'role' => 'app-dev',
-            ]);
+            $response = $this->gatewayClient->get('/api/nodes');
         } catch (GatewayApiException $exception) {
             if ($exception->hasGatewayError() && $exception->gatewayErrorCode() !== null) {
                 return [
@@ -114,39 +131,12 @@ final readonly class NodeDefaultActions
                 continue;
             }
 
-            if ($nodeRole !== 'app-dev') {
-                continue;
-            }
-
-            $result[] = ['name' => $nodeName, 'role' => 'app-dev'];
+            $result[] = [
+                'name' => $nodeName,
+                'role' => is_string($nodeRole) && $nodeRole !== '' ? $nodeRole : null,
+            ];
         }
 
         return $result;
-    }
-
-    /**
-     * @return array{code: string, message: string, meta: array<string, mixed>}|null
-     */
-    private function validateNode(string $name): ?array
-    {
-        $nodesOrError = $this->fetchDevelopmentNodes();
-
-        if (isset($nodesOrError['code'])) {
-            /** @var array{code: string, message: string, meta: array<string, mixed>} $nodesOrError */
-            return $nodesOrError;
-        }
-
-        /** @var list<array{name: string, role: string}> $nodesOrError */
-        $found = array_filter($nodesOrError, fn (array $n): bool => $n['name'] === $name);
-
-        if ($found !== []) {
-            return null;
-        }
-
-        return [
-            'code' => 'node.not_found',
-            'message' => "Node '{$name}' not found or not visible.",
-            'meta' => ['name' => $name],
-        ];
     }
 }

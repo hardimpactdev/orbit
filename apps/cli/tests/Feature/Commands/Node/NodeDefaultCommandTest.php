@@ -49,7 +49,7 @@ describe('node:default', function (): void {
                 ->and($decoded['success']['data']['default_node']['name'])
                 ->toBe('app-1')
                 ->and($decoded['success']['data']['default_node']['role'])
-                ->toBe('app-dev')
+                ->toBeNull()
                 ->and($decoded['success']['data']['default_node'])
                 ->not->toHaveKey('environment');
         });
@@ -111,7 +111,7 @@ describe('node:default', function (): void {
                 ->toBeNull();
         });
 
-        it('returns node.not_found when node has wrong role', function (): void {
+        it('stores any visible node role as the local default', function (): void {
             fakeGateway(fakeSuccessEnvelope([
                 'nodes' => [
                     ['name' => 'gateway-1', 'role' => 'gateway'],
@@ -123,7 +123,15 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.not_found');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['default_node'])
+                ->toMatchArray([
+                    'name' => 'gateway-1',
+                    'role' => 'gateway',
+                ])
+                ->and($this->store->defaultNode())
+                ->toBe('gateway-1');
         });
 
         it('returns gateway_unavailable when gateway is down', function (): void {
@@ -162,7 +170,7 @@ describe('node:default', function (): void {
                 fn (Request $request): bool => (
                     $request->method() === 'GET'
                     && str_contains($request->url(), '/api/nodes')
-                    && str_contains($request->url(), 'role=app-dev')
+                    && ! str_contains($request->url(), 'role=app-dev')
                 ),
             );
         });
@@ -234,7 +242,7 @@ describe('node:default', function (): void {
             expect($exitCode)
                 ->toBe(0)
                 ->and($output)
-                ->toContain('Default development node: app-1')
+                ->toContain('Default node: app-1')
                 ->and($output)
                 ->not->toContain('action:')->and($output)
                 ->not->toContain('{');
@@ -246,7 +254,7 @@ describe('node:default', function (): void {
             expect($exitCode)
                 ->toBe(0)
                 ->and($output)
-                ->toContain('No default development node is set.')
+                ->toContain('No default node is set.')
                 ->and($output)
                 ->toContain('Run `orbit node:default <name>` to set one.')
                 ->and($output)
@@ -269,7 +277,7 @@ describe('node:default', function (): void {
                 ->and($output)
                 ->toContain('Store local default')
                 ->and($output)
-                ->toContain('Default development node set to app-1.')
+                ->toContain('Default node set to app-1.')
                 ->and($output)
                 ->not->toContain('action:')->and($output)
                 ->not->toContain('{')->and($this->store->defaultNode())->toBe('app-1');
@@ -314,7 +322,7 @@ describe('node:default', function (): void {
             expect($exitCode)
                 ->toBe(0)
                 ->and($output)
-                ->toContain('Default development node cleared.')
+                ->toContain('Default node cleared.')
                 ->and($output)
                 ->not->toContain('action:')->and($output)
                 ->not->toContain('{');
@@ -326,7 +334,7 @@ describe('node:default', function (): void {
             expect($exitCode)
                 ->toBe(0)
                 ->and($output)
-                ->toContain('No default development node was set.')
+                ->toContain('No default node was set.')
                 ->and($output)
                 ->not->toContain('{');
         });

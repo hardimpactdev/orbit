@@ -16,12 +16,12 @@ final class NodeDefaultCommand extends LocalOnlyCommand
 
     #[\Override]
     protected $signature = 'node:default
-        {name? : Development node to set as the local default}
+        {name? : Node to set as the local default}
         {--clear : Clear the local default}
         {--json}';
 
     #[\Override]
-    protected $description = 'Choose, show, set, or clear the local default development node.';
+    protected $description = 'Choose, show, set, or clear the local default node.';
 
     public function handle(NodeDefaultActions $actions): int
     {
@@ -65,13 +65,13 @@ final class NodeDefaultCommand extends LocalOnlyCommand
         $default = $result['default_node'];
 
         if ($default === null) {
-            $this->line('No default development node is set.');
+            $this->line('No default node is set.');
             $this->line('Run `orbit node:default <name>` to set one.');
 
             return self::SUCCESS;
         }
 
-        $this->line("Default development node: {$default['name']}");
+        $this->line("Default node: {$default['name']}");
 
         return self::SUCCESS;
     }
@@ -81,12 +81,12 @@ final class NodeDefaultCommand extends LocalOnlyCommand
         if ($this->wantsJson()) {
             $result = $actions->set($name);
 
-            if (isset($result['code'])) {
+            if (array_key_exists('code', $result)) {
                 /** @var array{code: string, message: string, meta: array<string, mixed>} $result */
                 return $this->renderFailure($result['code'], $result['message'], $result['meta']);
             }
 
-            /** @var array{action: string, default_node: array{name: string, role: string}, meta: array<string, mixed>} $result */
+            /** @var array{action: string, default_node: array{name: string, role: string|null}, meta: array<string, mixed>} $result */
             return $this->renderSuccess([
                 'action' => $result['action'],
                 'default_node' => $result['default_node'],
@@ -101,18 +101,18 @@ final class NodeDefaultCommand extends LocalOnlyCommand
         $outcome = $this->runStepOperation(
             'Setting Default Node',
             [
-                ['label' => 'Load visible development nodes', 'doneLabel' => 'Loaded visible development nodes'],
+                ['label' => 'Load visible nodes', 'doneLabel' => 'Loaded visible nodes'],
                 ['label' => 'Store local default', 'doneLabel' => 'Stored local default'],
             ],
             work: function () use ($actions, $name): void {
                 $result = $actions->set($name);
 
-                if (isset($result['code'])) {
+                if (array_key_exists('code', $result)) {
                     /** @var array{code: string, message: string, meta: array<string, mixed>} $result */
                     throw new RuntimeException($result['message']);
                 }
             },
-            doneFooter: "Default development node set to {$name}.",
+            doneFooter: "Default node set to {$name}.",
         );
 
         return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
@@ -130,9 +130,9 @@ final class NodeDefaultCommand extends LocalOnlyCommand
         }
 
         if ($result['meta']['was_set']) {
-            $this->line('Default development node cleared.');
+            $this->line('Default node cleared.');
         } else {
-            $this->line('No default development node was set.');
+            $this->line('No default node was set.');
         }
 
         return self::SUCCESS;
@@ -140,18 +140,18 @@ final class NodeDefaultCommand extends LocalOnlyCommand
 
     private function handleChoose(NodeDefaultActions $actions): int
     {
-        $nodesOrError = $actions->fetchDevelopmentNodes();
+        $nodesOrError = $actions->fetchVisibleNodes();
 
-        if (isset($nodesOrError['code'])) {
+        if (array_key_exists('code', $nodesOrError)) {
             /** @var array{code: string, message: string, meta: array<string, mixed>} $nodesOrError */
             return $this->renderFailure($nodesOrError['code'], $nodesOrError['message'], $nodesOrError['meta']);
         }
 
-        /** @var list<array{name: string, role: string}> $nodesOrError */
+        /** @var list<array{name: string, role: string|null}> $nodesOrError */
         if ($nodesOrError === []) {
             return $this->renderFailure(
                 'node.not_found',
-                'No development app nodes found.',
+                'No nodes found.',
                 [],
             );
         }
@@ -162,7 +162,7 @@ final class NodeDefaultCommand extends LocalOnlyCommand
             ? $currentDefault
             : $choices[0];
 
-        $selected = $this->choice('Select the default development app node', $choices, $default);
+        $selected = $this->choice('Select the default node', $choices, $default);
 
         return $this->handleSet($actions, (string) $selected);
     }

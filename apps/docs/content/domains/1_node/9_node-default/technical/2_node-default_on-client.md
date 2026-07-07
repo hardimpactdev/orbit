@@ -10,16 +10,16 @@ node access and does not require a gateway access grant.
 
 **Post-input path eligibility:**
 - For the interactive `choose` path and direct `set` sub-action: the target
-  node resolves as a visible active app-dev node from the configured
-  gateway or local node registry.
+  node resolves as a visible node from the configured gateway or local node
+  registry.
 - For `show` and `clear`: no gateway reachability or grant check is required.
 
 ## Allowed Paths
 
 | Context | Behavior |
 | --- | --- |
-| Configured non-gateway CLI | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` query the gateway for visible development app nodes. |
-| Unconfigured non-gateway CLI | Execute locally against local node registry state. `show` and `clear` use local config only. Interactive `choose` and direct `set` can use local active app-dev node records. |
+| Configured non-gateway CLI | Execute locally. `show` and `clear` use local config only. Interactive `choose` and direct `set` query the gateway for visible nodes. |
+| Unconfigured non-gateway CLI | Execute locally against local node registry state. `show` and `clear` use local config only. Interactive `choose` and direct `set` can use local visible node records. |
 
 ## Show Sub-action
 
@@ -31,19 +31,16 @@ No gateway call is required.
 
 ## Set Sub-action
 
-1. Resolve visible active app-dev nodes from the configured gateway or
-   local node registry.
-2. Validate that the resolved target from `[name]` is a visible development app
-   node.
-3. Store the name locally as the default development node.
+1. Resolve visible nodes from the configured gateway or local node registry.
+2. Validate that the resolved target from `[name]` is a visible node.
+3. Store the name locally as the default node.
 4. Return the stored name.
 
 ## Choose Path
 
-1. Resolve visible active app-dev nodes from the configured gateway or
-   local node registry.
+1. Resolve visible nodes from the configured gateway or local node registry.
 2. Present those nodes as interactive choices.
-3. Store the selected node locally as the default development node.
+3. Store the selected node locally as the default node.
 4. Return the same result as the set sub-action.
 
 When a configured gateway is unreachable, fail before side effects after input
@@ -51,7 +48,7 @@ resolution.
 
 ## Clear Sub-action
 
-1. Remove the locally stored default development node, if any.
+1. Remove the locally stored default node, if any.
 2. Return success. If no default was stored, include `was_set: false` in the
    result metadata.
 
@@ -59,9 +56,9 @@ No gateway call is required.
 
 ## Stale Default Behavior
 
-When a stored default does not resolve to an active, authorized development
-node, the `show` sub-action still returns the stored name. The stale default
-is not cleared automatically. `doctor --self` may report
+When a stored default does not resolve to a visible node, the `show` sub-action
+still returns the stored name. The stale default is not cleared automatically.
+`doctor --self` may report
 `node.local_default_invalid`, but repair remains an explicit `node:default`
 action.
 
@@ -79,8 +76,8 @@ sub-action:
 Gateway connection is required to set a default node.
 ```
 
-When no configured gateway is present and no local active app-dev node
-matches the request:
+When no configured gateway is present and no local visible node matches the
+request:
 
 ```text
 Node 'app-1' not found or not visible.
@@ -90,8 +87,7 @@ Node 'app-1' not found or not visible.
 
 - `show`: never fails due to gateway unavailability.
 - `choose` or `set`: fails before side effects when a configured gateway is
-  unreachable, the target node is not found, or the target is not a development
-  app node.
+  unreachable or the target node is not found.
 - `clear`: never fails due to gateway unavailability.
 
 ## Test Mapping

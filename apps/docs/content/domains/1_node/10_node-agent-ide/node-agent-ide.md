@@ -109,7 +109,7 @@ Use these commands alongside `node:agent-ide` to manage node configuration and v
 - [`node:list`](../3_node-list/node-list.md) — list registered nodes
 - [`node:show`](../4_node-show/node-show.md) — show node details
 - [`node:update`](../7_node-update/node-update.md) — update node metadata
-- [`node:default`](../9_node-default/node-default.md) — set the local default development node
+- [`node:default`](../9_node-default/node-default.md) — set the local default node
 - [`app:prune`](../../5_app/7_app-prune/app-prune.md) — prune stale workspaces for an app
 - [`doctor --family=node`](../node-doctor.md) — verify and repair node drift
 

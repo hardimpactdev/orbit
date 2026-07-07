@@ -2,9 +2,9 @@
 
 [Back to Nodes commands.](../README.md)
 
-Choose, show, set, or clear the local default development node.
+Choose, show, set, or clear the local default node.
 
-Stores a client-local target preference so repeated development commands
+Stores a client-local target preference so repeated commands
 run against a chosen remote node without requiring `--node` every time.
 This is the only command that sets or clears the local default; `node:new`
 never sets it automatically.
@@ -17,8 +17,8 @@ orbit node:default
 ```
 
 Run without arguments in interactive input mode to choose from the visible
-development nodes the current node identity may read. Provide `name` to set
-it directly. Use `--clear` to remove the preference.
+nodes the current node identity may read. Provide `name` to set it directly.
+Use `--clear` to remove the preference.
 In non-interactive input mode, omitting `name` and `--clear` shows
 the current local default.
 
@@ -34,7 +34,7 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 
 ## Arguments and options
 
-- `name`: visible development node name. Required for the `set` sub-action
+- `name`: visible node name. Required for the `set` sub-action
   when no interactive prompt is available and a set is requested.
 - `--clear`: clear the local default node. Mutually exclusive with providing
   `name`.
@@ -42,7 +42,7 @@ orbit node:default app-1 --json # set app-1 as the default, output JSON
 
 ## What Happens
 
-Run `node:default` when you want to choose, set, or clear the development node your local commands target by default.
+Run `node:default` when you want to choose, set, or clear the node your local commands target by default.
 
 `node:default` reads and writes local client configuration only. It does
 not mutate gateway node configuration, grant access to the default node, or
@@ -53,27 +53,27 @@ config.
 ### Choose or set
 
 In interactive input mode, running `node:default` without a target queries the
-configured gateway for visible development nodes, or the local node registry
-when no gateway is configured, and presents matching app-dev nodes as
-choices. If the current local default is still in that choice list, it is
+configured gateway for visible nodes, or the local node registry
+when no gateway is configured, and presents matching nodes as choices. If the
+current local default is still in that choice list, it is
 preselected. Selecting a node stores it as the local default. Providing `name`
 skips the choice prompt and validates that node directly.
 
 ### Show (non-interactive no `name`, no `--clear`)
 
-Reads the locally stored default development node and displays it. No
+Reads the locally stored default node and displays it. No
 gateway call is required when a default is already stored locally. If no default
 is set, reports that state without failure.
 
 ### Set (`name` provided)
 
-Validates that the named node is a visible development node by querying the
+Validates that the named node is visible by querying the
 configured gateway, or the local node registry when no gateway is configured,
-then stores the name as the local default development node.
+then stores the name as the local default node.
 
 ### Clear (`--clear`)
 
-Removes the locally stored default development node. This is a local
+Removes the locally stored default node. This is a local
 configuration change only and does not require gateway reachability when the
 local preference exists.
 
@@ -84,10 +84,9 @@ prompt or non-interactive failure.
 ### Recovery from doctor warnings
 
 When `doctor --self` reports `node.local_default_invalid`, the stored local
-default points at a missing, unauthorized, or non-development node. Doctor
+default points at a missing or unauthorized node. Doctor
 reports this only; it does not choose or clear a target automatically. Recover
-by running `orbit node:default <valid-development-app-role>` or
-`orbit node:default --clear`.
+by running `orbit node:default <visible-node>` or `orbit node:default --clear`.
 
 ## Output
 
@@ -104,8 +103,8 @@ and payload shapes.
 
 - The local CLI has an active gateway configuration for interactive `choose`
   and direct `set` when the target must be resolved from the gateway; otherwise
-  those paths can use local active app-dev node records.
-- The target node must be a visible active app-dev node.
+  those paths can use local visible node records.
+- The target node must be visible.
 - The command writes only the invoking OS user's local Orbit config.
 
 ## Related Commands
