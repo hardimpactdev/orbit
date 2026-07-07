@@ -68,7 +68,7 @@
   Result: reviewer returned `VERDICT: pass` with no findings; it confirmed the smoke prompt stayed public-only and did not include hidden expected outcomes or rubrics. First capture attempt failed `exact_marker_not_found`, then a marker-only correction allowed successful capture at `.orbit/agent-sessions/codex/verify-evals-docs-librarian-reviewer-831` before close.
   Next: final analyzer and packet lint.
 - Tried: ran `composer docs-lint` and `composer quality-check`.
-  Result: `composer docs-lint` exited 0 with existing generated-doc warnings only; `composer quality-check` exited 0 with artifact `.orbit/quality-gates/quality-check-2026-07-07T104807Z-28a4605aba06.json`.
+  Result: `composer docs-lint` exited 0 with existing generated-doc warnings only; post-rebase `composer quality-check` exited 0 with artifact `.orbit/quality-gates/quality-check-2026-07-07T105909Z-ecad6b1aa59e.json`.
   Next: fill Final Distillation, run fresh analyzer, then finalization lint and archive.
 - Tried: ran fresh post-feature analyzer 832.
   Result: analyzer returned `VERDICT: yes` with no findings; it confirmed correct-noop classifications for worker/capture signals and packet sufficiency after this verdict row is recorded. Capture succeeded at `.orbit/agent-sessions/codex/verify-evals-post-feature-analyzer-832`.
@@ -99,7 +99,7 @@
 - Docs-librarian reviewer: Solo process 831, `VERDICT: pass`, capture `.orbit/agent-sessions/codex/verify-evals-docs-librarian-reviewer-831`
 - Post-feature analyzer: Solo process 832, `VERDICT: yes`, capture `.orbit/agent-sessions/codex/verify-evals-post-feature-analyzer-832`
 - Docs lint: `.orbit/quality-gates/docs-lint-2026-07-07T104542Z-85313628260c.json`, exit 0
-- Quality check: `.orbit/quality-gates/quality-check-2026-07-07T104807Z-28a4605aba06.json`, exit 0, all subgates 0
+- Quality check: `.orbit/quality-gates/quality-check-2026-07-07T105909Z-ecad6b1aa59e.json`, exit 0, all subgates 0
 - Session archive: .orbit/sessions/2026-07-07-125620-verify-evals-skill
 - Feature commit: `4c9ce0d27 Add verifying evals skill`
 
@@ -117,7 +117,7 @@ Fill this before commit, merge-back, session archive, or final completion report
   - complete
 - Required verification:
   - Retained topology proof: not applicable - branch diff changes eval skills, skill metadata, Solo scratchpad artifacts, and loop evidence only; no live node, topology, transport, deployment, or runtime behavior changed.
-  - `composer quality-check`: passed - `composer quality-check` exited 0; artifact `.orbit/quality-gates/quality-check-2026-07-07T104807Z-28a4605aba06.json` records all subgates 0.
+  - `composer quality-check`: passed - post-rebase `composer quality-check` exited 0; artifact `.orbit/quality-gates/quality-check-2026-07-07T105909Z-ecad6b1aa59e.json` records all subgates 0.
 - Finalization gate fit:
   - Branch diff is a documentation/skill routing change plus Solo scratchpad evidence. `composer docs-lint` passed with artifact `.orbit/quality-gates/docs-lint-2026-07-07T104542Z-85313628260c.json`; `composer quality-check` passed; retained topology proof is not applicable for this surface.
 - Distillation packet:
