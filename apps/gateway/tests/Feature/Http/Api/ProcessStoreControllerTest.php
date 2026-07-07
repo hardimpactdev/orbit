@@ -129,7 +129,7 @@ describe('ProcessStoreController', function (): void {
             ->toBe(ProcessRuntime::Systemd);
     });
 
-    it('rejects macos app command processes instead of defaulting to systemd', function (): void {
+    it('defaults macos app command processes to launchd', function (): void {
         $caller = createProcessStoreCallerNode();
         $appNode = createTestAppHostNode([
             'name' => 'mac-app-dev-1',
@@ -138,7 +138,8 @@ describe('ProcessStoreController', function (): void {
         ]);
         grantProcessStoreAccess($caller, $appNode);
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call(
             'POST',
@@ -154,13 +155,21 @@ describe('ProcessStoreController', function (): void {
         );
 
         $response
-            ->assertStatus(422)
-            ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.meta.field', 'runtime')
-            ->assertJsonPath('error.meta.value', 'systemd')
-            ->assertJsonPath('error.meta.reason', 'systemd_runtime_requires_linux');
+            ->assertOk()
+            ->assertJsonPath('success.data.process.name', 'vite')
+            ->assertJsonPath('success.data.process.runtime', 'launchd')
+            ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_main_vite');
 
-        expect(Process::query()->exists())->toBeFalse();
+        expect(Process::query()->where('name', 'vite')->value('runtime'))
+            ->toBe(ProcessRuntime::Launchd)
+            ->and(collect($remoteShell->scripts)
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        "internal:process-launchd-service 'apply' 'dev.hardimpact.orbit.orbit_docs_main_vite'",
+                    ),
+                ))
+            ->toBeTrue();
     });
 
     it('rejects unauthorized callers before writing intent', function (): void {
@@ -298,7 +307,7 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'supervisor')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'launchd', 'systemd']);
 
         expect(Process::query()->where('name', 'legacy')->exists())->toBeFalse();
     });
@@ -328,7 +337,7 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'launchd', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->exists())->toBeFalse();
     });
@@ -1173,12 +1182,94 @@ describe('ProcessStoreController', function (): void {
         );
 
         $response
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'version')
             ->assertJsonPath('error.meta.reason', 'process_service_version_requires_service');
 
         expect(Process::query()->where('name', 'worker')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('accepts launchd runtime for host command processes on macos nodes', function (): void {
+        $caller = createProcessStoreCallerNode();
+        $appNode = createTestAppHostNode(['platform' => 'darwin']);
+        grantProcessStoreAccess($caller, $appNode);
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'feedback-worker',
+                'command' => 'php artisan queue:work',
+                'runtime' => 'launchd',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.runtime', 'launchd');
+
+        expect(Process::query()->where('name', 'feedback-worker')->value('runtime'))->toBe(ProcessRuntime::Launchd);
+    });
+
+    it('defers crash notification agent_ide for launchd with launchd_crash_notification_deferred', function (): void {
+        $caller = createProcessStoreCallerNode();
+        $appNode = createTestAppHostNode(['platform' => 'darwin']);
+        grantProcessStoreAccess($caller, $appNode);
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'feedback-crash',
+                'command' => 'php artisan work',
+                'runtime' => 'launchd',
+                'crash_notification' => 'agent_ide',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response->assertStatus(422);
+        $json = $response->json();
+        expect($json['error']['meta']['reason'] ?? null)->toBe('launchd_crash_notification_deferred');
+    });
+
+    it('rejects launchd runtime on linux nodes with launchd_runtime_requires_macos', function (): void {
+        $caller = createProcessStoreCallerNode();
+        $appNode = createTestAppHostNode(['platform' => 'ubuntu_24-04']);
+        grantProcessStoreAccess($caller, $appNode);
+        App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'feedback-worker',
+                'command' => 'php artisan queue:work',
+                'runtime' => 'launchd',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response->assertStatus(422);
+        $json = $response->json();
+        expect($json['error']['code'] ?? null)->toBe('validation_failed');
+        expect($json['error']['meta']['reason'] ?? null)->toBe('launchd_runtime_requires_macos');
     });
 });
 
@@ -1200,6 +1291,13 @@ final class ProcessStoreRemoteShell implements RemoteShell
             return $this->internalSuccessResult([
                 'status' => 'ok',
                 'summary' => 'Applied systemd service.',
+            ]);
+        }
+
+        if (str_contains($script, 'internal:process-launchd-service')) {
+            return $this->internalSuccessResult([
+                'status' => 'ok',
+                'summary' => 'Applied launchd service.',
             ]);
         }
 

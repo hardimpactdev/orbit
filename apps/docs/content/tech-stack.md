@@ -81,10 +81,10 @@ The sections below walk through each layer of the stack in the same order as the
 | Gateway to node | Managed execution converges on `gateway-only` for gateway-owned reads/writes and `agent-push` for node-local execution. `agent-push` is gateway-authenticated HTTP to the node's Agent listener over Orbit/WireGuard for `orbit_agent_capable` nodes. `auto` selects `agent-push` when the node is active + capable + the envelope supports it and fails clearly otherwise; it does not silently fall back to SSH. `transitional-ssh-fallback` is an explicit operator-selected break-glass or migration preference. Agent execution is a gateway-built `binary + argv` request with gateway-issued operation tokens and a node-local binary allowlist; no arbitrary shell-over-HTTP. Reachable Agent nodes use gateway push only; the gateway is the sole initiator and the Agent runs no background retrieval loop. Break-glass SSH is operator-owned super-admin recovery outside normal Orbit command execution. |
 | Proxy | Dockerized Caddy in one `orbit-caddy` container per node; HTTPS listener intent publishes TCP/443 and UDP/443 where Orbit exposes HTTP ingress |
 | PHP runtime | FrankenPHP app/workspace containers |
-| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units |
-| Process manager | Process runtime backends: systemd for Linux host command process units, Docker for containerized process units, Docker Swarm for selected node-owned service processes |
+| Host init | Docker daemon plus Docker Swarm for gateway services and Docker-backed runtime units; systemd for Linux host command process units; launchd for macOS host command process units |
+| Process manager | Process runtime backends: systemd for Linux host command process units, launchd for macOS host command process units, Docker for containerized process units, Docker Swarm for selected node-owned service processes |
 | Scheduler | One-replica `orbit-scheduler` Swarm service using the Orbit gateway image |
-| Process logs | Runtime-backend log capture for process units; journald for systemd-backed host command processes and Docker logs for containerized processes |
+| Process logs | Runtime-backend log capture for process units; journald for systemd-backed host command processes, Orbit-owned stdout/stderr files for launchd-backed host command processes, and Docker logs for containerized processes |
 | Service containers | Docker for Orbit runtime containers and backing services |
 | Node provisioning and host prerequisites | Provisioning creates or adopts WireGuard/SSH identity, node-local Orbit config, service-address routing, and the node-local Orbit CLI entry point for every managed Ubuntu node. Those are topology infrastructure, not app, process, tool, or database runtime prerequisites. Production gateway-only nodes additionally require Docker Engine/CLI, Docker Swarm, gateway config root, and the native Orbit CLI binary. `app-dev` and `app-prod` nodes additionally require host PHP and Composer for app-source workflows; the Laravel installer is required on `app-dev` only. Git and `gh` are required where cloning/deployment needs repository access, not for no-source gateway-only production. Source-dev topologies may bind-mount or copy the worktree and point `/usr/local/bin/orbit` at `<source>/apps/cli/orbit`; artifact-prod topologies use built CLI binaries and production images. |
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
@@ -455,8 +455,9 @@ Release-aware deployments may switch the source path the container bind mounts,
 but the mount boundary stays inside the app source or active release plus
 explicitly managed shared paths. The container is represented as the
 process-owned long-running HTTP runtime unit with Docker runtime; configured
-host command processes are systemd-backed on Linux under the process family. A
-fully baked app-runtime Docker Swarm service remains a deferred phase.
+host command processes are systemd-backed on Linux and launchd-backed on macOS
+under the process family. A fully baked app-runtime Docker Swarm service
+remains a deferred phase.
 
 ### WebSocket runtime
 
@@ -559,21 +560,25 @@ Processes are the Orbit lifecycle-managed long-running units. Each process
 runtime unit uses its owning node/app/workspace context, selected runtime
 backend, restart policy, and Orbit-managed environment or container
 configuration. The supported runtime backends are systemd for Linux host command
-process units, Docker for containerized process units, and Docker Swarm for
-selected node-owned service processes.
+process units, launchd for macOS host command process units, Docker for
+containerized process units, and Docker Swarm for selected node-owned service
+processes.
 
 Systemd-backed units render as host systemd services and surface journald
-streams through the process family. Docker-backed units render as Orbit-managed
-containers and surface Docker log streams through the process family. Tools may
-supply the node-level capability a process depends on, but start, stop,
-restart, and logs belong to the process record.
+streams through the process family. Launchd-backed units render as Orbit-owned
+user LaunchAgent plists and surface Orbit-owned stdout/stderr log files through
+the process family. Docker-backed units render as Orbit-managed containers and
+surface Docker log streams through the process family. Tools may supply the
+node-level capability a process depends on, but start, stop, restart, and logs
+belong to the process record.
 
 Swarm is a per-artifact production backend, not a node-wide execution mode.
 Gateway API and scheduler lifecycles are Swarm services (`orbit-gateway` and
 `orbit-scheduler`). Other artifacts choose their own backend by product
 contract: `orbit-caddy`, app/workspace web runtimes, role services, and
 Docker-backed process units are Docker-managed containers or services;
-configured Linux host command processes are systemd services.
+configured Linux host command processes are systemd services, and configured
+macOS host command processes are launchd user LaunchAgents.
 
 ### Scheduler
 

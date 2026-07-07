@@ -14,8 +14,8 @@ the gateway decide authorization from node grants.
 Nodes carry role assignments such as `app-dev`, `app-prod`, `database`,
 `agent`, `ingress`, `websocket`, `s3`, and `metrics`. Workload nodes run
 role-specific artifacts: `orbit-caddy`, FrankenPHP app/workspace containers,
-systemd host command units, Docker-backed process units, Laravel Reverb,
-SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
+systemd or launchd host command units, Docker-backed process units, Laravel
+Reverb, SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
 similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
 fallbacks.
 
@@ -169,7 +169,7 @@ command catalog when command completeness matters.
 
 | Command | What it does |
 |---|---|
-| `orbit process:add [name] [cmd]` | Add a process definition for an app (systemd-backed on Linux) |
+| `orbit process:add [name] [cmd]` | Add a process definition for an app (systemd on Linux, launchd on macOS) |
 | `orbit process:update [name]` | Update a process definition |
 | `orbit process:remove [name]` | Remove a process definition |
 | `orbit process:list` | List configured processes |

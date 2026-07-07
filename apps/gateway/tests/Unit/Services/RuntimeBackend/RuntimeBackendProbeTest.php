@@ -50,14 +50,14 @@ it('reports the runtime backend as available when systemd responds through agent
     ));
 });
 
-it('reports macOS runtime readiness through Docker provider availability', function (string $platform): void {
+it('reports macOS runtime readiness through launchd provider availability', function (string $platform): void {
     Http::preventStrayRequests();
     Http::fake([
         'http://10.44.0.84:9477/v1/commands' => runtime_backend_probe_agent_response([
-            'provider' => 'docker',
+            'provider' => 'launchd',
             'available' => true,
             'exit_code' => 0,
-            'output' => 'Docker provider ready',
+            'output' => 'launchd provider ready',
         ]),
     ]);
     $node = runtime_backend_probe_node($platform);
@@ -70,11 +70,11 @@ it('reports macOS runtime readiness through Docker provider availability', funct
         ->and($result->exitCode)
         ->toBe(0)
         ->and($result->output)
-        ->toBe('Docker provider ready');
+        ->toBe('launchd provider ready');
 
     Http::assertSent(fn (Request $request): bool => runtime_backend_probe_request_matches(
         request: $request,
-        provider: 'docker',
+        provider: 'launchd',
     ));
 })->with(['macos_26-5-1', 'darwin']);
 

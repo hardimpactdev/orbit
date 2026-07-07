@@ -14,8 +14,17 @@ final readonly class RemoteProcessLogs
         private RemoteLocalExecutor $localExecutor,
     ) {}
 
-    public function read(Node $node, string $backend, string $runtimeUnit, int $lines): RemoteShellResult
-    {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
+    public function read(
+        Node $node,
+        string $backend,
+        string $runtimeUnit,
+        int $lines,
+        ?string $stdoutPath = null,
+        ?string $stderrPath = null,
+    ): RemoteShellResult {
         return $this->localExecutor->runInternal(
             node: $node,
             commandName: 'internal:process-logs',
@@ -25,6 +34,8 @@ final readonly class RemoteProcessLogs
                     'runtime_unit' => $runtimeUnit,
                     'lines' => $lines,
                     'follow' => false,
+                    ...($stdoutPath !== null ? ['stdout_path' => $stdoutPath] : []),
+                    ...($stderrPath !== null ? ['stderr_path' => $stderrPath] : []),
                 ], JSON_THROW_ON_ERROR),
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'process.logs.read',
@@ -38,8 +49,18 @@ final readonly class RemoteProcessLogs
     /**
      * @param  callable(string): void  $onOutput
      */
-    public function follow(Node $node, string $backend, string $runtimeUnit, int $lines, callable $onOutput): void
-    {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
+    public function follow(
+        Node $node,
+        string $backend,
+        string $runtimeUnit,
+        int $lines,
+        callable $onOutput,
+        ?string $stdoutPath = null,
+        ?string $stderrPath = null,
+    ): void {
         $this->localExecutor->streamInternal(
             node: $node,
             commandName: 'internal:process-logs',
@@ -49,6 +70,8 @@ final readonly class RemoteProcessLogs
                     'runtime_unit' => $runtimeUnit,
                     'lines' => $lines,
                     'follow' => true,
+                    ...($stdoutPath !== null ? ['stdout_path' => $stdoutPath] : []),
+                    ...($stderrPath !== null ? ['stderr_path' => $stderrPath] : []),
                 ], JSON_THROW_ON_ERROR),
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'process.logs.follow',

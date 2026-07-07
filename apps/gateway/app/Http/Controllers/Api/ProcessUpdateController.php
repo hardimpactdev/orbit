@@ -20,6 +20,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 #[RequiresPermission('process:update', servingNode: ServingNode::AppOwning)]
 final class ProcessUpdateController implements Loggable
 {
@@ -237,6 +240,21 @@ final class ProcessUpdateController implements Loggable
             }
 
             $changes['runtime'] = $runtime;
+        }
+
+        if (
+            ($changes['runtime'] ?? null) === ProcessRuntime::Launchd
+            && ($changes['crash_notification'] ?? null) === ProcessCrashNotification::AgentIde
+        ) {
+            return $this->error(
+                'validation_failed',
+                'Crash notification via agent_ide is deferred for launchd runtime.',
+                [
+                    'field' => 'crash_notification',
+                    'reason' => 'launchd_crash_notification_deferred',
+                ],
+                422,
+            );
         }
 
         return [

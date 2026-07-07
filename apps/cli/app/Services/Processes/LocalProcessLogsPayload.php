@@ -4,15 +4,24 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class LocalProcessLogsPayload
 {
-    private const array BACKENDS = ['docker', 'docker-swarm', 'systemd'];
+    private const array BACKENDS = ['docker', 'docker-swarm', 'systemd', 'launchd'];
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     private function __construct(
         public string $backend,
         public string $runtimeUnit,
         public int $lines,
         public bool $follow,
+        public ?string $stdoutPath = null,
+        public ?string $stderrPath = null,
     ) {}
 
     /**
@@ -20,12 +29,21 @@ final readonly class LocalProcessLogsPayload
      */
     public static function from(array $payload): self
     {
-        return new self(
-            backend: self::backend($payload['backend'] ?? null),
+        $backend = self::backend($payload['backend'] ?? null);
+        $instance = new self(
+            backend: $backend,
             runtimeUnit: self::runtimeUnit($payload['runtime_unit'] ?? null),
             lines: self::lines($payload['lines'] ?? null),
             follow: self::follow($payload['follow'] ?? false),
+            stdoutPath: self::nullablePath($payload['stdout_path'] ?? null),
+            stderrPath: self::nullablePath($payload['stderr_path'] ?? null),
         );
+
+        if ($backend === 'launchd') {
+            $instance->assertLaunchdPaths();
+        }
+
+        return $instance;
     }
 
     public function systemdServiceName(): string
@@ -95,5 +113,74 @@ final readonly class LocalProcessLogsPayload
             message: 'Process logs follow value is invalid.',
             meta: ['field' => 'follow'],
         );
+    }
+
+    private static function nullablePath(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value) && trim($value) !== '') {
+            return $value;
+        }
+
+        throw new LocalProcessLogsFailure(
+            errorCode: 'validation_failed',
+            message: 'Process logs path is invalid.',
+            meta: ['field' => 'stdout_path'],
+        );
+    }
+
+    private function assertLaunchdPaths(): void
+    {
+        if (
+            ! is_string($this->stdoutPath)
+            || trim($this->stdoutPath) === ''
+            || ! is_string($this->stderrPath)
+            || trim($this->stderrPath) === ''
+        ) {
+            throw new LocalProcessLogsFailure(
+                errorCode: 'validation_failed',
+                message: 'Process logs stdout and stderr paths are required for launchd.',
+                meta: ['field' => 'stdout_path'],
+            );
+        }
+
+        $this->assertLaunchdPath($this->stdoutPath, 'stdout_path', '.out.log');
+        $this->assertLaunchdPath($this->stderrPath, 'stderr_path', '.err.log');
+    }
+
+    private function assertLaunchdPath(string $path, string $field, string $suffix): void
+    {
+        $directory = self::launchdLogsDirectory();
+
+        if (
+            str_starts_with($path, "{$directory}/")
+            && str_ends_with($path, $suffix)
+            && basename($path) !== $suffix
+        ) {
+            return;
+        }
+
+        throw new LocalProcessLogsFailure(
+            errorCode: 'validation_failed',
+            message: 'Process logs launchd paths must stay under the Orbit user log directory.',
+            meta: [
+                'field' => $field,
+                'reason' => 'launchd_log_path_outside_orbit_directory',
+            ],
+        );
+    }
+
+    private static function launchdLogsDirectory(): string
+    {
+        $home = getenv('HOME');
+
+        if (is_string($home) && $home !== '') {
+            return rtrim($home, characters: '/').'/Library/Logs/Orbit/processes';
+        }
+
+        return '/Users/'.get_current_user().'/Library/Logs/Orbit/processes';
     }
 }

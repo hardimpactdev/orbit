@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit process:update [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--restart] [--json]
+orbit process:update [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -33,7 +33,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `command` | `--command` | Optional. At least one editable field is required. | Never. | Current value. | Non-empty command string when supplied. |
 | `restart_policy` | `--restart-policy` | Optional. At least one editable field is required. | Never. | Current value. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. At least one editable field is required. | Never. | Current value. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `systemd`. App/workspace host-command processes accept `systemd`; `docker-swarm` requires node ownership. Orbit-managed Docker process rows remain lifecycle-manageable via process commands. |
+| `runtime` | `--runtime` | Optional. At least one editable field is required. | Never. | Current value. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. See runtime selection below. |
 | `restart` | `--restart` | Optional. | Never. | `false`. | Boolean flag. Restarts affected running runtime units after applying when true. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -42,6 +42,17 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 `--name` is the new identity slug. `[name]` remains the current identity used to
 find the process. Supplying `--name` with the same value is a no-op and does not
 count as an editable field.
+
+Omitting `--runtime` preserves the current runtime. Host-command processes
+created without an explicit runtime default to `systemd` on Linux nodes and
+`launchd` on macOS nodes. Managed services default to `docker` unless their
+catalog entry and node platform admit another service runtime.
+
+When `--runtime` is supplied, host-command processes use `systemd` on Linux and
+`launchd` on macOS. Managed services accept `docker`, and accept
+`docker-swarm` only when their catalog entry and Linux node platform admit it.
+Orbit-managed Docker process rows remain lifecycle-manageable via process
+commands.
 
 ## Input Mode Contracts
 
@@ -84,12 +95,13 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
 | Process not found | The named process does not exist for the resolved owner scope. | Failure (`error.code=process.not_found`). |
 | Duplicate process name | `--name` matches another process in the resolved owner scope. | Failure (`error.code=process.name_conflict`; `error.meta.field=name`). |
 | Unsupported rename | The selected runtime/backend cannot safely replace derived unit identity. | Failure (`error.code=process.rename_unsupported`; gateway state remains unchanged). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Invalid app/workspace command runtime | `--runtime=docker`, `--runtime=systemd`, or `--runtime=docker-swarm` is supplied for an app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process`, `systemd_requires_node_owned_process`, or `docker_swarm_requires_node_owned_process`). |
+| Invalid host-command container runtime | `--runtime=docker` or `--runtime=docker-swarm` is supplied for a public app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process` or `docker_swarm_requires_node_owned_process`). |
+| Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
+| Launchd crash notification deferred | `--runtime=launchd` is combined with `--crash-notification=agent_ide`. | Failure (`error.code=validation_failed`; `error.meta.field=crash_notification`; `error.meta.reason=launchd_crash_notification_deferred`). |
 
 ## Doctor Relationship
 
@@ -101,8 +113,6 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 
 | Field | Value |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
-| `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
 | Type | `api:PATCH /processes/{name}` |
 | Effect | `write` |
 | Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |

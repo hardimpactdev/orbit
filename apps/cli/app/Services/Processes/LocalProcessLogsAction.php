@@ -12,6 +12,8 @@ final readonly class LocalProcessLogsAction
 
     private const int DOCKER_FOLLOW_FLAG_OFFSET = 4;
 
+    private const int LAUNCHD_FOLLOW_FLAG_OFFSET = 3;
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
@@ -54,7 +56,7 @@ final readonly class LocalProcessLogsAction
         $process = new Process($this->command($input));
         $process->setTimeout(null);
 
-        return $process->run(function (string $_type, string $buffer) use ($onOutput): void {
+        return $process->run(static function (string $_type, string $buffer) use ($onOutput): void {
             $onOutput($buffer);
         });
     }
@@ -104,6 +106,13 @@ final readonly class LocalProcessLogsAction
                 '--no-pager',
                 '--output=short-iso',
             ],
+            'launchd' => [
+                'tail',
+                '-n',
+                (string) $payload->lines,
+                $payload->stdoutPath ?? '',
+                $payload->stderrPath ?? '',
+            ],
             default => throw new LocalProcessLogsFailure(
                 errorCode: 'validation_failed',
                 message: 'Process logs backend is invalid.',
@@ -120,6 +129,12 @@ final readonly class LocalProcessLogsAction
     {
         if ($payload->backend === 'systemd') {
             array_splice($command, offset: self::SYSTEMD_FOLLOW_FLAG_OFFSET, length: 0, replacement: '-f');
+
+            return $command;
+        }
+
+        if ($payload->backend === 'launchd') {
+            array_splice($command, offset: self::LAUNCHD_FOLLOW_FLAG_OFFSET, length: 0, replacement: '-f');
 
             return $command;
         }

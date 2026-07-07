@@ -17,6 +17,7 @@ orbit process:update queue --app=docs --restart-policy=on_failure --restart
 orbit process:update horizon --app=docs --workspace=feature-docs --command="php artisan horizon"
 orbit process:update opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
 orbit process:update watcher --app=docs --runtime=systemd
+orbit process:update worker --app=feedback --runtime=launchd --restart
 orbit process:update mysql --node=database-1 --name=app-mysql --json
 orbit process:update vite --app=docs --command="npm run dev" --json
 ```
@@ -35,9 +36,9 @@ slug, and re-render its runtime units.
 - **Runtime Unit Replacement**: Re-renders the runtime units derived from the
   selected process definition and removes or replaces derived units that no
   longer match when the process identity changes.
-- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service
-  processes. `docker-swarm` is only valid for node-owned managed service
-  processes.
+- **Runtime Boundary**: Host-command processes use `systemd` on Linux nodes and
+  `launchd` on macOS nodes. Managed services default to `docker` unless their
+  catalog entry and Linux node platform admit `docker-swarm`.
 - **Unsupported Rename Boundary**: Backends that cannot safely replace derived
   unit identity reject `--name` before changing gateway state.
 - **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.

@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\LaunchdProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -18,6 +19,7 @@ final readonly class ProcessRuntimeDriverRegistry
     public function __construct(
         private DockerProcessRuntimeDriver $docker,
         private DockerSwarmProcessRuntimeDriver $dockerSwarm,
+        private LaunchdProcessRuntimeDriver $launchd,
         private SystemdProcessRuntimeDriver $systemd,
     ) {}
 
@@ -43,6 +45,7 @@ final readonly class ProcessRuntimeDriverRegistry
         return match ($runtime) {
             ProcessRuntime::Docker => $this->docker,
             ProcessRuntime::DockerSwarm => $this->dockerSwarm,
+            ProcessRuntime::Launchd => $this->launchd,
             ProcessRuntime::Systemd => $this->systemd,
         };
     }

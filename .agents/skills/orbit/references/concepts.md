@@ -51,7 +51,7 @@ CLI caller (client / gateway-local / workload node)
 Gateway (Laravel app, SQLite intent, typed API, doctor)
         | agent-push typed envelopes over WireGuard
         v
-Role-bearing nodes (orbit-caddy, FrankenPHP, systemd, Docker, SeaweedFS, Reverb)
+Role-bearing nodes (orbit-caddy, FrankenPHP, systemd/launchd, Docker, SeaweedFS, Reverb)
 ```
 
 Nodes do not mutate Orbit state directly. CLI calls from workload nodes still
@@ -110,6 +110,7 @@ Hostnames:
 - Production app: the value of `--domain` (globally unique across the fleet).
 
 Process runtime unit name: `orbit_<app>_<workspace|main>_<process>`.
+Launchd-backed units use label `dev.hardimpact.orbit.<runtimeUnit>`.
 
 ## Target resolution order
 

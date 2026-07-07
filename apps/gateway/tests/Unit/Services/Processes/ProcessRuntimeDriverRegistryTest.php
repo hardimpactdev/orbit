@@ -22,3 +22,12 @@ it('resolves concrete drivers by process runtime', function (): void {
         ->and($registry->for(ProcessRuntime::Systemd))
         ->toBeInstanceOf(SystemdProcessRuntimeDriver::class);
 });
+
+it('resolves launchd runtime value and will map to its driver once registered', function (): void {
+    $registry = app(ProcessRuntimeDriverRegistry::class);
+
+    // will fail until enum case + driver registration
+    expect(ProcessRuntime::Launchd->value)->toBe('launchd');
+    expect($registry->for(ProcessRuntime::Launchd))
+        ->toBeInstanceOf(\App\Services\Processes\ProcessRuntimeDrivers\LaunchdProcessRuntimeDriver::class);
+});

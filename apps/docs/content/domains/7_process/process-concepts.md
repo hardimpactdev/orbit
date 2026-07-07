@@ -21,7 +21,8 @@ These terms define how process definitions are identified, scoped, and ordered.
   tool.
 - **External macOS runtime provider:** macOS applications such as OrbStack may
   be managed as tool capabilities without a process row until a future external
-  runtime/process model admits lifecycle ownership in Orbit.
+  runtime/process model admits lifecycle ownership in Orbit. This is distinct
+  from Orbit-owned `launchd` process units.
 - **Managed service:** Catalog entry selected with `process:add --service` for
   a runnable service such as MySQL, PostgreSQL, Redis, ClickHouse, Prometheus,
   Grafana, node-exporter, or Plausible CE. Service version, runtime, endpoint,
@@ -40,12 +41,12 @@ These terms describe the runtime objects that Orbit derives from process definit
 - **Runtime unit:** Concrete runnable realization of a process definition in
   its selected node, app, or workspace context.
 - **Process runtime:** Backend that runs a process. Supported runtime families
-  are `systemd`, `docker`, and `docker-swarm`. Systemd is the Linux host-command
-  process runtime for node-, app-, and workspace-scoped commands. Docker is used
-  for containerized processes such as databases, caches, and FrankenPHP app or
-  workspace web runtimes. Docker Swarm is valid only for node-owned managed
-  service processes. Future macOS host command support should add `launchd` as
-  the platform runtime.
+  are `systemd`, `launchd`, `docker`, and `docker-swarm`. Systemd is the Linux
+  host-command process runtime for node-, app-, and workspace-scoped commands.
+  Launchd is the macOS host-command process runtime for Orbit-owned user
+  LaunchAgents. Docker is used for containerized processes such as databases,
+  caches, and FrankenPHP app or workspace web runtimes. Docker Swarm is
+  Linux-only and valid only for node-owned managed service processes.
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
   agent, app, and workspace runtime units.
@@ -59,6 +60,12 @@ These terms describe the runtime objects that Orbit derives from process definit
   including node-level services such as OpenCode Server or PolyScope Server and
   app/workspace command processes. The process row owns start/stop/restart/log
   lifecycle; any related tool row supplies only the installed capability.
+- **Launchd process runtime:** Runtime backend for macOS host command units.
+  The first slice renders user LaunchAgent plists under the configured node
+  user's `~/Library/LaunchAgents`, uses Orbit-owned labels under
+  `dev.hardimpact.orbit.*`, and stores stdout/stderr logs under
+  `~/Library/Logs/Orbit/processes`. System LaunchDaemons and third-party
+  process inventory are outside this runtime slice.
 - **Runtime unit expansion:** One process definition renders one or more
   runtime units as required by its scope. Node-level and workspace-scoped
   process definitions normally render one unit. App-scoped inherited process
@@ -66,6 +73,8 @@ These terms describe the runtime objects that Orbit derives from process definit
 - **Runtime unit filename:** Backend-safe identity for a rendered runtime unit.
   Systemd units use `orbit_<scope>_<process>` segment names for app/workspace
   command processes; Docker units use equivalent Orbit-owned container names.
+  Launchd labels use `dev.hardimpact.orbit.<runtimeUnit>` and plist files use
+  the same label under the configured node user's LaunchAgents directory.
   The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
 - **Runtime unit environment:** Predictable runtime environment exposed to
@@ -74,8 +83,11 @@ These terms describe the runtime objects that Orbit derives from process definit
   step environment.
 - **Runtime backend artifact:** Backend-specific rendering of a runtime unit.
   Systemd runtime units are host service files. Docker runtime units are
-  container definitions. The artifact starts the process command or image in the
-  resolved node, app, or workspace context.
+  container definitions. Launchd runtime units are user LaunchAgent plist files
+  with stdout/stderr log files at
+  `~/Library/Logs/Orbit/processes/<runtimeUnit>.out.log` and
+  `~/Library/Logs/Orbit/processes/<runtimeUnit>.err.log`. The artifact starts
+  the process command or image in the resolved node, app, or workspace context.
 
 ## Policy
 
@@ -86,11 +98,17 @@ These terms define per-process behavioral rules that apply to every derived runt
   `process:restart` actions do not change the policy.
 - **Crash notification policy:** Process-definition opt-in for crash event
   delivery. When the policy is enabled, `crashed` events resolve the effective
-  agent IDE and notify the active session when one is available.
+  agent IDE and notify the active session when one is available. Units that use
+  launchd reject `agent_ide` crash notification in this slice with
+  `launchd_crash_notification_deferred` until Orbit owns a macOS crash wrapper
+  that can emit gateway-authenticated `crashed` events.
 - **Process runtime selection:** Process-definition field that records which
   backend renders the runtime units. App and workspace host-command processes
-  default to `systemd` on Linux. Existing `supervisor` rows are migrated to
-  `systemd`; `supervisor` is not a supported runtime.
+  default to `systemd` on Linux and `launchd` on macOS. Node-owned host-command
+  processes follow the same platform default. Managed services default to
+  `docker` unless their catalog entry and node platform admit another service
+  runtime. Existing `supervisor` rows are migrated to `systemd`; `supervisor`
+  is not a supported runtime.
 
 ## Events
 
@@ -124,4 +142,7 @@ These terms define what the process family owns and what remains outside its sco
   firewall policy, schedule definitions, tool catalog membership, or tool
   installation/update/removal. Orbit does not add a separate service family for
   this model, and process `kind` or `category` is intentionally deferred until
-  a concrete workflow needs it.
+  a concrete workflow needs it. The launchd slice does not own system
+  LaunchDaemons, third-party LaunchAgent inventory or adoption, a broad macOS
+  background-process dashboard, migration tooling, or crash-notification parity
+  without an Orbit-owned wrapper.

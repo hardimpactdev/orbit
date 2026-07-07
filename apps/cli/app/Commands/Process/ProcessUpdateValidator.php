@@ -10,7 +10,7 @@ final readonly class ProcessUpdateValidator
 
     public const array CRASH_NOTIFICATIONS = ['none', 'agent_ide'];
 
-    public const array RUNTIMES = ['docker', 'docker-swarm', 'systemd'];
+    public const array RUNTIMES = ['docker', 'docker-swarm', 'systemd', 'launchd'];
 
     public function validate(ProcessUpdateInput $input): ?ProcessUpdateValidationFailure
     {

@@ -44,10 +44,12 @@ These rules describe how runtime units are derived from process definitions.
   unit for the main app instance and one runtime unit for each workspace of
   that app.
 - Each rendered runtime unit is applied by its selected process runtime backend:
-  `systemd` for Linux host commands, `docker` for containerized processes, or
-  `docker-swarm` for node-owned managed service processes.
-- Public app/workspace host-command process definitions use the `systemd`
-  runtime on Linux. App/workspace `docker` rows are reserved for Orbit-managed runtime
+  `systemd` for Linux host commands, `launchd` for macOS host commands,
+  `docker` for containerized processes, or `docker-swarm` for selected
+  node-owned managed service processes.
+- Public app/workspace host-command process definitions use the host command
+  runtime for their owning node: `systemd` on Linux and `launchd` on macOS.
+  App/workspace `docker` rows remain reserved for Orbit-managed runtime
   processes such as generated FrankenPHP web-runtime units, not arbitrary
   public host commands.
 - The process definition supplies shared fields such as command, restart policy,
@@ -60,8 +62,9 @@ These rules describe how runtime units are derived from process definitions.
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
-- Systemd unit names, Docker container names, and Swarm service names
-  derive from the same product identity.
+- Systemd unit names, launchd labels and plist names, Docker container names,
+  and Swarm service names derive from the same product identity. Launchd labels
+  are `dev.hardimpact.orbit.<runtimeUnit>`.
 
 ### Restart policy
 
@@ -70,6 +73,12 @@ Restart policy is process configuration. Each derived main-app or workspace runt
 ### Crash notification policy
 
 Process definitions may opt in to crash notification. When the policy is enabled, a `crashed` event resolves the effective agent IDE and notifies the active session when one is available. Crash notification delivery is best-effort and must not prevent the event from being recorded.
+
+Launchd-backed units reject `crash_notification=agent_ide` in this slice with
+the validation reason `launchd_crash_notification_deferred`. Launchd can
+restart jobs, but Orbit needs an owned wrapper or equivalent hook before it can
+emit stable gateway-authenticated `crashed` events for macOS host-command
+units.
 
 ### Crash event intake
 
@@ -107,6 +116,24 @@ These rules describe how lifecycle commands address runtime units.
 - Runtime lifecycle commands start, stop, restart, and inspect derived units.
 - Omitting `[name]` for `process:start`, `process:stop`, and `process:restart` targets every process definition in process order for the resolved context.
 - Logs come from the selected runtime backend for the selected runtime unit.
+  Host-command units that use launchd write stdout and stderr to Orbit-owned
+  log files at `~/Library/Logs/Orbit/processes/<runtimeUnit>.out.log` and
+  `~/Library/Logs/Orbit/processes/<runtimeUnit>.err.log`.
+
+### macOS launchd scope boundaries
+
+The `launchd` runtime is the macOS host-command process backend. It renders
+Orbit-owned user LaunchAgents under the configured node user's
+`~/Library/LaunchAgents`, uses labels shaped
+`dev.hardimpact.orbit.<runtimeUnit>`, and operates those labels through the
+node-local `launchctl` command adapter. The runtime name is `launchd`;
+`launchctl` is not a process runtime value.
+
+This slice intentionally excludes system LaunchDaemons under
+`/Library/LaunchDaemons`, root-owned boot-before-login services, third-party
+LaunchAgent inventory or adoption, a broad macOS background-process dashboard,
+launchd migration tooling, and launchd crash notification parity without an
+Orbit-owned crash wrapper.
 
 ### Managed services
 
@@ -144,8 +171,10 @@ Supported managed services in this vertical slice:
 entry declares Swarm support. `node-exporter` declares only `systemd` because
 it observes host resources directly.
 On macOS nodes, managed service processes use the `docker` runtime through the
-node's reachable Docker-compatible container provider; the `docker-swarm` and
-`systemd` runtimes are not supported on macOS.
+node's reachable Docker-compatible container provider; `docker-swarm` remains
+Linux-only. Managed Mac services stay on Docker unless the command is
+explicitly process-owned as a host-command process, in which case macOS uses
+`launchd`. The `systemd` runtime is not supported on macOS.
 PostgreSQL follows the same process-owned product direction, but it is not
 advertised as a supported managed service until its catalog entry lands.
 
@@ -179,7 +208,7 @@ branch on the node-role column locally.
   typically reserved for admin-class presets.
 
 Every process command is a request to the gateway typed API. The CLI never
-writes process configuration, reads Docker or systemd logs directly, or
+writes process configuration, reads Docker, systemd, or launchd logs directly, or
 operates a runtime backend directly.
 
 ## Runtime Unit Environment

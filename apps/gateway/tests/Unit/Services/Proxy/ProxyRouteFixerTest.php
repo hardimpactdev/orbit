@@ -715,7 +715,8 @@ describe('ProxyRouteFixer', function (): void {
                 '/Users/nckrtl/.config/orbit/certs/paseo.nmbp.crt',
                 '/Users/nckrtl/.config/orbit/certs/paseo.nmbp.key',
             )
-            ->not->toContain(
+            ->not
+            ->toContain(
                 '/etc/orbit/certs/paseo.nmbp.crt',
                 '/etc/orbit/certs/paseo.nmbp.key',
             )

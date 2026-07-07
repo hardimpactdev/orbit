@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--replace-container=<name>] [--force] [--start] [--no-start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--node-transport=<transport>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd|launchd>] [--replace-container=<name>] [--force] [--start] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -35,7 +35,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`. App/workspace host-command processes accept `systemd`; `docker-swarm` requires node ownership. Managed services accept `docker` and `docker-swarm`. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for Linux node-, app-, and workspace-owned host command processes; `launchd` for macOS node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`, `launchd`. Host-command processes use `systemd` on Linux and `launchd` on macOS. Managed services accept `docker`, and accept `docker-swarm` only when their catalog entry and Linux node platform admit it. |
 | `replace_containers` | repeated `--replace-container` | Optional migration cleanup for node-owned Docker managed services. | When `service` is absent, `node` is absent, or runtime is not `docker`. | Empty list. | Each value must be an explicit Docker container name. Non-interactive mode requires `--force`. The gateway removes only these named containers before writing new process configuration. |
 | `force` | `--force` | Non-interactive `replace_containers`. | Never. | `false`. | Confirms destructive replacement-container cleanup without prompting. Ignored when no replacement containers are supplied. |
 | `start` | `--start` | Optional redundant flag. | When `no_start` is present. | `true`. | Backward-compatible alias for default start behavior. Cannot be combined with `no_start`. |
@@ -57,12 +57,16 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
 3. Validate managed-service endpoint and volume conflicts before any destructive replacement-container cleanup.
 4. When explicit `replace_containers` are present, remove only those named Docker containers on the owning node.
-5. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
-6. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
-7. Render the derived runtime units on the owning node through the selected runtime backend.
-8. Start rendered runtime units by default unless `--no-start` is present.
-9. Record `started` events for units that start successfully.
-10. Render the selected output.
+5. Resolve the runtime backend. Host-command processes default to `systemd` on
+   Linux nodes and `launchd` on macOS nodes. Managed services default to
+   `docker` unless their catalog entry and node platform admit another service
+   runtime.
+6. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
+7. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
+8. Render the derived runtime units on the owning node through the selected runtime backend.
+9. Start rendered runtime units by default unless `--no-start` is present.
+10. Record `started` events for units that start successfully.
+11. Render the selected output.
 
 If process configuration is written but runtime-unit apply or optional start fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
 
@@ -87,7 +91,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
-| Invalid app/workspace command runtime | `--runtime=docker`, `--runtime=systemd`, or `--runtime=docker-swarm` is supplied for an app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process`, `systemd_requires_node_owned_process`, or `docker_swarm_requires_node_owned_process`). |
+| Invalid host-command container runtime | `--runtime=docker` or `--runtime=docker-swarm` is supplied for a public app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process` or `docker_swarm_requires_node_owned_process`). |
+| Invalid host-command platform runtime | `--runtime=systemd` is supplied for a macOS host-command process, or `--runtime=launchd` is supplied for a Linux host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=systemd_runtime_requires_linux` or `launchd_runtime_requires_macos`). |
+| Launchd crash notification deferred | `--runtime=launchd` is combined with `--crash-notification=agent_ide`. | Failure (`error.code=validation_failed`; `error.meta.field=crash_notification`; `error.meta.reason=launchd_crash_notification_deferred`). |
 | Version without managed service | `--version` is supplied without `--service`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_version_requires_service`). |
 | Invalid managed service scope | `--service` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_requires_node_owned_process`). |
 | Managed service with tool | `--service` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_cannot_reference_tool`). |

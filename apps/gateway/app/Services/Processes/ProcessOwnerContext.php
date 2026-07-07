@@ -50,6 +50,10 @@ final readonly class ProcessOwnerContext
             return ProcessRuntime::defaultForApp($this->app);
         }
 
+        if (NodeHostPaths::isMacosPlatform($this->node->platform)) {
+            return ProcessRuntime::Launchd;
+        }
+
         return ProcessRuntime::Systemd;
     }
 
@@ -98,6 +102,10 @@ final readonly class ProcessOwnerContext
 
     private function runtimeSupportedByNode(ProcessRuntime $runtime): bool
     {
+        if ($runtime === ProcessRuntime::Launchd) {
+            return NodeHostPaths::isMacosPlatform($this->node->platform);
+        }
+
         if (! NodeHostPaths::isMacosPlatform($this->node->platform)) {
             return true;
         }
@@ -108,6 +116,7 @@ final readonly class ProcessOwnerContext
     private function nodeRuntimeViolationReason(ProcessRuntime $runtime): string
     {
         return match ($runtime) {
+            ProcessRuntime::Launchd => 'launchd_runtime_requires_macos',
             ProcessRuntime::DockerSwarm => 'docker_swarm_runtime_requires_linux',
             ProcessRuntime::Systemd => 'systemd_runtime_requires_linux',
             ProcessRuntime::Docker => 'runtime_unsupported_on_node',
@@ -117,6 +126,7 @@ final readonly class ProcessOwnerContext
     private function nodeRuntimeViolationMessage(ProcessRuntime $runtime): string
     {
         return match ($runtime) {
+            ProcessRuntime::Launchd => 'The launchd runtime is only supported on macOS nodes.',
             ProcessRuntime::DockerSwarm => 'The docker-swarm runtime is only supported on Linux nodes.',
             ProcessRuntime::Systemd => 'The systemd runtime is only supported on Linux nodes.',
             ProcessRuntime::Docker => 'The selected runtime is not supported on this node.',

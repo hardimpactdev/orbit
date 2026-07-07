@@ -6,11 +6,11 @@ use App\Services\OrbitConfigStore;
 use Symfony\Component\Process\Process;
 
 /**
- * @return array<string, mixed>
+ * @return array{commands: list<array<string, mixed>>}
  */
 function orbitCommandList(): array
 {
-    /** @var array<string, mixed>|null $commandList */
+    /** @var array{commands: list<array<string, mixed>>}|null $commandList */
     static $commandList = null;
     static $configPath = null;
 
@@ -30,14 +30,14 @@ function orbitCommandList(): array
 
     expect($process->getExitCode())->toBe(0, 'orbit list --format=json failed: '.$process->getErrorOutput());
 
-    $commandList = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+    $commandList = decode_command_list($process->getOutput());
 
     return $commandList;
 }
 
 /**
  * @param  array<string, string>  $environment
- * @return array<string, mixed>
+ * @return array{commands: list<array<string, mixed>>}
  */
 function orbit_command_list_with_environment(array $environment): array
 {
@@ -46,17 +46,37 @@ function orbit_command_list_with_environment(array $environment): array
 
     expect($process->getExitCode())->toBe(0, 'orbit list --format=json failed: '.$process->getErrorOutput());
 
-    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+    return decode_command_list($process->getOutput());
 }
 
 /**
- * @param  array<string, mixed>  $commandList
+ * @return array{commands: list<array<string, mixed>>}
+ */
+function decode_command_list(string $output): array
+{
+    /** @var mixed $decoded */
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    if (
+        ! is_array($decoded)
+        || ! array_key_exists('commands', $decoded)
+        || ! is_array($decoded['commands'])
+    ) {
+        throw new RuntimeException('orbit list --format=json did not return a command list.');
+    }
+
+    /** @var array{commands: list<array<string, mixed>>} $decoded */
+    return $decoded;
+}
+
+/**
+ * @param  array{commands: list<array<string, mixed>>}  $commandList
  * @return array<string, mixed>|null
  */
 function findCommandInList(array $commandList, string $name): ?array
 {
     foreach ($commandList['commands'] as $command) {
-        if ($command['name'] === $name) {
+        if (($command['name'] ?? null) === $name) {
             return $command;
         }
     }
@@ -65,15 +85,24 @@ function findCommandInList(array $commandList, string $name): ?array
 }
 
 /**
- * @param  array<string, mixed>  $commandList
+ * @param  array{commands: list<array<string, mixed>>}  $commandList
  * @return list<string>
  */
 function visibleCommandNames(array $commandList): array
 {
-    return array_values(array_column(
-        array_filter($commandList['commands'], fn (array $c): bool => ! ($c['hidden'] ?? false)),
-        'name',
-    ));
+    $names = [];
+
+    foreach ($commandList['commands'] as $command) {
+        if (($command['hidden'] ?? false) === true) {
+            continue;
+        }
+
+        if (is_string($command['name'] ?? null)) {
+            $names[] = $command['name'];
+        }
+    }
+
+    return $names;
 }
 
 describe('command list visibility', function (): void {
@@ -288,10 +317,10 @@ describe('command list visibility', function (): void {
                 'ORBIT_CONFIG_PATH' => $enabledConfigPath,
             ]));
 
-            expect($defaultVisible)
-                ->not->toContain('app:codex')
-                ->not->toContain('codex:app')->and($enabledVisible)->toContain('codex:app')
-                ->not->toContain('app:codex');
+            expect(in_array('app:codex', $defaultVisible, strict: true))->toBeFalse();
+            expect(in_array('codex:app', $defaultVisible, strict: true))->toBeFalse();
+            expect($enabledVisible)->toContain('codex:app');
+            expect(in_array('app:codex', $enabledVisible, strict: true))->toBeFalse();
         } finally {
             unlink_orbit_test_file($defaultConfigPath);
             unlink_orbit_test_file($enabledConfigPath);
@@ -478,6 +507,7 @@ describe('command list visibility', function (): void {
         'internal:node-security-posture:probe',
         'internal:process-docker-container',
         'internal:process-docker-swarm-service',
+        'internal:process-launchd-service',
         'internal:process-logs',
         'internal:process-systemd-service',
         'internal:runtime-backend:probe',

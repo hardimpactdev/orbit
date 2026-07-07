@@ -7,6 +7,7 @@ namespace App\Services\RuntimeBackend;
 use App\Contracts\RemoteShell;
 use App\Data\RuntimeBackend\RuntimeBackendProbeResult;
 use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use JsonException;
 
@@ -50,6 +51,10 @@ final readonly class RuntimeBackendProbe
 
     private function provider(Node $node): string
     {
+        if (NodeHostPaths::isMacosPlatform($node->platform)) {
+            return 'launchd';
+        }
+
         if ($this->usesDockerProvider($node)) {
             return 'docker';
         }

@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process;
 
 final readonly class LocalRuntimeBackendProbe
 {
-    private const array PROVIDERS = ['docker', 'systemd'];
+    private const array PROVIDERS = ['docker', 'systemd', 'launchd'];
 
     /**
      * @return array<string, mixed>
@@ -16,13 +16,17 @@ final readonly class LocalRuntimeBackendProbe
     public function check(mixed $provider): array
     {
         $provider = $this->provider($provider);
-        $commands = $provider === 'docker'
-            ? [
+        $commands = match ($provider) {
+            'docker' => [
                 ['docker', 'info'],
-            ]
-            : [
+            ],
+            'launchd' => [
+                ['launchctl', 'help'],
+            ],
+            default => [
                 ['systemctl', '--version'],
-            ];
+            ],
+        };
 
         foreach ($commands as $command) {
             $result = $this->run($command);
@@ -41,7 +45,11 @@ final readonly class LocalRuntimeBackendProbe
             'provider' => $provider,
             'available' => true,
             'exit_code' => 0,
-            'output' => $provider === 'docker' ? 'Docker provider ready' : 'systemd provider ready',
+            'output' => match ($provider) {
+                'docker' => 'Docker provider ready',
+                'launchd' => 'launchd provider ready',
+                default => 'systemd provider ready',
+            },
         ];
     }
 

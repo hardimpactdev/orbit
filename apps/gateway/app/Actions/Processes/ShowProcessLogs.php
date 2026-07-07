@@ -11,6 +11,7 @@ use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
+use App\Services\Processes\ProcessRuntimeDrivers\LaunchdProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use App\Services\Processes\ProcessServiceMetadataPayload;
@@ -39,6 +40,8 @@ final readonly class ShowProcessLogs
             backend: $target['backend'],
             runtimeUnit: $target['runtime_unit'],
             lines: $lines,
+            stdoutPath: $target['stdout_path'],
+            stderrPath: $target['stderr_path'],
         );
 
         if (! $result->successful()) {
@@ -73,7 +76,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}
      */
     public function streamTarget(ProcessOwnerContext $context, string $name, int $lines): array
     {
@@ -81,7 +84,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}  $target
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}  $target
      * @param  callable(string): void  $onOutput
      */
     public function followTarget(array $target, callable $onOutput): void
@@ -92,11 +95,13 @@ final readonly class ShowProcessLogs
             runtimeUnit: $target['runtime_unit'],
             lines: $target['lines'],
             onOutput: $onOutput,
+            stdoutPath: $target['stdout_path'],
+            stderrPath: $target['stderr_path'],
         );
     }
 
     /**
-     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}  $target
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}  $target
      * @param  callable(string): void  $onOutput
      */
     public function followTargetViaRemoteShell(array $target, callable $onOutput): void
@@ -116,7 +121,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}
      */
     private function target(ProcessOwnerContext $context, string $name, int $lines, bool $follow): array
     {
@@ -141,6 +146,12 @@ final readonly class ShowProcessLogs
         $workspace = $context->runtimeWorkspaceFor($process);
         $driver = $this->runtimeDrivers->forProcess($process);
         $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);
+        $stdoutPath = $driver instanceof LaunchdProcessRuntimeDriver
+            ? $driver->stdoutLogPath($context->node, $runtimeUnit)
+            : null;
+        $stderrPath = $driver instanceof LaunchdProcessRuntimeDriver
+            ? $driver->stderrLogPath($context->node, $runtimeUnit)
+            : null;
 
         return [
             'node' => $context->node,
@@ -150,6 +161,8 @@ final readonly class ShowProcessLogs
             'backend' => $this->backend($driver),
             'script' => $driver->logScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
             'lines' => $lines,
+            'stdout_path' => $stdoutPath,
+            'stderr_path' => $stderrPath,
         ];
     }
 
@@ -158,6 +171,7 @@ final readonly class ShowProcessLogs
         return match (true) {
             $driver instanceof DockerProcessRuntimeDriver => 'docker',
             $driver instanceof DockerSwarmProcessRuntimeDriver => 'docker-swarm',
+            $driver instanceof LaunchdProcessRuntimeDriver => 'launchd',
             $driver instanceof SystemdProcessRuntimeDriver => 'systemd',
             default => throw new RuntimeException('Unsupported process log runtime backend.'),
         };

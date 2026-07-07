@@ -496,7 +496,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'launchd', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker');
     });
@@ -527,7 +527,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'supervisor')
-            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
+            ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'launchd', 'systemd']);
 
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)
             ->toBe('docker')
@@ -668,6 +668,48 @@ describe('ProcessUpdateController', function (): void {
         'invalid restart' => [['app' => 'docs', 'restart_policy' => 'sometimes'], 'vite', 422, 'validation_failed'],
         'not found' => [['app' => 'docs', 'command' => 'php artisan queue:work'], 'queue', 404, 'process.not_found'],
     ]);
+
+    it('rejects agent ide crash notification updates for existing launchd processes', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode([
+            'platform' => 'macos_14',
+            'user' => 'nckrtl',
+        ]);
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Process::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'feedback',
+                'runtime' => 'launchd',
+                'crash_notification' => 'none',
+            ]);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/feedback',
+            [
+                'app' => 'docs',
+                'crash_notification' => 'agent_ide',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'crash_notification')
+            ->assertJsonPath('error.meta.reason', 'launchd_crash_notification_deferred');
+
+        expect(Process::query()->where('name', 'feedback')->value('crash_notification')->value)
+            ->toBe('none')
+            ->and($remoteShell->scripts)
+            ->toBeEmpty();
+    });
 });
 
 final class ProcessUpdateRemoteShell implements RemoteShell
@@ -688,6 +730,13 @@ final class ProcessUpdateRemoteShell implements RemoteShell
             return $this->internalSuccessResult([
                 'status' => 'ok',
                 'summary' => 'Applied systemd service.',
+            ]);
+        }
+
+        if (str_contains($script, 'internal:process-launchd-service')) {
+            return $this->internalSuccessResult([
+                'status' => 'ok',
+                'summary' => 'Applied launchd service.',
             ]);
         }
 

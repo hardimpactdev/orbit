@@ -114,7 +114,9 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
         $stubLog = (string) file_get_contents("{$root}/stub.log");
 
         expect($stubLog)
-            ->toContain('Storage::disk')
+            ->toContain('Aws\S3\S3Client')
+            ->toContain('putObject')
+            ->toContain('fclose($stream)')
             ->toContain('orbit-release-manifest')
             ->toContain('orbit-build-cli-binary mac arm 0.1.200')
             ->toContain('orbit-build-cli-binary linux x64 0.1.200')

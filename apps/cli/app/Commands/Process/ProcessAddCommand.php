@@ -24,7 +24,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--image= : Explicit Docker image override}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|docker-swarm|systemd); defaults to docker for managed services and systemd for host commands}
+        {--runtime= : Process runtime (docker|docker-swarm|systemd|launchd); defaults to docker for managed services, systemd for Linux host commands, and launchd for macOS host commands}
         {--replace-container=* : Remove an explicitly named Docker container on the target node before adding a Docker managed service}
         {--force : Confirm destructive replacement-container cleanup without prompting}
         {--start : Redundant backward-compatible flag; processes start by default}

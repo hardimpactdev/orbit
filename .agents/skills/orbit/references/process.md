@@ -1,6 +1,6 @@
 # Process Commands
 
-Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). On Linux, each app/workspace host-command process definition renders as one systemd unit per target. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`. Spec: [`apps/docs/content/domains/7_process/`](../../../apps/docs/content/domains/7_process/).
+Long-running app-owned processes (queue workers, websocket servers, vite dev server, ...). App/workspace host-command process definitions render as one systemd unit per target on Linux and one Orbit-owned launchd user LaunchAgent per target on macOS. Runtime unit name: `orbit_<app>_<workspace|main>_<process>`; launchd labels are `dev.hardimpact.orbit.<runtimeUnit>`. Spec: [`apps/docs/content/domains/7_process/`](../../../apps/docs/content/domains/7_process/).
 
 App/workspace runtime units receive Laravel Vite-compatible URL/TLS env fields:
 `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`, `VITE_DEV_SERVER_KEY`, and
@@ -16,6 +16,7 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
                   [--service=<mysql|redis>] [--version=<version>] [--image=<image>]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none|agent_ide]
+                  [--runtime=docker|docker-swarm|systemd|launchd]
                   [--replace-container=<name>] [--force]
                   [--no-start] [--json]
 ```
@@ -32,7 +33,8 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
 | `--replace-container` |  -  | Explicit Docker container to remove before adding a node-owned Docker managed service. Repeat for multiple known blockers. Requires `--force` in non-interactive mode. |
 | `--force` | off | Confirm destructive replacement-container cleanup. |
 | `--restart-policy` | `never` | Runtime restart behavior. |
-| `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter. |
+| `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter; rejected for `launchd` until the macOS crash wrapper exists. |
+| `--runtime` | platform/service default | Host commands default to `systemd` on Linux and `launchd` on macOS. Managed services default to `docker`; `docker-swarm` is Linux-only and service-catalog gated. |
 | `--no-start` | off | Skip starting rendered runtime units after apply. |
 | `--start` | redundant | Accepted for backward compatibility; processes start by default. |
 
@@ -44,6 +46,9 @@ orbit process:add queue 'php artisan queue:work --tries=3' --app=myapp \
 
 orbit process:add reverb 'php artisan reverb:start' --app=myapp \
   --restart-policy=on_failure
+
+orbit process:add feedback 'php artisan feedback:work' --app=feedback \
+  --runtime=launchd
 
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 
@@ -65,7 +70,9 @@ orbit process:update [<name>] [--app=<name>] [--command='<shell>']
                      [--restart] [--json]
 ```
 
-`--restart` restarts affected runtime units after the update lands.
+`--restart` restarts affected runtime units after the update lands. Omitting
+`--runtime` preserves the current runtime; the same platform rules as
+`process:add` apply when changing it.
 
 ## `orbit process:remove [name]`
 
@@ -104,7 +111,8 @@ orbit process:logs [<name>] [--app=<name>] [--workspace=<name>]
                    [--follow] [--lines=100] [--json]
 ```
 
-`--follow` streams new lines as they arrive (Ctrl-C to stop). On agent-capable
-nodes, bounded reads and follow streams use the gateway-to-Agent command
-transport; explicit transitional SSH fallback is reserved for migration and
-recovery.
+`--follow` streams new lines as they arrive (Ctrl-C to stop). Launchd-backed
+processes read Orbit-owned stdout/stderr files under
+`~/Library/Logs/Orbit/processes`. On agent-capable nodes, bounded reads and
+follow streams use the gateway-to-Agent command transport; explicit
+transitional SSH fallback is reserved for migration and recovery.

@@ -366,6 +366,58 @@ describe('ProcessLogController', function (): void {
         $response->assertStatus(502)
             ->assertJsonPath('error.code', 'process.log_read_failed');
     });
+
+    it('passes explicit launchd stdout and stderr paths to the local log reader', function (): void {
+        $caller = createProcessLogCallerNode();
+        $appNode = create_process_log_agent_node([
+            'platform' => 'macos_14',
+            'user' => 'nckrtl',
+        ]);
+        grantProcessLogAccess($caller, $appNode);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $appNode->id,
+            'path' => '/Users/nckrtl/apps/docs',
+        ]);
+        Process::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'feedback',
+                'runtime' => ProcessRuntime::Launchd,
+            ]);
+        fake_process_log_agent("Feedback ready\n");
+
+        $response = $this->call(
+            'GET',
+            '/api/processes/feedback/log',
+            [
+                'app' => 'docs',
+                'lines' => 5,
+            ],
+            [],
+            [],
+            process_log_agent_push_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_main_feedback')
+            ->assertJsonPath('success.data.logs.lines.0.message', 'Feedback ready');
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request['argv'][0] === 'internal:process-logs'
+                && json_decode((string) $request['input'], associative: true) === [
+                    'backend' => 'launchd',
+                    'runtime_unit' => 'orbit_docs_main_feedback',
+                    'lines' => 5,
+                    'follow' => false,
+                    'stdout_path' => '/Users/nckrtl/Library/Logs/Orbit/processes/orbit_docs_main_feedback.out.log',
+                    'stderr_path' => '/Users/nckrtl/Library/Logs/Orbit/processes/orbit_docs_main_feedback.err.log',
+                ]
+            ),
+        );
+    });
 });
 
 final class ProcessLogApiRemoteShell implements RemoteShell

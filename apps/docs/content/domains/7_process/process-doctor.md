@@ -19,6 +19,10 @@ The process family owns these facts:
 - systemd process runtime units rendered from process, app, workspace, and node
   configuration, including command, working directory, restart policy, and
   runtime environment;
+- launchd process runtime units rendered as user LaunchAgent plist files that
+  Orbit owns under `~/Library/LaunchAgents`, with labels shaped
+  `dev.hardimpact.orbit.<runtimeUnit>` and stdout/stderr logs under
+  `~/Library/Logs/Orbit/processes`;
 - Docker containers and Docker Swarm services rendered from node-owned managed
   services, including service identifier, version family, concrete
   version, runtime unit name, spec hash, endpoint metadata, and credential
@@ -56,6 +60,8 @@ The owning app resolves to an active app record and the expected runtime context
 
 The owning node has the selected runtime backend available and responsive.
 Systemd-backed process units require `systemctl` and journald access.
+Launchd-backed process units require `launchctl` access in the owning user's
+GUI domain and readable plist/log paths for LaunchAgents that Orbit owns.
 Docker-backed service process units require Docker container inspection.
 Docker Swarm-backed service process units require Docker service inspection.
 When this layer fails, the probe stops and reports
@@ -71,6 +77,13 @@ and compares their content hash, restart policy, and environment lines against
 the rendered gateway spec. For Docker and Docker Swarm runtime units, the probe
 compares the Orbit-managed process spec hash on the concrete container or
 service labels.
+
+For launchd runtime units, the probe reads LaunchAgent plist files that Orbit
+owns and compares content hashes against the gateway-rendered plist. When the
+runtime unit is expected to be running, the probe checks whether the label is
+loaded in the current user GUI domain. Log paths are reported separately from
+configuration drift. `doctor --restore` may rewrite the plist and run lifecycle
+actions only for launchd labels that Orbit owns.
 
 ### Runtime-unit identity
 
@@ -90,12 +103,14 @@ to node provisioning/topology work.
 ### Runtime artifact presence
 
 Each expected runtime unit exists as the selected backend artifact: a systemd
-service, Docker container, or Docker Swarm service. Checked only when the
-selected runtime backend is reachable.
+service, launchd LaunchAgent plist, Docker container, or Docker Swarm service.
+Checked only when the selected runtime backend is reachable.
 
 ### Runtime artifact shape
 
-The rendered command, working directory, restart policy, user, and runtime environment match gateway configuration.
+The rendered command, working directory, restart policy, user, runtime
+environment, launchd label, and launchd stdout/stderr log paths match gateway
+configuration.
 
 ### Lifecycle notifier material
 
@@ -103,7 +118,12 @@ The crash event hooks that Orbit manages, gateway endpoint material, and gateway
 
 ### Stale runtime units
 
-Runtime artifacts that Orbit owns are reported as process-family drift when their encoded app, workspace, or process identity has no match in active gateway configuration.
+Runtime artifacts that Orbit owns are reported as process-family drift when
+their encoded app, workspace, or process identity has no match in active
+gateway configuration. For launchd, the probe only inspects Orbit-owned labels
+under `dev.hardimpact.orbit.*` and matching plist paths in
+`~/Library/LaunchAgents`; third-party LaunchAgents are outside process-family
+scope.
 
 ### Lifecycle events as history
 
@@ -125,6 +145,7 @@ Each code below identifies a specific process-family drift condition that the pr
 | `process.runtime_unit_missing` | An expected Orbit-owned runtime unit has no corresponding backend artifact. |
 | `process.runtime_unit_extra` | An Orbit-owned backend artifact exists without matching active app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | The runtime artifact command, working directory, user, or unit name differs from gateway process configuration. |
+| `process.runtime_unit_unloaded` | A launchd-backed runtime unit that is expected to be running has an Orbit-owned plist but its label is not loaded in the current user GUI domain. |
 | `process.restart_policy_mismatch` | The rendered backend restart policy differs from the process definition. |
 | `process.runtime_environment_mismatch` | The rendered runtime environment differs from the runtime unit environment contract. |
 | `process.event_notifier_missing` | Runtime lifecycle event notifier material is absent for a runtime unit that should emit crash events. |
@@ -136,12 +157,13 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker or systemd. |
+| `process.runtime_backend_unavailable` | No `doctor --restore` action. Process manager installation and recovery belong to node operations. Process doctor reports the dependency and does not attempt to install Docker, systemd, or launchd. |
 | `process.wireguard_self_route_unavailable` | No `doctor --restore` action. WireGuard self-route mutation belongs to node provisioning/topology repair, not the process family. |
 | `process.runtime_unit_unrenderable` | No `doctor --restore` action. Fix the process definition or run the role baseline that owns the incomplete service process intent. |
 | `process.runtime_unit_missing` | Re-render and reload the missing backend artifact from gateway app, workspace, and process configuration. |
 | `process.runtime_unit_extra` | Stop and remove the stale Orbit-owned backend artifact whose identity has no match in active gateway app, workspace, and process configuration. |
 | `process.runtime_unit_mismatch` | Rewrite the backend artifact from gateway app, workspace, and process configuration. |
+| `process.runtime_unit_unloaded` | Re-run launchd lifecycle actions for the Orbit-owned label when the process should be running. |
 | `process.restart_policy_mismatch` | Rewrite the backend restart policy from the process definition. |
 | `process.runtime_environment_mismatch` | Rewrite the runtime environment from the runtime unit environment contract. |
 | `process.event_notifier_missing` | Reinstall Orbit-managed lifecycle event notifier material for the selected runtime unit. |
@@ -156,6 +178,13 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 
 Missing or invalid process definitions and app ownership problems remain explicit process, app, or workspace command work. Process doctor never creates process definitions, changes process names, edits app or workspace records, or adopts arbitrary runtime-unit files as gateway configuration.
 
+For launchd, restore is limited to Orbit-owned user LaunchAgents. It may write
+the expected plist under the configured node user's `~/Library/LaunchAgents`,
+operate the matching `dev.hardimpact.orbit.*` label through launchd lifecycle
+actions, and leave stdout/stderr log files in place. It does not write system
+LaunchDaemons, adopt third-party LaunchAgents, or inventory unrelated launchd
+jobs.
+
 ## Process Adopt Map
 
 Use `doctor --adopt` to apply the adoption action listed for each code.
@@ -167,6 +196,7 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | `process.runtime_unit_unrenderable` | No adoption action. Invalid gateway intent must be corrected instead of adopted from runtime state. |
 | `process.runtime_unit_extra` | No adoption action. Runtime artifacts are derived and must not create process configuration. |
 | `process.runtime_unit_mismatch` | No adoption action. Update process configuration with `process:update` when the observed runtime command should become configuration. |
+| `process.runtime_unit_unloaded` | No adoption action. Loaded state is repaired through restore or lifecycle commands, not adopted as gateway configuration. |
 | `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:update` when the observed policy should become configuration. |
 | `process.runtime_environment_mismatch` | No adoption action. Runtime environment is derived from app, workspace, and node configuration. |
 | `process.event_notifier_mismatch` | No adoption action. Event notifier material is derived from gateway-owned process configuration and gateway event intake identity. |
@@ -190,6 +220,7 @@ reporting, and the `process.runtime_backend_unavailable` short-circuit.
 `ProcessesProbeTest` covers registry configuration, node/app/workspace owner
 validation, app and workspace expansion, and process manager availability.
 It also covers runtime-unit identity and Docker/Docker Swarm managed service metadata.
-WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts, restart
-policy drift, runtime environment drift, event notifier drift, and exclusion of
-non-process drift from issue codes are also covered.
+WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts,
+launchd plist and loaded-state drift, restart policy drift, runtime environment
+drift, event notifier drift, and exclusion of non-process drift from issue
+codes are also covered.

@@ -98,6 +98,7 @@ use App\Commands\Internal\ManagedFileCommand;
 use App\Commands\Internal\NodeSecurityPostureProbeCommand;
 use App\Commands\Internal\ProcessDockerContainerCommand;
 use App\Commands\Internal\ProcessDockerSwarmServiceCommand;
+use App\Commands\Internal\ProcessLaunchdServiceCommand;
 use App\Commands\Internal\ProcessLogsCommand as InternalProcessLogsCommand;
 use App\Commands\Internal\ProcessSystemdServiceCommand;
 use App\Commands\Internal\RuntimeBackendProbeCommand;
@@ -414,6 +415,7 @@ return [
         ProcessDockerSwarmServiceCommand::class,
         InternalProcessLogsCommand::class,
         ProcessSystemdServiceCommand::class,
+        ProcessLaunchdServiceCommand::class,
         RuntimeBackendProbeCommand::class,
         S3RuntimeProbeCommand::class,
         SecretFileCommand::class,

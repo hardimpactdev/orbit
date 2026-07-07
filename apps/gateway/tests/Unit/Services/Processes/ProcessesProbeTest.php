@@ -1245,7 +1245,7 @@ describe('docker runtime probe scope', function (): void {
         $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
-        $extra = issue($drift, 'process.runtime_unit_extra');
+        $extra = issue($drift, key: 'process.runtime_unit_extra');
         expect($extra?->kind)->toBe(DriftKind::Extra);
         expect($extra?->detail)->toMatchArray(['runtime_unit' => 'orbit_docs_main_oldqueue']);
     });
@@ -1450,3 +1450,66 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell
         );
     }
 }
+
+it('introspects launchd runtime units through user LaunchAgent plist checks', function (): void {
+    $node = createTestAppHostNode([
+        'name' => 'mac-app',
+        'platform' => 'macos_26-5-1',
+        'user' => 'orbit',
+    ]);
+    $app = App::factory()
+        ->for($node, 'node')
+        ->create([
+            'name' => 'docs',
+            'path' => '/Users/orbit/apps/docs',
+        ]);
+    $process = processFor($app, [
+        'name' => 'vite',
+        'runtime' => ProcessRuntime::Launchd,
+    ]);
+    $shell = new ProcessesProbeRecordingRemoteShell([
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: processesProbeSuccessData([
+                'available' => true,
+                'exit_code' => 0,
+                'output' => 'launchd OK',
+            ]),
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: "orbit_docs_main_vite\t1\t1\t1\n",
+            stderr: '',
+            durationMs: 1,
+        ),
+    ]);
+
+    $snapshot = processesProbeWithShell($shell)->introspect($process);
+
+    expect($snapshot->get('vite'))->toMatchArray([
+        'runtime_backend_available' => true,
+        'runtime_backend_exit_code' => 0,
+        'runtime_backend_output' => 'launchd OK',
+    ]);
+    expect($shell->scripts[0])->toContain("internal:runtime-backend:probe 'launchd'");
+    $script = $shell->scripts[1] ?? '';
+    $viteSnapshot = $snapshot->get('vite');
+    $runtimeUnits = is_array($viteSnapshot) && is_array($viteSnapshot['runtime_units'] ?? null)
+        ? $viteSnapshot['runtime_units']
+        : [];
+
+    expect($script)
+        ->toStartWith('set -eu')
+        ->toContain('probe_launchd_unit')
+        ->toContain("probe_launchd_unit 'orbit_docs_main_vite'")
+        ->toContain('/Users/orbit/Library/LaunchAgents/dev.hardimpact.orbit.orbit_docs_main_vite.plist')
+        ->toContain('dev.hardimpact.orbit.orbit_docs_main_vite');
+    expect(str_contains($script, 'systemctl'))->toBeFalse();
+    expect($runtimeUnits['orbit_docs_main_vite'] ?? [])->toMatchArray([
+        'config_exists' => true,
+        'config_matches' => true,
+        'loaded' => true,
+    ]);
+});

@@ -5,9 +5,13 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Artisan;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
+use Symfony\Component\Console\Command\Command as SymfonyCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+/**
+ * @mago-expect lint:halstead
+ */
 describe('internal process logs command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
@@ -15,11 +19,15 @@ describe('internal process logs command', function (): void {
             'allowed' => true,
         ]));
         $originalPath = getenv('PATH');
-        $this->originalPath = $originalPath === false ? '' : $originalPath;
+        process_logs_original_path($originalPath === false ? '' : $originalPath);
+
+        $originalHome = getenv('HOME');
+        process_logs_original_home($originalHome === false ? '' : $originalHome);
     });
 
     afterEach(function (): void {
-        putenv("PATH={$this->originalPath}");
+        putenv('PATH='.process_logs_original_path());
+        putenv('HOME='.process_logs_original_home());
 
         $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-process-logs-bin-*');
 
@@ -60,6 +68,7 @@ describe('internal process logs command', function (): void {
             ], JSON_THROW_ON_ERROR),
         );
 
+        /** @var array{success: array{data: array{output: string}}} $payload */
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)
@@ -92,6 +101,97 @@ describe('internal process logs command', function (): void {
             ->toBe("Vite ready\n")
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('logs --tail 25 --follow orbit_docs_main_queue');
+    });
+
+    it('accepts launchd backend and tails explicit stdout/stderr paths with single tail argv for follow', function (): void {
+        $home = sys_get_temp_dir().'/orbit-launchd-home-'.bin2hex(random_bytes(4));
+        $logDir = "{$home}/Library/Logs/Orbit/processes";
+
+        mkdir($logDir, permissions: 0o755, recursive: true);
+        putenv("HOME={$home}");
+
+        $stdout = "{$logDir}/dev.hardimpact.orbit.test-unit.out.log";
+        $stderr = "{$logDir}/dev.hardimpact.orbit.test-unit.err.log";
+
+        if (file_put_contents(filename: $stdout, data: "stdout line 1\n") === false) {
+            throw new RuntimeException('Failed to create launchd stdout fixture.');
+        }
+
+        if (file_put_contents(filename: $stderr, data: "stderr line 1\n") === false) {
+            throw new RuntimeException('Failed to create launchd stderr fixture.');
+        }
+
+        try {
+            [$exitCode, $output] = run_internal_process_logs_command(
+                [
+                    '--operation-token' => process_logs_signed_operation_token(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'backend' => 'launchd',
+                    'runtime_unit' => 'dev.hardimpact.orbit.test-unit',
+                    'stdout_path' => $stdout,
+                    'stderr_path' => $stderr,
+                    'lines' => 10,
+                    'follow' => false,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and(
+                    process_logs_json_success_data($output)['backend'] ?? null,
+                )
+                ->toBe('launchd');
+        } finally {
+            if (is_file($stdout)) {
+                unlink($stdout);
+            }
+
+            if (is_file($stderr)) {
+                unlink($stderr);
+            }
+
+            delete_process_logs_directory($home);
+        }
+    });
+
+    it('rejects launchd log paths outside the Orbit user log directory', function (): void {
+        $home = sys_get_temp_dir().'/orbit-launchd-home-'.bin2hex(random_bytes(4));
+
+        mkdir("{$home}/Library/Logs/Orbit/processes", permissions: 0o755, recursive: true);
+        putenv("HOME={$home}");
+
+        try {
+            [$exitCode, $output] = run_internal_process_logs_command(
+                [
+                    '--operation-token' => process_logs_signed_operation_token(),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'backend' => 'launchd',
+                    'runtime_unit' => 'dev.hardimpact.orbit.test-unit',
+                    'stdout_path' => '/tmp/dev.hardimpact.orbit.test-unit.out.log',
+                    'stderr_path' => "{$home}/Library/Logs/Orbit/processes/dev.hardimpact.orbit.test-unit.err.log",
+                    'lines' => 10,
+                    'follow' => false,
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($exitCode)
+                ->toBe(1)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+                ->toBe(JsonEnvelope::failure(
+                    'validation_failed',
+                    'Process logs launchd paths must stay under the Orbit user log directory.',
+                    [
+                        'field' => 'stdout_path',
+                        'reason' => 'launchd_log_path_outside_orbit_directory',
+                    ],
+                ));
+        } finally {
+            delete_process_logs_directory($home);
+        }
     });
 });
 
@@ -136,10 +236,61 @@ function run_internal_process_logs_command(array $parameters = [], string $stdin
     $input->setStream($stream);
 
     $output = new BufferedOutput;
-    $command = Artisan::all()['internal:process-logs'];
+    /** @var mixed $command */
+    $command = Artisan::all()['internal:process-logs'] ?? null;
+
+    if (! $command instanceof SymfonyCommand) {
+        throw new RuntimeException('internal:process-logs not registered.');
+    }
+
     $exitCode = $command->run($input, $output);
 
     return [$exitCode, $output->fetch()];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function process_logs_json_success_data(string $output): array
+{
+    /** @var mixed $payload */
+    $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($payload)) {
+        return [];
+    }
+
+    /** @var mixed $data */
+    $data = data_get(target: $payload, key: 'success.data');
+
+    if (! is_array($data)) {
+        return [];
+    }
+
+    /** @var array<string, mixed> $data */
+    return $data;
+}
+
+function process_logs_original_path(?string $path = null): string
+{
+    static $originalPath = '';
+
+    if ($path !== null) {
+        $originalPath = $path;
+    }
+
+    return $originalPath;
+}
+
+function process_logs_original_home(?string $path = null): string
+{
+    static $originalHome = '';
+
+    if ($path !== null) {
+        $originalHome = $path;
+    }
+
+    return $originalHome;
 }
 
 function install_process_logs_fake_bin(): string
@@ -179,4 +330,35 @@ function delete_process_logs_file(string $path): void
     }
 
     unlink($path);
+}
+
+function delete_process_logs_directory(string $path): void
+{
+    if (! is_dir($path)) {
+        return;
+    }
+
+    $items = scandir($path);
+
+    if ($items === false) {
+        return;
+    }
+
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        $child = "{$path}/{$item}";
+
+        if (is_dir($child)) {
+            delete_process_logs_directory($child);
+
+            continue;
+        }
+
+        delete_process_logs_file($child);
+    }
+
+    rmdir($path);
 }
