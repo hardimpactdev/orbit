@@ -215,6 +215,9 @@ describe('internal caddy config command', function (): void {
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $calls = file_get_contents("{$bin}/calls.log");
+        $globalCaddyfileSource = caddy_config_docker_bind_source('/etc/caddy/Caddyfile');
+        $sitesSource = caddy_config_docker_bind_source('/etc/caddy/sites');
+        $runPhpSource = caddy_config_docker_bind_source('/run/php');
 
         expect($exitCode)
             ->toBe(0)
@@ -245,9 +248,9 @@ describe('internal caddy config command', function (): void {
             ->toContain('--label orbit.container.kind=caddy')
             ->toContain('--label orbit.managed=true')
             ->toContain("--label orbit.caddy.spec_hash={$expectedHash}")
-            ->toContain('--mount type=bind,source=/etc/caddy/Caddyfile,target=/etc/caddy/Caddyfile,readonly')
-            ->toContain('--mount type=bind,source=/etc/caddy/sites,target=/etc/caddy/sites,readonly')
-            ->toContain('--mount type=bind,source=/run/php,target=/run/php')
+            ->toContain("--mount type=bind,source={$globalCaddyfileSource},target=/etc/caddy/Caddyfile,readonly")
+            ->toContain("--mount type=bind,source={$sitesSource},target=/etc/caddy/sites,readonly")
+            ->toContain("--mount type=bind,source={$runPhpSource},target=/run/php")
             ->toContain('caddy:2-alpine')
             ->toContain('docker start orbit-caddy');
     });
@@ -276,6 +279,51 @@ describe('internal caddy config command', function (): void {
             ->toContain('test -d /run/php')
             ->not->toContain('sudo test -d')
             ->not->toContain('install -d -m 0755 /run/php');
+    });
+
+    it('canonicalizes docker bind mount sources before running the caddy container', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'c', times: 64);
+        $workspace = make_caddy_config_realpath_workspace();
+        $targetDirectory = "{$workspace}/target";
+        $linkDirectory = "{$workspace}/link";
+
+        mkdir($targetDirectory, recursive: true);
+        symlink($targetDirectory, $linkDirectory);
+        file_put_contents(
+            filename: "{$targetDirectory}/Caddyfile",
+            data: "import /etc/caddy/sites/*.caddy\n",
+        );
+
+        $spec = caddy_config_container_spec($expectedHash);
+        $spec['mounts'][0]['source'] = "{$linkDirectory}/Caddyfile";
+
+        try {
+            [$exitCode] = run_internal_caddy_config_command(
+                [
+                    'action' => 'apply-container',
+                    '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                    '--json' => true,
+                ],
+                json_encode([
+                    'container' => $spec,
+                    'global_config' => "import /etc/caddy/sites/*.caddy\n",
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $calls = file_get_contents("{$bin}/calls.log");
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and($calls)
+                ->toContain(
+                    '--mount type=bind,source='
+                    .caddy_config_docker_bind_source("{$targetDirectory}/Caddyfile")
+                    .',target=/etc/caddy/Caddyfile,readonly',
+                );
+        } finally {
+            delete_caddy_config_realpath_workspace($workspace);
+        }
     });
 });
 
@@ -462,6 +510,39 @@ function delete_caddy_config_fake_bin(string $path): void
     if (is_dir($path)) {
         rmdir($path);
     }
+}
+
+function make_caddy_config_realpath_workspace(): string
+{
+    $path = sys_get_temp_dir().'/orbit-caddy-config-realpath-'.bin2hex(random_bytes(8));
+
+    mkdir($path);
+
+    return $path;
+}
+
+function delete_caddy_config_realpath_workspace(string $path): void
+{
+    delete_caddy_config_file("{$path}/target/Caddyfile");
+
+    if (is_link("{$path}/link")) {
+        unlink("{$path}/link");
+    }
+
+    if (is_dir("{$path}/target")) {
+        rmdir("{$path}/target");
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
+}
+
+function caddy_config_docker_bind_source(string $source): string
+{
+    $canonical = realpath($source);
+
+    return is_string($canonical) && $canonical !== '' ? $canonical : $source;
 }
 
 function delete_caddy_config_file(string $path): void

@@ -672,7 +672,7 @@ final readonly class LocalCaddyConfigAction
 
         foreach ($spec['mounts'] as $mount) {
             $command[] = '--mount';
-            $command[] = $this->mountSpec($mount);
+            $command[] = $this->dockerMountSpec($mount);
         }
 
         $command[] = $spec['image'];
@@ -695,6 +695,16 @@ final readonly class LocalCaddyConfigAction
     /**
      * @param  array{source: string, target: string, read_only: bool}  $mount
      */
+    private function dockerMountSpec(array $mount): string
+    {
+        $mount['source'] = $this->dockerBindSource($mount['source']);
+
+        return $this->mountSpec($mount);
+    }
+
+    /**
+     * @param  array{source: string, target: string, read_only: bool}  $mount
+     */
     private function mountSpec(array $mount): string
     {
         $fields = [
@@ -708,6 +718,13 @@ final readonly class LocalCaddyConfigAction
         }
 
         return implode(',', $fields);
+    }
+
+    private function dockerBindSource(string $source): string
+    {
+        $canonical = realpath($source);
+
+        return is_string($canonical) && $canonical !== '' ? $canonical : $source;
     }
 
     private function mountField(string $key, string $value): string
