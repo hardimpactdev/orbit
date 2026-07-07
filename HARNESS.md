@@ -357,9 +357,9 @@ lines from `LOOP.md.example`: `- Loop outcome:`, `- Required verification:`,
 `- No-new-signal rationale:`. At least one of the
 signal-outcome labels must contain a meaningful outcome before merge or cleanup.
 Custom headings, bare label lines without `- ` and `:`, or equivalent prose can
-support the explanation, but they do not satisfy the gate by themselves. The
-`Appendix: Compact Single-Slice Variant` in `LOOP.md.example` keeps every
-mechanical label and passes the same `--lint` check.
+support the explanation, but they do not satisfy the gate by themselves. Both
+the compact default packet and `Appendix: Full Multi-Slice Variant` in
+`LOOP.md.example` keep every mechanical label and pass the same `--lint` check.
 
 Merge packets must include a `- Fresh analyzer:` row; `deferred - <reason>` is
 accepted as a non-blocking WARNING so analyzer infrastructure failures are
@@ -511,6 +511,264 @@ roadmap substance into the execution project, pause the feature loop and fix the
 scratchpad before continuing. Classify the miss in `.orbit/loop.md` final
 distillation and update `harness-signals/` only when existing guidance did not
 make the gate clear.
+
+### Loop Packet Escalation
+
+`LOOP.md.example` leads with the compact single-slice packet because most
+feature loops should not carry multi-slice ceremony by default. Escalate to the
+full multi-slice packet in `LOOP.md.example` when the slice has any of these
+properties: multi-slice feature, parallel workers, topology-relevant diff,
+product-contract change, or release scope.
+
+Escalated loops use the full packet, the reviewer persona selected by the
+`Root Routing` table, and a fresh post-feature analyzer before merge. Otherwise,
+use the compact packet, the reviewer selected by the routing table when that
+table requires one, and record the no-analysis rationale in the final packet
+when skipping the analyzer.
+
+Packet tiering reduces coordination ceremony only. It never tiers down TDD,
+the verification evidence required by the final branch diff, retained topology
+proof when required, or session archive requirements.
+
+## E2E Readiness And Resource Pool
+
+This section is for reading shared E2E provider state and existing artifacts
+only. Agents must not run `composer test:e2e*` commands. Normal feature
+completion uses retained topology proof instead of prepared E2E.
+
+The E2E provider pools are shared across every Orbit worktree on this machine.
+Worktrees symlink `.env.e2e` back to the main checkout, so provider selection,
+runner capacity, lease directories, and host pools are shared state. Read the
+active providers from `.env.e2e`, not from hard-coded hostnames: Docker feature
+tests use `ORBIT_E2E_DOCKER_TEST_RUNNERS`, and Incus preparation/topology work
+uses the configured Incus host variables such as `ORBIT_E2E_INCUS_HOSTS` and
+`ORBIT_E2E_INCUS_HOST_SLOTS`.
+
+Active `orbit-e2e` containers, networks, volumes, VMs, or lease files on those
+configured providers are normal while other features run in other worktrees.
+Resource existence or container count alone is not a stale-resource signal.
+
+When inspecting a user-run E2E lane in a worktree:
+
+1. `composer e2e:preflight` — verifies the configured Incus host is
+   reachable. This is a manual diagnostic command; do not run it as an agent
+   unless the task is retained topology setup rather than E2E testing.
+
+2. Treat the provider pool as a blocking lease pool. If the user reports a long
+   wait at startup, it usually means every configured slot is currently leased
+   by another worktree. Do not reap merely because resources exist on a
+   provider.
+
+3. Use host diagnostics only after a wait exceeds
+   `ORBIT_E2E_SLOT_WAIT_SECONDS`, or when recovering from an interrupted run.
+   Derive Docker hosts from `.env.e2e`:
+
+   ```bash
+   set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a
+
+   printf '%s\n' "${ORBIT_E2E_DOCKER_TEST_RUNNERS:-}" \
+     | tr ',' '\n' \
+     | while IFS=: read -r host slots container_cap; do
+         [ -n "$host" ] || continue
+
+         if [ "$host" = "local" ]; then
+           docker ps \
+             --filter "name=orbit-e2e" \
+             --format '{{.Names}}\t{{.Status}}'
+         else
+           DOCKER_HOST="ssh://$host" docker ps \
+             --filter "name=orbit-e2e" \
+             --format '{{.Names}}\t{{.Status}}'
+         fi
+       done
+   ```
+
+   Interpret output as context only. The resources may belong to live runs from
+   other worktrees.
+
+4. If the shared pool is busy, report that the user-run command can wait or
+   reduce only that command's temporary demand. For Docker, the user can pass a
+   smaller `ORBIT_E2E_DOCKER_TEST_RUNNERS` value or
+   `ORBIT_E2E_PARALLEL_PROCESSES=<n>` in the command environment. Do not commit
+   or permanently edit `.env.e2e` just to make one worktree smaller; that file
+   controls every worktree.
+
+5. Reaping is destructive recovery, not pre-run hygiene. Use the dry run only
+   as inventory, and remember that its output can include legitimate resources
+   from other worktrees:
+
+   ```bash
+   composer e2e:reap-docker
+   composer e2e:reap-incus
+   ```
+
+   Run with `--force` only after confirming the resources belong to an
+   interrupted run you own, or after confirming no live E2E process can be using
+   the configured providers:
+
+   ```bash
+   composer e2e:reap-docker -- --force
+   ```
+
+   Do not use `--older-than=0m` on shared providers unless intentionally
+   deleting retained or abandoned resources you own.
+
+The slot pool is a blocking lease pool: workers that cannot lease a slot
+wait, they do not fail loudly. A long hang at the start of `composer
+test:e2e:docker` or `composer test:e2e:incus` usually means the configured
+pool is fully booked by another worktree, not a real failure.
+
+## Retained Incus Inspection Gate
+
+Retained Incus is the mandatory hands-on verification step whenever the change
+touches real VM/node behavior: OS package installs, role baselines, doctor
+restore, tool repair, SSH/sudo, WireGuard, systemd, host mutation, gateway API
+shims, source-mounted checkout behavior, or anything that previously failed
+only inside an Incus topology.
+
+Any feature that creates or changes a CLI command must also pass a retained
+ingress VM Solo-terminal gate before live/release-candidate deployment. This
+includes new commands, flags, options, arguments, human output, JSON schemas,
+validation, prompts, command side effects, and command-family behavior.
+CLI retained topology proof must run in a Solo terminal, not only through a
+detached host command or captured artifact. Keep that Solo terminal open
+through feature completion and leave it available afterward. The preserved
+terminal lets the user later validate the addressed CLI commands and their output.
+The retained topology may be reaped after feature completion, but the Solo
+terminal stays preserved as the validation anchor.
+
+For CLI changes, use this ordering:
+
+1. Create or update focused Pest tests for the command contract.
+2. Implement the smallest slice that makes the focused command behavior work.
+3. Spawn or request a Solo terminal.
+4. Acquire a retained Incus topology with the relevant source-mounted VM.
+5. Verify which Orbit launcher will be exercised. For source-mounted retained
+   topology proof, run the command through the source checkout
+   (`./apps/cli/orbit` from `/home/orbit/orbit-run`) or prove that
+   `/usr/local/bin/orbit` resolves to that source checkout. For
+   release-candidate or live-node proof, use the installed binary path being
+   validated.
+6. Open an interactive shell inside the relevant retained VM, usually the
+   ingress or operator VM, before running the changed command. The Solo
+   terminal should land at `/home/orbit/orbit-run` inside the VM so the user can
+   watch progress, spinners, blinking indicators, prompts, and streaming output
+   while the command runs.
+7. Run or request CLI reviewer PTY frame analysis from the same runtime context
+   before asking the user to inspect human UX/output. For retained Incus proof,
+   prefer running the capture script inside the Solo terminal shell attached to
+   the target VM. The reviewer inspects `summary.txt`, `chunks.jsonl`, and
+   `transcript.txt` for cadence, liveness, skipped frames, wrapping, ANSI
+   framing, and final shape.
+8. Prove the observed human output, JSON output, prompts, failure paths, and
+   side effects that changed.
+9. Give the user a chance to inspect and confirm the VM-observed CLI behavior
+    only after the reviewer has summarized the PTY confidence basis or exact
+    remaining mismatch.
+10. Then run broader quality or release-candidate flow when applicable.
+
+Do not spend the live topology or release-candidate path on a CLI change before
+this retained VM proof and user verification point. Do not treat retained Incus
+as optional "extra confidence" for those changes. The retained check is the
+operator-facing proof gate for feature completion.
+
+Acquire the topology from the implementation worktree and source-mount only the
+roles that need the current checkout:
+
+```bash
+composer e2e:incus -- --start --topology=<kind> --checkout-roles=<roles> --json
+```
+
+For CLI command changes, use the topology that creates a dedicated ingress VM.
+Source-mount the ingress role, plus only the other roles whose current checkout
+is needed for the command under test:
+
+```bash
+composer e2e:incus -- --start \
+  --topology=operator_gateway_app-dev_app-prod_ingress \
+  --checkout-roles=ingress \
+  --json
+```
+
+Identify the target instance from the retained topology output or manifest, then
+open that retained VM in a Solo terminal and stop at a VM shell prompt before
+starting the command. Run the exact changed command path from
+`/home/orbit/orbit-run`, covering human and `--json` output when either contract
+is affected, plus the relevant failure or prompt path. Record the launcher proof
+(`command -v orbit`, `readlink -f`, or the explicit `./apps/cli/orbit` source
+launcher command) next to the observed output.
+
+A host-wrapped one-shot command such as
+`ssh <host> 'incus exec <instance> -- ... <orbit command>'` is useful for
+machine transcripts, JSON capture, or fallback diagnosis, but it does not
+satisfy the retained Solo-terminal inspection gate for human rendering. The
+gate is only satisfied when the Solo terminal is attached inside the VM before
+the human command starts. If the current Solo environment cannot open that
+interactive VM shell, use the configured Incus host with `incus exec` as a
+fallback and report that the user-inspection gate was downgraded.
+
+Inspect through the configured Incus host from `.env.e2e`; do not assume a
+host name unless the environment says so. Typical Beast-backed inspection looks
+like:
+
+```bash
+ssh beast 'incus list --format csv -c ns | grep <retained-id> || true'
+ssh -tt beast 'incus exec <instance> -- sudo -iu orbit bash -lc "cd /home/orbit/orbit-run && exec bash -i"'
+# then run inside the VM shell:
+./apps/cli/orbit <command>
+ssh beast 'incus exec <instance> -- bash -lc "<host command such as gh --version>"'
+```
+
+For source-mounted Incus topologies, `/home/orbit/orbit` is the synced source
+mount and `/home/orbit/orbit-run` is the VM-local runtime mirror. Run Orbit
+commands from `/home/orbit/orbit-run` unless explicitly testing the source
+mount itself. After local worktree edits, refresh a retained topology with:
+
+```bash
+composer e2e:incus -- --sync --id=<id>
+```
+
+That sync is one-way from the implementation worktree to the runner-host source
+mount and then to each recorded VM runtime mirror. It transfers filesystem
+deltas for included files to the runner host, not only Git-dirty files, and then
+refreshes the VM-local runtime mirrors. Keep the implementation worktree as the
+source of truth. VM-side edits in `/home/orbit/orbit-run` are scratch work and
+are overwritten by the next sync; VM-side edits in `/home/orbit/orbit` mutate
+the runner-host copy, not the local worktree.
+
+`--sync` refreshes files on disk but does not reload the long-running gateway
+API container. After a sync, the gateway lease container keeps serving the
+pre-sync code and returns HTTP 500 on every gateway call (including paths the
+change never touched, e.g. single-node `doctor`), which reads as a product
+regression but is not one. Restart the gateway lease containers on the gateway
+VM before re-verifying:
+
+```bash
+ssh <incus-host> 'incus exec <gateway-instance> -- bash -lc \
+  "docker restart orbit-gateway-e2e-topology-lease-http orbit-gateway-e2e-topology-lease-tls"'
+```
+
+Then re-run the changed command. A 500 on an unrelated gateway path right after
+`--sync` is a stale-container signal, not a code defect — restart first, then
+classify.
+
+Record the retained topology id, topology kind, checkout roles, inspected
+instances, Solo terminal or fallback session, commands run, and observed result
+in the Solo report. If you mutate state for a focused check, isolate unrelated
+prepared-state drift first and say what was isolated.
+
+After feature completion, release and verify retained topology cleanup:
+
+```bash
+composer e2e:incus -- --stop --id=<id> --json
+ssh <incus-host> 'incus list --format csv -c ns | grep <id> || true'
+```
+
+If `--stop` misses owned instances because the retained manifest is incomplete,
+delete only the owned leftovers by exact instance name, verify the grep is
+empty, and report the cleanup anomaly. Do not close or archive the Solo terminal
+as part of topology cleanup; preserve it for later user validation of the
+command address/output transcript.
 
 ## Feature Cleanup
 

@@ -114,11 +114,9 @@ Feature roadmap scratchpad: <solo://... or none, single-slice>
   without reconstructing intent from the conversation.
 - Active `.orbit/` is worktree-local session state. Archive completed active
   state with `bin/orbit-session-archive` before worktree cleanup and before
-  rewriting `.orbit/loop.md` for a new slice; `HARNESS.md` Session Archives is
-  the authority for archive policy and naming. Archive directories use
-  `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not use
-  compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory
-  names.
+  rewriting `.orbit/loop.md` for a new slice; `HARNESS.md` -> `Session
+  Archives` owns archive policy, and `bin/orbit-session-archive` generates and
+  enforces the archive directory name.
 
 ## Implementation Handoff
 

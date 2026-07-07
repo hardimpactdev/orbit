@@ -958,15 +958,18 @@ it('keeps e2e test commands manual only across default gates and skills', functi
 });
 
 it('requires retained cli topology proof to keep the solo terminal open', function (): void {
+    $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
 
-    expect($implementingFeaturesSkill)
+    expect($harness)
         ->toContain('CLI retained topology proof must run in a Solo terminal')
         ->toContain('Keep that Solo terminal open')
         ->toContain('through feature completion')
         ->toContain('leave it available afterward')
         ->toContain('addressed CLI commands')
-        ->toContain('their output');
+        ->toContain('their output')
+        ->and($implementingFeaturesSkill)
+        ->toContain('HARNESS.md` -> `Retained Incus Inspection Gate');
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {

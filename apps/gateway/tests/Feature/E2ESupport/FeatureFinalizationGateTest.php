@@ -1396,14 +1396,27 @@ it('lints a missing packet file as blocked', function (): void {
     }
 });
 
-it('documents the compact single-slice variant and session archive tool in the loop template', function (): void {
+it('documents the compact default and full multi-slice appendix in the loop template', function (): void {
     $template = (string) file_get_contents(repo_path('LOOP.md.example'));
 
+    $compactPosition = strpos($template, '- Single-slice: yes -');
+    $fullAppendixPosition = strpos($template, '## Appendix: Full Multi-Slice Variant');
+
     expect($template)
-        ->toContain('Compact Single-Slice Variant')
+        ->toContain('## Appendix: Full Multi-Slice Variant')
+        ->not
+        ->toContain('## Appendix: Compact Single-Slice Variant')
         ->toContain('- Single-slice: yes -')
         ->toContain('- Parallelization: serial -')
-        ->toContain('bin/orbit-session-archive');
+        ->toContain('- Active slice start gate:')
+        ->toContain('- Parallelization scan:')
+        ->toContain('bin/orbit-session-archive')
+        ->and($compactPosition)
+        ->toBeInt()
+        ->and($fullAppendixPosition)
+        ->toBeInt()
+        ->and($compactPosition)
+        ->toBeLessThan($fullAppendixPosition);
 });
 
 it('finalization gate blocks lanes-having packet with zero healthy captures and no waiver', function (): void {

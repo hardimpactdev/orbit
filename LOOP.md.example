@@ -5,6 +5,153 @@ it to `.orbit/loop.md`, keep that local copy focused on the active slice, and
 do not commit active `.orbit` state. Completed session archives under
 `.orbit/sessions/` are committed so other machines can inspect them.
 
+Use the compact packet below by default. Escalate to the full multi-slice
+variant in `Appendix: Full Multi-Slice Variant` when HARNESS.md routing calls
+for it.
+
+## Feature Context
+
+- Scratchpad: <required `solo://...` feature roadmap for multi-slice features;
+  use `none, single-slice` only when the request truly fits one slice>
+- Worktree:
+- Branch:
+- Completed slices:
+  - <slice>: <one-line outcome>
+- Current slice:
+
+## Done Contract
+
+- Single-slice: yes - <why this request fits one slice>
+- Parallelization: serial - <concrete dependency, shared-state,
+  provider-capacity, or merge-order reason>
+- Done when:
+  -
+- Evidence:
+  -
+- Reviewer checks:
+  -
+- Stop if:
+  -
+- Pivot if:
+  -
+
+## Progress
+
+- Tried:
+  Result:
+  Next:
+
+## Candidate Signals While Working
+
+Record possible loop-improvement signals as they happen. The post-feature
+analysis classifies this list; it should not have to reconstruct the session
+from scattered artifacts.
+
+- <time/source>: <candidate signal, evidence pointer, and current status>
+
+## Blockers
+
+- <blocker, owner, and unblock condition>
+
+## Evidence Links
+
+- <command, result, artifact, retained topology id, Solo terminal/session,
+  commit, or report>
+
+## Harness Signals
+
+- Searched:
+- Created or updated:
+- Deferred follow-up:
+
+## Final Distillation
+
+Fill this before commit, merge-back, session archive, or final completion
+reporting for any non-trivial feature loop. Use `not applicable` only for truly
+tiny local changes with no workers, reviewer findings, retained terminal/PTY
+evidence, quality gate artifacts, or human steering.
+
+This section is the canonical local final packet. Scratchpads, reviewer output,
+and final reports should point back here instead of becoming parallel final
+packets. After the slice or feature loop is complete, archive the active
+`.orbit/` session into the persistent, committed project archive home before
+worktree cleanup or before rewriting `.orbit/loop.md` for a new slice. The
+default archive home is the primary checkout's
+`.orbit/sessions/<timestamp-feature-slug>/`. `bin/orbit-session-archive`
+generates and enforces the archive directory name; run it instead of
+hand-writing timestamps, and see HARNESS.md Worktree-Local State for the
+naming contract. Preserve every active `.orbit/` entry except `.orbit/sessions/`,
+including `loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, and
+`agent-sessions/` output from
+lane-close `bin/orbit-agent-session-capture` runs. `bin/orbit-session-archive`
+copies staged captures byte-for-byte and falls back to archive-time extraction
+only when no staged captures exist. Provider session archives are grouped by
+LLM and process/session slug and contain
+`manifest.json`, `usage.json`, `messages.jsonl`, and raw provider files for
+supported providers. Antigravity remains an explicit unsupported/missing
+manifest entry or waiver until a reliable local session-file contract is known.
+`harness-signals/` remains curated distilled learning, not raw session storage.
+
+Keep the exact Markdown bullet-label shape below.
+`bin/orbit-feature-finalization-check` uses those list labels as the mechanical
+merge-boundary contract. Equivalent custom headings, bare label lines without
+`- ` and `:`, or prose do not replace them. Before merge or cleanup, at least
+one of `- Accepted durable updates:`, `- Rejected or already-covered signals:`,
+`- Deferred follow-ups:`, or `- No-new-signal rationale:` must contain a
+meaningful value.
+
+- Loop outcome:
+  - <complete | blocked | complete + loop improvement>
+- Required verification:
+  - Retained topology proof: <passed | blocked | not applicable> -
+    <retained topology id/kind plus checkout roles or inspected nodes, or host
+    topology kind=host-macos; host=<hostname>; os=<Darwin/sw_vers>; command=<exact command>;
+    evidence=<terminal/session/artifact/Computer Use evidence>; blocker, or reason>
+  - `composer quality-check`: <passed | blocked | not applicable> -
+    <command/evidence, blocker, or reason>
+- Finalization gate fit:
+  - <why the branch diff makes docs-lint, quality-check, and retained topology
+    proof passed, blocked, or not applicable; see HARNESS.md Merge Boundary
+    Gate>
+- Distillation packet:
+  - Location: `.orbit/loop.md`
+  - Includes objective/final diff:
+  - Includes worker/reviewer/terminal/evidence pointers:
+  - Includes orchestrator steering notes:
+- Agent session capture waivers: <none | provider(s) and reason for missing or unsupported lane-close capture>
+- Fresh analyzer:
+  - Persona:
+  - Solo process or analyzer:
+  - Verdict:
+- Candidate signals:
+  - <candidate -> correct-noop | missed | redundant | wrong-target | defer |
+    promote | already-covered | reject -> reason>
+- Accepted durable updates:
+  - <guardrail target, record, verification, or none>
+- Rejected or already-covered signals:
+  - <candidate, rationale, existing coverage when already-covered, and note if
+    rejected because it was a one-off handoff, reviewer catch fixed before
+    merge, stale historical artifact, or ordinary feature work>
+- Deferred follow-ups:
+  - <follow-up, owner, trigger, or none>
+- No-new-signal rationale:
+  - <why local cleanup, existing guardrails, already-landed fixes, or rejection
+    was enough>
+
+Validate either variant before merge with:
+
+```bash
+bin/orbit-feature-finalization-check --lint .orbit/loop.md
+```
+
+---
+
+## Appendix: Full Multi-Slice Variant
+
+Use this variant for multi-slice features, parallel workers, topology-relevant
+diffs, product-contract changes, release scope, or any other HARNESS.md routing
+case that escalates beyond the compact packet.
+
 When a feature has multiple slices, archive the completed active `.orbit/`
 session into the persistent project archive home before rewriting
 `.orbit/loop.md` at the start of the next slice. The default archive home is
@@ -18,8 +165,7 @@ in the feature scratchpad and session archives. Keep code history in Git.
 
 ## Feature Context
 
-- Scratchpad: <required `solo://...` feature roadmap for multi-slice features;
-  use `none, single-slice` only when the request truly fits one slice>
+- Scratchpad: <required `solo://...` feature roadmap for multi-slice features>
 - Worktree:
 - Branch:
 - Completed slices:
@@ -152,39 +298,3 @@ meaningful value.
 - No-new-signal rationale:
   - <why local cleanup, existing guardrails, already-landed fixes, or rejection
     was enough>
-
----
-
-## Appendix: Compact Single-Slice Variant
-
-Use the full template above for multi-slice loops. When the request truly fits
-one slice, you may collapse the start gate and the parallelization scan to one
-line each while keeping every mechanical label the finalization gate keys on.
-
-In the compact variant, replace the `Active slice start gate` and
-`Parallelization scan` blocks under `## Done Contract` with exactly these two
-lines:
-
-- Single-slice: yes - <why this request fits one slice>
-- Parallelization: serial - <concrete dependency, shared-state,
-  provider-capacity, or merge-order reason>
-
-Everything else keeps the same labels as the full template. The gate still
-requires, verbatim: `## Final Distillation`, `- Loop outcome:`,
-`- Required verification:` with the `Retained topology proof` and
-`` `composer quality-check` `` rows, `- Fresh analyzer:` (a value of
-`deferred - <reason>` is accepted with a warning), and at least one meaningful
-value among `- Accepted durable updates:`,
-`- Rejected or already-covered signals:`, `- Deferred follow-ups:`, or
-`- No-new-signal rationale:`. The `- Loop outcome:` value must be exactly one
-of `complete`, `blocked`, or `complete + loop improvement`.
-
-Archiving is unchanged: `bin/orbit-session-archive` generates the archive
-directory name; run it instead of hand-writing timestamps, and see the tool's
-`--help` for slug and destination options.
-
-Validate either variant before merge with:
-
-```bash
-bin/orbit-feature-finalization-check --lint .orbit/loop.md
-```
