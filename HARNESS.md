@@ -41,14 +41,32 @@ The root harness is intentionally incremental. Not in scope yet:
 
 - Autonomous merge or reviewer-agent automation
 - Customer/product harness (fleet/workspace agent docs)
-- Automation loop (nightly distillation, continuous session mining)
+- Unattended or scheduled continuous session mining
 - Reviewer-persona framework beyond the focused personas justified by real
   feature-loop signals
 
 `LOOP.md.example`, `.orbit/loop.md`, `.orbit/sessions/`,
 `.orbit/quality-gates/`, `.orbit/evidence/`, and `HARNESS_SIGNALS.md` define
-the manual feedback-loop layer. Later slices may add or refine reviewer
-personas and automation only after the manual loop is stable.
+the manual feedback-loop layer. Human-invoked batch loop review is sanctioned
+through `.agents/skills/loop-review/SKILL.md`: it reads the session index and
+selected archives, then writes findings for human adjudication through the
+existing `HARNESS_SIGNALS.md` promotion gate. It does not edit guardrails,
+skills, signal records, product docs, tests, or tooling.
+
+The harness deliberately does not build these aggregate-analysis variants:
+
+- A/B infrastructure: Orbit does not have enough comparable loop traffic, and
+  observe-mode before/after comparison is enough for current harness changes.
+- Embedding or clustering pipelines: the deterministic session index plus a
+  focused LLM read is a better fit at the current archive scale.
+- Metrics dashboards: `.orbit/sessions/index.json` plus the loop-review metrics
+  section is enough until the manual review proves a stronger need.
+- Autonomous guardrail promotion or unattended mining: human launch approval is
+  retained, and the poisoned-distillation incident remains the local proof that
+  promotion needs human adjudication.
+
+Later slices may add or refine reviewer personas. Any automated loop needs a
+new explicit decision after human-invoked batch review proves stable.
 
 ## Worktree-Local State
 
@@ -154,22 +172,24 @@ Start at the monorepo root and read in this order:
    `bin/orbit-prepare-worktree` when it seeds `.orbit/loop.md`
 6. **`.orbit/loop.md`**: current slice state after worktree preparation; never
    treat absence in a fresh checkout as a product gap
-7. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
-8. **`harness-signals/`**: curated signal records to search for prior
+7. **`.orbit/sessions/index.json`**: compact first stop for cross-session
+   questions; use it to choose which persisted archives need direct inspection
+8. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
+9. **`harness-signals/`**: curated signal records to search for prior
    occurrences, guardrail changes, and recurrence checks; start with
    `harness-signals/index.json` when present, then open matching records; not
    raw session archives under `.orbit/sessions/`
-9. **`.agents/skills/`**: domain procedures activated just-in-time per change
+10. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
-10. **`.agents/review-personas/`**: focused review checklists activated by the
+11. **`.agents/review-personas/`**: focused review checklists activated by the
    routing table after implementation evidence exists
-11. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
+12. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
    changes and reversals
-12. **`apps/docs/content/`**: product authority (behavior contracts, not
+13. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-13. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+14. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-14. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
+15. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
    E2E lanes across apps/packages
 
 ## Search Hygiene
@@ -181,9 +201,10 @@ narrow to the owning app/package or generated index that answers the question.
 Use default `rg` from the repository root for normal discovery. It respects the
 repo ignore rules that keep stale worktrees, active `.orbit/` state, vendor
 trees, build outputs, app storage, caches, and retained artifacts out of the
-ordinary agent search path. Tracked `.orbit/sessions/` archives remain trace
-evidence and should be opened only when named by the packet, prompt, or review
-route. Prefer scoped searches once the owner is known:
+ordinary agent search path. For cross-session questions, start with
+`.orbit/sessions/index.json`; tracked `.orbit/sessions/` archives remain trace
+evidence and should be opened only when named by the packet, prompt, review
+route, or index facets. Prefer scoped searches once the owner is known:
 
 ```bash
 rg -n "<pattern>" AGENTS.md HARNESS.md apps/docs/content .agents/skills
@@ -207,8 +228,9 @@ rg --hidden --glob '!/.worktrees/**' --glob '!/.orbit/**' \
 Generated LLM-facing artifacts are allowed when they are the intended route:
 `apps/docs/content/generated/command-catalog.json`,
 `apps/docs/content/generated/monorepo-unit-map.json`, and
-`harness-signals/index.json`. Open them deliberately instead of letting a
-catch-all search mix generated contracts with source code.
+`harness-signals/index.json`, and `.orbit/sessions/index.json`. Open them
+deliberately instead of letting a catch-all search mix generated contracts with
+source code.
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
 authority and are not the durable harness.
