@@ -280,20 +280,21 @@ it('uses Mago for analysis, linting, and formatting', function (): void {
     }
 });
 
-it('keeps the aggregate quality gate composer scripts quiet', function (): void {
+it('disables the Composer process timeout for aggregate quality gate scripts', function (): void {
     $composer = json_decode(
         file_get_contents(repo_path('composer.json')) ?: '',
         associative: true,
         flags: JSON_THROW_ON_ERROR,
     );
 
-    // The gate keeps every subgate while capping background fan-out to the host.
     expect($composer['scripts']['quality-check'])
         ->toBe([
+            'Composer\\Config::disableProcessTimeout',
             'bin/quality-check.sh',
         ])
         ->and($composer['scripts']['quality-check:fix'])
         ->toBe([
+            'Composer\\Config::disableProcessTimeout',
             'bin/quality-check.sh --fix',
         ]);
 });

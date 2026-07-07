@@ -213,9 +213,11 @@
             "cd apps/e2e && vendor/bin/rector process"
         ],
         "quality-check": [
+            "Composer\\Config::disableProcessTimeout",
             "bin/quality-check.sh"
         ],
         "quality-check:fix": [
+            "Composer\\Config::disableProcessTimeout",
             "bin/quality-check.sh --fix"
         ],
         "quality-gate:analyze": [
