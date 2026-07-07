@@ -6,10 +6,10 @@ namespace App\Services\Operations;
 
 final class LocalFleetUpdateVerifyBinPath
 {
-    public static function fromPayload(mixed $binPath): string
+    public static function fromPayload(mixed $binPath, string $binaryName = 'orbit'): string
     {
         if ($binPath === null) {
-            return 'orbit';
+            return $binaryName;
         }
 
         if (! is_string($binPath)) {
@@ -18,7 +18,7 @@ final class LocalFleetUpdateVerifyBinPath
 
         $binPath = trim($binPath);
 
-        if ($binPath === '' || str_contains($binPath, "\0") || basename($binPath) !== 'orbit') {
+        if ($binPath === '' || str_contains($binPath, "\0") || basename($binPath) !== $binaryName) {
             throw self::invalid();
         }
 

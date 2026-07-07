@@ -14,6 +14,10 @@ use RuntimeException;
 
 class GatewayCliArtifactRelay
 {
+    private const string ARTIFACT_KIND_CLI = 'cli';
+
+    private const string ARTIFACT_KIND_AGENT = 'agent';
+
     public function __construct(
         private readonly ?FleetUpdateTargetSelector $targets = null,
     ) {}
@@ -23,7 +27,31 @@ class GatewayCliArtifactRelay
      */
     public function artifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): array
     {
-        $artifact = $this->manifestArtifact($plan, $platform);
+        return $this->artifactForKind($operationRun, $plan, self::ARTIFACT_KIND_CLI, $platform);
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string}|null
+     */
+    public function agentArtifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): ?array
+    {
+        if (! $this->planHasArtifact($plan, self::ARTIFACT_KIND_AGENT, $platform)) {
+            return null;
+        }
+
+        return $this->artifactForKind($operationRun, $plan, self::ARTIFACT_KIND_AGENT, $platform);
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string}
+     */
+    private function artifactForKind(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        string $artifactKind,
+        string $platform,
+    ): array {
+        $artifact = $this->manifestArtifact($plan, $artifactKind, $platform);
 
         if (! $this->shouldRelayArtifact($artifact)) {
             return [
@@ -33,10 +61,10 @@ class GatewayCliArtifactRelay
             ];
         }
 
-        $this->stageArtifact($operationRun, $platform, $artifact);
+        $this->stageArtifact($operationRun, $platform, $artifact, $artifactKind);
 
         return [
-            'url' => $this->downloadUrl($operationRun, $platform, $artifact['sha256']),
+            'url' => $this->downloadUrl($operationRun, $artifactKind, $platform, $artifact['sha256']),
             'sha256' => $artifact['sha256'],
             'source_url' => $artifact['url'],
         ];
@@ -46,19 +74,10 @@ class GatewayCliArtifactRelay
     {
         $artifacts = [];
 
-        foreach (array_keys($plan->cli_artifacts) as $platform) {
-            if (! is_string($platform)) {
-                continue;
-            }
-
-            $artifact = $this->manifestArtifact($plan, $platform);
-
-            if (! $this->shouldRelayArtifact($artifact)) {
-                continue;
-            }
-
-            $artifacts[$platform] = $artifact;
-        }
+        $artifacts = [
+            ...$this->artifactsToRelay($plan, self::ARTIFACT_KIND_CLI),
+            ...$this->artifactsToRelay($plan, self::ARTIFACT_KIND_AGENT),
+        ];
 
         if ($artifacts === []) {
             return;
@@ -66,8 +85,10 @@ class GatewayCliArtifactRelay
 
         $this->cleanupExpired();
 
-        foreach ($artifacts as $platform => $artifact) {
-            $this->stageArtifact($operationRun, $platform, $artifact);
+        foreach ($artifacts as $artifactKey => $artifact) {
+            [$artifactKind, $platform] = explode(separator: ':', string: $artifactKey, limit: 2);
+
+            $this->stageArtifact($operationRun, $platform, $artifact, $artifactKind);
         }
     }
 
@@ -93,21 +114,25 @@ class GatewayCliArtifactRelay
         }
     }
 
-    public function downloadPath(OperationRun $operationRun, string $platform, ?string $token): string
-    {
+    public function downloadPath(
+        OperationRun $operationRun,
+        string $artifactKind,
+        string $platform,
+        ?string $token,
+    ): string {
         $plan = $operationRun->updatePlan()->first();
 
         if (! $plan instanceof OperationUpdatePlan) {
             throw new RuntimeException('The update plan for this operation was not found.');
         }
 
-        $artifact = $this->manifestArtifact($plan, $platform);
+        $artifact = $this->manifestArtifact($plan, $artifactKind, $platform);
 
-        if (! $this->tokenMatches($operationRun, $platform, $artifact['sha256'], $token)) {
+        if (! $this->tokenMatches($operationRun, $artifactKind, $platform, $artifact['sha256'], $token)) {
             throw new RuntimeException('The update artifact token is invalid.');
         }
 
-        $path = $this->artifactPath($operationRun, $platform);
+        $path = $this->artifactPath($operationRun, $artifactKind, $platform);
 
         if (! File::isFile($path)) {
             throw new RuntimeException('The update artifact has not been staged on this gateway.');
@@ -121,9 +146,13 @@ class GatewayCliArtifactRelay
     /**
      * @param  array{url: string, sha256: string}  $artifact
      */
-    private function stageArtifact(OperationRun $operationRun, string $platform, array $artifact): void
-    {
-        $path = $this->artifactPath($operationRun, $platform);
+    private function stageArtifact(
+        OperationRun $operationRun,
+        string $platform,
+        array $artifact,
+        string $artifactKind = self::ARTIFACT_KIND_CLI,
+    ): void {
+        $path = $this->artifactPath($operationRun, $artifactKind, $platform);
 
         if (File::isFile($path) && hash_file('sha256', $path) === strtolower($artifact['sha256'])) {
             return;
@@ -137,7 +166,7 @@ class GatewayCliArtifactRelay
             $response = Http::timeout($this->downloadTimeoutSeconds())->get($artifact['url']);
 
             if (! $response->successful()) {
-                throw new RuntimeException("Could not download CLI artifact [{$artifact['url']}].");
+                throw new RuntimeException("Could not download {$artifactKind} artifact [{$artifact['url']}].");
             }
 
             File::put($temporaryPath, $response->body());
@@ -152,18 +181,25 @@ class GatewayCliArtifactRelay
     /**
      * @return array{url: string, sha256: string}
      */
-    private function manifestArtifact(OperationUpdatePlan $plan, string $platform): array
+    private function manifestArtifact(OperationUpdatePlan $plan, string $artifactKind, string $platform): array
     {
+        $this->assertSafeArtifactKind($artifactKind);
         $this->assertSafePlatform($platform);
 
-        $artifact = $plan->cli_artifacts[$platform] ?? null;
+        $artifact = match ($artifactKind) {
+            self::ARTIFACT_KIND_CLI => $plan->cli_artifacts[$platform] ?? null,
+            self::ARTIFACT_KIND_AGENT => (($plan->agent_artifacts ?? []))[$platform] ?? null,
+            default => null,
+        };
 
         if (
             ! is_array($artifact)
             || ! is_string($artifact['url'] ?? null)
             || ! is_string($artifact['sha256'] ?? null)
         ) {
-            throw new RuntimeException("Update plan does not contain a CLI artifact for platform [{$platform}].");
+            throw new RuntimeException(
+                "Update plan does not contain a {$artifactKind} artifact for platform [{$platform}].",
+            );
         }
 
         return [
@@ -172,12 +208,16 @@ class GatewayCliArtifactRelay
         ];
     }
 
-    private function downloadUrl(OperationRun $operationRun, string $platform, string $sha256): string
-    {
+    private function downloadUrl(
+        OperationRun $operationRun,
+        string $artifactKind,
+        string $platform,
+        string $sha256,
+    ): string {
         $baseUrl = $this->downloadBaseUrl();
-        $token = $this->token($operationRun, $platform, $sha256);
+        $token = $this->token($operationRun, $artifactKind, $platform, $sha256);
 
-        return "{$baseUrl}/api/update/artifacts/{$operationRun->id}/cli/{$platform}?token={$token}";
+        return "{$baseUrl}/api/update/artifacts/{$operationRun->id}/{$artifactKind}/{$platform}?token={$token}";
     }
 
     private function downloadBaseUrl(): string
@@ -270,17 +310,23 @@ class GatewayCliArtifactRelay
         return $this->isLocalOnlyBaseUrl($artifact['url']);
     }
 
-    private function tokenMatches(OperationRun $operationRun, string $platform, string $sha256, ?string $token): bool
-    {
-        return is_string($token) && hash_equals($this->token($operationRun, $platform, $sha256), $token);
+    private function tokenMatches(
+        OperationRun $operationRun,
+        string $artifactKind,
+        string $platform,
+        string $sha256,
+        ?string $token,
+    ): bool {
+        return is_string($token) && hash_equals($this->token($operationRun, $artifactKind, $platform, $sha256), $token);
     }
 
-    private function token(OperationRun $operationRun, string $platform, string $sha256): string
+    private function token(OperationRun $operationRun, string $artifactKind, string $platform, string $sha256): string
     {
         return hash_hmac(
             'sha256',
             implode('|', [
                 $operationRun->id,
+                $artifactKind,
                 $platform,
                 strtolower($sha256),
             ]),
@@ -295,11 +341,14 @@ class GatewayCliArtifactRelay
         return $key !== '' ? $key : 'orbit-update-artifacts';
     }
 
-    private function artifactPath(OperationRun $operationRun, string $platform): string
+    private function artifactPath(OperationRun $operationRun, string $artifactKind, string $platform): string
     {
+        $this->assertSafeArtifactKind($artifactKind);
         $this->assertSafePlatform($platform);
 
-        return $this->operationDirectory($operationRun)."/cli/{$platform}/orbit";
+        $file = $artifactKind === self::ARTIFACT_KIND_AGENT ? 'orbit-agent' : 'orbit';
+
+        return $this->operationDirectory($operationRun)."/{$artifactKind}/{$platform}/{$file}";
     }
 
     private function operationDirectory(OperationRun $operationRun): string
@@ -315,7 +364,14 @@ class GatewayCliArtifactRelay
     private function assertSafePlatform(string $platform): void
     {
         if (preg_match('/^[a-z0-9._-]+$/', $platform) !== 1) {
-            throw new RuntimeException("Unsupported CLI artifact platform [{$platform}].");
+            throw new RuntimeException("Unsupported update artifact platform [{$platform}].");
+        }
+    }
+
+    private function assertSafeArtifactKind(string $artifactKind): void
+    {
+        if (! in_array($artifactKind, [self::ARTIFACT_KIND_CLI, self::ARTIFACT_KIND_AGENT], strict: true)) {
+            throw new RuntimeException("Unsupported update artifact kind [{$artifactKind}].");
         }
     }
 
@@ -324,8 +380,46 @@ class GatewayCliArtifactRelay
         $actual = hash_file('sha256', $path);
 
         if ($actual !== strtolower($expected)) {
-            throw new RuntimeException("CLI artifact hash mismatch for [{$path}].");
+            throw new RuntimeException("Update artifact hash mismatch for [{$path}].");
         }
+    }
+
+    /**
+     * @return array<string, array{url: string, sha256: string}>
+     */
+    private function artifactsToRelay(OperationUpdatePlan $plan, string $artifactKind): array
+    {
+        $manifestArtifacts = match ($artifactKind) {
+            self::ARTIFACT_KIND_CLI => $plan->cli_artifacts,
+            self::ARTIFACT_KIND_AGENT => $plan->agent_artifacts ?? [],
+            default => [],
+        };
+        $artifacts = [];
+
+        foreach (array_keys($manifestArtifacts) as $platform) {
+            if (! is_string($platform)) {
+                continue;
+            }
+
+            $artifact = $this->manifestArtifact($plan, $artifactKind, $platform);
+
+            if (! $this->shouldRelayArtifact($artifact)) {
+                continue;
+            }
+
+            $artifacts["{$artifactKind}:{$platform}"] = $artifact;
+        }
+
+        return $artifacts;
+    }
+
+    private function planHasArtifact(OperationUpdatePlan $plan, string $artifactKind, string $platform): bool
+    {
+        return match ($artifactKind) {
+            self::ARTIFACT_KIND_CLI => is_array($plan->cli_artifacts[$platform] ?? null),
+            self::ARTIFACT_KIND_AGENT => is_array((($plan->agent_artifacts ?? []))[$platform] ?? null),
+            default => false,
+        };
     }
 
     private function cacheTtlSeconds(): int

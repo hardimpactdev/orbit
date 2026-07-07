@@ -44,6 +44,8 @@ it('downloads validates and exposes a release manifest from the configured GitHu
         )
         ->and($manifest->cliArtifacts['linux-amd64']['sha256'])
         ->toBe(str_repeat('b', 64))
+        ->and($manifest->agentArtifacts['linux-amd64']['sha256'])
+        ->toBe(str_repeat('e', 64))
         ->and($manifest->roleImages['orbit-websocket'])
         ->toBe('hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
         ->and($manifest->snapshot())
@@ -210,7 +212,9 @@ it('feeds the manifest resolver snapshot into the immutable update plan builder'
         ->and($snapshot->manifestSnapshot['schema_version'])
         ->toBe(1)
         ->and($snapshot->cliArtifacts['linux-amd64']['url'])
-        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64');
+        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64')
+        ->and($snapshot->agentArtifacts['linux-amd64']['url'])
+        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64');
 });
 
 function releaseManifestResolverRun(): OperationRun
@@ -239,6 +243,12 @@ function releaseManifestResolverFixture(array $overrides = []): array
             'linux-amd64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
                 'sha256' => str_repeat('b', 64),
+            ],
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
+                'sha256' => str_repeat('e', 64),
             ],
         ],
         'role_images' => [

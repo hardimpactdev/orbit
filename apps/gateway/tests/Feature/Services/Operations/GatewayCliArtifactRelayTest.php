@@ -93,6 +93,41 @@ it('stages a local-only manifest CLI artifact and serves it through the gateway 
     Http::assertSentCount(1);
 });
 
+it('stages a local-only manifest agent artifact and serves it through the gateway endpoint', function (): void {
+    $binary = 'orbit-agent-linux-binary';
+    $sha256 = hash('sha256', $binary);
+    $run = gatewayCliArtifactRelayRun();
+    $plan = gatewayCliArtifactRelayPlan(
+        $run,
+        cliSha256: str_repeat('b', times: 64),
+        agentSha256: $sha256,
+        agentArtifactUrl: 'http://localhost/orbit-agent-linux-x64',
+    );
+
+    Http::fake([
+        'http://localhost/orbit-agent-linux-x64' => Http::response($binary, 200),
+    ]);
+
+    $artifact = app(GatewayCliArtifactRelay::class)->agentArtifactFor($run, $plan, 'linux-amd64');
+
+    expect($artifact)
+        ->not
+        ->toBeNull()
+        ->and($artifact)
+        ->toMatchArray([
+            'sha256' => $sha256,
+            'source_url' => 'http://localhost/orbit-agent-linux-x64',
+        ])
+        ->and($artifact['url'])
+        ->toStartWith("http://gateway.test/api/update/artifacts/{$run->id}/agent/linux-amd64?token=");
+
+    $response = $this->get(gatewayCliArtifactRelayPathFromUrl($artifact['url']));
+
+    $response->assertOk();
+    expect(File::get($response->baseResponse->getFile()->getPathname()))->toBe($binary);
+    Http::assertSentCount(1);
+});
+
 it('uses the registered gateway address when the configured artifact base url is local only', function (): void {
     config()->set('app.url', 'http://localhost');
     config()->set('orbit.updates.artifact_base_url', 'http://localhost');
@@ -139,14 +174,18 @@ it('rejects gateway artifact downloads with an invalid token', function (): void
 
 it('fails staging when the downloaded artifact hash does not match the manifest', function (): void {
     $run = gatewayCliArtifactRelayRun();
-    $plan = gatewayCliArtifactRelayPlan($run, str_repeat('b', 64), artifactUrl: 'http://localhost/orbit-linux-amd64');
+    $plan = gatewayCliArtifactRelayPlan(
+        $run,
+        str_repeat('b', times: 64),
+        artifactUrl: 'http://localhost/orbit-linux-amd64',
+    );
 
     Http::fake([
         'http://localhost/orbit-linux-amd64' => Http::response('wrong-binary', 200),
     ]);
 
     expect(fn () => app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64'))
-        ->toThrow(RuntimeException::class, 'CLI artifact hash mismatch');
+        ->toThrow(RuntimeException::class, 'Update artifact hash mismatch');
 });
 
 it('removes expired artifact cache directories before staging', function (): void {
@@ -172,10 +211,12 @@ function gatewayCliArtifactRelayRun(): OperationRun
 
 function gatewayCliArtifactRelayPlan(
     OperationRun $run,
-    string $sha256,
+    string $cliSha256,
     string $artifactUrl = 'https://artifacts.example/orbit-linux-amd64',
+    ?string $agentSha256 = null,
+    string $agentArtifactUrl = 'https://artifacts.example/orbit-agent-linux-x64',
 ): OperationUpdatePlan {
-    $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:'.str_repeat('a', 64);
+    $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:'.str_repeat('a', times: 64);
 
     return OperationUpdatePlan::query()->create([
         'operation_run_id' => $run->id,
@@ -191,17 +232,33 @@ function gatewayCliArtifactRelayPlan(
             'cli_artifacts' => [
                 'linux-amd64' => [
                     'url' => $artifactUrl,
-                    'sha256' => $sha256,
+                    'sha256' => $cliSha256,
                 ],
             ],
+            'agent_artifacts' => $agentSha256 === null
+                ? []
+                : [
+                    'linux-amd64' => [
+                        'url' => $agentArtifactUrl,
+                        'sha256' => $agentSha256,
+                    ],
+                ],
             'role_images' => [],
         ],
         'cli_artifacts' => [
             'linux-amd64' => [
                 'url' => $artifactUrl,
-                'sha256' => $sha256,
+                'sha256' => $cliSha256,
             ],
         ],
+        'agent_artifacts' => $agentSha256 === null
+            ? []
+            : [
+                'linux-amd64' => [
+                    'url' => $agentArtifactUrl,
+                    'sha256' => $agentSha256,
+                ],
+            ],
         'role_images' => [],
     ]);
 }

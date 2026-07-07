@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Nodes\InstalledGatewayImage;
 use App\Data\Operations\OperationUpdatePlanSnapshot;
@@ -23,13 +24,14 @@ it('compares gateway image and workload CLI artifact identity from node DTOs', f
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
     Node::factory()
         ->agent()
         ->create([
             'name' => 'agent-1',
             'platform' => 'ubuntu_24-04',
-            'installed_cli' => fleetVersionProbeInstalledCliArtifact(sha256: str_repeat('c', 64)),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(sha256: str_repeat('c', times: 64)),
         ]);
     Node::factory()
         ->appDev()
@@ -67,6 +69,7 @@ it('treats missing workload CLI state as outdated', function (): void {
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
     Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
 
@@ -85,6 +88,7 @@ it('counts the gateway as outdated when its tracked image is missing or differs'
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => $installedGatewayImage,
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
 
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
@@ -94,7 +98,7 @@ it('counts the gateway as outdated when its tracked image is missing or differs'
     expect($report->outdatedCount)->toBe(1)->and($report->allCurrent())->toBeFalse();
 })->with([
     'missing image state' => [null],
-    'different digest' => [fleetVersionProbeInstalledGatewayImage(digest: 'sha256:'.str_repeat('c', 64))],
+    'different digest' => [fleetVersionProbeInstalledGatewayImage(digest: 'sha256:'.str_repeat('c', times: 64))],
 ]);
 
 it('reports all current when the gateway digest and workload hashes match', function (): void {
@@ -105,6 +109,7 @@ it('reports all current when the gateway digest and workload hashes match', func
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
     Node::factory()
         ->agent()
@@ -136,6 +141,7 @@ it('compares macos workload nodes against darwin arm64 CLI artifacts', function 
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
         ]);
     Node::factory()
         ->appDev()
@@ -144,7 +150,7 @@ it('compares macos workload nodes against darwin arm64 CLI artifacts', function 
             'platform' => 'macos_26-5-1',
             'installed_cli' => fleetVersionProbeInstalledCliArtifact(
                 platform: 'darwin-arm64',
-                sha256: str_repeat('f', 64),
+                sha256: str_repeat('f', times: 64),
                 artifactUrl: 'https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64',
             ),
         ]);
@@ -156,11 +162,11 @@ it('compares macos workload nodes against darwin arm64 CLI artifacts', function 
             cliArtifacts: [
                 'linux-amd64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-linux-x64',
-                    'sha256' => str_repeat('b', 64),
+                    'sha256' => str_repeat('b', times: 64),
                 ],
                 'darwin-arm64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64',
-                    'sha256' => str_repeat('f', 64),
+                    'sha256' => str_repeat('f', times: 64),
                 ],
             ],
         ),
@@ -174,6 +180,82 @@ it('compares macos workload nodes against darwin arm64 CLI artifacts', function 
         ->toBe(0)
         ->and($report->allCurrent())
         ->toBeTrue();
+});
+
+it('counts an agent-capable workload as outdated when its agent artifact differs', function (): void {
+    $run = fleetVersionProbeRun();
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
+    Node::factory()
+        ->agent()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+            'installed_agent' => fleetVersionProbeInstalledAgentArtifact(sha256: str_repeat('9', times: 64)),
+        ]);
+
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVersionProbeSnapshot(
+            '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($report->outdatedCount)->toBe(1)->and($report->allCurrent())->toBeFalse();
+});
+
+it('treats matching installed agent artifacts as current', function (): void {
+    $run = fleetVersionProbeRun();
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
+    Node::factory()
+        ->agent()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+            'installed_agent' => fleetVersionProbeInstalledAgentArtifact(sha256: str_repeat('c', times: 64)),
+        ]);
+
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVersionProbeSnapshot(
+            '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('c', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($report->outdatedCount)->toBe(0)->and($report->allCurrent())->toBeTrue();
 });
 
 it('falls back to the baked app version when no gateway node exists', function (): void {
@@ -203,20 +285,24 @@ function fleetVersionProbeRun(): OperationRun
 
 /**
  * @param  array<string, array{url: string, sha256: string}>|null  $cliArtifacts
+ * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
  */
-function fleetVersionProbeSnapshot(string $targetVersion, ?array $cliArtifacts = null): OperationUpdatePlanSnapshot
-{
-    $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:'.$targetVersion.'@sha256:'.str_repeat('a', 64);
+function fleetVersionProbeSnapshot(
+    string $targetVersion,
+    ?array $cliArtifacts = null,
+    array $agentArtifacts = [],
+): OperationUpdatePlanSnapshot {
+    $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:'.$targetVersion.'@sha256:'.str_repeat('a', times: 64);
 
     $cliArtifacts ??= [
         'linux-amd64' => [
             'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v'.$targetVersion.'/orbit-linux-amd64',
-            'sha256' => str_repeat('b', 64),
+            'sha256' => str_repeat('b', times: 64),
         ],
     ];
     $roleImages = [
         'orbit-caddy' => 'caddy:2-alpine',
-        'orbit-websocket' => 'hardimpact/orbit-reverb:'.$targetVersion.'@sha256:'.str_repeat('d', 64),
+        'orbit-websocket' => 'hardimpact/orbit-reverb:'.$targetVersion.'@sha256:'.str_repeat('d', times: 64),
     ];
 
     return new OperationUpdatePlanSnapshot(
@@ -229,9 +315,11 @@ function fleetVersionProbeSnapshot(string $targetVersion, ?array $cliArtifacts =
             'source' => 'github-release',
             'images' => ['gateway' => $gatewayImage],
             'cli_artifacts' => $cliArtifacts,
+            'agent_artifacts' => $agentArtifacts,
             'role_images' => $roleImages,
         ],
         cliArtifacts: $cliArtifacts,
+        agentArtifacts: $agentArtifacts,
         roleImages: $roleImages,
     );
 }
@@ -244,7 +332,7 @@ function fleetVersionProbeInstalledCliArtifact(
     return InstalledCliArtifact::record(
         version: '2.0.0',
         platform: $platform,
-        sha256: $sha256 !== '' ? $sha256 : str_repeat('b', 64),
+        sha256: $sha256 !== '' ? $sha256 : str_repeat('b', times: 64),
         source: 'github-release',
         buildId: null,
         artifactUrl: $artifactUrl,
@@ -253,9 +341,26 @@ function fleetVersionProbeInstalledCliArtifact(
     );
 }
 
+function fleetVersionProbeInstalledAgentArtifact(
+    string $sha256,
+    string $platform = 'linux-amd64',
+    string $artifactUrl = 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-linux-x64',
+): InstalledAgentArtifact {
+    return InstalledAgentArtifact::record([
+        'version' => '2.0.0',
+        'platform' => $platform,
+        'sha256' => $sha256,
+        'source' => 'github-release',
+        'build_id' => null,
+        'artifact_url' => $artifactUrl,
+        'installed_path' => '/usr/local/bin/orbit-agent',
+        'operation_run_id' => (string) Str::uuid(),
+    ]);
+}
+
 function fleetVersionProbeInstalledGatewayImage(?string $digest = null): InstalledGatewayImage
 {
-    $digest ??= 'sha256:'.str_repeat('a', 64);
+    $digest ??= 'sha256:'.str_repeat('a', times: 64);
 
     return InstalledGatewayImage::record(
         version: '2.0.0',

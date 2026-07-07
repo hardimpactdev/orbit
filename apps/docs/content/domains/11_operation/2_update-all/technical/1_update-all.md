@@ -268,9 +268,11 @@ The expected target shape per calling context:
   binary too. Best-effort: an unwritable earlier path is left unchanged and the
   node update continues.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
-  update for CLI artifacts and required role image metadata.
-- Remote update execution is gateway-owned node execution through the
-  classified host update lane.
+  update for CLI artifacts, Orbit Agent artifacts, and required role image
+  metadata.
+- Remote update execution is gateway-owned node execution through typed Orbit
+  Agent requests for agent-capable nodes, with the classified host update lane
+  retained for bootstrap/recovery fallback.
   Clients do not SSH directly to the gateway, nodes, or other operator
   workstations as part of the command contract. The gateway does not SSH to
   operator workstations as part of the command contract.

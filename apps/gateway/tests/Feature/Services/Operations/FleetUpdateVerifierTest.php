@@ -202,6 +202,104 @@ it('verifies macos workload CLI through the user launcher and skips required rol
         ->toBe(json_encode(['bin_path' => '/Users/nckrtl/.local/bin/orbit'], JSON_THROW_ON_ERROR));
 });
 
+it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes', function (): void {
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request));
+
+    $run = fleetVerifierRun();
+    Node::factory()
+        ->gateway()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.44.0.1',
+        ]);
+    Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'wireguard_address' => '10.44.0.12',
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVerifierSnapshot(
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    app(FleetUpdateVerifier::class)->verify($run, $plan);
+
+    $agentRequests = array_values(array_filter(
+        fleet_verifier_agent_requests(),
+        fn (array $request): bool => ($request['argv'][1] ?? null) === 'agent',
+    ));
+
+    expect($agentRequests)
+        ->toHaveCount(2)
+        ->and(array_column($agentRequests, 'node'))
+        ->toBe(['10.44.0.1', '10.44.0.12'])
+        ->and($agentRequests[0]['input'])
+        ->toBe(json_encode([
+            'bin_path' => '/usr/local/bin/orbit-agent',
+            'sha256' => str_repeat('9', times: 64),
+        ], JSON_THROW_ON_ERROR));
+});
+
+it('fails when Orbit Agent artifact verification fails', function (): void {
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "gateway-image\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "scheduler-image\n",
+        ),
+    ]);
+
+    Http::preventStrayRequests();
+    Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request, failCheck: 'agent'));
+
+    $run = fleetVerifierRun();
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        fleetVerifierSnapshot(
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+    Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'wireguard_address' => '10.44.0.12',
+        ]);
+
+    expect(fn () => app(FleetUpdateVerifier::class)->verify($run, $plan))
+        ->toThrow(FleetUpdateVerificationFailed::class, 'Orbit Agent verification failed');
+});
+
 it('fails when workload CLI verification fails', function (): void {
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
@@ -300,8 +398,8 @@ it('emits terminal success only after runner verification passes', function (): 
             ['check-fleet-versions', 'running'],
             ['check-fleet-versions', 'done'],
             ['lease.fleet',          'done'],
-            ['cli-artifacts',        'running'],
-            ['cli-artifacts',        'done'],
+            ['update-artifacts',     'running'],
+            ['update-artifacts',     'done'],
             ['gateway',              'running'],
             ['lease.gateway',        'done'],
             ['scheduler.stop',       'running'],
@@ -485,14 +583,21 @@ function fleet_verifier_success_envelope(string $check, mixed $input): string
 
 function fleet_verifier_failure_envelope(string $check): string
 {
+    $code = match ($check) {
+        'role-images' => 'fleet_update.required_image_missing',
+        'agent' => 'fleet_update.agent_verification_failed',
+        default => 'fleet_update.cli_verification_failed',
+    };
+    $message = match ($check) {
+        'role-images' => 'Required role image verification failed.',
+        'agent' => 'Orbit Agent verification failed.',
+        default => 'CLI verification failed.',
+    };
+
     return json_encode([
         'error' => [
-            'code' => $check === 'role-images'
-                ? 'fleet_update.required_image_missing'
-                : 'fleet_update.cli_verification_failed',
-            'message' => $check === 'role-images'
-                ? 'Required role image verification failed.'
-                : 'CLI verification failed.',
+            'code' => $code,
+            'message' => $message,
             'meta' => [],
         ],
     ], JSON_THROW_ON_ERROR);
@@ -524,11 +629,13 @@ function fleet_verifier_agent_requests(): array
 
 /**
  * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
+ * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
  * @param  array<string, string>  $roleImages
  */
 function fleetVerifierSnapshot(
     string $targetVersion = '1.2.3',
     array $cliArtifacts = [],
+    array $agentArtifacts = [],
     array $roleImages = [],
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -536,7 +643,7 @@ function fleetVerifierSnapshot(
         ? [
             'linux-amd64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-                'sha256' => str_repeat('b', 64),
+                'sha256' => str_repeat('b', times: 64),
             ],
         ] : $cliArtifacts;
     $roleImages = $roleImages === []
@@ -557,9 +664,11 @@ function fleetVerifierSnapshot(
                 'gateway' => $gatewayImage,
             ],
             'cli_artifacts' => $cliArtifacts,
+            'agent_artifacts' => $agentArtifacts,
             'role_images' => $roleImages,
         ],
         cliArtifacts: $cliArtifacts,
+        agentArtifacts: $agentArtifacts,
         roleImages: $roleImages,
     );
 }

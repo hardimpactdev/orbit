@@ -20,6 +20,7 @@ use RuntimeException;
  * @property string $manifest_version
  * @property array<string, mixed> $manifest_snapshot
  * @property array<string, mixed> $cli_artifacts
+ * @property array<string, mixed>|null $agent_artifacts
  * @property array<string, mixed> $role_images
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -36,6 +37,7 @@ class OperationUpdatePlan extends Model
         'manifest_version',
         'manifest_snapshot',
         'cli_artifacts',
+        'agent_artifacts',
         'role_images',
     ];
 
@@ -45,6 +47,7 @@ class OperationUpdatePlan extends Model
         return [
             'manifest_snapshot' => 'array',
             'cli_artifacts' => 'array',
+            'agent_artifacts' => 'array',
             'role_images' => 'array',
         ];
     }
@@ -82,8 +85,13 @@ class OperationUpdatePlan extends Model
             manifestSource: $this->manifest_source,
             manifestVersion: $this->manifest_version,
             manifestSnapshot: $this->manifest_snapshot,
-            cliArtifacts: $this->cli_artifacts,
-            roleImages: $this->role_images,
+            cliArtifacts: OperationUpdatePlanSnapshot::artifactMap($this->cli_artifacts, 'CLI artifacts'),
+            agentArtifacts: OperationUpdatePlanSnapshot::optionalArtifactMap(
+                ['agent_artifacts' => $this->agent_artifacts ?? []],
+                'agent_artifacts',
+                'agent artifacts',
+            ),
+            roleImages: OperationUpdatePlanSnapshot::roleImageMap($this->role_images),
         );
     }
 }

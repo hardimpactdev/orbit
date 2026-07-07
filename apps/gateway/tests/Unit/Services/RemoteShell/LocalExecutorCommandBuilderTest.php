@@ -141,6 +141,25 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         ]);
     });
 
+    it('allows gateway host update verification on gateway-only nodes', function (): void {
+        $operationToken = local_executor_test_operation_token();
+
+        $argv = localExecutorCommandBuilder()->buildArgv(
+            targetNode: localExecutorTargetNode(['gateway']),
+            commandName: 'internal:fleet-update:verify',
+            arguments: ['agent'],
+            options: [],
+            operationToken: $operationToken,
+        );
+
+        expect($argv)->toBe([
+            'internal:fleet-update:verify',
+            'agent',
+            "--operation-token={$operationToken}",
+            '--json',
+        ]);
+    });
+
     it('uses the configured local executor binary path only for gateway nodes', function (): void {
         $operationToken = local_executor_test_operation_token();
 
@@ -364,6 +383,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'analytics',
             ],
             'internal:fleet-update:verify' => [
+                'gateway',
                 'vpn',
                 'router',
                 'app-dev',
@@ -608,7 +628,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'env file' => ['internal:env-file', ['app-dev'], ['vpn']],
         'firewall rule' => ['internal:firewall-rule', ['app-dev'], []],
         'firewall rule probe' => ['internal:firewall-rule:probe', ['app-dev'], []],
-        'fleet update verify' => ['internal:fleet-update:verify', ['app-dev'], ['gateway']],
+        'fleet update verify' => ['internal:fleet-update:verify', ['gateway'], ['operator']],
         'gateway runtime backend probe' => ['internal:gateway-runtime-backend:probe', ['gateway'], ['app-dev']],
         'managed file' => ['internal:managed-file', ['app-dev'], ['gateway']],
         'node security posture probe' => ['internal:node-security-posture:probe', ['app-dev'], []],

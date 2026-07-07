@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Nodes\InstalledGatewayImage;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -166,6 +167,7 @@ class GatewayServiceUpdater
      *     install_root: string,
      *     bin_path: string,
      *     shared_binary_path: string|null,
+     *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
      *     role_images: list<string>,
      * }
      */
@@ -183,6 +185,7 @@ class GatewayServiceUpdater
             'install_root' => $installRoot,
             'bin_path' => FleetUpdateNodeCliLauncher::binPath($gatewayNode),
             'shared_binary_path' => null,
+            'agent_artifact' => $this->gatewayHostAgentArtifactPayload($operationRun, $plan, $gatewayNode),
             'role_images' => [],
         ];
     }
@@ -239,6 +242,42 @@ class GatewayServiceUpdater
                 operationRunId: $operationRun->id,
             ),
         ])->save();
+
+        $this->recordInstalledGatewayHostAgent($operationRun, $plan, $gatewayNode);
+    }
+
+    private function recordInstalledGatewayHostAgent(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $gatewayNode,
+    ): void {
+        $platform = CliArtifactPlatform::forNode($gatewayNode);
+        $artifact = $plan->agent_artifacts[$platform] ?? null;
+
+        if ($artifact === null) {
+            return;
+        }
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+        ) {
+            throw new RuntimeException("Update plan contains an invalid agent artifact for platform [{$platform}].");
+        }
+
+        $gatewayNode->forceFill([
+            'installed_agent' => InstalledAgentArtifact::record([
+                'version' => $plan->target_version,
+                'platform' => $platform,
+                'sha256' => $artifact['sha256'],
+                'source' => $plan->manifest_source,
+                'build_id' => $this->manifestBuildId($plan),
+                'artifact_url' => $artifact['url'],
+                'installed_path' => FleetUpdateNodeAgentBinary::binPath($gatewayNode),
+                'operation_run_id' => $operationRun->id,
+            ]),
+        ])->save();
     }
 
     private function runMigrations(): null
@@ -250,6 +289,31 @@ class GatewayServiceUpdater
         }
 
         return null;
+    }
+
+    /**
+     * @return array{artifact_url: string, sha256: string, bin_path: string}|null
+     */
+    private function gatewayHostAgentArtifactPayload(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $gatewayNode,
+    ): ?array {
+        $artifact = $this->artifactRelay()->agentArtifactFor(
+            operationRun: $operationRun,
+            plan: $plan,
+            platform: CliArtifactPlatform::forNode($gatewayNode),
+        );
+
+        if ($artifact === null) {
+            return null;
+        }
+
+        return [
+            'artifact_url' => $artifact['url'],
+            'sha256' => $artifact['sha256'],
+            'bin_path' => FleetUpdateNodeAgentBinary::binPath($gatewayNode),
+        ];
     }
 
     private function updateGatewayService(GatewayImageReference $targetImage): null

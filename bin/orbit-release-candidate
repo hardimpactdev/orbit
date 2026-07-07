@@ -32,15 +32,16 @@ Formalizes the release-candidate publication flow from step 7 of
 .agents/skills/release/SKILL.md.
 
   build   Preflight (VERSION, HEAD == origin/main), build CLI binaries and the
-          candidate gateway image, push to GHCR, generate the candidate
+          candidate gateway image and Linux Orbit Agent binary, push to GHCR, generate the candidate
           manifest, upload artifacts plus the channel manifest through the
           gateway orbit-artifacts disk, then record durable state under
           .orbit/release-candidates/<build_id>/ (candidate.env includes
-          sha256_linux_amd64 and sha256_darwin_arm64) and update the
+          sha256_linux_amd64, sha256_darwin_arm64, and
+          sha256_agent_linux_amd64) and update the
           .orbit/release-candidates/latest pointer file.
   env     Print eval-able `export key=value` lines from the recorded
           candidate.env of the latest (or --build-id) candidate.
-  verify  Recompute sha256 hashes of the stored CLI artifacts against
+  verify  Recompute sha256 hashes of the stored CLI and Agent artifacts against
           candidate.env, and with --release-image compare the image digest
           from `docker buildx imagetools inspect` against gateway_digest.
 
@@ -185,9 +186,11 @@ cmd_build() {
 
     "${repo_root}/bin/orbit-build-cli-binary" mac arm "$version"
     "${repo_root}/bin/orbit-build-cli-binary" linux x64 "$version"
+    "${repo_root}/bin/orbit-build-agent-binary" linux x64
 
     cp apps/cli/builds/dist/linux/linux-x64 "${work_dir}/orbit-linux-x64"
     cp apps/cli/builds/dist/mac/mac-arm "${work_dir}/orbit-macos-arm64"
+    cp apps/agent/builds/dist/linux/linux-x64 "${work_dir}/orbit-agent-linux-x64"
 
     docker buildx build \
         --platform linux/amd64 \
@@ -230,6 +233,7 @@ cmd_build() {
         --gateway-digest="$gateway_digest" \
         --cli-artifact="linux-amd64=orbit-linux-x64=${work_dir}/orbit-linux-x64" \
         --cli-artifact="darwin-arm64=orbit-macos-arm64=${work_dir}/orbit-macos-arm64" \
+        --agent-artifact="linux-amd64=orbit-agent-linux-x64=${work_dir}/orbit-agent-linux-x64" \
         --role-image="orbit-caddy=caddy:2-alpine" \
         --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
         --output="${work_dir}/orbit-release-manifest.candidate.json"
@@ -243,7 +247,7 @@ cmd_build() {
             $dir = rtrim((string) getenv("ORBIT_CANDIDATE_DIR"), "/");
             $channel = trim((string) getenv("ORBIT_CANDIDATE_CHANNEL"), "/");
 
-            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
+            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-release-manifest.candidate.json"] as $asset) {
                 $disk->put("{$prefix}/{$asset}", file_get_contents("{$dir}/{$asset}"), "public");
             }
 
@@ -254,15 +258,17 @@ cmd_build() {
             );
         '
 
-    local sha256_linux_amd64 sha256_darwin_arm64
+    local sha256_linux_amd64 sha256_darwin_arm64 sha256_agent_linux_amd64
     sha256_linux_amd64="$(compute_sha256 "${work_dir}/orbit-linux-x64")"
     sha256_darwin_arm64="$(compute_sha256 "${work_dir}/orbit-macos-arm64")"
+    sha256_agent_linux_amd64="$(compute_sha256 "${work_dir}/orbit-agent-linux-x64")"
 
     local state_dir="${state_root}/${build_id}"
     mkdir -p "$state_dir"
 
     cp "${work_dir}/orbit-linux-x64" "${state_dir}/orbit-linux-x64"
     cp "${work_dir}/orbit-macos-arm64" "${state_dir}/orbit-macos-arm64"
+    cp "${work_dir}/orbit-agent-linux-x64" "${state_dir}/orbit-agent-linux-x64"
     cp "${work_dir}/orbit-release-manifest.candidate.json" "${state_dir}/orbit-release-manifest.candidate.json"
     cp "${work_dir}/gateway-image-push.log" "${state_dir}/gateway-image-push.log"
 
@@ -281,6 +287,7 @@ cmd_build() {
         printf 'candidate_channel_manifest_url=%s\n' "$candidate_channel_manifest_url"
         printf 'sha256_linux_amd64=%s\n' "$sha256_linux_amd64"
         printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"
+        printf 'sha256_agent_linux_amd64=%s\n' "$sha256_agent_linux_amd64"
     } > "${state_dir}/candidate.env"
 
     printf '%s\n' "$build_id" > "$latest_pointer"
@@ -348,7 +355,11 @@ cmd_verify() {
     local failures=0
     local pair key artifact expected actual
 
-    for pair in 'sha256_linux_amd64:orbit-linux-x64' 'sha256_darwin_arm64:orbit-macos-arm64'; do
+    for pair in \
+        'sha256_linux_amd64:orbit-linux-x64' \
+        'sha256_darwin_arm64:orbit-macos-arm64' \
+        'sha256_agent_linux_amd64:orbit-agent-linux-x64'
+    do
         key="${pair%%:*}"
         artifact="${state_dir}/${pair#*:}"
         expected="$(state_value "$key" "$state_file")"

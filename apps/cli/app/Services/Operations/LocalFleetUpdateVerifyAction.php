@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process;
 
 final readonly class LocalFleetUpdateVerifyAction
 {
-    private const array CHECKS = ['cli', 'role-images'];
+    private const array CHECKS = ['cli', 'agent', 'role-images'];
 
     /**
      * @param  array<string, mixed>  $payload
@@ -20,6 +20,10 @@ final readonly class LocalFleetUpdateVerifyAction
 
         if ($check === 'cli') {
             return $this->verifyCli($payload);
+        }
+
+        if ($check === 'agent') {
+            return app(LocalFleetUpdateVerifyAgentAction::class)->run($payload);
         }
 
         return $this->verifyRoleImages($payload);

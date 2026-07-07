@@ -349,7 +349,7 @@ self-updating. V1 agent-push requests are structured Orbit CLI invocations
 submitted by the gateway, with transitional SSH fallback only when explicitly
 selected for migration or break-glass use. App-dev convergence over Orbit Agent
 remains deferred until it can be sent as a direct gateway-pushed command
-envelope; `node role:add` does not create queued Agent pull jobs.
+envelope; `node role:add` does not create an Agent work queue.
 
 The macOS menu-bar surface lives in `apps/macos` and is intentionally minimal:
 it can show service/gateway status, refresh status on menu open or Refresh, and

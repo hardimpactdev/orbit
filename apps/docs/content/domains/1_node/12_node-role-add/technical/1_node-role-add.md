@@ -66,8 +66,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
 - Success returns the stored assignment payload after convergence completes with
   `status=active`.
-- `node role:add` does not queue Orbit Agent pull jobs. App-dev convergence over
-  Orbit Agent remains deferred until it can run as a direct gateway-pushed
+- `node role:add` does not create an Orbit Agent work queue. App-dev convergence
+  over Orbit Agent remains deferred until it can run as a direct gateway-pushed
   command envelope.
 - `orbit_agent_capable=true` marks a node eligible for explicit agent-push
   operations. The `agent` workload role and platform alone do not imply Orbit

@@ -52,6 +52,7 @@ it('emits the two check steps before the gateway phase and reports outdated node
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+            'installed_cli' => checkStepsInstalledCliArtifact(),
         ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
@@ -96,6 +97,7 @@ it('reports all nodes current when the gateway and every workload node match the
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+            'installed_cli' => checkStepsInstalledCliArtifact(),
         ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
@@ -127,6 +129,7 @@ it('short-circuits when the fleet-version probe finds 0 outdated nodes', functio
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+            'installed_cli' => checkStepsInstalledCliArtifact(),
         ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
@@ -165,6 +168,7 @@ it('does not short-circuit topology candidate manifests when the candidate CLI h
             'name' => 'gateway-1',
             'platform' => 'debian_12',
             'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+            'installed_cli' => checkStepsInstalledCliArtifact(),
         ]);
 
     app(OperationUpdatePlanStore::class)->create(

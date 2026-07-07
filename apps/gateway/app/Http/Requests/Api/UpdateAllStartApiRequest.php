@@ -28,6 +28,7 @@ class UpdateAllStartApiRequest extends FormRequest
             'manifest' => ['nullable', 'array'],
             'gateway_image' => ['nullable', 'string', 'filled', 'max:512'],
             'cli_artifacts' => ['nullable', 'array'],
+            'agent_artifacts' => ['nullable', 'array'],
             'role_images' => ['nullable', 'array'],
         ];
     }
@@ -41,6 +42,7 @@ class UpdateAllStartApiRequest extends FormRequest
             'manifest_source',
             'manifest_version',
             'cli_artifacts',
+            'agent_artifacts',
             'role_images',
         ];
     }

@@ -64,11 +64,11 @@ it('serializes manifest cli artifacts and role image references exactly', functi
         cliArtifacts: [
             'linux-amd64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-                'sha256' => str_repeat('b', 64),
+                'sha256' => str_repeat('b', times: 64),
             ],
             'darwin-arm64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-darwin-arm64',
-                'sha256' => str_repeat('c', 64),
+                'sha256' => str_repeat('c', times: 64),
             ],
         ],
         roleImages: [
@@ -83,10 +83,14 @@ it('serializes manifest cli artifacts and role image references exactly', functi
         ->toBe($snapshot->manifestSnapshot)
         ->and($plan->cli_artifacts)
         ->toBe($snapshot->cliArtifacts)
+        ->and($plan->agent_artifacts)
+        ->toBe($snapshot->agentArtifacts)
         ->and($plan->role_images)
         ->toBe($snapshot->roleImages)
         ->and($plan->toSnapshot()->cliArtifacts)
         ->toBe($snapshot->cliArtifacts)
+        ->and($plan->toSnapshot()->agentArtifacts)
+        ->toBe($snapshot->agentArtifacts)
         ->and($plan->toSnapshot()->roleImages)
         ->toBe($snapshot->roleImages);
 });
@@ -114,7 +118,9 @@ it('builds a digest-pinned update plan snapshot from request manifest data', fun
         ->and($snapshot->manifestVersion)
         ->toBe('1.2.3')
         ->and($snapshot->cliArtifacts['linux-amd64']['sha256'])
-        ->toBe(str_repeat('b', 64))
+        ->toBe(str_repeat('b', times: 64))
+        ->and($snapshot->agentArtifacts['linux-amd64']['sha256'])
+        ->toBe(str_repeat('e', times: 64))
         ->and($snapshot->roleImages['orbit-caddy'])
         ->toBe('caddy:2-alpine');
 });
@@ -209,6 +215,7 @@ function operationUpdatePlanSnapshot(
     string $manifestVersion = '1.2.3',
     array $manifestOverrides = [],
     array $cliArtifacts = [],
+    array $agentArtifacts = [],
     array $roleImages = [],
 ): OperationUpdatePlanSnapshot {
     $manifestSnapshot = operationUpdateReleaseManifest($manifestOverrides);
@@ -220,6 +227,7 @@ function operationUpdatePlanSnapshot(
         manifestVersion: $manifestVersion,
         manifestSnapshot: $manifestSnapshot,
         cliArtifacts: $cliArtifacts === [] ? $manifestSnapshot['cli_artifacts'] : $cliArtifacts,
+        agentArtifacts: $agentArtifacts === [] ? $manifestSnapshot['agent_artifacts'] : $agentArtifacts,
         roleImages: $roleImages === [] ? $manifestSnapshot['role_images'] : $roleImages,
     );
 }
@@ -240,7 +248,13 @@ function operationUpdateReleaseManifest(array $overrides = []): array
         'cli_artifacts' => [
             'linux-amd64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-                'sha256' => str_repeat('b', 64),
+                'sha256' => str_repeat('b', times: 64),
+            ],
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
+                'sha256' => str_repeat('e', times: 64),
             ],
         ],
         'role_images' => [

@@ -79,6 +79,51 @@ describe('internal fleet update install cli command', function (): void {
             ->toBe("Orbit 9.9.9\n");
     });
 
+    it('installs an optional Orbit Agent artifact into the requested binary path', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        $sha256 = hash_file('sha256', $artifactPath);
+        $agentSha256 = hash_file('sha256', $agentArtifactPath);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => $agentSha256,
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data)
+            ->toMatchArray([
+                'agent_installed' => true,
+                'agent_bin_path' => "{$workspace}/bin/orbit-agent",
+            ])
+            ->and(hash_file('sha256', "{$workspace}/bin/orbit-agent"))
+            ->toBe($agentSha256)
+            ->and($data['stdout'] ?? '')
+            ->toContain('download_agent')
+            ->toContain('install_agent')
+            ->toContain('verify_agent');
+    });
+
     it('keeps cli installs successful when role image pre-pulls are unavailable', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";

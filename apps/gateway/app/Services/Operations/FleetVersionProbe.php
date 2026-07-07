@@ -14,11 +14,15 @@ use RuntimeException;
 /**
  * Resolves the installed Orbit artifact identity for the gateway and selected
  * workload nodes without shelling into each node during the check phase.
+ *
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
  */
 final readonly class FleetVersionProbe
 {
     public function __construct(
         private FleetUpdateTargetSelector $targets,
+        private FleetAgentArtifactProbe $agentArtifacts,
     ) {}
 
     public function probe(OperationRun $operationRun, OperationUpdatePlan $plan): FleetVersionReport
@@ -36,7 +40,7 @@ final readonly class FleetVersionProbe
         foreach ($this->targets->workloadNodes() as $node) {
             $nodeVersions[$node->name] = $this->nodeVersion($node, $operationRun);
 
-            if ($this->nodeNeedsCliUpdate($node, $plan)) {
+            if ($this->nodeNeedsUpdate($node, $plan)) {
                 $outdated++;
             }
         }
@@ -94,11 +98,23 @@ final readonly class FleetVersionProbe
 
         $targetImage = GatewayImageReference::fromString($plan->gateway_image);
 
-        return ! $installed->matches(
+        if (! $installed->matches(
             version: $plan->target_version,
             image: $targetImage->canonical(),
             digest: $targetImage->digest(),
+        )) {
+            return true;
+        }
+
+        return (
+            $this->gatewayHostNeedsCliUpdate($gatewayNode, $plan)
+            || $this->agentArtifacts->nodeNeedsUpdate($gatewayNode, $plan)
         );
+    }
+
+    public function nodeNeedsUpdate(Node $node, OperationUpdatePlan $plan): bool
+    {
+        return $this->nodeNeedsCliUpdate($node, $plan) || $this->agentArtifacts->nodeNeedsUpdate($node, $plan);
     }
 
     public function nodeNeedsCliUpdate(Node $node, OperationUpdatePlan $plan): bool
@@ -110,6 +126,23 @@ final readonly class FleetVersionProbe
         }
 
         $artifact = $this->cliArtifact($plan, CliArtifactPlatform::forNode($node));
+
+        return ! $installed->matches(
+            version: $plan->target_version,
+            platform: $artifact['platform'],
+            sha256: $artifact['sha256'],
+        );
+    }
+
+    private function gatewayHostNeedsCliUpdate(Node $gatewayNode, OperationUpdatePlan $plan): bool
+    {
+        $installed = $gatewayNode->installed_cli;
+
+        if ($installed === null) {
+            return true;
+        }
+
+        $artifact = $this->cliArtifact($plan, CliArtifactPlatform::forNode($gatewayNode));
 
         return ! $installed->matches(
             version: $plan->target_version,

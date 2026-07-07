@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
@@ -123,7 +124,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function runRemoteUpdate(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
-        if (! $this->fleetVersions->nodeNeedsCliUpdate($node, $plan)) {
+        if (! $this->fleetVersions->nodeNeedsUpdate($node, $plan)) {
             return [
                 ...$this->targetPayload($node),
                 'status' => 'skipped',
@@ -230,6 +231,7 @@ final readonly class WorkloadNodeUpdater
      *     install_root: string,
      *     bin_path: string,
      *     shared_binary_path: string|null,
+     *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
      *     role_images: list<string>,
      * }
      */
@@ -246,6 +248,7 @@ final readonly class WorkloadNodeUpdater
                 ? $this->hostPaths->homeDirectory($node).'/.local/bin/orbit'
                 : '/usr/local/bin/orbit',
             'shared_binary_path' => null,
+            'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'role_images' => $this->requiredRoleImages($plan, $node),
         ];
     }
@@ -277,6 +280,43 @@ final readonly class WorkloadNodeUpdater
                 operationRunId: $operationRun->id,
             ),
         ])->save();
+
+        $this->recordInstalledAgent($operationRun, $plan, $node);
+    }
+
+    private function recordInstalledAgent(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void
+    {
+        if (! $node->orbit_agent_capable) {
+            return;
+        }
+
+        $platform = CliArtifactPlatform::forNode($node);
+        $artifact = $plan->agent_artifacts[$platform] ?? null;
+
+        if ($artifact === null) {
+            return;
+        }
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+        ) {
+            throw new RuntimeException("Update plan contains an invalid agent artifact for platform [{$platform}].");
+        }
+
+        $node->forceFill([
+            'installed_agent' => InstalledAgentArtifact::record([
+                'version' => $plan->target_version,
+                'platform' => $platform,
+                'sha256' => $artifact['sha256'],
+                'source' => $plan->manifest_source,
+                'build_id' => $this->manifestBuildId($plan),
+                'artifact_url' => $artifact['url'],
+                'installed_path' => FleetUpdateNodeAgentBinary::binPath($node),
+                'operation_run_id' => $operationRun->id,
+            ]),
+        ])->save();
     }
 
     /**
@@ -303,6 +343,32 @@ final readonly class WorkloadNodeUpdater
         $platform = CliArtifactPlatform::forNode($node);
 
         return $this->artifactRelay->artifactFor($operationRun, $plan, $platform);
+    }
+
+    /**
+     * @return array{artifact_url: string, sha256: string, bin_path: string}|null
+     */
+    private function agentArtifactPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): ?array
+    {
+        if (! $node->orbit_agent_capable) {
+            return null;
+        }
+
+        $artifact = $this->artifactRelay->agentArtifactFor(
+            operationRun: $operationRun,
+            plan: $plan,
+            platform: CliArtifactPlatform::forNode($node),
+        );
+
+        if ($artifact === null) {
+            return null;
+        }
+
+        return [
+            'artifact_url' => $artifact['url'],
+            'sha256' => $artifact['sha256'],
+            'bin_path' => FleetUpdateNodeAgentBinary::binPath($node),
+        ];
     }
 
     /**

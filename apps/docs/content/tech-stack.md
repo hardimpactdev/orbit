@@ -329,8 +329,8 @@ V1 is scoped narrowly:
   managing only the UI process and any embedded service it started itself;
 - no menu job history;
 - app-dev convergence over Orbit Agent remains deferred until it can run as a
-  direct gateway-pushed command envelope; `node role:add` does not queue Agent
-  pull jobs;
+  direct gateway-pushed command envelope; `node role:add` does not create a
+  separate Agent work queue;
 - no production packaging, autostart, signing, notarization, or self-update.
 
 Orbit Agent is distinct from the existing `agent` workload role and from Agent

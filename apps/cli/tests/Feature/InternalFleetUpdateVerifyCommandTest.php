@@ -116,6 +116,60 @@ describe('internal fleet update verify command', function (): void {
             ->toContain('orbit --version --local');
     });
 
+    it('verifies the installed Orbit Agent binary hash', function (): void {
+        $bin = install_fleet_update_verify_fake_bin('orbit-agent', output: "agent\n");
+        $agentPath = "{$bin}/orbit-agent";
+        $sha256 = hash_file('sha256', $agentPath);
+
+        [$exitCode, $output] = run_internal_fleet_update_verify_command(
+            [
+                'check' => 'agent',
+                '--operation-token' => fleet_update_verify_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'bin_path' => $agentPath,
+                'sha256' => $sha256,
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_verify_success_data($output);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data)
+            ->toMatchArray([
+                'check' => 'agent',
+                'verified' => true,
+                'bin_path' => $agentPath,
+                'sha256' => $sha256,
+            ]);
+    });
+
+    it('fails Orbit Agent verification when the hash differs', function (): void {
+        $bin = install_fleet_update_verify_fake_bin('orbit-agent', output: "agent\n");
+
+        [$exitCode, $output] = run_internal_fleet_update_verify_command(
+            [
+                'check' => 'agent',
+                '--operation-token' => fleet_update_verify_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'bin_path' => "{$bin}/orbit-agent",
+                'sha256' => str_repeat('a', times: 64),
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('fleet_update.agent_verification_failed')
+            ->and($payload['error']['message'] ?? null)
+            ->toBe('Orbit Agent verification failed.');
+    });
+
     it('rejects non Orbit binary paths for CLI verification', function (): void {
         [$exitCode, $output] = run_internal_fleet_update_verify_command(
             [
@@ -279,6 +333,7 @@ function install_fleet_update_verify_fake_bin(string $binary, string $output, in
 function delete_fleet_update_verify_fake_bin(string $path): void
 {
     delete_fleet_update_verify_file("{$path}/orbit");
+    delete_fleet_update_verify_file("{$path}/orbit-agent");
     delete_fleet_update_verify_file("{$path}/docker");
     delete_fleet_update_verify_file("{$path}/calls.log");
     delete_fleet_update_verify_file("{$path}/output");

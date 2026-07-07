@@ -16,13 +16,18 @@ final readonly class UpdateArtifactDownloadController
         private GatewayCliArtifactRelay $artifacts,
     ) {}
 
-    public function __invoke(Request $request, OperationRun $operationRun, string $platform): BinaryFileResponse
-    {
+    public function __invoke(
+        Request $request,
+        OperationRun $operationRun,
+        string $artifactKind,
+        string $platform,
+    ): BinaryFileResponse {
         $token = $request->query('token');
 
         try {
             $path = $this->artifacts->downloadPath(
                 operationRun: $operationRun,
+                artifactKind: $artifactKind,
                 platform: $platform,
                 token: is_string($token) ? $token : null,
             );
@@ -30,6 +35,6 @@ final readonly class UpdateArtifactDownloadController
             abort($throwable->getMessage() === 'The update artifact token is invalid.' ? 403 : 404);
         }
 
-        return response()->download($path, "orbit-{$platform}");
+        return response()->download($path, "orbit-{$artifactKind}-{$platform}");
     }
 }

@@ -541,7 +541,10 @@ final class UpdateAllHumanProgressRenderer
             // short-circuit. The gateway row starts at the gateway phase below.
             'Update plan persisted', 'Update runner started', 'Fleet update lease acquired' => null,
             'Gateway and scheduler update leases acquired' => null,
-            'Updating gateway services' => $this->setGatewayStage(
+            'Staging update artifacts on gateway',
+            'Update artifacts staged on gateway',
+            'Updating gateway services',
+                => $this->setGatewayStage(
                 $output,
                 self::STAGE_DOWNLOADING,
                 $this->gatewayAssetsMessage(),
@@ -573,6 +576,7 @@ final class UpdateAllHumanProgressRenderer
             'Verifying orbit-gateway service',
             'Verifying orbit-scheduler service',
             'Verifying workload CLI artifacts',
+            'Verifying Orbit Agent artifacts',
             'Verifying required role images',
                 => $this->setGatewayStage($output, self::STAGE_VERIFYING),
             default => null,

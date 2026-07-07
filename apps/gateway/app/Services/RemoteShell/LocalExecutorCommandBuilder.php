@@ -86,6 +86,7 @@ final readonly class LocalExecutorCommandBuilder
             'analytics',
         ],
         'internal:fleet-update:verify' => [
+            'gateway',
             'vpn',
             'router',
             'app-dev',

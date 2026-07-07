@@ -18,7 +18,7 @@ use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
 use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -238,7 +238,7 @@ describe('NodeRoleAddController', function (): void {
         'macos database' => ['macos_14', 'database', []],
     ]);
 
-    it('does not queue pull jobs for opted-in macos agent-capable nodes', function (): void {
+    it('does not create agent work queue rows for opted-in macos agent-capable nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'darwin',
@@ -256,10 +256,10 @@ describe('NodeRoleAddController', function (): void {
             ->assertJsonPath('success.data.assignment.role', 'app-dev')
             ->assertJsonMissingPath('success.data.agent_job');
 
-        expect(DB::table('orbit_agent_jobs')->count())->toBe(0);
+        expect(Schema::hasTable('orbit_agent_jobs'))->toBeFalse();
     });
 
-    it('does not queue pull jobs for opted-in linux agent-capable nodes', function (): void {
+    it('does not create agent work queue rows for opted-in linux agent-capable nodes', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         $target->forceFill([
             'platform' => 'ubuntu',
@@ -277,7 +277,7 @@ describe('NodeRoleAddController', function (): void {
             ->assertJsonPath('success.data.assignment.role', 'app-dev')
             ->assertJsonMissingPath('success.data.agent_job');
 
-        expect(DB::table('orbit_agent_jobs')->count())->toBe(0);
+        expect(Schema::hasTable('orbit_agent_jobs'))->toBeFalse();
     });
 
     it('does not return app-dev convergence jobs for macos nodes without agent capability', function (): void {
@@ -297,7 +297,7 @@ describe('NodeRoleAddController', function (): void {
             ->assertOk()
             ->assertJsonMissingPath('success.data.agent_job');
 
-        expect(DB::table('orbit_agent_jobs')->count())->toBe(0);
+        expect(Schema::hasTable('orbit_agent_jobs'))->toBeFalse();
     });
 
     it('keeps ubuntu-only roles unsupported on macos workload nodes', function (): void {

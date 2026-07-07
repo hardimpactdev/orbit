@@ -332,10 +332,10 @@ Node transport has different rules before and after bootstrap:
   receives gateway-pushed `binary + argv` command envelopes over the node-local
   Agent listener; it is not arbitrary shell transport, not a WebSocket
   requirement, and not an HTTP capability API on the node.
-- The current runtime bootstrap does not implement privileged pull jobs. Later
-  privileged Orbit Agent slices may use the OS prompt when the gateway submits
-  protected local work through direct agent-push. V1 has no separate Orbit
-  approval UI or pending/approve flow. The macOS menu icon only means the
+- The current runtime bootstrap does not implement a privileged Agent work queue.
+  Later privileged Orbit Agent slices may use the OS prompt when the gateway
+  submits protected local work through direct agent-push. V1 has no separate
+  Orbit approval UI or pending/approve flow. The macOS menu icon only means the
   process is running;
   opening the menu may perform a one-shot gateway ping that shows Connected or
   Disconnected, node name, and gateway name/host, plus Restart and Quit actions.

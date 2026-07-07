@@ -22,6 +22,7 @@ final readonly class LocalFleetUpdateInstallCliAction
 
         $process = new Process(['/usr/bin/env', 'bash', '-lc', $this->installScript()]);
         $process->setTimeout(300);
+        $agentArtifact = $installPayload->agentArtifact;
         $process->setEnv([
             'PATH' => is_string($path) ? $path : '',
             'ORBIT_CLI_ARTIFACT_URL' => $installPayload->artifactUrl,
@@ -29,6 +30,9 @@ final readonly class LocalFleetUpdateInstallCliAction
             'ORBIT_INSTALL_PATH' => $installPayload->installRoot,
             'ORBIT_BIN_PATH' => $installPayload->binPath,
             'ORBIT_SHARED_BINARY_PATH' => $installPayload->sharedBinaryPath ?? '',
+            'ORBIT_AGENT_ARTIFACT_URL' => $agentArtifact->artifactUrl ?? '',
+            'ORBIT_AGENT_SHA256' => strtolower($agentArtifact->sha256 ?? ''),
+            'ORBIT_AGENT_BIN_PATH' => $agentArtifact->binPath ?? '',
             'ORBIT_ROLE_IMAGES_JSON' => json_encode($installPayload->roleImages, JSON_THROW_ON_ERROR),
         ]);
         $process->run();
@@ -45,6 +49,8 @@ final readonly class LocalFleetUpdateInstallCliAction
             'installed' => true,
             'bin_path' => $installPayload->binPath,
             'install_root' => $installPayload->installRoot,
+            'agent_bin_path' => $installPayload->agentArtifact?->binPath,
+            'agent_installed' => $installPayload->agentArtifact instanceof LocalFleetUpdateInstallAgentPayload,
             'role_images' => $installPayload->roleImages,
             'stdout' => trim($process->getOutput()),
         ];
@@ -67,16 +73,17 @@ final readonly class LocalFleetUpdateInstallCliAction
             }
 
             check_sha256() {
-                file="$1"
+                expected="$1"
+                file="$2"
 
                 if command -v sha256sum >/dev/null 2>&1; then
-                    printf '%s  %s\n' "$ORBIT_CLI_SHA256" "$file" | sha256sum -c -
+                    printf '%s  %s\n' "$expected" "$file" | sha256sum -c -
                     return
                 fi
 
                 if command -v shasum >/dev/null 2>&1; then
                     actual="$(shasum -a 256 "$file" | awk '{ print $1 }')"
-                    test "$actual" = "$ORBIT_CLI_SHA256"
+                    test "$actual" = "$expected"
                     return
                 fi
 
@@ -104,16 +111,38 @@ final readonly class LocalFleetUpdateInstallCliAction
                 run_privileged ln -sfn "$target" "$link"
             }
 
+            download_artifact() {
+                url="$1"
+                target="$2"
+
+                case "$url" in
+                    file:///*)
+                        cp "${url#file://}" "$target"
+                        ;;
+                    *)
+                        curl -fksSL "$url" -o "$target"
+                        ;;
+                esac
+            }
+
+            restart_agent_service_if_present() {
+                if ! command -v systemctl >/dev/null 2>&1; then
+                    echo skip_agent_restart_no_systemctl
+                    return
+                fi
+
+                if systemctl status orbit-agent >/dev/null 2>&1 || systemctl is-enabled orbit-agent >/dev/null 2>&1; then
+                    echo restart_agent
+                    run_privileged systemctl restart orbit-agent
+                    return
+                fi
+
+                echo skip_agent_restart_no_unit
+            }
+
             echo download_cli
-            case "$ORBIT_CLI_ARTIFACT_URL" in
-                file:///*)
-                    cp "${ORBIT_CLI_ARTIFACT_URL#file://}" "$tmp/orbit"
-                    ;;
-                *)
-                    curl -fksSL "$ORBIT_CLI_ARTIFACT_URL" -o "$tmp/orbit"
-                    ;;
-            esac
-            check_sha256 "$tmp/orbit"
+            download_artifact "$ORBIT_CLI_ARTIFACT_URL" "$tmp/orbit"
+            check_sha256 "$ORBIT_CLI_SHA256" "$tmp/orbit"
 
             install_root="${ORBIT_INSTALL_PATH:-/home/orbit/orbit}"
             bin_path="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"
@@ -139,11 +168,27 @@ final readonly class LocalFleetUpdateInstallCliAction
             link_binary "$link_target" "$bin_path"
 
             echo verify_cli
-            check_sha256 "$install_root/bin/orbit-binary-$sha_prefix"
-            check_sha256 "$link_target"
+            check_sha256 "$ORBIT_CLI_SHA256" "$install_root/bin/orbit-binary-$sha_prefix"
+            check_sha256 "$ORBIT_CLI_SHA256" "$link_target"
             resolved_binary="$(readlink -f "$bin_path" 2>/dev/null || printf %s "$bin_path")"
-            check_sha256 "$resolved_binary"
+            check_sha256 "$ORBIT_CLI_SHA256" "$resolved_binary"
             "$bin_path" --version --local
+
+            if [ -n "${ORBIT_AGENT_ARTIFACT_URL:-}" ]; then
+                agent_bin_path="${ORBIT_AGENT_BIN_PATH:-/usr/local/bin/orbit-agent}"
+
+                echo download_agent
+                download_artifact "$ORBIT_AGENT_ARTIFACT_URL" "$tmp/orbit-agent"
+                check_sha256 "$ORBIT_AGENT_SHA256" "$tmp/orbit-agent"
+
+                echo install_agent
+                install_binary "$tmp/orbit-agent" "$agent_bin_path"
+
+                echo verify_agent
+                resolved_agent_binary="$(readlink -f "$agent_bin_path" 2>/dev/null || printf %s "$agent_bin_path")"
+                check_sha256 "$ORBIT_AGENT_SHA256" "$resolved_agent_binary"
+                restart_agent_service_if_present
+            fi
 
             role_images_json="${ORBIT_ROLE_IMAGES_JSON:-[]}"
             if [ "$role_images_json" != "[]" ]; then

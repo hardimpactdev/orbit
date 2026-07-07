@@ -22,6 +22,7 @@ final readonly class ReleaseManifest
 
     /**
      * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
+     * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
      * @param  array<string, string>  $roleImages
      * @param  array<string, mixed>  $snapshot
      */
@@ -32,6 +33,7 @@ final readonly class ReleaseManifest
         public ?string $buildId,
         public string $gatewayImage,
         public array $cliArtifacts,
+        public array $agentArtifacts,
         public array $roleImages,
         private array $snapshot,
     ) {}
@@ -69,6 +71,9 @@ final readonly class ReleaseManifest
         self::assertDigestPinnedGatewayImage($gatewayImage);
 
         $cliArtifacts = self::cliArtifacts(self::arrayValue($manifest, 'cli_artifacts', 'CLI artifacts'));
+        $agentArtifacts = array_key_exists('agent_artifacts', $manifest)
+            ? self::artifacts(self::arrayValue($manifest, 'agent_artifacts', 'Agent artifacts'), 'Agent artifacts')
+            : [];
         $roleImages = self::roleImages(self::arrayValue($manifest, 'role_images', 'role images'));
 
         return new self(
@@ -78,6 +83,7 @@ final readonly class ReleaseManifest
             buildId: $buildId,
             gatewayImage: GatewayImageReference::fromString($gatewayImage)->canonical(),
             cliArtifacts: $cliArtifacts,
+            agentArtifacts: $agentArtifacts,
             roleImages: $roleImages,
             snapshot: $snapshot,
         );
@@ -170,18 +176,27 @@ final readonly class ReleaseManifest
             throw new RuntimeException('Release manifest CLI artifacts cannot be empty.');
         }
 
+        return self::artifacts($artifacts, 'CLI artifacts');
+    }
+
+    /**
+     * @param  array<string, mixed>  $artifacts
+     * @return array<string, array{url: string, sha256: string}>
+     */
+    private static function artifacts(array $artifacts, string $label): array
+    {
         $validated = [];
 
         foreach ($artifacts as $platform => $artifact) {
             if (! is_string($platform) || trim($platform) === '' || ! is_array($artifact)) {
-                throw new RuntimeException('Release manifest CLI artifacts must be keyed by platform.');
+                throw new RuntimeException("Release manifest {$label} must be keyed by platform.");
             }
 
-            $url = self::stringValue($artifact, 'url', "CLI artifact [{$platform}] URL");
-            $sha256 = self::stringValue($artifact, 'sha256', "CLI artifact [{$platform}] sha256");
+            $url = self::stringValue($artifact, 'url', "{$label} [{$platform}] URL");
+            $sha256 = self::stringValue($artifact, 'sha256', "{$label} [{$platform}] sha256");
 
             if (preg_match('/^[a-f0-9]{64}$/', $sha256) !== 1) {
-                throw new RuntimeException("Release manifest CLI artifact [{$platform}] sha256 must be a sha256 hash.");
+                throw new RuntimeException("Release manifest {$label} [{$platform}] sha256 must be a sha256 hash.");
             }
 
             $validated[trim($platform)] = [

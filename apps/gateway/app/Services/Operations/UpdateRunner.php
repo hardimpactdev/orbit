@@ -78,9 +78,9 @@ final readonly class UpdateRunner
 
                         $this->runPhase(
                             $operationRun,
-                            'cli-artifacts',
-                            'Staging CLI artifacts on gateway',
-                            'CLI artifacts staged on gateway',
+                            'update-artifacts',
+                            'Staging update artifacts on gateway',
+                            'Update artifacts staged on gateway',
                             function () use ($operationRun, $plan, &$stagedArtifacts): null {
                                 $stagedArtifacts = true;
                                 $this->cliArtifacts->stage($operationRun, $plan);

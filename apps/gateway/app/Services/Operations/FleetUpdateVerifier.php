@@ -45,6 +45,13 @@ class FleetUpdateVerifier
         );
         $this->runVerificationStep(
             $operationRun,
+            'verification.agent',
+            'Verifying Orbit Agent artifacts',
+            'Orbit Agent artifacts verified',
+            fn (): null => $this->verifyAgentArtifacts($operationRun, $plan),
+        );
+        $this->runVerificationStep(
+            $operationRun,
             'verification.role-images',
             'Verifying required role images',
             'Required role images verified',
@@ -96,6 +103,13 @@ class FleetUpdateVerifier
                 throw new FleetUpdateVerificationFailed('cli_verification_failed', 'CLI verification failed.');
             }
         }
+
+        return null;
+    }
+
+    private function verifyAgentArtifacts(OperationRun $operationRun, OperationUpdatePlan $plan): null
+    {
+        app(FleetUpdateAgentVerifier::class)->verify($operationRun, $plan);
 
         return null;
     }

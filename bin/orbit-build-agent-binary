@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+agent_dir="$repo_root/apps/agent"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-build-agent-binary linux x64
+
+Builds the headless Orbit Agent service binary used by gateway-pushed node
+commands. The Linux x64 artifact is built inside a Linux Rust container so the
+release candidate flow does not depend on host cross-linker packages.
+EOF
+}
+
+fail() {
+    printf 'orbit-build-agent-binary: %s\n' "$*" >&2
+    exit 1
+}
+
+platform="${1:-}"
+architecture="${2:-}"
+
+if [ "$platform" = "-h" ] || [ "$platform" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+[ -n "$platform" ] && [ -n "$architecture" ] || {
+    usage >&2
+    exit 2
+}
+
+case "$platform:$architecture" in
+    linux:x64)
+        ;;
+    *)
+        fail "unsupported target: ${platform} ${architecture}"
+        ;;
+esac
+
+command -v docker >/dev/null 2>&1 || fail 'docker is required to build the Linux agent binary.'
+[ -f "$agent_dir/Cargo.toml" ] || fail 'apps/agent/Cargo.toml is required.'
+
+image="${ORBIT_AGENT_BUILD_IMAGE:-rust:1-bookworm}"
+target_dir="/workspace/apps/agent/target/orbit-agent-linux-x64"
+output_dir="$agent_dir/builds/dist/linux"
+
+mkdir -p "$output_dir"
+
+docker run --rm \
+    --platform linux/amd64 \
+    --user "$(id -u):$(id -g)" \
+    -e CARGO_HOME=/tmp/cargo-home \
+    -e CARGO_TARGET_DIR="$target_dir" \
+    -e HOME=/tmp \
+    -v "$repo_root:/workspace" \
+    -w /workspace/apps/agent \
+    "$image" \
+    cargo build --release
+
+artifact="$agent_dir/target/orbit-agent-linux-x64/release/orbit-agent"
+
+[ -f "$artifact" ] || fail "expected agent binary was not built at $artifact"
+
+cp "$artifact" "$output_dir/linux-x64"
+chmod 0755 "$output_dir/linux-x64"

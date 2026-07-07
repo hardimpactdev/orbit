@@ -55,12 +55,12 @@ orbit update:all --stream-json
    `Checking for updates` when needed, then compares the desired artifact
    identity against the gateway database before any update side effects.
 
-   If the tracked gateway image digest and workload CLI hashes already match the
-   desired manifest artifacts, it skips the gateway, local, workload, and
-   verification phases. A `topology-candidate` manifest updates when its desired
-   artifact hash or digest differs, even if the semantic version is unchanged.
-   If the gateway-selected manifest URL is a stable candidate channel, the
-   channel is resolved only for this plan.
+   If the tracked gateway image digest and the recorded CLI and Orbit Agent
+   artifact hashes already match the desired manifest artifacts, it skips the
+   gateway, local, workload, and verification phases. A `topology-candidate`
+   manifest updates when its desired artifact hash or digest differs, even if
+   the semantic version is unchanged. If the gateway-selected manifest URL is a
+   stable candidate channel, the channel is resolved only for this plan.
 
    After the plan exists, the runner uses only that immutable snapshot for the
    rest of the run.
@@ -69,15 +69,17 @@ orbit update:all --stream-json
    workload nodes. Production installs update the native CLI binary artifact;
    source-dev topologies keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit`.
-   A later Orbit Agent update slice may let the same immutable update plan
-   select both the CLI artifact and Orbit Agent artifact for agent-capable
-   workload nodes. Orbit Agent artifact replacement, relaunch, and self-update
-   mechanics are not implemented in the current runtime bootstrap.
+   The same immutable update plan selects both the CLI artifact and Orbit Agent
+   artifact for agent-capable Linux nodes. The signed internal installer
+   replaces the node-local `orbit-agent` binary, restarts an existing
+   `orbit-agent` systemd service when present, and records installed artifact
+   identity for future drift checks.
 5. The CLI follows the operation event journal over Server-Sent Events. If the
    gateway service is replaced mid-stream, the CLI reconnects with
    `Last-Event-ID` and replays only events it has not rendered.
 6. The runner performs final verification: gateway health, scheduler health,
-   CLI execution on selected nodes, and required role image availability.
+   CLI execution on selected nodes, Orbit Agent artifact hashes on
+   agent-capable nodes, and required role image availability.
 7. Report every per-installation result and the terminal operation status,
    including partial failures.
 
@@ -121,24 +123,22 @@ the exact shape of both modes.
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
-- The gateway can reach every selected node through its node execution path
-  (currently the classified host SSH update lane; a later Orbit Agent update slice may use
-  typed Orbit Agent update jobs for agent-capable nodes, with SSH retained for
-  bootstrap, recovery, and fallback).
+- The gateway can reach every selected node through its node execution path.
+  For nodes with Orbit Agent enabled, the gateway pushes typed requests to run
+  the installer and verifier. SSH remains classified as bootstrap/recovery
+  fallback rather than the default managed transport.
 - The gateway can persist operation rows, event journal rows, immutable update
   plans, and expiring update leases.
 - The gateway can launch a one-shot runner from the target `orbit-gateway`
   image with the Docker socket and gateway config root mounted.
 - Each selected workload installation has a writable Orbit install root and a
   host `orbit` launcher or an equivalent Orbit CLI entry point local to the node.
-- The gateway requires access to the release or candidate CLI artifact source
-  referenced by the resolved manifest. Workload targets download CLI binaries
-  from the gateway's per-operation artifact endpoint, not directly from GitHub
-  or the candidate source. Targets also need permission to write the binary and
-  update the user-local launcher link.
-- Orbit Agent artifact replacement and relaunch remain deferred. The bootstrap
-  does not update itself; current workload targets update the Orbit CLI
-  artifact, not an Orbit Agent artifact.
+- The gateway requires access to the release or candidate CLI and Orbit Agent
+  artifact sources referenced by the resolved manifest. Workload targets
+  download binaries from the gateway's per-operation artifact endpoint, not
+  directly from GitHub or the candidate source. Targets also need permission to
+  write the binary, update the user-local launcher link, and restart an existing
+  `orbit-agent` systemd service when the Agent artifact is present.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.

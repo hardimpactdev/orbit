@@ -11,6 +11,10 @@ use App\Services\Gateway\GatewayImageReference;
 use Illuminate\Http\Request;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
+ */
 class UpdatePlanBuilder
 {
     public function __construct(
@@ -42,8 +46,10 @@ class UpdatePlanBuilder
             manifestSource: $this->stringInput($request, 'manifest_source') ?? $manifest->source,
             manifestVersion: $this->stringInput($request, 'manifest_version') ?? $manifest->version,
             manifestSnapshot: $manifest->snapshot(),
-            cliArtifacts: $this->arrayInput($request, 'cli_artifacts') ?? $manifest->cliArtifacts,
-            roleImages: $this->arrayInput($request, 'role_images') ?? $manifest->roleImages,
+            cliArtifacts: $this->artifactInput($request, 'cli_artifacts', 'CLI artifacts') ?? $manifest->cliArtifacts,
+            agentArtifacts: $this->artifactInput($request, 'agent_artifacts', 'agent artifacts')
+            ?? $manifest->agentArtifacts,
+            roleImages: $this->roleImageInput($request, 'role_images') ?? $manifest->roleImages,
         );
     }
 
@@ -90,6 +96,26 @@ class UpdatePlanBuilder
     private function arrayInput(Request $request, string $key): ?array
     {
         return $this->arrayFrom($request->input($key));
+    }
+
+    /**
+     * @return array<string, array{url: string, sha256: string}>|null
+     */
+    private function artifactInput(Request $request, string $key, string $label): ?array
+    {
+        $input = $this->arrayInput($request, $key);
+
+        return $input === null ? null : OperationUpdatePlanSnapshot::artifactMap($input, $label);
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function roleImageInput(Request $request, string $key): ?array
+    {
+        $input = $this->arrayInput($request, $key);
+
+        return $input === null ? null : OperationUpdatePlanSnapshot::roleImageMap($input);
     }
 
     /**

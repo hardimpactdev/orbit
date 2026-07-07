@@ -131,8 +131,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::get('/status', GatewayStatusController::class)->name('api.status');
     Route::get('/ca/root', CaRootController::class);
-    Route::get('/update/artifacts/{operationRun}/cli/{platform}', UpdateArtifactDownloadController::class)
-        ->name('api.update.artifacts.cli');
+    Route::get('/update/artifacts/{operationRun}/{artifactKind}/{platform}', UpdateArtifactDownloadController::class)
+        ->whereIn('artifactKind', ['cli', 'agent'])
+        ->name('api.update.artifacts.download');
 
     Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class])->group(function (): void {
         Route::get('/operations/{operationRun}/events', OperationEventStreamController::class)

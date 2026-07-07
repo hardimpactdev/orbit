@@ -102,7 +102,7 @@ it('updates gateway and scheduler services to the plan image after in-process mi
     expect($gateway->fresh()->installed_gateway_image?->image)
         ->toBe($plan->gateway_image)
         ->and($gateway->fresh()->installed_gateway_image?->digest)
-        ->toBe('sha256:'.str_repeat('a', 64))
+        ->toBe('sha256:'.str_repeat('a', times: 64))
         ->and($gateway->fresh()->installed_gateway_image?->operationRunId)
         ->toBe($run->id)
         ->and($gateway->fresh()->orbit_agent_capable)
@@ -110,7 +110,9 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->and($gateway->fresh()->installed_cli?->version)
         ->toBe('1.2.3')
         ->and($gateway->fresh()->installed_cli?->sha256)
-        ->toBe(str_repeat('c', 64))
+        ->toBe(str_repeat('c', times: 64))
+        ->and($gateway->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('d', times: 64))
         ->and($localExecutor->calls)
         ->toHaveCount(1)
         ->and($localExecutor->calls[0]['node'])
@@ -123,10 +125,15 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->and($localExecutor->payloads()[0])
         ->toMatchArray([
             'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-            'sha256' => str_repeat('c', 64),
+            'sha256' => str_repeat('c', times: 64),
             'install_root' => '/home/orbit/orbit',
             'bin_path' => '/usr/local/bin/orbit',
             'shared_binary_path' => null,
+            'agent_artifact' => [
+                'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
+                'sha256' => str_repeat('d', times: 64),
+                'bin_path' => '/usr/local/bin/orbit-agent',
+            ],
             'role_images' => [],
         ]);
 
@@ -438,7 +445,11 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifact = [
         'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-        'sha256' => str_repeat('c', 64),
+        'sha256' => str_repeat('c', times: 64),
+    ];
+    $agentArtifact = [
+        'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
+        'sha256' => str_repeat('d', times: 64),
     ];
 
     return OperationUpdatePlan::query()->create([
@@ -455,9 +466,15 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
             'cli_artifacts' => [
                 'linux-amd64' => $cliArtifact,
             ],
+            'agent_artifacts' => [
+                'linux-amd64' => $agentArtifact,
+            ],
         ],
         'cli_artifacts' => [
             'linux-amd64' => $cliArtifact,
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => $agentArtifact,
         ],
         'role_images' => [],
     ]);

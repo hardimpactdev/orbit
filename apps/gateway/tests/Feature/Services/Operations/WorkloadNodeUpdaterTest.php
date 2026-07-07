@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -79,7 +80,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             cliArtifacts: [
                 'linux-amd64' => [
                     'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
-                    'sha256' => str_repeat('e', 64),
+                    'sha256' => str_repeat('e', times: 64),
                 ],
             ],
             roleImages: [
@@ -146,29 +147,29 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
         ->toBe(0);
 
-    expect(workloadUpdaterInstallPayload($shell, 'agent-1'))
+    expect(workload_updater_install_payload($shell, node: 'agent-1'))
         ->toMatchArray([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
-            'sha256' => str_repeat('e', 64),
+            'sha256' => str_repeat('e', times: 64),
             'install_root' => '/home/orbit/orbit',
             'bin_path' => '/usr/local/bin/orbit',
             'shared_binary_path' => null,
             'role_images' => ['caddy:2.9-alpine'],
         ])
-        ->and(workloadUpdaterInstallPayload($shell, 'app-dev-1'))
+        ->and(workload_updater_install_payload($shell, node: 'app-dev-1'))
         ->toMatchArray([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
-            'sha256' => str_repeat('e', 64),
+            'sha256' => str_repeat('e', times: 64),
             'role_images' => ['caddy:2.9-alpine'],
         ])
-        ->and(workloadUpdaterInstallPayload($shell, 'app-prod-1')['role_images'])
+        ->and(workload_updater_install_payload($shell, node: 'app-prod-1')['role_images'])
         ->toBe([
             'caddy:2.9-alpine',
             'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
         ])
-        ->and(workloadUpdaterInstallPayload($shell, 'database-1')['role_images'])
+        ->and(workload_updater_install_payload($shell, node: 'database-1')['role_images'])
         ->toBe([])
-        ->and(workloadUpdaterInstallPayload($shell, 'ingress-1')['role_images'])
+        ->and(workload_updater_install_payload($shell, node: 'ingress-1')['role_images'])
         ->toBe(['caddy:2.9-alpine']);
 
     $installedCli = $appDev->fresh()->installed_cli;
@@ -178,11 +179,88 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and($installedCli?->version)
         ->toBe('2.0.0')
         ->and($installedCli?->sha256)
-        ->toBe(str_repeat('e', 64))
+        ->toBe(str_repeat('e', times: 64))
         ->and($installedCli?->source)
         ->toBe('github-release')
         ->and($installedCli?->artifactUrl)
         ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64');
+});
+
+it('installs and records agent artifacts for agent-capable workload nodes', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['agent_artifact'])
+        ->toBe([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/linux-amd64?token=fake",
+            'sha256' => str_repeat('9', times: 64),
+            'bin_path' => '/usr/local/bin/orbit-agent',
+        ])
+        ->and($node->fresh()->installed_agent)
+        ->toBeInstanceOf(InstalledAgentArtifact::class)
+        ->and($node->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('9', times: 64))
+        ->and($node->fresh()->installed_agent?->artifactUrl)
+        ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-linux-x64');
+});
+
+it('skips agent artifacts for nodes that are not agent capable', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect(workload_updater_install_payload($shell, node: 'app-dev-1')['agent_artifact'])
+        ->toBeNull()
+        ->and($node->fresh()->installed_agent)
+        ->toBeNull();
 });
 
 it('skips a workload node already on the target version and runs no remote update', function (): void {
@@ -327,7 +405,7 @@ it('does not send role images to macos workload cli installers', function (): vo
             cliArtifacts: [
                 'darwin-arm64' => [
                     'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-macos-arm64',
-                    'sha256' => str_repeat('a', 64),
+                    'sha256' => str_repeat('a', times: 64),
                 ],
             ],
             roleImages: [
@@ -349,10 +427,10 @@ it('does not send role images to macos workload cli installers', function (): vo
                 'doctor_issues' => 0,
             ],
         ])
-        ->and(workloadUpdaterInstallPayload($shell, node: 'mini'))
+        ->and(workload_updater_install_payload($shell, node: 'mini'))
         ->toMatchArray([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake",
-            'sha256' => str_repeat('a', 64),
+            'sha256' => str_repeat('a', times: 64),
             'install_root' => '/Users/nckrtl/orbit',
             'bin_path' => '/Users/nckrtl/.local/bin/orbit',
             'shared_binary_path' => null,
@@ -370,7 +448,10 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->create([
             'name' => 'app-dev-1',
             'platform' => 'linux',
-            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0', sha256: str_repeat('c', 64)),
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0', sha256: str_repeat(
+                'c',
+                times: 64,
+            )),
         ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
@@ -380,7 +461,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
             cliArtifacts: [
                 'linux-amd64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-x64',
-                    'sha256' => str_repeat('e', 64),
+                    'sha256' => str_repeat('e', times: 64),
                 ],
             ],
         ),
@@ -402,7 +483,7 @@ it('updates topology candidate artifacts with the same version when the CLI hash
         ->toBe(['app-dev-1'])
         ->and($shell->scriptsFor('app-dev-1'))
         ->toBe([$shell->scriptFor('app-dev-1')])
-        ->and(workloadUpdaterInstallPayload($shell, 'app-dev-1')['artifact_url'])
+        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['artifact_url'])
         ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
         ->and(workloadUpdaterStepMessages($run))
         ->not
@@ -436,11 +517,11 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
             cliArtifacts: [
                 'linux-amd64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-linux-x64',
-                    'sha256' => str_repeat('b', 64),
+                    'sha256' => str_repeat('b', times: 64),
                 ],
                 'darwin-arm64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64',
-                    'sha256' => str_repeat('f', 64),
+                    'sha256' => str_repeat('f', times: 64),
                 ],
             ],
         ),
@@ -458,9 +539,9 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
                 'doctor_issues' => 0,
             ],
         ])
-        ->and(workloadUpdaterInstallPayload($shell, 'NMBP')['artifact_url'])
+        ->and(workload_updater_install_payload($shell, node: 'NMBP')['artifact_url'])
         ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake")
-        ->and(workloadUpdaterInstallPayload($shell, 'NMBP')['bin_path'])
+        ->and(workload_updater_install_payload($shell, node: 'NMBP')['bin_path'])
         ->toBe('/Users/nckrtl/.local/bin/orbit')
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe([
@@ -470,7 +551,7 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
         ->and($node->fresh()->installed_cli?->platform)
         ->toBe('darwin-arm64')
         ->and($node->fresh()->installed_cli?->sha256)
-        ->toBe(str_repeat('f', 64))
+        ->toBe(str_repeat('f', times: 64))
         ->and($node->fresh()->installed_cli?->artifactUrl)
         ->toBe('https://artifacts.orbit/releases/candidates/build/orbit-macos-arm64');
 });
@@ -951,20 +1032,22 @@ final class WorkloadUpdaterFailIfCalledFleetVerifier extends FleetUpdateVerifier
 
 /**
  * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
+ * @param  array<string, array{url: string, sha256: string}>  $agentArtifacts
  * @param  array<string, string>  $roleImages
  */
 function workloadUpdaterSnapshot(
     string $targetVersion = '1.2.3',
-    string $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     string $manifestSource = 'github-release',
     array $cliArtifacts = [],
+    array $agentArtifacts = [],
     array $roleImages = [],
 ): OperationUpdatePlanSnapshot {
+    $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifacts = $cliArtifacts === []
         ? [
             'linux-amd64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-                'sha256' => str_repeat('b', 64),
+                'sha256' => str_repeat('b', times: 64),
             ],
         ] : $cliArtifacts;
     $roleImages = $roleImages === []
@@ -986,9 +1069,11 @@ function workloadUpdaterSnapshot(
                 'gateway' => $gatewayImage,
             ],
             'cli_artifacts' => $cliArtifacts,
+            'agent_artifacts' => $agentArtifacts,
             'role_images' => $roleImages,
         ],
         cliArtifacts: $cliArtifacts,
+        agentArtifacts: $agentArtifacts,
         roleImages: $roleImages,
     );
 }
@@ -1000,7 +1085,7 @@ function workloadUpdaterInstalledCliArtifact(
     return InstalledCliArtifact::record(
         version: $version,
         platform: 'linux-amd64',
-        sha256: $sha256 !== '' ? $sha256 : str_repeat('b', 64),
+        sha256: $sha256 !== '' ? $sha256 : str_repeat('b', times: 64),
         source: 'github-release',
         buildId: null,
         artifactUrl: "https://github.com/hardimpactdev/orbit/releases/download/v{$version}/orbit-linux-amd64",
@@ -1029,6 +1114,33 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
 
         return [
             'url' => "http://gateway.test/api/update/artifacts/{$operationRun->id}/cli/{$platform}?token=fake",
+            'sha256' => $artifact['sha256'],
+            'source_url' => $artifact['url'],
+        ];
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string}|null
+     */
+    #[Override]
+    public function agentArtifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): ?array
+    {
+        $artifact = (($plan->agent_artifacts ?? []))[$platform] ?? null;
+
+        if ($artifact === null) {
+            return null;
+        }
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['sha256'] ?? null)
+            || ! is_string($artifact['url'] ?? null)
+        ) {
+            throw new RuntimeException("Missing test agent artifact for [{$platform}].");
+        }
+
+        return [
+            'url' => "http://gateway.test/api/update/artifacts/{$operationRun->id}/agent/{$platform}?token=fake",
             'sha256' => $artifact['sha256'],
             'source_url' => $artifact['url'],
         ];
@@ -1110,7 +1222,7 @@ function workloadUpdaterVersionStdout(string $version, string $script): string
 /**
  * @return array<string, mixed>
  */
-function workloadUpdaterInstallPayload(WorkloadUpdaterFakeShell $shell, string $node): array
+function workload_updater_install_payload(WorkloadUpdaterFakeShell $shell, string $node): array
 {
     /** @var mixed $payload */
     $payload = json_decode($shell->scriptFor($node), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -1328,7 +1440,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
     {
         return count(array_filter(
             $this->calls,
-            fn (array $call): bool => (
+            static fn (array $call): bool => (
                 $call['node'] === $node
                 && ! workloadUpdaterIsVersionProbe($call['script'])
                 && ! str_contains($call['script'], 'doctor')

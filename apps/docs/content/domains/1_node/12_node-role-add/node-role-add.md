@@ -26,7 +26,7 @@ This command validates the role assignment, applies role-local options, and repo
   agent` fails with `validation_failed` and the explanation that
   `node:new --template=agent` is the preferred path that may create it.
 - `app-dev` requires `--tld`.
-- `node role:add` does not queue Orbit Agent pull jobs. Future app-dev
+- `node role:add` does not create an Orbit Agent work queue. Future app-dev
   convergence over Orbit Agent must use a direct gateway-pushed command
   envelope after the node has explicitly been marked capable with
   `node:update <node> --orbit-agent-capable`.

@@ -16,6 +16,8 @@ final class LocalFleetUpdateInstallCliPayload
 
     public ?string $sharedBinaryPath;
 
+    public ?LocalFleetUpdateInstallAgentPayload $agentArtifact;
+
     /**
      * @param  list<string>  $roleImages
      */
@@ -27,6 +29,7 @@ final class LocalFleetUpdateInstallCliPayload
         $this->installRoot = '';
         $this->binPath = '';
         $this->sharedBinaryPath = null;
+        $this->agentArtifact = null;
     }
 
     /**
@@ -51,6 +54,9 @@ final class LocalFleetUpdateInstallCliPayload
         $typedPayload->sharedBinaryPath = LocalFleetUpdateInstallCliPayloadField::optionalAbsolutePath(
             $payload['shared_binary_path'] ?? null,
             'shared_binary_path',
+        );
+        $typedPayload->agentArtifact = LocalFleetUpdateInstallAgentPayload::fromPayload(
+            $payload['agent_artifact'] ?? null,
         );
 
         return $typedPayload;
