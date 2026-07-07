@@ -215,10 +215,10 @@ These rules apply to all node commands and define the invariants the family enfo
 - Clients are dedicated CLI callers; nodes may also act as CLI callers
   when commands are run from an app or workspace path. Neither role owns fleet
   state.
-- A client may store a local default development node. Commands that
+- A client may store a local default node. Commands that
   accept a node target may use this local default when `--node` is omitted
   and no app or workspace context already determines the owning node.
-- `node:new` never sets the local default development node automatically.
+- `node:new` never sets the local default node automatically.
   The caller must run `node:default` explicitly.
 - Nodes may store a default agent IDE adapter for apps and workspaces on that
   node. App-level settings override the node default.
@@ -420,7 +420,7 @@ The ideal node lifecycle is:
 1. Start from a client with the Orbit CLI.
 2. Add an existing gateway to local config or bootstrap/register a new gateway.
 3. Register and provision nodes.
-4. Optionally run `node:default` to set a local default development node
+4. Optionally run `node:default` to set a local default node
    for repeated local work.
 5. Grant consuming nodes access to serving nodes.
 6. Inspect, update, verify, or remove nodes through gateway-owned configuration.

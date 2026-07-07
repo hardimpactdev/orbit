@@ -44,7 +44,7 @@ This command follows the shared
 
 1. **Node Resolution:** Use explicit `--node`. If missing, interactive mode
    prompts for a visible active node and preselects the local
-   `node:default` development node when one is configured. In
+   `node:default` node when one is configured. In
    non-interactive mode, use local `node:default` if configured; otherwise
    fail.
 2. **Name Validation:** Validate `name` against the slug regex and length

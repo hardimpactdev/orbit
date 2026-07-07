@@ -40,7 +40,7 @@ These rules govern all app family commands.
   routes; proxy route registry, router route convergence, and backend artifact
   convergence belong to the `proxy` family.
 - Commands that create or set up apps use explicit `--node` first, then the
-  local `node:default` development node when configured.
+  local `node:default` node when configured.
 - `app:new` creates or clones app source/path and then uses `app:register`
   behavior to converge app configuration and node artifacts.
 - `app:register` is idempotent. It can adopt an existing app path, re-apply

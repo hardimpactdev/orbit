@@ -14,8 +14,8 @@
 - Gateway hosts run `node:default` like any other operator host: it edits the
   operator user's local CLI config.
 - For the `choose` or `set` sub-action: the target node resolves as a visible
-  active app-dev node, validated against the configured gateway when
-  one is reachable; the stored default remains local CLI state regardless.
+  node, validated against the configured gateway when one is reachable; the
+  stored default remains local CLI state regardless.
 - For the `show` and `clear` sub-actions: no gateway reachability or grant
   check is required; these paths read or write local CLI configuration only.
 
@@ -35,14 +35,14 @@ input:
 
 | Sub-action | Trigger | Description |
 | --- | --- | --- |
-| `choose` | Interactive input mode, no `name`, and no `--clear`. | Present visible development nodes as choices, then store the selected node as the local default. |
+| `choose` | Interactive input mode, no `name`, and no `--clear`. | Present visible nodes as choices, then store the selected node as the local default. |
 | `show` | Non-interactive input mode, no `name`, and no `--clear`. | Display the current local default. |
 | `set` | `name` is present and `--clear` is absent. | Store the resolved target node as the local default. |
 | `clear` | `--clear` is present. | Remove the local default. |
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `name` | `[name]` | Never; interactive input mode can prompt through the `choose` sub-action. | `--clear` is present. | None. | Must match a visible development node when `set` sub-action is selected. Invalid or non-development nodes fail before side effects. |
+| `name` | `[name]` | Never; interactive input mode can prompt through the `choose` sub-action. | `--clear` is present. | None. | Must match a visible node when `set` sub-action is selected. Invalid or non-visible nodes fail before side effects. |
 | `clear` | `--clear` | Optional. | When `name` is present. | `false`. | Boolean flag. Mutually exclusive with `name`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
@@ -58,13 +58,12 @@ input:
      select `show`.
 2. Resolve `node_default.name`.
    - For `set`, resolve from `[name]`.
-   - For `choose`, prompt from the visible development app-role list. See
+   - For `choose`, prompt from the visible node list. See
      [`5.1_node-default_input-mode_interactive.md`](5.1_node-default_input-mode_interactive.md).
    - For `show` and `clear`, no node target is resolved.
 3. Validate `node_default.name` immediately when the sub-action is `set` or
    `choose`.
-   - Must resolve to a visible active app-dev node.
-   - Must not be a gateway, operator, or production app node.
+   - Must resolve to a visible node.
 4. Resolve `node_default.json` from `--json`. Default `false`.
 
 ## Input Mode Contracts
@@ -76,16 +75,16 @@ input:
 
 ### Choose sub-action
 
-1. Query the configured gateway for visible development app nodes, or the local
+1. Query the configured gateway for visible nodes, or the local
    node registry when no gateway is configured.
-2. Present the visible development app nodes as choices.
-3. Store the selected node as the local default development node.
+2. Present the visible nodes as choices.
+3. Store the selected node as the local default node.
 4. Return the stored name and the `set` action. `choose` is an interactive
    input path, not a separate persisted result action.
 
 ### Show sub-action
 
-1. Read the locally stored default development node name.
+1. Read the locally stored default node name.
 2. If a default is set, return the stored name.
 3. If no default is set, return the empty-state result without failure.
 
@@ -95,16 +94,15 @@ interactive input mode contract.
 
 ### Set sub-action
 
-1. Query the configured gateway for visible development app nodes, or the local
+1. Query the configured gateway for visible nodes, or the local
    node registry when no gateway is configured.
-2. Validate that the resolved `name` matches a visible active app-dev
-   node.
-3. Store the name as the local default development node.
+2. Validate that the resolved `name` matches a visible node.
+3. Store the name as the local default node.
 4. Return the stored name and the `set` action.
 
 ### Clear sub-action
 
-1. Remove the locally stored default development node, if any.
+1. Remove the locally stored default node, if any.
 2. Return the clear result, indicating whether a default existed.
 
 No gateway call or grant check is required for the clear sub-action.
@@ -131,8 +129,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Mutually exclusive input | `--clear` is combined with `name`. | Failure |
 | Node not found | `set` or `choose` sub-action and the selected node does not match a visible node. | Failure |
-| Not a development node | `set` sub-action and the selected node matches a node that is not a development node. | Failure |
-
 The `show` and `clear` sub-actions do not perform grant checks and do not fail
 when no default is set. The `show` sub-action reports the empty state; the
 `clear` sub-action reports success with `was_set: false`. Missing target input
@@ -151,8 +147,7 @@ because the `show` sub-action is selected instead.
 - `doctor --self --restore` reports an invalid local default but does not clear or
   replace it. Setting or clearing the local default remains an explicit
   `node:default` action. Recover from `node.local_default_invalid` by running
-  `orbit node:default <valid-development-app-role>` or
-  `orbit node:default --clear`.
+  `orbit node:default <visible-node>` or `orbit node:default --clear`.
 
 ## Activity Logging
 

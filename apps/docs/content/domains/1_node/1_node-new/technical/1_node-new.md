@@ -294,7 +294,7 @@ routes.
   first-gateway bootstrap it also seeds the initial gateway endpoint.
   Public IP metadata may be recorded later through
   `node:update`, but node doctor does not probe or drift-check it.
-- `node:new` does not set the local default development node. Operators must
+- `node:new` does not set the local default node. Operators must
   run [`node:default`](../../9_node-default/node-default.md) explicitly to set
   that local targeting preference.
 - Destructive gateway reset is outside `node:new` and requires a future explicit

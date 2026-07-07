@@ -44,7 +44,7 @@ The following arguments and options shape an `app:register` invocation.
 
 ### `--node` defaults
 
-`--node` defaults to the existing app owner, the local default development node, or an interactive prompt.
+`--node` defaults to the existing app owner, the local default node, or an interactive prompt.
 
 ### `--php-version` defaults
 
@@ -69,7 +69,7 @@ gateway and that its runtime artifacts are properly applied on the target app
 node.
 
 1. **Resolution**: Identifies the app and target node from the provided name,
-   options, or the CLI's stored `node:default` development node.
+   options, or the CLI's stored `node:default` node.
 2. **Registration/Adoption**: Writes the app's configuration to the gateway
    database. An existing path not yet managed by Orbit is adopted at this step.
 3. **Move**: Existing apps can move to another eligible node/path only when both
