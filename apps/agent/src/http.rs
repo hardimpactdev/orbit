@@ -725,12 +725,37 @@ fn resolve_orbit_binary() -> Option<String> {
         return Some(path);
     }
 
-    let mut candidates = home_relative_orbit_binary().into_iter().collect::<Vec<_>>();
-    candidates.push("/usr/local/bin/orbit".to_string());
-    candidates.push("/opt/homebrew/bin/orbit".to_string());
+    orbit_binary_candidates()
+        .into_iter()
+        .find(|path| Path::new(path).exists())
+}
+
+fn orbit_binary_candidates() -> Vec<String> {
+    orbit_binary_candidates_for(std::env::var("HOME").ok(), cfg!(target_os = "macos"))
+}
+
+fn orbit_binary_candidates_for(home: Option<String>, macos: bool) -> Vec<String> {
+    let home_binary = home.filter(|home| !home.trim().is_empty()).map(|home| {
+        PathBuf::from(home)
+            .join(".local/bin/orbit")
+            .to_string_lossy()
+            .to_string()
+    });
+    let mut candidates = Vec::new();
+
+    if macos {
+        candidates.extend(home_binary.clone());
+        candidates.push("/opt/homebrew/bin/orbit".to_string());
+        candidates.push("/usr/local/bin/orbit".to_string());
+    } else {
+        candidates.push("/usr/local/bin/orbit".to_string());
+        candidates.extend(home_binary);
+        candidates.push("/opt/homebrew/bin/orbit".to_string());
+    }
+
     candidates.push("../cli/orbit".to_string());
 
-    candidates.into_iter().find(|path| Path::new(path).exists())
+    candidates
 }
 
 fn existing_env_path(key: &str) -> Option<String> {
@@ -741,14 +766,6 @@ fn existing_env_path(key: &str) -> Option<String> {
     }
 
     Some(path)
-}
-
-fn home_relative_orbit_binary() -> Option<String> {
-    std::env::var("HOME")
-        .ok()
-        .filter(|home| !home.trim().is_empty())
-        .map(|home| PathBuf::from(home).join(".local/bin/orbit"))
-        .map(|path| path.to_string_lossy().to_string())
 }
 
 fn should_retry_stale_fleet_update_without_legacy_flags(
@@ -1262,6 +1279,34 @@ mod tests {
         };
 
         assert_eq!(command_binary(&request), "/bin/cat");
+    }
+
+    #[test]
+    fn orbit_binary_candidates_prefer_system_install_on_linux() {
+        let candidates = orbit_binary_candidates_for(Some("/home/orbit".to_string()), false);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&"/usr/local/bin/orbit".to_string())
+        );
+        assert_eq!(
+            candidates.get(1),
+            Some(&"/home/orbit/.local/bin/orbit".to_string())
+        );
+    }
+
+    #[test]
+    fn orbit_binary_candidates_keep_home_install_first_on_macos() {
+        let candidates = orbit_binary_candidates_for(Some("/Users/orbit".to_string()), true);
+
+        assert_eq!(
+            candidates.first(),
+            Some(&"/Users/orbit/.local/bin/orbit".to_string())
+        );
+        assert_eq!(
+            candidates.get(1),
+            Some(&"/opt/homebrew/bin/orbit".to_string())
+        );
     }
 
     #[tokio::test]
