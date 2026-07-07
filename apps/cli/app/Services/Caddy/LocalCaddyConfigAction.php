@@ -87,7 +87,7 @@ final readonly class LocalCaddyConfigAction
      */
     private function readGlobal(): array
     {
-        $exists = $this->runProcess(['sudo', 'test', '-f', self::GLOBAL_CADDYFILE]);
+        $exists = $this->runPrivilegedProcess(['test', '-f', self::GLOBAL_CADDYFILE]);
 
         if ($exists['exit_code'] !== 0) {
             return [
@@ -97,7 +97,7 @@ final readonly class LocalCaddyConfigAction
             ];
         }
 
-        $read = $this->runProcess(['sudo', 'cat', self::GLOBAL_CADDYFILE]);
+        $read = $this->runPrivilegedProcess(['cat', self::GLOBAL_CADDYFILE]);
 
         if ($read['exit_code'] !== 0) {
             throw new LocalCaddyConfigFailure(
@@ -125,8 +125,7 @@ final readonly class LocalCaddyConfigAction
     {
         $directory = dirname($path);
 
-        $this->mustRun([
-            'sudo',
+        $this->mustRunPrivileged([
             'install',
             '-d',
             '-m',
@@ -134,9 +133,9 @@ final readonly class LocalCaddyConfigAction
             '/etc/caddy',
             self::SITES_DIRECTORY,
         ], 'caddy_config.directory_failed');
-        $this->mustRun(['sudo', 'install', '-d', '-m', '0755', $directory], 'caddy_config.directory_failed');
-        $this->mustRunWithInput(['sudo', 'tee', $path], $content, 'caddy_config.write_failed');
-        $this->mustRun(['sudo', 'chmod', '0644', $path], 'caddy_config.chmod_failed');
+        $this->mustRunPrivileged(['install', '-d', '-m', '0755', $directory], 'caddy_config.directory_failed');
+        $this->mustRunPrivilegedWithInput(['tee', $path], $content, 'caddy_config.write_failed');
+        $this->mustRunPrivileged(['chmod', '0644', $path], 'caddy_config.chmod_failed');
 
         return [
             'path' => $path,
@@ -152,8 +151,7 @@ final readonly class LocalCaddyConfigAction
     {
         $domain = $this->domain($domain);
 
-        $this->mustRun([
-            'sudo',
+        $this->mustRunPrivileged([
             'rm',
             '-f',
             $this->sitePath($domain, ''),
@@ -400,18 +398,18 @@ final readonly class LocalCaddyConfigAction
             $this->ensureHostDirectory($directory);
         }
 
-        $exists = $this->runProcess(['sudo', 'test', '-f', self::GLOBAL_CADDYFILE]);
+        $exists = $this->runPrivilegedProcess(['test', '-f', self::GLOBAL_CADDYFILE]);
 
         if ($exists['exit_code'] === 0) {
             return;
         }
 
-        $this->mustRunWithInput(
-            ['sudo', 'tee', self::GLOBAL_CADDYFILE],
+        $this->mustRunPrivilegedWithInput(
+            ['tee', self::GLOBAL_CADDYFILE],
             $globalConfig,
             'caddy_container.global_config_failed',
         );
-        $this->mustRun(['sudo', 'chmod', '0644', self::GLOBAL_CADDYFILE], 'caddy_container.global_config_failed');
+        $this->mustRunPrivileged(['chmod', '0644', self::GLOBAL_CADDYFILE], 'caddy_container.global_config_failed');
     }
 
     /**
@@ -440,14 +438,13 @@ final readonly class LocalCaddyConfigAction
 
     private function ensureHostDirectory(string $directory): void
     {
-        $exists = $this->runProcess(['sudo', 'test', '-d', $directory]);
+        $exists = $this->runPrivilegedProcess(['test', '-d', $directory]);
 
         if ($exists['exit_code'] === 0) {
             return;
         }
 
-        $this->mustRun([
-            'sudo',
+        $this->mustRunPrivileged([
             'install',
             '-d',
             '-m',
@@ -839,6 +836,63 @@ final readonly class LocalCaddyConfigAction
                 'output' => $result['output'],
             ],
         );
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function mustRunPrivileged(array $command, string $errorCode): void
+    {
+        $result = $this->runPrivilegedProcess($command);
+
+        if ($result['exit_code'] === 0) {
+            return;
+        }
+
+        throw new LocalCaddyConfigFailure(
+            errorCode: $errorCode,
+            message: 'Caddy config command failed.',
+            meta: [
+                'exit_code' => $result['exit_code'],
+                'output' => $result['output'],
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function mustRunPrivilegedWithInput(array $command, string $input, string $errorCode): void
+    {
+        $result = $this->runPrivilegedProcess($command, $input);
+
+        if ($result['exit_code'] === 0) {
+            return;
+        }
+
+        throw new LocalCaddyConfigFailure(
+            errorCode: $errorCode,
+            message: 'Caddy config command failed.',
+            meta: [
+                'exit_code' => $result['exit_code'],
+                'output' => $result['output'],
+            ],
+        );
+    }
+
+    /**
+     * @param  list<string>  $command
+     * @return array{exit_code: int, output: string}
+     */
+    private function runPrivilegedProcess(array $command, ?string $input = null): array
+    {
+        $result = $this->runProcess($command, $input);
+
+        if ($result['exit_code'] === 0) {
+            return $result;
+        }
+
+        return $this->runProcess(['sudo', '-n', ...$command], $input);
     }
 
     /**

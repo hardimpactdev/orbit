@@ -101,7 +101,7 @@ describe('internal caddy config command', function (): void {
             ->and($payload['success']['data']['path'] ?? null)
             ->toBe('/etc/caddy/sites/docs.test.caddy')
             ->and(file_get_contents("{$bin}/calls.log"))
-            ->toContain('sudo tee /etc/caddy/sites/docs.test.caddy')
+            ->toContain('tee /etc/caddy/sites/docs.test.caddy')
             ->toContain(
                 'docker exec orbit-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
             )
@@ -133,7 +133,7 @@ describe('internal caddy config command', function (): void {
             ->toBe('/etc/caddy/sites/docs.test.caddy')
             ->and($calls)
             ->toContain(
-                'sudo rm -f /etc/caddy/sites/docs.test.caddy /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key',
+                'rm -f /etc/caddy/sites/docs.test.caddy /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key',
             )
             ->toContain(
                 'docker exec orbit-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
@@ -168,12 +168,17 @@ describe('internal caddy config command', function (): void {
             ->and($payload['success']['data']['expected_hash'] ?? null)
             ->toBe($expectedHash)
             ->and($calls)
-            ->toContain('sudo test -d /etc/caddy')
-            ->toContain('sudo install -d -m 0755 /etc/caddy')
-            ->toContain('sudo test -d /etc/caddy/sites')
-            ->toContain('sudo install -d -m 0755 /etc/caddy/sites')
-            ->toContain('sudo test -d /run/php')
-            ->toContain('sudo install -d -m 0755 /run/php')
+            ->toContain('test -d /etc/caddy')
+            ->toContain('sudo -n test -d /etc/caddy')
+            ->toContain('install -d -m 0755 /etc/caddy')
+            ->toContain('test -d /etc/caddy/sites')
+            ->toContain('sudo -n test -d /etc/caddy/sites')
+            ->toContain('install -d -m 0755 /etc/caddy/sites')
+            ->toContain('test -d /run/php')
+            ->toContain('sudo -n test -d /run/php')
+            ->toContain('install -d -m 0755 /run/php')
+            ->not
+            ->toContain('sudo test -d')
             ->toContain('docker image inspect caddy:2-alpine')
             ->toContain('docker network inspect orbit-network')
             ->toContain(
@@ -213,9 +218,9 @@ describe('internal caddy config command', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($calls)
-            ->toContain('sudo test -d /run/php')
-            ->not->toContain('sudo install -d -m 0755 /etc/caddy /etc/caddy/sites /run/php')
-            ->not->toContain('sudo install -d -m 0755 /run/php');
+            ->toContain('test -d /run/php')
+            ->not->toContain('sudo test -d')
+            ->not->toContain('install -d -m 0755 /run/php');
     });
 });
 
@@ -328,12 +333,34 @@ function install_caddy_config_fake_bin(): string
         if ($stdin !== '') {
             file_put_contents(__DIR__.'/stdin.log', $stdin, FILE_APPEND);
         }
+        $arguments = array_slice($argv, 1);
+        if (($arguments[0] ?? null) === '-n') {
+            $arguments = array_slice($arguments, 1);
+        }
         $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
-        if (($argv[1] ?? null) === 'test' && ($argv[2] ?? null) === '-d' && in_array($argv[3] ?? '', $missingDirectories, true)) {
+        if (($arguments[0] ?? null) === 'test' && ($arguments[1] ?? null) === '-d' && in_array($arguments[2] ?? '', $missingDirectories, true)) {
             exit(1);
         }
         exit(0);
         PHP);
+    foreach (['cat', 'chmod', 'install', 'rm', 'tee', 'test'] as $command) {
+        file_put_contents("{$dir}/{$command}", <<<'PHP'
+            #!/usr/bin/env php
+            <?php
+            $command = basename($argv[0]);
+            file_put_contents(__DIR__.'/calls.log', $command.' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
+            $stdin = stream_get_contents(STDIN);
+            if ($stdin !== '') {
+                file_put_contents(__DIR__.'/stdin.log', $stdin, FILE_APPEND);
+            }
+            $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
+            if ($command === 'test' && ($argv[1] ?? null) === '-d' && in_array($argv[2] ?? '', $missingDirectories, true)) {
+                exit(1);
+            }
+            exit(0);
+            PHP);
+        chmod(filename: "{$dir}/{$command}", permissions: 0o755);
+    }
     file_put_contents("{$dir}/docker", <<<'PHP'
         #!/usr/bin/env php
         <?php
@@ -352,6 +379,12 @@ function install_caddy_config_fake_bin(): string
 function delete_caddy_config_fake_bin(string $path): void
 {
     delete_caddy_config_file("{$path}/sudo");
+    delete_caddy_config_file("{$path}/cat");
+    delete_caddy_config_file("{$path}/chmod");
+    delete_caddy_config_file("{$path}/install");
+    delete_caddy_config_file("{$path}/rm");
+    delete_caddy_config_file("{$path}/tee");
+    delete_caddy_config_file("{$path}/test");
     delete_caddy_config_file("{$path}/docker");
     delete_caddy_config_file("{$path}/calls.log");
     delete_caddy_config_file("{$path}/stdin.log");
