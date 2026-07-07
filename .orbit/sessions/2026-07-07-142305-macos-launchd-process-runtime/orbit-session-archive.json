@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-07T12:23:05+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-macos-launchd-process-runtime/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-07-142305-macos-launchd-process-runtime",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-07-142305-macos-launchd-process-runtime/agent-sessions",
+    "copied_entries": [
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
