@@ -124,6 +124,53 @@ describe('internal fleet update install cli command', function (): void {
             ->toContain('verify_agent');
     });
 
+    it('schedules a deferred Orbit Agent restart through systemd-run when available', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        $sha256 = hash_file('sha256', $artifactPath);
+        $agentSha256 = hash_file('sha256', $agentArtifactPath);
+        $path = $systemdBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => $agentSha256,
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+        $calls = file_get_contents("{$workspace}/systemd-calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data['stdout'] ?? '')
+            ->toContain('schedule_agent_restart')
+            ->and($calls)
+            ->toContain('systemd-run')
+            ->toContain('--on-active=5s')
+            ->toContain('systemctl restart orbit-agent');
+    });
+
     it('keeps cli installs successful when role image pre-pulls are unavailable', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";
@@ -358,6 +405,34 @@ function make_fleet_update_install_cli_shadow_launcher(string $workspace): strin
     chmod(filename: $launcher, permissions: 0o755);
 
     return $launcher;
+}
+
+function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): string
+{
+    $bin = "{$workspace}/systemd-bin";
+    $log = "{$workspace}/systemd-calls.log";
+
+    mkdir($bin, recursive: true);
+    file_put_contents($log, '');
+
+    file_put_contents("{$bin}/systemctl", <<<SH
+        #!/usr/bin/env sh
+        echo "systemctl \$*" >> {$log}
+        if [ "\$1" = "status" ] || [ "\$1" = "is-enabled" ]; then
+          exit 0
+        fi
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/systemctl", permissions: 0o755);
+
+    file_put_contents("{$bin}/systemd-run", <<<SH
+        #!/usr/bin/env sh
+        echo "systemd-run \$*" >> {$log}
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/systemd-run", permissions: 0o755);
+
+    return $bin;
 }
 
 function fleet_update_install_cli_binary_path(string $workspace, string $sha256): string

@@ -126,14 +126,32 @@ final readonly class LocalFleetUpdateInstallCliAction
             }
 
             restart_agent_service_if_present() {
-                if ! command -v systemctl >/dev/null 2>&1; then
+                systemctl_bin="$(command -v systemctl || true)"
+
+                if [ -z "$systemctl_bin" ]; then
                     echo skip_agent_restart_no_systemctl
                     return
                 fi
 
-                if systemctl status orbit-agent >/dev/null 2>&1 || systemctl is-enabled orbit-agent >/dev/null 2>&1; then
+                if "$systemctl_bin" status orbit-agent >/dev/null 2>&1 || "$systemctl_bin" is-enabled orbit-agent >/dev/null 2>&1; then
+                    systemd_run_bin="$(command -v systemd-run || true)"
+
+                    if [ -n "$systemd_run_bin" ]; then
+                        unit="orbit-agent-self-restart-$(date +%s)-$$"
+
+                        if run_privileged "$systemd_run_bin" \
+                            --unit="$unit" \
+                            --description="Restart Orbit Agent after self-update" \
+                            --on-active=5s \
+                            --collect \
+                            "$systemctl_bin" restart orbit-agent; then
+                            echo schedule_agent_restart
+                            return
+                        fi
+                    fi
+
                     echo restart_agent
-                    run_privileged systemctl restart orbit-agent
+                    run_privileged "$systemctl_bin" restart orbit-agent
                     return
                 fi
 
