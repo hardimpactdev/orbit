@@ -288,13 +288,7 @@ final readonly class ToolsProbe
             if [ -n "$container" ]; then
                 if docker container inspect "$container" >/dev/null 2>&1; then
                     container_exists='1'
-                    running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
-
-                    if [ "$running" = "true" ]; then
-                        container_state='running'
-                    else
-                        container_state='stopped'
-                    fi
+                    container_state=$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || printf 'stopped')
 
                     state=$container_state
                     container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
@@ -503,13 +497,7 @@ final readonly class ToolsProbe
                 if [ -n "$path" ] && [ -n "$container" ]; then
                     if docker container inspect "$container" >/dev/null 2>&1; then
                         container_exists='true'
-                        running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
-
-                        if [ "$running" = "true" ]; then
-                            container_state='running'
-                        else
-                            container_state='stopped'
-                        fi
+                        container_state=$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || printf 'stopped')
 
                         state=$container_state
                         container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)

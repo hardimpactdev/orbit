@@ -81,6 +81,8 @@ final readonly class ProxyRouteFixer
             ];
         }
 
+        $this->normalizeOwnedRouteTlsPaths($route);
+
         $content = $this->renderer->renderManagedPhpRuntimeIntent($route);
 
         if ($route->owner_type === 'router') {
@@ -186,7 +188,7 @@ final readonly class ProxyRouteFixer
 
     private function repairTls(ProxyRoute $route): void
     {
-        if ($this->ensureSiteCertificateForOwnedPhpRoute($route)) {
+        if ($this->repairOwnedRouteTls($route)) {
             return;
         }
 
@@ -208,6 +210,26 @@ final readonly class ProxyRouteFixer
             sensitive: true,
         ));
         $this->reloadCaddy($route->node);
+    }
+
+    private function repairOwnedRouteTls(ProxyRoute $route): bool
+    {
+        if (! $this->ensureSiteCertificateForOwnedPhpRoute($route)) {
+            return false;
+        }
+
+        $this->normalizeOwnedRouteTlsPaths($route);
+        $content = $this->renderer->renderManagedPhpRuntimeIntent($route);
+
+        $this->ensureRuntimeTrustPool($route->node, $route);
+        $this->writeSiteAndReload($route->node, $route->domain, $content);
+
+        $route->forceFill([
+            'config' => $route->config,
+            'source_hash' => hash('sha256', $content),
+        ])->save();
+
+        return true;
     }
 
     private function ensureSiteCertificateForOwnedPhpRoute(ProxyRoute $route): bool
@@ -232,6 +254,41 @@ final readonly class ProxyRouteFixer
         }
 
         $this->repairTls($route);
+    }
+
+    private function normalizeOwnedRouteTlsPaths(ProxyRoute $route): void
+    {
+        if (! in_array($route->kind, ['app', 'workspace'], true)) {
+            return;
+        }
+
+        if (! $this->usesOrbitManagedTls($route)) {
+            return;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $tls = is_array($config['tls'] ?? null) ? $config['tls'] : [];
+
+        $tls['cert_path'] = "/etc/orbit/certs/{$route->domain}.crt";
+        $tls['key_path'] = "/etc/orbit/certs/{$route->domain}.key";
+        $config['tls'] = $tls;
+        $route->config = $config;
+    }
+
+    private function usesOrbitManagedTls(ProxyRoute $route): bool
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $tls = $config['tls'] ?? null;
+
+        if ($tls === 'internal') {
+            return false;
+        }
+
+        $managedBy = is_array($tls)
+            ? $tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit'
+            : $config['tls_managed_by'] ?? 'orbit';
+
+        return $managedBy === 'orbit';
     }
 
     private function expectsOrbitManagedTls(ProxyRoute $route): bool

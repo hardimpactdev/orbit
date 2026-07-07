@@ -120,7 +120,7 @@ final readonly class ProxyRouteProbe
             upstream="${ORBIT_PROXY_RUNTIME_UPSTREAM:-}"
             path="/etc/caddy/sites/${domain}${suffix}.caddy"
 
-            if ! docker container inspect --format '{{.State.Running}}' orbit-caddy >/dev/null 2>&1; then
+            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
                 printf '0\t\t\t\t0\t0\t\t\n'
                 exit 0
             fi
@@ -205,7 +205,7 @@ final readonly class ProxyRouteProbe
     {
         $script = <<<'BASH'
             set -euo pipefail
-            if ! docker container inspect --format '{{.State.Running}}' orbit-caddy >/dev/null 2>&1; then
+            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
                 exit 0
             fi
             docker exec orbit-caddy sh -c '
@@ -291,10 +291,10 @@ final readonly class ProxyRouteProbe
                 elif ! docker info >/dev/null 2>&1; then
                     runtime="daemon_unavailable"
                 else
-                    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
+                    state=$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)
+                    if [ -n "$state" ]; then
                         exists="true"
-                        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
-                        if [ "$state" = "true" ]; then
+                        if [ "$state" = "running" ]; then
                             running="true"
                         fi
                     fi
@@ -392,7 +392,7 @@ final readonly class ProxyRouteProbe
     {
         $script = <<<'BASH'
             set -euo pipefail
-            if ! docker container inspect --format '{{.State.Running}}' orbit-caddy >/dev/null 2>&1; then
+            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
                 exit 0
             fi
             docker exec orbit-caddy sh -c '

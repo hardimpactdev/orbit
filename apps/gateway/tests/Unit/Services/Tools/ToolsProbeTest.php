@@ -809,6 +809,7 @@ describe('ToolsProbe', function (): void {
 
                 expect($shell->script)
                     ->toContain('docker container inspect')
+                    ->toContain('.State.Restarting')
                     ->and($input['container'])
                     ->toBe($container->name())
                     ->and($input['container'])
@@ -822,6 +823,30 @@ describe('ToolsProbe', function (): void {
                     ]);
             },
         );
+    });
+
+    it('detects restarting orbit-caddy containers as not running', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $shell = new RecordingToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\trestarting\t{$container->specHash()}\n",
+        );
+        $probe = new ToolsProbe($shell);
+
+        $drift = $probe->diff($tool, $probe->introspect($tool));
+
+        expect(toolProbeIssue($drift, key: 'tool.container_not_running')?->detail)
+            ->toMatchArray([
+                'container' => 'orbit-caddy',
+                'observed_state' => 'restarting',
+            ]);
     });
 
     it('detects missing orbit-caddy containers separately from missing docker capability', function (): void {

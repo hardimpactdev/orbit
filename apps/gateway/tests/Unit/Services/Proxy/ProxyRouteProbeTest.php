@@ -1256,6 +1256,8 @@ describe('orbit-caddy container readiness', function (): void {
             ->and($shell->scripts[0])
             ->toContain('docker container inspect')
             ->and($shell->scripts[0])
+            ->toContain('.State.Restarting')
+            ->and($shell->scripts[0])
             ->toContain('orbit-caddy')
             ->and($shell->scripts[0])
             ->toContain('orbit-proxy-doctor:caddy-container-probe')

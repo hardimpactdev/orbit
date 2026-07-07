@@ -823,6 +823,8 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'tls missing',
         ));
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/docs.test.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action)
             ->toMatchArray([
@@ -833,8 +835,16 @@ describe('ProxyRouteFixer', function (): void {
             ])
             ->and($certificates->hosts)
             ->toBe(['docs.test'])
-            ->and($shell->scripts)
-            ->toBe([]);
+            ->and($caddySite)
+            ->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
+            ->and($caddySite)
+            ->not
+            ->toContain('/home/orbit/.config/orbit/certs/docs.test.crt')
+            ->and($route->refresh()->config['tls'])
+            ->toMatchArray([
+                'cert_path' => '/etc/orbit/certs/docs.test.crt',
+                'key_path' => '/etc/orbit/certs/docs.test.key',
+            ]);
     });
 
     it(

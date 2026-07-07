@@ -266,7 +266,7 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
 
     expect($caddySite)
         ->toContain(
-            'tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key',
+            'tls /etc/orbit/certs/feature-a.demo.crt /etc/orbit/certs/feature-a.demo.key',
         )
         ->and($caddySite)
         ->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
@@ -282,8 +282,8 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
         )->toBe('reload')->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
             $route?->config['php_socket'],
         )->toBeNull()->and($route?->config['tls'])->toBe([
-            'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
-            'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',
+            'cert_path' => '/etc/orbit/certs/feature-a.demo.crt',
+            'key_path' => '/etc/orbit/certs/feature-a.demo.key',
         ])->and($certificates->hosts)->toBe(['feature-a.demo'])->and($route?->source_hash)->toBe(hash(
             'sha256',
             $caddySite,
