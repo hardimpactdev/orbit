@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "ceremony-simplification-post-feature-analyzer-837",
+    "solo_process_id": 837,
+    "kind": "agent",
+    "started_at": "2026-07-07 11:21:40",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T13-21-43-019f3c4f-fd71-7f82-a563-152c57d906e3.jsonl",
+    "source": "codex_exact_marker"
+}

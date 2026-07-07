@@ -1,0 +1,6 @@
+COMPACT_PACKET=/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/tmp.C0nt4c9SM6/compact-loop.md
+WARNING: Fresh analyzer deferred: deferred - lint fixture
+PASS: /var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/tmp.C0nt4c9SM6/compact-loop.md Final Distillation packet shape is valid
+FULL_PACKET=/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/tmp.C0nt4c9SM6/full-loop.md
+WARNING: Fresh analyzer deferred: deferred - lint fixture
+PASS: /var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/tmp.C0nt4c9SM6/full-loop.md Final Distillation packet shape is valid

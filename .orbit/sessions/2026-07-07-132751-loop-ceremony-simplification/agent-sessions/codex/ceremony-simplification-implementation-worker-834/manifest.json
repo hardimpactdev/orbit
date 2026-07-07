@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "ceremony-simplification-implementation-worker-834",
+    "solo_process_id": 834,
+    "kind": "agent",
+    "started_at": "2026-07-07 11:02:26",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T13-02-26-019f3c3e-57b0-7570-b460-165e6537af6b.jsonl",
+    "source": "codex_exact_marker"
+}

@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 56,
+    "record_count": 57,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -1480,6 +1480,31 @@
                 "output_tokens": 33682,
                 "total_tokens": 4053980,
                 "reasoning_tokens": 17638
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-07-132751-loop-ceremony-simplification",
+            "slug": "loop-ceremony-simplification",
+            "timestamp": "2026-07-07-132751",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "already-covered": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 3094137,
+                "output_tokens": 28025,
+                "total_tokens": 3122162,
+                "reasoning_tokens": 15422
             },
             "capture_status": "ok"
         }
