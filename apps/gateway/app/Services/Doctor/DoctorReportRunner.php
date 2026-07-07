@@ -1724,6 +1724,19 @@ final readonly class DoctorReportRunner
                     ],
                 ]);
             }
+
+            $globalSnapshot = $this->proxyRouteProbe->introspectGlobalConfig($node);
+
+            foreach ($this->proxyRouteProbe->diffGlobalConfig($node, $globalSnapshot) as $entry) {
+                $issues[] = $this->annotateIssue([
+                    'family' => 'proxy',
+                    'node' => $node->name,
+                    'key' => $entry->key,
+                    'kind' => $entry->kind->value,
+                    'summary' => $entry->summary,
+                    'detail' => $entry->detail ?? [],
+                ]);
+            }
         } catch (RemoteShellFailed $exception) {
             $issues[] = $this->remoteShellProbeFailedIssue(
                 node: $node,
@@ -3275,6 +3288,10 @@ final readonly class DoctorReportRunner
             return $this->handleProxyCaddyContainerAction($mode, $node, $this->driftEntryFromIssue($issue));
         }
 
+        if (in_array($key, ['proxy.global_config_missing', 'proxy.global_config_mismatch'], true)) {
+            return $this->handleProxyGlobalConfigAction($mode, $node, $this->driftEntryFromIssue($issue));
+        }
+
         if (in_array(
             $key,
             [WebSocketProxyDoctorProbe::RouterRouteKey, WebSocketProxyDoctorProbe::PublicRouteKey],
@@ -3323,6 +3340,33 @@ final readonly class DoctorReportRunner
 
         try {
             return $this->proxyRouteFixer->fixCaddyContainer($node, $entry);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => $mode,
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleProxyGlobalConfigAction(string $mode, Node $node, DriftEntry $entry): ?array
+    {
+        if ($mode === 'verify') {
+            return null;
+        }
+
+        try {
+            return $this->proxyRouteFixer->fixGlobalConfig($node, $entry);
         } catch (\Throwable $e) {
             return [
                 'family' => $entry->family,
@@ -3625,6 +3669,8 @@ final readonly class DoctorReportRunner
             'proxy.tls_mismatch',
             'proxy.caddy_container_missing',
             'proxy.caddy_container_down',
+            'proxy.global_config_missing',
+            'proxy.global_config_mismatch',
             WebSocketProxyDoctorProbe::RouterRouteKey,
             WebSocketProxyDoctorProbe::PublicRouteKey,
             S3ProxyDoctorProbe::RouterRouteKey,

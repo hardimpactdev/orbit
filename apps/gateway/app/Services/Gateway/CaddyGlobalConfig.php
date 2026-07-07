@@ -9,7 +9,7 @@ final readonly class CaddyGlobalConfig
     /**
      * @var list<string>
      */
-    private const array Imports = [
+    public const array Imports = [
         '/etc/caddy/orbit/*.caddy',
         '/etc/caddy/sites/*.caddy',
     ];
@@ -23,8 +23,12 @@ final readonly class CaddyGlobalConfig
         ]))."\n";
     }
 
-    public function ensure(string $contents): string
+    /**
+     * @param  list<string>  $withoutSiteDomains
+     */
+    public function ensure(string $contents, array $withoutSiteDomains = []): string
     {
+        $contents = new CaddyGlobalSiteBlocks()->remove($contents, $withoutSiteDomains);
         $contents = rtrim($contents);
 
         if ($contents === '') {

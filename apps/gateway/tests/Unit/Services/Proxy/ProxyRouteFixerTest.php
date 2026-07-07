@@ -1044,6 +1044,80 @@ describe('ProxyRouteFixer', function (): void {
             ->toBe([]);
     });
 
+    it('reconciles stale global orbit-caddy config through the agent caddy config action', function (): void {
+        $node = createTestAppHostNode(['name' => 'NMBP']);
+        $shell = new ProxyFixerRecordingRemoteShell(<<<'CADDY'
+            {
+                local_certs
+            }
+            CADDY);
+
+        $action = new ProxyRouteFixer(
+            $shell,
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fixGlobalConfig($node, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.global_config_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'global config mismatch',
+        ));
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'NMBP',
+                'key' => 'proxy.global_config_mismatch',
+                'status' => 'completed',
+            ])
+            ->and($shell->globalConfig)
+            ->toContain('import /etc/caddy/sites/*.caddy')
+            ->and($shell->globalConfig)
+            ->toContain('(profiling_headers)')
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'read-global'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'write-global'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeTrue();
+    });
+
+    it('removes extra proxy routes from both site files and legacy global caddy blocks', function (): void {
+        $node = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        $shell = new ProxyFixerRecordingRemoteShell(<<<'CADDY'
+            {
+                local_certs
+            }
+
+            paper.nmbp {
+                reverse_proxy http://127.0.0.1:29979
+            }
+            CADDY);
+
+        $action = new ProxyRouteFixer(
+            $shell,
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->removeExtra($node, 'paper.nmbp');
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'NMBP',
+                'key' => 'paper.nmbp',
+                'status' => 'completed',
+            ])
+            ->and($shell->globalConfig)
+            ->not
+            ->toContain('paper.nmbp')
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'remove-site'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'write-global'"))
+            ->toBeTrue();
+    });
+
     it('uses the public-ingress spec when the node is an ingress role host', function (): void {
         $node = Node::factory()->create(['name' => 'edge-1', 'wireguard_address' => '10.6.0.4']);
         NodeRoleAssignment::factory()->create(['node_id' => $node->id, 'role' => 'ingress', 'status' => 'active']);
@@ -1150,12 +1224,14 @@ describe('ProxyRouteFixer', function (): void {
 
 final readonly class ProxyFixerFakeCa extends OrbitCaService
 {
+    #[\Override]
     public function rootCert(): string
     {
         return 'fake-root-ca';
     }
 
     /** @return array{cert: string, key: string} */
+    #[\Override]
     public function issueLeaf(string $host, array $additionalSans = []): array
     {
         $dir = sys_get_temp_dir().'/orbit-proxy-fixer-ca';
@@ -1266,9 +1342,11 @@ function proxy_fixer_payload_from_synthetic_script(string $script): array
     $normalized = [];
 
     foreach ($payload as $key => $value) {
-        if (is_string($key)) {
-            $normalized[$key] = $value;
+        if (! is_string($key)) {
+            continue;
         }
+
+        $normalized[$key] = $value;
     }
 
     return $normalized;
@@ -1330,8 +1408,9 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
     /** @var list<array<string, mixed>> */
     public array $payloads = [];
 
-    public function __construct()
-    {
+    public function __construct(
+        public ?string $globalConfig = null,
+    ) {
         app()->instance(RemoteShell::class, $this);
     }
 
@@ -1362,6 +1441,24 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
             ]);
         }
 
+        if (str_contains($script, "internal:caddy-config 'read-global'")) {
+            return proxy_fixer_shell_success([
+                'content' => $this->globalConfig ?? '',
+            ]);
+        }
+
+        if (str_contains($script, "internal:caddy-config 'write-global'")) {
+            $content = $payload['content'] ?? null;
+
+            if (is_string($content)) {
+                $this->globalConfig = $content;
+            }
+
+            return proxy_fixer_shell_success([
+                'content' => $this->globalConfig ?? '',
+            ]);
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }
@@ -1385,9 +1482,11 @@ function proxy_fixer_decode_input(mixed $input): array
     $normalized = [];
 
     foreach ($payload as $key => $value) {
-        if (is_string($key)) {
-            $normalized[$key] = $value;
+        if (! is_string($key)) {
+            continue;
         }
+
+        $normalized[$key] = $value;
     }
 
     return $normalized;

@@ -20,6 +20,7 @@ use App\Models\Schedule;
 use App\Models\SchedulerState;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
@@ -1124,13 +1125,13 @@ describe('DoctorRunController', function (): void {
     });
 });
 
-final class DoctorRunDatabaseScopeRemoteShell implements RemoteShell
+final readonly class DoctorRunDatabaseScopeRemoteShell implements RemoteShell
 {
     /**
      * @param  array<string, string>  $envByPath
      */
     public function __construct(
-        private readonly array $envByPath,
+        private array $envByPath,
     ) {}
 
     /**
@@ -1181,10 +1182,10 @@ final class DoctorRunDatabaseScopeRemoteShell implements RemoteShell
     }
 }
 
-final class DoctorRunFleetRemoteShell implements RemoteShell
+final readonly class DoctorRunFleetRemoteShell implements RemoteShell
 {
     public function __construct(
-        private readonly string $failingNodeName = 'app-prod-1',
+        private string $failingNodeName = 'app-prod-1',
     ) {}
 
     /**
@@ -1208,6 +1209,15 @@ final class DoctorRunFleetRemoteShell implements RemoteShell
 
         if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
             return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, '/etc/caddy/Caddyfile')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "1\t".base64_encode(new CaddyGlobalConfig()->fresh())."\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
@@ -1252,6 +1262,15 @@ final class DoctorRunRemoteShell implements RemoteShell
             return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
         }
 
+        if (str_contains($script, '/etc/caddy/Caddyfile')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "1\t".base64_encode(new CaddyGlobalConfig()->fresh())."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
         $isNodeLevel = str_contains($script, '/etc/caddy/sites/*.caddy');
         $stdout = $isNodeLevel
             ? $this->nodeLevelStdout
@@ -1264,6 +1283,7 @@ final class DoctorRunRemoteShell implements RemoteShell
 final readonly class DoctorRunFakeCa extends OrbitCaService
 {
     /** @return array{cert: string, key: string} */
+    #[\Override]
     public function issueLeaf(string $host, array $additionalSans = []): array
     {
         $dir = sys_get_temp_dir().'/orbit-doctor-run-ca';

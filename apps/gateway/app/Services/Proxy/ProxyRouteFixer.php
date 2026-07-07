@@ -14,6 +14,8 @@ use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
+use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class ProxyRouteFixer
@@ -623,6 +625,7 @@ final readonly class ProxyRouteFixer
     {
         $result = $this->caddyConfig()->removeSite($node, $domain, $this->caddyContainerName($node));
         $this->ensureSuccessful($result, "Failed to remove extra proxy route {$domain} from {$node->name}");
+        $this->removeGlobalSiteBlock($node, $domain);
 
         return [
             'family' => 'proxy',
@@ -633,6 +636,60 @@ final readonly class ProxyRouteFixer
             'status' => 'completed',
             'summary' => "Removed extra proxy route {$domain} from node.",
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function fixGlobalConfig(Node $node, DriftEntry $entry): array
+    {
+        $content = $this->caddyConfig()->readGlobal($node);
+
+        if ($content === null) {
+            throw new \RuntimeException("Failed to read global orbit-caddy config on {$node->name}");
+        }
+
+        $updated = new CaddyGlobalConfig()->ensure($content);
+
+        if (! hash_equals($updated, $content)) {
+            $write = $this->caddyConfig()->writeGlobal($node, $updated);
+            $this->ensureSuccessful($write, "Failed to write global orbit-caddy config on {$node->name}");
+
+            $this->reloadCaddy($node);
+        }
+
+        return [
+            'family' => 'proxy',
+            'node' => $node->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'fix',
+            'status' => 'completed',
+            'summary' => "Reconciled global orbit-caddy config on {$node->name}.",
+            'details' => [
+                'node' => $node->name,
+            ],
+        ];
+    }
+
+    private function removeGlobalSiteBlock(Node $node, string $domain): void
+    {
+        $content = $this->caddyConfig()->readGlobal($node);
+
+        if ($content === null) {
+            return;
+        }
+
+        $updated = new CaddyGlobalSiteBlocks()->remove($content, [$domain]);
+
+        if (hash_equals($updated, $content)) {
+            return;
+        }
+
+        $write = $this->caddyConfig()->writeGlobal($node, $updated);
+        $this->ensureSuccessful($write, "Failed to remove legacy global Caddy route {$domain} on {$node->name}");
+
+        $this->reloadCaddy($node);
     }
 
     private function caddyContainerName(Node $node): string

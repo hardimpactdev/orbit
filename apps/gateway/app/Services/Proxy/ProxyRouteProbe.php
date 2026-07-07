@@ -12,6 +12,8 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
+use App\Services\Gateway\CaddyGlobalConfig;
+use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitContainerNames;
 use Throwable;
@@ -262,6 +264,45 @@ final readonly class ProxyRouteProbe
         return new ProbeSnapshot($items);
     }
 
+    public function introspectGlobalConfig(Node $node): ProbeSnapshot
+    {
+        $script = <<<'BASH'
+            set -euo pipefail
+            if [ "$(docker container inspect --format '{{if .State.Restarting}}restarting{{else}}{{.State.Status}}{{end}}' orbit-caddy 2>/dev/null || true)" != "running" ]; then
+                printf "0\t\n"
+                exit 0
+            fi
+            docker exec orbit-caddy sh -c '
+                path="/etc/caddy/Caddyfile"
+                if [ ! -f "$path" ]; then
+                    printf "0\t\n"
+                    exit 0
+                fi
+
+                content=$(base64 -w0 "$path" 2>/dev/null || base64 "$path" | tr -d "\n")
+                printf "1\t%s\n" "$content"
+            '
+            BASH;
+
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
+        $parts = explode("\t", trim($result->stdout), limit: 2);
+        $exists = ($parts[0] ?? '') === '1';
+        $content = '';
+
+        if ($exists && is_string($parts[1] ?? null)) {
+            $decoded = base64_decode($parts[1], true);
+            $content = $decoded === false ? '' : $decoded;
+        }
+
+        return new ProbeSnapshot([
+            'global_caddy_config' => [
+                'exists' => $exists,
+                'content' => $content,
+                'hash' => hash('sha256', $content),
+            ],
+        ]);
+    }
+
     /**
      * Probe the orbit-caddy container on a serving node. Returns a single
      * snapshot keyed by the canonical container name with `runtime_status`
@@ -509,6 +550,79 @@ final readonly class ProxyRouteProbe
                 key: $domain,
                 kind: DriftKind::Extra,
                 summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+            );
+        }
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    public function diffGlobalConfig(Node $node, ProbeSnapshot $snapshot): array
+    {
+        $observed = $snapshot->get('global_caddy_config');
+
+        if (! is_array($observed)) {
+            return [];
+        }
+
+        if (($observed['exists'] ?? null) !== true) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'proxy.global_config_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Global orbit-caddy config is missing on {$node->name}.",
+                    detail: ['node' => $node->name],
+                ),
+            ];
+        }
+
+        $content = is_string($observed['content'] ?? null) ? $observed['content'] : '';
+        $config = new CaddyGlobalConfig;
+        $expectedContent = $config->ensure($content);
+        $drift = [];
+
+        if (! hash_equals($expectedContent, rtrim($content)."\n")) {
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'proxy.global_config_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Global orbit-caddy config on {$node->name} is missing Orbit-managed imports or snippets.",
+                detail: [
+                    'node' => $node->name,
+                    'current_hash' => is_string($observed['hash'] ?? null)
+                        ? $observed['hash']
+                        : hash('sha256', $content),
+                    'expected_hash' => hash('sha256', $expectedContent),
+                    'expected_imports' => CaddyGlobalConfig::Imports,
+                ],
+            );
+        }
+
+        $tld = is_string($node->tld) ? trim($node->tld) : '';
+
+        if ($tld === '') {
+            return $drift;
+        }
+
+        $expectedDomains = $this->expectedDomainsForNode($node);
+
+        foreach (new CaddyGlobalSiteBlocks()->domains($content) as $domain) {
+            if (! str_ends_with($domain, ".{$tld}") || in_array($domain, $expectedDomains, true)) {
+                continue;
+            }
+
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: $domain,
+                kind: DriftKind::Extra,
+                summary: "Proxy route '{$domain}' exists in the global Caddyfile but not in the gateway registry.",
+                detail: [
+                    'domain' => $domain,
+                    'source' => 'global_caddy_config',
+                ],
             );
         }
 

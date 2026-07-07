@@ -1156,6 +1156,23 @@ describe('proxy node-level introspection', function (): void {
             ->and($snapshot->get('vite.docs.test'))
             ->not->toBeNull();
     });
+
+    it('introspects the global orbit-caddy config on a node', function (): void {
+        $node = createTestAppHostNode();
+        $contents = "paper.nmbp {\n    reverse_proxy http://127.0.0.1:29979\n}\n";
+        $shell = new ProxyProbeRecordingRemoteShell("1\t".base64_encode($contents)."\n");
+
+        $snapshot = new ProxyRouteProbe($shell)->introspectGlobalConfig($node);
+
+        expect($snapshot->get('global_caddy_config'))
+            ->toMatchArray([
+                'exists' => true,
+                'content' => $contents,
+                'hash' => hash('sha256', $contents),
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('/etc/caddy/Caddyfile');
+    });
 });
 
 describe('proxy node-level diff', function (): void {
@@ -1216,6 +1233,52 @@ describe('proxy node-level diff', function (): void {
             ->toBe(DriftKind::Missing)
             ->and(proxyProbeIssue($drift, 'node-only.test')?->kind)
             ->toBe(DriftKind::Extra);
+    });
+
+    it('reports global caddy config drift and stale node-tld domains embedded in the global file', function (): void {
+        $node = createTestAppHostNode([
+            'name' => 'NMBP',
+            'tld' => 'nmbp',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'happie.nmbp',
+        ]);
+        $contents = <<<'CADDY'
+            {
+                local_certs
+            }
+
+            paper.nmbp {
+                reverse_proxy http://127.0.0.1:29979
+            }
+            CADDY;
+
+        $drift = new ProxyRouteProbe()->diffGlobalConfig($node, new ProbeSnapshot([
+            'global_caddy_config' => [
+                'exists' => true,
+                'content' => $contents,
+                'hash' => hash('sha256', $contents),
+            ],
+        ]));
+
+        expect(proxyProbeIssue($drift, key: 'proxy.global_config_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, key: 'proxy.global_config_mismatch')?->detail)
+            ->toMatchArray([
+                'node' => 'NMBP',
+                'expected_imports' => [
+                    '/etc/caddy/orbit/*.caddy',
+                    '/etc/caddy/sites/*.caddy',
+                ],
+            ])
+            ->and(proxyProbeIssue($drift, key: 'paper.nmbp')?->kind)
+            ->toBe(DriftKind::Extra)
+            ->and(proxyProbeIssue($drift, key: 'paper.nmbp')?->detail)
+            ->toMatchArray([
+                'domain' => 'paper.nmbp',
+                'source' => 'global_caddy_config',
+            ]);
     });
 });
 
