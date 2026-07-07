@@ -14,6 +14,7 @@ use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayHostAgentConfigWriter;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmManager;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Sleep;
@@ -126,7 +127,7 @@ class GatewayServiceUpdater
             ],
         ];
 
-        $result = $this->runCliInstall($gatewayNode, $transportOptions);
+        $result = $this->runCliInstallWithSelfUpdateRetry($gatewayNode, $transportOptions);
 
         if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
             $result = $this->runCliInstall($gatewayNode, $transportOptions);
@@ -153,6 +154,20 @@ class GatewayServiceUpdater
             commandOptions: [],
             transportOptions: $transportOptions,
         );
+    }
+
+    /**
+     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
+     */
+    private function runCliInstallWithSelfUpdateRetry(Node $gatewayNode, array $transportOptions): RemoteShellResult
+    {
+        try {
+            return $this->runCliInstall($gatewayNode, $transportOptions);
+        } catch (RemoteLocalExecutorTransportFailed) {
+            Sleep::for(1)->second();
+
+            return $this->runCliInstall($gatewayNode, $transportOptions);
+        }
     }
 
     private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool

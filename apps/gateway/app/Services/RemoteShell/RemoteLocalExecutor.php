@@ -1356,17 +1356,3 @@ final readonly class LocalExecutorActivity implements Loggable
         return $this->description;
     }
 }
-
-final class RemoteLocalExecutorTransportFailed extends RuntimeException
-{
-    /**
-     * @param  array<array-key, mixed>  $meta
-     */
-    public function __construct(
-        string $message,
-        public readonly array $meta = [],
-        int $code = 0,
-    ) {
-        parent::__construct($message, $code);
-    }
-}
