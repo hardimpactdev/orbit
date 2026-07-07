@@ -154,7 +154,30 @@ final readonly class ProxyRouteProbe
                     [ -n "$key" ] && [ -f "$key" ] && key_exists=1
 
                     if [ -n "$upstream" ]; then
-                        probe_output=$(wget -S -O /dev/null -T 3 "$upstream" 2>&1 || true)
+                        if command -v curl >/dev/null 2>&1; then
+                            case "$upstream" in
+                                https://*)
+                                    rest="${upstream#https://}"
+                                    authority="${rest%%/*}"
+                                    path="/"
+                                    if [ "$rest" != "$authority" ]; then
+                                        path="/${rest#*/}"
+                                    fi
+                                    host="${authority%%:*}"
+                                    port="443"
+                                    if [ "$authority" != "$host" ]; then
+                                        port="${authority##*:}"
+                                    fi
+
+                                    probe_output=$(curl -k -sS --connect-timeout 3 --max-time 8 -o /dev/null -w "HTTP/%{http_version} %{http_code}" --connect-to "$domain:$port:$host:$port" "https://$domain:$port$path" 2>&1 || true)
+                                    ;;
+                                *)
+                                    probe_output=$(curl -sS --connect-timeout 3 --max-time 8 -o /dev/null -w "HTTP/%{http_version} %{http_code}" "$upstream" 2>&1 || true)
+                                    ;;
+                            esac
+                        else
+                            probe_output=$(wget -S -O /dev/null -T 3 "$upstream" 2>&1 || true)
+                        fi
 
                         case "$probe_output" in
                             *HTTP/*) runtime_reachable=1 ;;

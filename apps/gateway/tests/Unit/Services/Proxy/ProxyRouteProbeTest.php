@@ -456,6 +456,63 @@ describe('proxy backend and TLS reality', function (): void {
             ->toContain('/etc/caddy/sites/${domain}${suffix}.caddy');
     });
 
+    it('probes HTTPS runtime upstreams with the route domain as SNI', function (): void {
+        $node = createTestAppHostNode(['tld' => 'nmbp']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'happie-nmbp',
+            'document_root' => 'public',
+            'runtime_config' => ['proxy_transport' => 'https'],
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'happie.nmbp',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('a', 64),
+                'config' => [
+                    'document_root' => '/Users/nckrtl/apps/happie/public',
+                    'runtime_upstream' =>
+                        'https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort,
+                    'runtime_upstream_tls' => [
+                        'trusted_by_gateway_ca' => true,
+                        'ca_path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                        'server_name' => 'happie.nmbp',
+                    ],
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt',
+                        'key_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.key',
+                    ],
+                ],
+            ]);
+        $shell = new ProxyProbeRecordingRemoteShell(
+            "1\t"
+            .str_repeat('a', 64)
+            ."\t/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt"
+            ."\t/Users/nckrtl/.config/orbit/certs/happie.nmbp.key"
+            ."\t1\t1\t1\t"
+            .base64_encode('HTTP/2 200')
+            ."\n",
+        );
+
+        $snapshot = new ProxyRouteProbe($shell)->introspect($route);
+
+        expect($snapshot->get('happie.nmbp'))
+            ->toMatchArray([
+                'route_exists' => true,
+                'runtime_upstream' => 'https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort,
+                'runtime_upstream_reachable' => true,
+                'runtime_probe_error' => 'HTTP/2 200',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('--connect-to "$domain:$port:$host:$port"')
+            ->toContain('"https://$domain:$port$path"')
+            ->and($shell->options[0]['metadata']['ORBIT_PROXY_RUNTIME_UPSTREAM'])
+            ->toBe('https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort);
+    });
+
     it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
         $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active']);
         $router = Node::factory()->create(['name' => 'gateway-1', 'status' => 'active']);
