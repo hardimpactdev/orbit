@@ -291,6 +291,139 @@ it('installs macos agent artifacts into the user local agent binary path', funct
         ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64');
 });
 
+it('retries agent artifact installs after an old cli installer ignores the agent payload', function (): void {
+    $oldInstallerResult = new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => [
+                    'installed' => true,
+                    'bin_path' => '/Users/nckrtl/.local/bin/orbit',
+                ],
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 15,
+    );
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'mini' => [$oldInstallerResult],
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-macos-arm64',
+                    'sha256' => str_repeat('8', times: 64),
+                ],
+            ],
+            agentArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64',
+                    'sha256' => str_repeat('7', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and($shell->updateScriptCallsFor('mini'))
+        ->toBe(2)
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
+        ->and(workload_updater_install_payload($shell, node: 'mini')['agent_artifact'])
+        ->toBe([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/darwin-arm64?token=fake",
+            'sha256' => str_repeat('7', times: 64),
+            'bin_path' => '/Users/nckrtl/.local/bin/orbit-agent',
+        ])
+        ->and($node->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('7', times: 64));
+});
+
+it('records agent artifact installs when the retry disconnects during agent restart', function (): void {
+    $oldInstallerResult = new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => [
+                    'installed' => true,
+                    'bin_path' => '/Users/nckrtl/.local/bin/orbit',
+                ],
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 15,
+    );
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'mini' => [
+            $oldInstallerResult,
+            new RemoteLocalExecutorTransportFailed(
+                'Remote local executor transport failed: cURL error 52: Empty reply from server',
+            ),
+        ],
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-macos-arm64',
+                    'sha256' => str_repeat('8', times: 64),
+                ],
+            ],
+            agentArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64',
+                    'sha256' => str_repeat('7', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and($shell->updateScriptCallsFor('mini'))
+        ->toBe(2)
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
+        ->and($node->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('7', times: 64));
+});
+
 it('skips agent artifacts for nodes that are not agent capable', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
@@ -1532,10 +1665,37 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
 
         return new RemoteShellResult(
             exitCode: 0,
-            stdout: "updated\n",
+            stdout: $this->successfulInstallStdout(),
             stderr: '',
             durationMs: 20,
         );
+    }
+
+    private function successfulInstallStdout(): string
+    {
+        $lastCallKey = array_key_last($this->calls);
+        $call = $lastCallKey === null ? null : $this->calls[$lastCallKey];
+        $input = is_array($call) && is_string($call['options']['input'] ?? null)
+            ? $call['options']['input']
+            : '{}';
+        /** @var mixed $payload */
+        $payload = json_decode($input, associative: true);
+        $agentArtifact = is_array($payload) ? $payload['agent_artifact'] ?? null : null;
+        $data = [
+            'installed' => true,
+        ];
+
+        if (is_array($agentArtifact)) {
+            $data['agent_installed'] = true;
+            $data['agent_bin_path'] = $agentArtifact['bin_path'] ?? null;
+        }
+
+        return json_encode([
+            'success' => [
+                'data' => $data,
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR);
     }
 
     public function scriptFor(string $node): string

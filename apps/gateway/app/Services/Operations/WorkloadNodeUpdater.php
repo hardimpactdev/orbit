@@ -14,8 +14,6 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
-use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
 use Throwable;
 
@@ -24,11 +22,11 @@ final readonly class WorkloadNodeUpdater
     public function __construct(
         private NodeRoleAssignments $roles,
         private NodeHostPaths $hostPaths,
-        private RunsInternalCommands $localExecutor,
         private UpdateLeaseManager $leases,
         private OperationRunRecorder $operationRuns,
         private FleetUpdateTargetSelector $targets,
         private FleetVersionProbe $fleetVersions,
+        private FleetUpdateNodeInstaller $nodeInstaller,
         private GatewayCliArtifactRelay $artifactRelay,
         private RemoteNodeDoctor $nodeDoctor,
     ) {}
@@ -146,19 +144,12 @@ final readonly class WorkloadNodeUpdater
             'metadata' => $this->remoteShellMetadata($operationRun, $node),
         ];
 
-        try {
-            $result = $this->runCliInstall($node, $transportOptions);
-        } catch (RemoteLocalExecutorTransportFailed $exception) {
-            if (! $this->isAgentRestartDisconnect($exception)) {
-                throw $exception;
-            }
-
-            $result = null;
-        }
-
-        if ($result instanceof RemoteShellResult && $this->shouldRetryCliInstallAfterSelfUpdate($result)) {
-            $result = $this->runCliInstall($node, $transportOptions);
-        }
+        $result = $this->nodeInstaller->run(
+            operationRun: $operationRun,
+            node: $node,
+            eventKey: $this->eventKey($node),
+            transportOptions: $transportOptions,
+        );
 
         if ($result instanceof RemoteShellResult && ! $result->successful()) {
             return [
@@ -190,30 +181,6 @@ final readonly class WorkloadNodeUpdater
             'status' => 'completed',
             'doctor_issues' => $this->runNodeDoctor($operationRun, $node),
         ];
-    }
-
-    /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
-     */
-    private function runCliInstall(Node $node, array $transportOptions): RemoteShellResult
-    {
-        return $this->localExecutor->runInternal(
-            $node,
-            'internal:fleet-update:install-cli',
-            [],
-            [],
-            $transportOptions,
-        );
-    }
-
-    private function isAgentRestartDisconnect(RemoteLocalExecutorTransportFailed $exception): bool
-    {
-        return str_contains($exception->getMessage(), 'Empty reply from server');
-    }
-
-    private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool
-    {
-        return $result->exitCode === 255 && trim($result->stdout) === '' && trim($result->stderr) === '';
     }
 
     /**

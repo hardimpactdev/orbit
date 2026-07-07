@@ -33,6 +33,8 @@ final readonly class LocalFleetUpdateInstallCliAction
             'ORBIT_AGENT_ARTIFACT_URL' => $agentArtifact->artifactUrl ?? '',
             'ORBIT_AGENT_SHA256' => strtolower($agentArtifact->sha256 ?? ''),
             'ORBIT_AGENT_BIN_PATH' => $agentArtifact->binPath ?? '',
+            'ORBIT_AGENT_LAUNCHD_LABEL' => $this->environmentString('ORBIT_AGENT_LAUNCHD_LABEL'),
+            'ORBIT_AGENT_LAUNCHCTL_BIN' => $this->environmentString('ORBIT_AGENT_LAUNCHCTL_BIN'),
             'ORBIT_ROLE_IMAGES_JSON' => json_encode($installPayload->roleImages, JSON_THROW_ON_ERROR),
         ]);
         $process->run();
@@ -128,12 +130,9 @@ final readonly class LocalFleetUpdateInstallCliAction
             restart_agent_service_if_present() {
                 systemctl_bin="$(command -v systemctl || true)"
 
-                if [ -z "$systemctl_bin" ]; then
-                    echo skip_agent_restart_no_systemctl
-                    return
-                fi
-
-                if "$systemctl_bin" status orbit-agent >/dev/null 2>&1 || "$systemctl_bin" is-enabled orbit-agent >/dev/null 2>&1; then
+                if [ -n "$systemctl_bin" ] && {
+                    "$systemctl_bin" status orbit-agent >/dev/null 2>&1 || "$systemctl_bin" is-enabled orbit-agent >/dev/null 2>&1
+                }; then
                     systemd_run_bin="$(command -v systemd-run || true)"
 
                     if [ -n "$systemd_run_bin" ]; then
@@ -153,6 +152,27 @@ final readonly class LocalFleetUpdateInstallCliAction
                     echo restart_agent
                     run_privileged "$systemctl_bin" restart orbit-agent
                     return
+                fi
+
+                launchctl_bin="${ORBIT_AGENT_LAUNCHCTL_BIN:-}"
+
+                if [ -z "$launchctl_bin" ]; then
+                    launchctl_bin="$(command -v launchctl || true)"
+                fi
+
+                if [ -n "$launchctl_bin" ]; then
+                    label="${ORBIT_AGENT_LAUNCHD_LABEL:-dev.orbit.agent}"
+                    service="gui/$(id -u)/$label"
+
+                    if "$launchctl_bin" print "$service" >/dev/null 2>&1; then
+                        if "$launchctl_bin" kickstart -k "$service" >/dev/null 2>&1; then
+                            echo restart_agent_launchd
+                            return
+                        fi
+
+                        echo restart_agent_launchd_failed
+                        return
+                    fi
                 fi
 
                 echo skip_agent_restart_no_unit
@@ -236,6 +256,13 @@ final readonly class LocalFleetUpdateInstallCliAction
             echo verify
             "$bin_path" --version --local
             BASH;
+    }
+
+    private function environmentString(string $key): string
+    {
+        $value = getenv($key);
+
+        return is_string($value) ? $value : '';
     }
 
     /**

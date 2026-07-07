@@ -241,6 +241,69 @@ describe('internal fleet update install cli command', function (): void {
     });
 });
 
+describe('macos Orbit Agent launchd restart during fleet update install', function (): void {
+    beforeEach(function (): void {
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+        fleet_update_install_cli_store_environment();
+    });
+
+    afterEach(function (): void {
+        fleet_update_install_cli_restore_environment();
+    });
+
+    it('restarts a loaded launchd service after installing an agent artifact', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $launchctlBin = make_fleet_update_install_cli_fake_launchctl_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        $sha256 = hash_file('sha256', $artifactPath);
+        $agentSha256 = hash_file('sha256', $agentArtifactPath);
+        $path = $launchctlBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        putenv("ORBIT_AGENT_LAUNCHCTL_BIN={$launchctlBin}/launchctl");
+        $_ENV['PATH'] = $path;
+        $_ENV['ORBIT_AGENT_LAUNCHCTL_BIN'] = "{$launchctlBin}/launchctl";
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => $agentSha256,
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+        $calls = file_get_contents("{$workspace}/launchctl-calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($data['stdout'] ?? '')
+            ->toContain('restart_agent_launchd')
+            ->and($calls)
+            ->toContain('launchctl print gui/')
+            ->toContain('/dev.orbit.agent')
+            ->toContain('launchctl kickstart -k gui/');
+    });
+});
+
 describe('internal fleet update install cli launcher isolation', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
@@ -319,6 +382,37 @@ function fleet_update_install_cli_signed_operation_token(
 function fleet_update_install_cli_operation_secret(): string
 {
     return implode('-', ['gateway', 'secret']);
+}
+
+function fleet_update_install_cli_store_environment(): void
+{
+    $originalPath = getenv('PATH');
+    $originalLaunchctlBin = getenv('ORBIT_AGENT_LAUNCHCTL_BIN');
+    $originalLaunchdLabel = getenv('ORBIT_AGENT_LAUNCHD_LABEL');
+
+    $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] = $originalPath === false ? '' : $originalPath;
+    $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_LAUNCHCTL_BIN'] = $originalLaunchctlBin === false
+        ? ''
+        : $originalLaunchctlBin;
+    $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_LAUNCHD_LABEL'] = $originalLaunchdLabel === false
+        ? ''
+        : $originalLaunchdLabel;
+}
+
+function fleet_update_install_cli_restore_environment(): void
+{
+    $path = $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '';
+    $launchctlBin = $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_LAUNCHCTL_BIN'] ?? '';
+    $launchdLabel = $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_LAUNCHD_LABEL'] ?? '';
+
+    putenv('PATH='.$path);
+    $_ENV['PATH'] = $path;
+    $_SERVER['PATH'] = $path;
+
+    putenv($launchctlBin === '' ? 'ORBIT_AGENT_LAUNCHCTL_BIN' : 'ORBIT_AGENT_LAUNCHCTL_BIN='.$launchctlBin);
+    putenv($launchdLabel === '' ? 'ORBIT_AGENT_LAUNCHD_LABEL' : 'ORBIT_AGENT_LAUNCHD_LABEL='.$launchdLabel);
+    $_ENV['ORBIT_AGENT_LAUNCHCTL_BIN'] = $launchctlBin;
+    $_ENV['ORBIT_AGENT_LAUNCHD_LABEL'] = $launchdLabel;
 }
 
 /**
@@ -466,6 +560,38 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
         exit 0
         SH);
     chmod(filename: "{$bin}/systemd-run", permissions: 0o755);
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_fake_launchctl_bin(string $workspace): string
+{
+    $bin = "{$workspace}/launchctl-bin";
+    $log = "{$workspace}/launchctl-calls.log";
+
+    mkdir($bin, recursive: true);
+    file_put_contents($log, '');
+
+    file_put_contents("{$bin}/systemctl", <<<'SH'
+        #!/usr/bin/env sh
+        exit 1
+        SH);
+    chmod(filename: "{$bin}/systemctl", permissions: 0o755);
+
+    file_put_contents("{$bin}/launchctl", <<<SH
+        #!/usr/bin/env sh
+        echo "launchctl \$*" >> {$log}
+        if [ "\$1" = "print" ]; then
+          case "\$2" in
+            gui/*/dev.orbit.agent) exit 0 ;;
+          esac
+        fi
+        if [ "\$1" = "kickstart" ]; then
+          exit 0
+        fi
+        exit 1
+        SH);
+    chmod(filename: "{$bin}/launchctl", permissions: 0o755);
 
     return $bin;
 }
