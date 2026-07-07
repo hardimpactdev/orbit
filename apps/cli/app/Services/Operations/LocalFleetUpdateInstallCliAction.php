@@ -171,17 +171,23 @@ final readonly class LocalFleetUpdateInstallCliAction
             install_binary "$tmp/orbit" "$install_root/bin/orbit-binary-$sha_prefix"
             link_target="$install_root/bin/orbit-binary-$sha_prefix"
 
-            case "$bin_path" in
-                /usr/local/bin/*)
-                    if [ -z "$shared_binary_path" ]; then
+            if [ -z "$shared_binary_path" ]; then
+                case "$bin_path" in
+                    /usr/local/bin/*)
                         link_name="$(basename "$bin_path")"
                         shared_binary_path="/usr/local/lib/orbit/${link_name}-binary-$sha_prefix"
-                    fi
+                        ;;
+                esac
+            fi
 
-                    install_binary "$tmp/orbit" "$shared_binary_path"
-                    link_target="$shared_binary_path"
-                    ;;
-            esac
+            if [ -n "$shared_binary_path" ]; then
+                install_binary "$tmp/orbit" "$shared_binary_path"
+                link_target="$shared_binary_path"
+
+                if [ "$(basename "$shared_binary_path")" = "orbit-binary-$sha_prefix" ]; then
+                    link_binary "$shared_binary_path" "$(dirname "$shared_binary_path")/orbit-binary"
+                fi
+            fi
 
             link_binary "$link_target" "$bin_path"
 

@@ -124,6 +124,41 @@ describe('internal fleet update install cli command', function (): void {
             ->toContain('verify_agent');
     });
 
+    it('refreshes the generic shared binary link when installing a versioned shared CLI artifact', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $sha256 = hash_file('sha256', $artifactPath);
+        $shaPrefix = substr($sha256, offset: 0, length: 12);
+        $sharedBinaryPath = "{$workspace}/shared/orbit-binary-{$shaPrefix}";
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => $sharedBinaryPath,
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $genericSharedBinaryPath = "{$workspace}/shared/orbit-binary";
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(fleet_update_install_cli_success_data($output)['stdout'] ?? '')
+            ->toContain('install_cli')
+            ->and(is_link($genericSharedBinaryPath))
+            ->toBeTrue()
+            ->and(readlink($genericSharedBinaryPath))
+            ->toBe($sharedBinaryPath)
+            ->and(hash_file('sha256', realpath($genericSharedBinaryPath) ?: $genericSharedBinaryPath))
+            ->toBe($sha256);
+    });
+
     it('schedules a deferred Orbit Agent restart through systemd-run when available', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $systemdBin = make_fleet_update_install_cli_fake_systemd_bin($workspace);
