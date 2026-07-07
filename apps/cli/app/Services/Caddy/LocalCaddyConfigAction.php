@@ -396,15 +396,8 @@ final readonly class LocalCaddyConfigAction
     {
         $directories = $this->hostMountDirectories($spec['mounts']);
 
-        if ($directories !== []) {
-            $this->mustRun([
-                'sudo',
-                'install',
-                '-d',
-                '-m',
-                '0755',
-                ...$directories,
-            ], 'caddy_container.host_config_failed');
+        foreach ($directories as $directory) {
+            $this->ensureHostDirectory($directory);
         }
 
         $exists = $this->runProcess(['sudo', 'test', '-f', self::GLOBAL_CADDYFILE]);
@@ -443,6 +436,24 @@ final readonly class LocalCaddyConfigAction
         }
 
         return $directories;
+    }
+
+    private function ensureHostDirectory(string $directory): void
+    {
+        $exists = $this->runProcess(['sudo', 'test', '-d', $directory]);
+
+        if ($exists['exit_code'] === 0) {
+            return;
+        }
+
+        $this->mustRun([
+            'sudo',
+            'install',
+            '-d',
+            '-m',
+            '0755',
+            $directory,
+        ], 'caddy_container.host_config_failed');
     }
 
     /**
