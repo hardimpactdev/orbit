@@ -794,6 +794,12 @@ command address/output transcript.
    `.orbit/loop.md` and `HARNESS_SIGNALS.md`. If a reviewer or human points to
    behavior already present in the raw request, reclassify it as a blocking
    contract gap unless it was explicitly deferred before editing.
+   When a Solo worker, reviewer, analyzer, or retained agent lane reaches lane
+   close, run `bin/orbit-agent-session-capture <solo-process-id>` while that
+   Solo process row is still alive. Record the staged path and status in
+   `.orbit/loop.md`. If a provider is unsupported or cannot be captured, add
+   the explicit `- Agent session capture waivers:` row naming the provider and
+   reason; do not rely on archive-time lookup as the primary capture path.
 11. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Codex documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
@@ -991,6 +997,8 @@ command address/output transcript.
     changed guardrail target is reachable. After final distillation is complete,
     archive the completed active `.orbit/` state with `bin/orbit-session-archive`
     before cleanup and before any later `.orbit/loop.md` rewrite. The tool
+    copies staged lane-close captures from `.orbit/agent-sessions/` when they
+    exist and uses archive-time extraction only as a no-staging fallback. It
     generates the archive name, links the archive under the packet's
     `## Evidence Links`, and refreshes an existing archive instead of
     duplicating it; `HARNESS.md` Session Archives is the authority.

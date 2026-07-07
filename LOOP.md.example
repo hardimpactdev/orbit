@@ -98,11 +98,13 @@ hand-writing timestamps, and see HARNESS.md Worktree-Local State for the
 naming contract. Preserve every active `.orbit/` entry except `.orbit/sessions/`,
 including `loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, and
 `agent-sessions/` output from
-`bin/orbit-session-archive`. Provider session archives are grouped by LLM and
-process/session slug and contain
+lane-close `bin/orbit-agent-session-capture` runs. `bin/orbit-session-archive`
+copies staged captures byte-for-byte and falls back to archive-time extraction
+only when no staged captures exist. Provider session archives are grouped by
+LLM and process/session slug and contain
 `manifest.json`, `usage.json`, `messages.jsonl`, and raw provider files for
 supported providers. Antigravity remains an explicit unsupported/missing
-manifest entry until a reliable local session-file contract is known.
+manifest entry or waiver until a reliable local session-file contract is known.
 `harness-signals/` remains curated distilled learning, not raw session storage.
 
 Keep the exact Markdown bullet-label shape below.
@@ -131,6 +133,7 @@ meaningful value.
   - Includes objective/final diff:
   - Includes worker/reviewer/terminal/evidence pointers:
   - Includes orchestrator steering notes:
+- Agent session capture waivers: <none | provider(s) and reason for missing or unsupported lane-close capture>
 - Fresh analyzer:
   - Persona:
   - Solo process or analyzer:

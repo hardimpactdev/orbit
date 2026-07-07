@@ -1,0 +1,681 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Lane-close agent session capture.
+ *
+ * While the Solo DB row for <solo-process-id> is alive, resolve provider/cwd/started_at
+ * and extract that session's transcript via exact "Solo process ID: <id>" marker join
+ * into staging .orbit/agent-sessions/<provider>/<lane-slug>/.
+ *
+ * Exact marker join: the marker text must select exactly one runtime-scoped provider
+ * session candidate. Ambiguity or zero matches = loud failure with diagnostics.
+ */
+
+// Robust arg parsing for mixed positional id + long options (works under test Process exec too)
+$rawArgv = $GLOBALS['argv'] ?? $_SERVER['argv'] ?? [];
+$script = array_shift($rawArgv); // drop script name
+
+$soloProcessId = null;
+$options = [];
+
+foreach ($rawArgv as $a) {
+    if (preg_match('/^--([a-z0-9-]+)(?:=(.*))?$/', $a, $m)) {
+        $key = str_replace('-', '_', $m[1]);
+        $val = $m[2] ?? true;
+        $options[$key] = $val;
+    } elseif ($soloProcessId === null && preg_match('/^\d+$/', $a)) {
+        $soloProcessId = (int) $a;
+    } elseif (preg_match('/^--solo-process-id=(.+)$/', $a, $m)) {
+        $soloProcessId = (int) $m[1];
+    }
+}
+
+if (array_key_exists('help', $options) || $soloProcessId === null) {
+    fwrite(STDOUT, <<<'EOF'
+Usage:
+  bin/orbit-agent-session-capture <solo-process-id> [--home=...] [--cwd=...] [--solo-db=...] [--orbit-dir=...]
+
+Extracts the provider session for the given live Solo process id using exact marker match
+"Solo process ID: <id>" (and close variants). Writes staged capture under
+.orbit/agent-sessions/<provider>/<slug>/ containing manifest.json, usage.json,
+messages.jsonl, and raw/ copies.
+
+Exits non-zero with diagnostics on missing or ambiguous marker match.
+EOF);
+    exit($soloProcessId === null ? 2 : 0);
+}
+
+if ($soloProcessId <= 0) {
+    fwrite(STDERR, "solo-process-id is required and must be positive\n");
+    exit(2);
+}
+
+$home = (string) ($options['home'] ?? getenv('HOME'));
+$cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
+$soloDb = (string) ($options['solo_db'] ?? $options['solo-db'] ?? "{$home}/.config/soloterm/solo.db");
+$orbitDir = (string) ($options['orbit_dir'] ?? $options['orbit-dir'] ?? ($cwd.'/.orbit'));
+$explicitProvider = $options['provider'] ?? null;
+$explicitSlug = $options['slug'] ?? null;
+
+if (! is_file($soloDb)) {
+    fwrite(STDERR, "solo db not found: {$soloDb}\n");
+    exit(2);
+}
+
+$processRow = loadSoloProcessRow($soloDb, $soloProcessId);
+
+if ($processRow === null) {
+    // Try spawned_processes as fallback for runtime liveness
+    $processRow = loadSoloSpawnedProcess($soloDb, $soloProcessId);
+}
+
+if ($processRow === null) {
+    fwrite(STDERR, "solo process {$soloProcessId} not found in solo db (row not alive)\n");
+    exit(2);
+}
+
+$kind = strtolower((string) ($processRow['kind'] ?? $processRow['process_kind'] ?? 'command'));
+$command = (string) ($processRow['command'] ?? '');
+$workingDir = realpath((string) ($processRow['working_dir'] ?? $processRow['project_path'] ?? $cwd)) ?: $cwd;
+$name = (string) ($processRow['name'] ?? $processRow['process_name'] ?? 'agent');
+
+$provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
+
+// Resolve started_at from Solo row (prefer runtime spawned_at when the row is alive)
+$startedAt = $processRow['spawned_at']
+    ?? $processRow['created_at']
+    ?? $processRow['started_at']
+    ?? null;
+
+fwrite(STDERR, sprintf(
+    "resolved from solo.db: solo_process_id=%d provider=%s cwd=%s started_at=%s\n",
+    $soloProcessId,
+    $provider,
+    $workingDir,
+    $startedAt ?? 'null'
+));
+
+$slug = $explicitSlug ?: slugify($name ?: 'process-'.$soloProcessId).'-'.$soloProcessId;
+
+$stagingBase = rtrim($orbitDir, '/').'/agent-sessions/'.$provider.'/'.$slug;
+ensureDirectory($stagingBase);
+ensureDirectory($stagingBase.'/raw');
+
+$markerNeedle = "Solo process ID: {$soloProcessId}";
+
+$extract = match ($provider) {
+    'codex' => captureCodexExact($home, $workingDir, $soloProcessId, $markerNeedle),
+    'claude' => captureClaudeExact($home, $workingDir, $soloProcessId, $markerNeedle),
+    'grok' => captureGrokExact($home, $workingDir, $soloProcessId, $markerNeedle),
+    default => [
+        'status' => 'unsupported',
+        'reason' => $kind === 'terminal' ? 'terminal_kind_requires_waiver' : 'provider_unsupported',
+        'checked' => [],
+    ],
+};
+
+if (($extract['status'] ?? null) === 'ok') {
+    // Write staged artifacts
+    $manifest = [
+        'schema_version' => 1,
+        'provider' => $provider,
+        'status' => 'ok',
+        'slug' => $slug,
+        'solo_process_id' => $soloProcessId,
+        'kind' => $kind,
+        'started_at' => $startedAt,
+        'marker_match' => 'exact',
+        'artifact' => $extract['artifact'] ?? null,
+        'source' => $extract['source'] ?? 'lane_close_capture',
+    ];
+    writeJsonFile($stagingBase.'/manifest.json', $manifest);
+    writeJsonFile($stagingBase.'/usage.json', $extract['usage'] ?? []);
+    file_put_contents($stagingBase.'/messages.jsonl', ($extract['messages_jsonl'] ?? '')."\n");
+
+    if (!empty($extract['raw_files'])) {
+        foreach ($extract['raw_files'] as $rf) {
+            $src = $rf['path'];
+            $dest = $stagingBase.'/raw/'.$rf['archive_name'];
+            if (is_file($src)) {
+                copyFileOrFail($src, $dest);
+            }
+        }
+    }
+
+    $result = [
+        'status' => 'ok',
+        'provider' => $provider,
+        'solo_process_id' => $soloProcessId,
+        'slug' => $slug,
+        'started_at' => $startedAt,
+        'staging_dir' => $stagingBase,
+    ];
+    echo json_encode($result, JSON_UNESCAPED_SLASHES)."\n";
+    exit(0);
+}
+
+// Failure or unsupported path: write explicit manifest entry (supports waiver later)
+$manifest = [
+    'schema_version' => 1,
+    'provider' => $provider,
+    'status' => $extract['status'] ?? 'missing',
+    'slug' => $slug,
+    'solo_process_id' => $soloProcessId,
+    'kind' => $kind,
+    'started_at' => $startedAt,
+    'reason' => $extract['reason'] ?? 'capture_failed',
+    'checked' => $extract['checked'] ?? [],
+    'marker' => $markerNeedle,
+];
+writeJsonFile($stagingBase.'/manifest.json', $manifest);
+
+fwrite(STDERR, "capture failed for solo_process_id={$soloProcessId} provider={$provider}: ".($extract['reason'] ?? 'unknown')."\n");
+if (!empty($extract['checked'])) {
+    fwrite(STDERR, "candidates checked:\n".json_encode($extract['checked'], JSON_PRETTY_PRINT)."\n");
+}
+if (($extract['status'] ?? '') === 'ambiguous') {
+    fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect checked list above.\n");
+}
+exit(1);
+
+// --- helpers ---
+
+function loadSoloProcessRow(string $dbPath, int $id): ?array
+{
+    try {
+        $db = new PDO('sqlite:'.$dbPath);
+        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $columns = tableColumns($db, 'processes');
+        $selectedColumns = array_values(array_filter(
+            ['id', 'name', 'command', 'working_dir', 'kind', 'project_id', 'started_at', 'created_at', 'spawned_at'],
+            fn (string $column): bool => in_array($column, $columns, true),
+        ));
+
+        if (! in_array('id', $selectedColumns, true)) {
+            return null;
+        }
+
+        $select = implode(', ', array_map(quoteIdentifier(...), $selectedColumns));
+        $stmt = $db->prepare("SELECT {$select} FROM processes WHERE id = ?");
+        $stmt->execute([$id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function loadSoloSpawnedProcess(string $dbPath, int $id): ?array
+{
+    try {
+        $db = new PDO('sqlite:'.$dbPath);
+        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $columns = tableColumns($db, 'spawned_processes');
+
+        if ($columns === []) {
+            return null;
+        }
+
+        $select = [];
+
+        foreach ([
+            'pid' => 'id',
+            'id' => 'id',
+            'process_name' => 'name',
+            'name' => 'name',
+            'command' => 'command',
+            'project_path' => 'working_dir',
+            'working_dir' => 'working_dir',
+            'kind' => 'kind',
+            'spawned_at' => 'spawned_at',
+            'started_at' => 'started_at',
+            'created_at' => 'created_at',
+        ] as $column => $alias) {
+            if (in_array($column, $columns, true)) {
+                $select[] = quoteIdentifier($column).' AS '.quoteIdentifier($alias);
+            }
+        }
+
+        if (! in_array('kind', $columns, true)) {
+            $select[] = "'agent' AS ".quoteIdentifier('kind');
+        }
+
+        if ($select === []) {
+            return null;
+        }
+
+        $where = [];
+        $params = [];
+
+        if (in_array('pid', $columns, true)) {
+            $where[] = quoteIdentifier('pid').' = ?';
+            $params[] = $id;
+        }
+
+        if (in_array('id', $columns, true)) {
+            $where[] = quoteIdentifier('id').' = ?';
+            $params[] = $id;
+        }
+
+        if (in_array('process_name', $columns, true)) {
+            $where[] = quoteIdentifier('process_name').' LIKE ?';
+            $params[] = '%'.$id.'%';
+        }
+
+        if ($where === []) {
+            return null;
+        }
+
+        $stmt = $db->prepare('SELECT '.implode(', ', $select).' FROM spawned_processes WHERE '.implode(' OR ', $where).' LIMIT 1');
+        $stmt->execute($params);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * @return list<string>
+ */
+function tableColumns(PDO $db, string $table): array
+{
+    $columns = [];
+    $stmt = $db->query('PRAGMA table_info('.quoteIdentifier($table).')');
+
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (isset($row['name']) && is_string($row['name'])) {
+            $columns[] = $row['name'];
+        }
+    }
+
+    return $columns;
+}
+
+function quoteIdentifier(string $identifier): string
+{
+    return '"'.str_replace('"', '""', $identifier).'"';
+}
+
+function inferProviderFromCommandOrName(string $command, string $name, string $kind): string
+{
+    $hay = strtolower($command.' '.$name);
+    if (str_contains($hay, 'codex') || str_contains($hay, 'openai') || str_contains($hay, 'o1')) {
+        return 'codex';
+    }
+    if (str_contains($hay, 'claude') || str_contains($hay, 'anthropic')) {
+        return 'claude';
+    }
+    if (str_contains($hay, 'grok') || str_contains($hay, 'xai')) {
+        return 'grok';
+    }
+    if ($kind === 'terminal') {
+        return 'terminal';
+    }
+    // default to codex for agent workers in this harness
+    return 'codex';
+}
+
+function slugify(string $value): string
+{
+    $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '-', $value));
+    $slug = trim($slug, '-');
+    return $slug === '' ? 'session' : $slug;
+}
+
+function ensureDirectory(string $directory): void
+{
+    if (is_dir($directory)) {
+        return;
+    }
+    if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
+        throw new RuntimeException("Unable to create directory: {$directory}");
+    }
+}
+
+function writeJsonFile(string $path, array $payload): void
+{
+    ensureDirectory(dirname($path));
+    file_put_contents($path, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
+}
+
+function copyFileOrFail(string $src, string $dest): void
+{
+    ensureDirectory(dirname($dest));
+    if (!copy($src, $dest)) {
+        throw new RuntimeException("copy failed: {$src} -> {$dest}");
+    }
+}
+
+function fileContains(string $path, string $needle): bool
+{
+    if (!is_file($path)) {
+        return false;
+    }
+    $fh = fopen($path, 'r');
+    if ($fh === false) {
+        return false;
+    }
+    while (!feof($fh)) {
+        $chunk = fread($fh, 8192);
+        if ($chunk !== false && str_contains($chunk, $needle)) {
+            fclose($fh);
+            return true;
+        }
+    }
+    fclose($fh);
+    return false;
+}
+
+/** @return list<string> */
+function findFiles(string $root, string $glob): array
+{
+    $files = [];
+    if (!is_dir($root)) {
+        return $files;
+    }
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+    foreach ($it as $entry) {
+        if ($entry->isFile() && fnmatch($glob, $entry->getFilename())) {
+            $files[] = $entry->getPathname();
+        }
+    }
+    return $files;
+}
+
+function captureCodexExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+{
+    $root = "{$home}/.codex/sessions";
+    $candidates = [];
+    $checked = [];
+    $rollouts = findFiles($root, '*.jsonl');
+
+    foreach ($rollouts as $file) {
+        $checked[] = $file;
+        if (! codexFileHasScopedMarker($file, $markerNeedle)) {
+            continue;
+        }
+        $candidates[] = $file;
+    }
+
+    if (count($candidates) !== 1) {
+        return [
+            'status' => count($candidates) === 0 ? 'missing' : 'ambiguous',
+            'reason' => count($candidates) === 0 ? 'exact_marker_not_found' : 'ambiguous_duplicate_markers',
+            'checked' => array_slice($checked, 0, 20),
+        ];
+    }
+
+    $chosen = $candidates[0];
+    // Parse minimal usage + messages from the rollout (reuse light logic)
+    $messages = [];
+    $usage = ['input_tokens' => 0, 'output_tokens' => 0, 'total_tokens' => 0];
+    foreach (jsonl($chosen) as $row) {
+        $type = $row['type'] ?? '';
+        if ($type === 'response_item' && isset($row['payload']['content'])) {
+            foreach ($row['payload']['content'] as $c) {
+                if (isset($c['text'])) {
+                    $messages[] = ['role' => $row['payload']['role'] ?? 'unknown', 'content' => $c['text']];
+                }
+            }
+        }
+        if ($type === 'event_msg' && ($row['payload']['type'] ?? '') === 'token_count') {
+            $u = $row['payload']['info']['total_token_usage'] ?? [];
+            $usage['input_tokens'] = (int) ($u['input_tokens'] ?? 0);
+            $usage['output_tokens'] = (int) ($u['output_tokens'] ?? 0);
+            $usage['reasoning_tokens'] = (int) ($u['reasoning_output_tokens'] ?? 0);
+            $usage['total_tokens'] = (int) ($u['total_tokens'] ?? 0);
+        }
+    }
+
+    $messagesJsonl = implode("\n", array_map(fn($m) => json_encode(['role' => $m['role'], 'content' => $m['content']], JSON_UNESCAPED_SLASHES), $messages));
+
+    return [
+        'status' => 'ok',
+        'source' => 'codex_exact_marker',
+        'artifact' => $chosen,
+        'usage' => $usage,
+        'messages_jsonl' => $messagesJsonl,
+        'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
+    ];
+}
+
+function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
+{
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) === 'session_meta') {
+            $base = $row['payload']['base_instructions'] ?? [];
+            $text = '';
+
+            if (is_array($base) && isset($base['text'])) {
+                $text = (string) $base['text'];
+            } elseif (is_string($base)) {
+                $text = $base;
+            }
+
+            if (str_contains($text, $markerNeedle)) {
+                return true;
+            }
+
+            continue;
+        }
+
+        if (($row['type'] ?? null) !== 'response_item') {
+            continue;
+        }
+
+        $payload = $row['payload'] ?? [];
+
+        if (($payload['type'] ?? null) !== 'message' || ($payload['role'] ?? null) !== 'user') {
+            continue;
+        }
+
+        if (str_contains(extractText($payload['content'] ?? ''), $markerNeedle)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function captureClaudeExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+{
+    $checked = [];
+    $matches = [];
+    foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
+        $checked[] = $file;
+        if (claudeFileHasPromptMarker($file, $markerNeedle)) {
+            $matches[] = $file;
+        }
+    }
+
+    if (count($matches) !== 1) {
+        return [
+            'status' => count($matches) === 0 ? 'missing' : 'ambiguous',
+            'reason' => count($matches) === 0 ? 'exact_marker_not_found' : 'duplicate_exact_markers',
+            'checked' => array_slice($checked, 0, 20),
+        ];
+    }
+
+    $chosen = $matches[0];
+    $messages = [];
+    $usage = ['input_tokens' => 0, 'output_tokens' => 0];
+    foreach (jsonl($chosen) as $row) {
+        if (($row['type'] ?? '') === 'user' && isset($row['message']['content'])) {
+            $messages[] = ['role' => 'user', 'content' => extractText($row['message']['content'])];
+        }
+        if (($row['type'] ?? '') === 'assistant' && isset($row['message']['content'])) {
+            $messages[] = ['role' => 'assistant', 'content' => extractText($row['message']['content'])];
+            $u = $row['message']['usage'] ?? [];
+            $usage['input_tokens'] += (int) ($u['input_tokens'] ?? 0);
+            $usage['output_tokens'] += (int) ($u['output_tokens'] ?? 0);
+            $usage['cache_read_tokens'] = (int) ($u['cache_read_input_tokens'] ?? 0);
+            $usage['cache_write_tokens'] = (int) ($u['cache_creation_input_tokens'] ?? 0);
+        }
+    }
+
+    $messagesJsonl = implode("\n", array_map(fn($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
+
+    return [
+        'status' => 'ok',
+        'source' => 'claude_exact_marker',
+        'artifact' => $chosen,
+        'usage' => $usage,
+        'messages_jsonl' => $messagesJsonl,
+        'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
+    ];
+}
+
+function captureGrokExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+{
+    $checked = [];
+    $candidates = [];
+    $base = "{$home}/.grok/sessions";
+    foreach (glob("{$base}/*/*", GLOB_ONLYDIR) ?: [] as $dir) {
+        foreach (glob("{$dir}/chat_history.jsonl") ?: [] as $f) {
+            $checked[] = $f;
+            if (grokChatHasPromptMarker($f, $markerNeedle)) {
+                $candidates[] = $dir;
+            }
+        }
+    }
+
+    if (count($candidates) !== 1) {
+        return [
+            'status' => count($candidates) === 0 ? 'missing' : 'ambiguous',
+            'reason' => count($candidates) === 0 ? 'exact_marker_not_found' : 'ambiguous_duplicate_markers',
+            'checked' => array_slice($checked, 0, 20),
+        ];
+    }
+
+    $dir = $candidates[0];
+    $messages = extractGrokMessages($dir);
+    $signalsFile = "{$dir}/signals.json";
+    $signals = is_file($signalsFile) ? (json_decode((string) file_get_contents($signalsFile), true) ?: []) : [];
+    // Honest telemetry: do not surface toolFailureCount or other unverified counters.
+    $usage = [
+        'context_tokens_used' => (int) ($signals['contextTokensUsed'] ?? 0),
+        'context_window_tokens' => (int) ($signals['contextWindowTokens'] ?? 0),
+        'tool_call_count' => (int) ($signals['toolCallCount'] ?? 0),
+        'session_duration_seconds' => (int) ($signals['sessionDurationSeconds'] ?? 0),
+    ];
+
+    $messagesJsonl = implode("\n", array_map(fn($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
+
+    $raw = [];
+    foreach (['chat_history.jsonl','events.jsonl','updates.jsonl','signals.json','summary.json','prompt_context.json','resources_state.json','system_prompt.txt','terminal.log'] as $rf) {
+        $p = "{$dir}/{$rf}";
+        if (is_file($p)) {
+            $raw[] = ['path' => $p, 'archive_name' => $rf];
+        }
+    }
+
+    return [
+        'status' => 'ok',
+        'source' => 'grok_exact_marker',
+        'artifact' => $dir,
+        'usage' => $usage,
+        'messages_jsonl' => $messagesJsonl,
+        'raw_files' => $raw,
+    ];
+}
+
+function claudeFileHasPromptMarker(string $path, string $markerNeedle): bool
+{
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) !== 'user') {
+            continue;
+        }
+
+        if (str_contains(extractText($row['message']['content'] ?? ''), $markerNeedle)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function grokChatHasPromptMarker(string $path, string $markerNeedle): bool
+{
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) !== 'user') {
+            continue;
+        }
+
+        if (str_contains(extractText($row['content'] ?? ''), $markerNeedle)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function extractText($content): string
+{
+    if (is_string($content)) {
+        return $content;
+    }
+    if (is_array($content)) {
+        $parts = [];
+        foreach ($content as $c) {
+            if (is_array($c) && isset($c['text'])) {
+                $parts[] = $c['text'];
+            }
+        }
+        return implode(' ', $parts);
+    }
+    return '';
+}
+
+/** @return iterable<array> */
+function jsonl(string $path): iterable
+{
+    if (!is_file($path)) {
+        return;
+    }
+
+    $handle = fopen($path, 'r');
+
+    if ($handle === false) {
+        return;
+    }
+
+    try {
+        while (($line = fgets($handle)) !== false) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            $j = json_decode($line, true);
+
+            if (is_array($j)) {
+                yield $j;
+            }
+        }
+    } finally {
+        fclose($handle);
+    }
+}
+
+/** @return list<array{role:string,content:string}> */
+function extractGrokMessages(string $sessionDir): array
+{
+    $messages = [];
+    $chatHistory = "{$sessionDir}/chat_history.jsonl";
+    foreach (jsonl($chatHistory) as $row) {
+        $type = $row['type'] ?? '';
+        if (in_array($type, ['user','assistant','system'], true) && isset($row['content'])) {
+            $text = is_array($row['content']) ? extractText($row['content']) : (string) $row['content'];
+            $messages[] = ['role' => $type, 'content' => $text];
+        }
+    }
+    return $messages;
+}

@@ -103,21 +103,33 @@ A session archive should preserve at minimum:
 - `agent-sessions/` with the provider session files that backed the loop
 
 Use `bin/orbit-session-archive` to create the session archive. It copies every
-active `.orbit/` entry except `.orbit/sessions/`, runs
-`bin/orbit-agent-session-archive` into the archive's `agent-sessions/`
-directory, and then writes the archive pointer back into the active
-`.orbit/loop.md` under `## Evidence Links` so the archived and active `loop.md`
-stay byte-identical. Reruns are idempotent: when the newest archive for the
-same slug already matches the active `loop.md`, the tool refreshes that archive
-in place (`mode=refreshed`) instead of minting a duplicate. It exits non-zero
-on missing source state, invalid archive names, mismatched existing archives,
-or copy failures, and prints a stderr WARNING naming the missing provider
-context when it can only write an empty agent-sessions manifest. Provider
-archives are grouped per LLM and include `manifest.json`, `usage.json`,
-`messages.jsonl`, and `raw/` copies of the session files used to derive them;
-missing or unsupported providers appear as explicit manifest entries with a
-`checked` list of the paths searched. See the tool's `--help` for slug,
-timestamp, and destination options.
+active `.orbit/` entry except `.orbit/sessions/`, then writes the archive
+pointer back into the active `.orbit/loop.md` under `## Evidence Links` so the
+archived and active `loop.md` stay byte-identical. Reruns are idempotent: when
+the newest archive for the same slug already matches the active `loop.md`, the
+tool refreshes that archive in place (`mode=refreshed`) instead of minting a
+duplicate. It exits non-zero on missing source state, invalid archive names,
+mismatched existing archives, or copy failures.
+
+Agent-session capture happens at lane close, while the Solo process row is
+still alive. Run `bin/orbit-agent-session-capture <solo-process-id>` for each
+worker/reviewer/analyzer lane that should be preserved. The capture tool
+resolves provider, cwd, and started time from Solo's database, joins provider
+session files by the exact `Solo process ID: <id>` marker from the spawned
+runtime prompt, and stages artifacts under the ignored active-state directory
+`.orbit/agent-sessions/<provider>/<lane-slug>/`. Provider archives include
+`manifest.json`, `usage.json`, `messages.jsonl`, and `raw/` copies of the
+session files used to derive them. Missing, ambiguous, or unsupported providers
+must be represented by an explicit manifest or by the final packet's
+`- Agent session capture waivers:` row; do not silently drop them.
+
+When staged captures exist, `bin/orbit-session-archive` copies the staged
+`agent-sessions/` tree byte-for-byte and skips archive-time live extraction so
+the archive cannot overwrite or duplicate lane-close evidence. Loops without
+staged captures still fall back to `bin/orbit-agent-session-archive`, which
+writes an aggregate `agent-sessions/manifest.json` and stderr WARNINGs for
+missing provider context. See the tools' `--help` output for slug, timestamp,
+and destination options.
 
 Archive creation must exclude the existing `.orbit/sessions/` tree so archives
 do not recurse into prior session copies.
@@ -304,8 +316,14 @@ feature-cleanup boundaries. It blocks when:
   uncommitted tracked changes;
 - on cleanup, `git worktree remove` or `git branch -d`/`-D` runs without a
   primary-checkout `.orbit/sessions/` archive named
-  `YYYY-MM-DD-HHMMSS-<slug>` that contains `loop.md` and
-  `agent-sessions/manifest.json`; create it with `bin/orbit-session-archive`.
+  `YYYY-MM-DD-HHMMSS-<slug>` that contains `loop.md` and agent-session
+  manifests from staged lane-close capture or fallback extraction; create it
+  with `bin/orbit-session-archive`;
+- the packet names worker/reviewer/analyzer lanes with Solo process ids, but
+  active or archived agent-session manifests contain zero `status: ok`
+  captures and the packet does not include an explicit
+  `- Agent session capture waivers:` row naming the missing or unsupported
+  providers.
 
 It derives the required proof from the branch diff and reads existing
 `.orbit/quality-gates/` artifacts instead of rerunning gates.

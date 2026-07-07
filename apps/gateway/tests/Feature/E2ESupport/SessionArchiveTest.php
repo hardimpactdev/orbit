@@ -462,3 +462,106 @@ function remove_session_archive_workspace(string $path): void
 
     new Process(['rm', '-rf', $path])->run();
 }
+
+/**
+ * Snapshot .orbit/agent-sessions tree as [relativePath => sha1(content)] for exact comparison.
+ * Returns sorted assoc array so identical trees compare equal.
+ */
+function snapshot_agent_sessions_tree(string $root): array
+{
+    if (! is_dir($root)) {
+        return [];
+    }
+
+    $snapshot = [];
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($it as $file) {
+        if (! $file->isFile()) {
+            continue;
+        }
+        $full = $file->getPathname();
+        $rel = substr($full, strlen($root) + 1);
+        $content = (string) file_get_contents($full);
+        $snapshot[$rel] = sha1($content);
+    }
+
+    ksort($snapshot);
+
+    return $snapshot;
+}
+
+it(
+    'session archive prefers staged agent-sessions from lane-close capture and fallback adds/overwrites nothing (exact tree match)',
+    function (): void {
+        $workspace = session_archive_workspace(suffix: 'staged-prefer-exact');
+
+        try {
+            $paths = session_archive_paths(workspace: $workspace);
+
+            // Seed a staged capture dir in the active .orbit (as lane-close capture would)
+            $stagedRoot = $paths['sourceOrbitDir'].'/agent-sessions';
+            $stagedProvider = "{$stagedRoot}/codex/staged-lane-801";
+            mkdir($stagedProvider, recursive: true);
+            file_put_contents("{$stagedProvider}/manifest.json", json_encode([
+                'schema_version' => 1,
+                'provider' => 'codex',
+                'status' => 'ok',
+                'slug' => 'staged-lane-801',
+                'solo_process_id' => 801,
+                'marker_match' => 'exact',
+            ], JSON_THROW_ON_ERROR)
+                .PHP_EOL);
+            file_put_contents("{$stagedProvider}/usage.json", json_encode([
+                'input_tokens' => 11,
+                'output_tokens' => 3,
+            ], JSON_THROW_ON_ERROR)
+                .PHP_EOL);
+            file_put_contents("{$stagedProvider}/messages.jsonl", json_encode([
+                'role' => 'user',
+                'content' => 'staged marker content',
+            ])
+                .PHP_EOL);
+            mkdir("{$stagedProvider}/raw", recursive: true);
+            file_put_contents("{$stagedProvider}/raw/rollout.jsonl", "{}\n");
+
+            // Also put a minimal loop.md referencing a process
+            file_put_contents($paths['loopPath'], "# Orbit Current Slice State\n\n## Evidence Links\n- process 801\n");
+
+            // Snapshot the exact staged tree (relative paths + content hashes) BEFORE archive
+            $beforeSnapshot = snapshot_agent_sessions_tree($stagedRoot);
+
+            $process = run_session_archive(arguments: [
+                "--source-orbit-dir={$paths['sourceOrbitDir']}",
+                "--archive-root={$paths['archiveRoot']}",
+                '--timestamp=2026-07-07-101010',
+                '--slug=staged-prefer-exact',
+                "--cwd={$paths['cwd']}",
+                "--home={$paths['home']}",
+            ]);
+
+            expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+            $summary = session_archive_summary(process: $process);
+            $archiveAgentDir = $summary['archive_dir'].'/agent-sessions';
+
+            // Snapshot AFTER
+            $afterSnapshot = snapshot_agent_sessions_tree($archiveAgentDir);
+
+            // The archive agent-sessions must be byte-identical to what was staged (no fallback added files, no overwrites, no top-level manifest.json from live extraction, no extra dirs)
+            expect($afterSnapshot)->toBe(
+                $beforeSnapshot,
+                'archive agent-sessions tree must exactly match staged source; fallback must not add/overwrite anything',
+            );
+
+            // Explicitly assert no fallback-created top-level manifest or unknown providers appeared
+            expect("{$archiveAgentDir}/manifest.json")->not->toBeFile();
+            expect("{$archiveAgentDir}/unknown")->not->toBeDirectory();
+        } finally {
+            remove_session_archive_workspace(path: $workspace);
+        }
+    },
+);

@@ -118,7 +118,18 @@ if ($loopDiscoveryAttempted && $loopProcessIds === []) {
     );
 }
 
-$agentResults = runAgentSessionArchive($options, $cwd, $archiveDir, $loopProcessIds);
+// Staged precedence (lane-close capture contract):
+// If the active source .orbit/agent-sessions contains staged provider/session captures,
+// prefer the copied tree byte-for-byte and do NOT invoke live fallback extraction
+// (which would add top-level manifest or other files into archive/agent-sessions).
+// No-staging loops still fall back to live extraction.
+$sourceStaged = rtrim($sourceOrbitDir, '/') . '/agent-sessions';
+if (is_dir($sourceStaged) && hasStagedCaptures($sourceStaged)) {
+    fwrite(STDERR, "Preferring validated staged captures from active .orbit/agent-sessions; skipping live extraction.\n");
+    $agentResults = [];
+} else {
+    $agentResults = runAgentSessionArchive($options, $cwd, $archiveDir, $loopProcessIds);
+}
 
 writeSessionArchiveLink($activeLoopPath, basename($archiveDir));
 copyFileOrFail($activeLoopPath, "{$archiveDir}/loop.md");
@@ -607,4 +618,28 @@ function ensureDirectory(string $directory): void
     if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
         throw new RuntimeException("Unable to create directory: {$directory}");
     }
+}
+
+/**
+ * Returns true only when the active staging tree contains manifest-backed
+ * captures. Malformed or empty staging should not suppress fallback extraction.
+ */
+function hasStagedCaptures(string $dir): bool
+{
+    if (!is_dir($dir)) {
+        return false;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $entry) {
+        if ($entry->isFile() && $entry->getFilename() === 'manifest.json') {
+            return true;
+        }
+    }
+
+    return false;
 }

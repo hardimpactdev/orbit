@@ -1251,7 +1251,7 @@ it('blocks cleanup when the matching session archive uses only the branch slug',
     }
 });
 
-it('blocks cleanup when the matching session archive is missing the agent-sessions manifest', function (): void {
+it('blocks cleanup when the matching session archive is missing agent session manifests', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
 
     commit_finalization_gate_file(
@@ -1274,7 +1274,7 @@ it('blocks cleanup when the matching session archive is missing the agent-sessio
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('agent-sessions/manifest.json');
+            ->toContain('agent session manifests');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
@@ -1404,6 +1404,526 @@ it('documents the compact single-slice variant and session archive tool in the l
         ->toContain('- Single-slice: yes -')
         ->toContain('- Parallelization: serial -')
         ->toContain('bin/orbit-session-archive');
+});
+
+it('finalization gate blocks lanes-having packet with zero healthy captures and no waiver', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - test packet for capture health gate
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - test coverage for zero healthy capture block when lanes named and no waiver row
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+        - Reviewer: post-feature-analyzer (Solo process 802)
+
+        - Agent session capture waivers: none
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'harness-signals/2026-07-07-capture.md',
+        contents: "# Example\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'docs-lint',
+        exitCode: 0,
+        endedAt: '2026-07-07T10:00:00+00:00',
+    );
+
+    $slug = 'feature';
+    $archiveDir = write_finalization_gate_session_archive(repo: $repo, slug: $slug);
+    // copy the full packet (with lanes + waivers: none) into archive loop.md so health parser sees labels
+    $sourceLoop = "{$worktree}/.orbit/loop.md";
+    if (is_file($sourceLoop)) {
+        copy($sourceLoop, "{$archiveDir}/loop.md");
+    }
+    // manifest with zero healthy
+    file_put_contents("{$archiveDir}/agent-sessions/manifest.json", json_encode([
+        'schema_version' => 1,
+        'providers' => ['codex' => ['missing' => 1]],
+        'sessions' => [['solo_process_id' => 801, 'status' => 'missing', 'reason' => 'exact_marker_not_found']],
+    ], JSON_THROW_ON_ERROR)
+        .PHP_EOL);
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('BLOCKED')
+            ->toContain('zero healthy agent session captures')
+            ->toContain('waiver');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('finalization merge gate blocks named lanes with zero active captures before archive exists', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: feature
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - test packet for active capture health gate
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - test coverage for merge blocking when named lanes have no active or archived healthy captures
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: none
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'harness-signals/2026-07-07-capture.md',
+        contents: "# Example\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'docs-lint',
+        exitCode: 0,
+        endedAt: '2026-07-07T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('zero healthy agent session captures');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('finalization gate passes with waiver label naming missing providers for lanes-having packet', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - test packet for capture health gate with waiver
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - test coverage for waiver row allowing zero healthy when lanes named
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: codex, grok (terminal kind unsupported in this env)
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'harness-signals/2026-07-07-capture.md',
+        contents: "# Example\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'docs-lint',
+        exitCode: 0,
+        endedAt: '2026-07-07T10:00:00+00:00',
+    );
+
+    $slug = 'feature';
+    $archiveDir = write_finalization_gate_session_archive(repo: $repo, slug: $slug);
+    // copy the full packet (with lanes + waivers row) into archive loop.md
+    $sourceLoop = "{$worktree}/.orbit/loop.md";
+    if (is_file($sourceLoop)) {
+        copy($sourceLoop, "{$archiveDir}/loop.md");
+    }
+    file_put_contents("{$archiveDir}/agent-sessions/manifest.json", json_encode([
+        'schema_version' => 1,
+        'providers' => ['codex' => ['unsupported' => 1]],
+        'sessions' => [[
+            'solo_process_id' => 801,
+            'status' => 'unsupported',
+            'reason' => 'terminal_kind_requires_waiver',
+        ]],
+    ], JSON_THROW_ON_ERROR)
+        .PHP_EOL);
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('finalization lint rejects waiver rows that do not name a provider', function (): void {
+    $packetDir = make_finalization_lint_dir(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - lint packet for capture health gate with invalid waiver
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - lint coverage for rejecting generic waiver prose
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: unsupported
+        MARKDOWN);
+
+    try {
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput())
+            ->toContain('zero healthy agent session captures');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('finalization lint blocks lanes-having packet with zero healthy active captures and no waiver', function (): void {
+    $packetDir = make_finalization_lint_dir(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - lint packet for capture health gate
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - lint coverage for zero healthy capture block when lanes named and no waiver row
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: none
+        MARKDOWN);
+
+    try {
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput())
+            ->toContain('zero healthy agent session captures');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('finalization lint accepts healthy archived captures when active staging is absent', function (): void {
+    $packetDir = make_finalization_lint_dir(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - lint packet for archived capture health gate
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - lint coverage for healthy archived capture allowing named lanes
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: none
+        MARKDOWN);
+
+    try {
+        $archiveDir = write_finalization_gate_session_archive($packetDir, 'lane-close-agent-session-capture');
+        file_put_contents("{$archiveDir}/agent-sessions/manifest.json", json_encode([
+            'schema_version' => 1,
+            'providers' => ['grok' => ['ok' => 1]],
+            'sessions' => [['solo_process_id' => 801, 'status' => 'ok']],
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('finalization lint passes lanes-having packet with healthy active staged capture', function (): void {
+    $packetDir = make_finalization_lint_dir(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - lint packet for capture health gate with healthy active staged capture
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - lint coverage for healthy active staged capture allowing named lanes
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: none
+        MARKDOWN);
+
+    try {
+        $stagedDir = "{$packetDir}/.orbit/agent-sessions/grok/lane-close-capture-worker-801";
+        mkdir($stagedDir, recursive: true);
+        file_put_contents("{$stagedDir}/manifest.json", json_encode([
+            'schema_version' => 1,
+            'provider' => 'grok',
+            'status' => 'ok',
+            'solo_process_id' => 801,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('finalization gate unchanged for laneless loops even with zero captures', function (): void {
+    $packetDir = make_finalization_lint_dir(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - laneless test packet
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - laneless loop; no named worker/reviewer/analyzer lanes so no capture health requirement
+        MARKDOWN);
+
+    try {
+        $slug = 'laneless-ok';
+        $archiveDir = write_finalization_gate_session_archive($packetDir, $slug);
+        // empty / no healthy is fine for laneless
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
 });
 
 /**

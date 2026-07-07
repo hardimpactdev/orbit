@@ -1016,3 +1016,425 @@ function assert_provider_archive(string $archiveDir, array $spec): void
         expect("{$providerDir}/raw/{$rawFile}")->toBeFile();
     }
 }
+
+it('lane-close capture stages exactly one session via exact "Solo process ID: <id>" marker join', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-exact');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $stagingDir = "{$orbitDir}/agent-sessions";
+        $soloProcessId = 424242;
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        // Fixture: codex rollout containing the exact marker in base_instructions (first prompt)
+        $codexDir = "{$home}/.codex/sessions/2026/07/07";
+        mkdir($codexDir, recursive: true);
+        write_jsonl("{$codexDir}/rollout-2026-07-07T10-00-00-exact.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'capture-exact-codex',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T10:00:05Z',
+                    'base_instructions' => [
+                        'text' => "You are implementing...\nSolo process ID: {$soloProcessId}\n",
+                    ],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Environment context without the Solo marker.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Implement feature '.$soloProcessId]],
+                ],
+            ],
+            [
+                'type' => 'event_msg',
+                'payload' => [
+                    'type' => 'token_count',
+                    'info' => [
+                        'model_context_window' => 128000,
+                        'total_token_usage' => [
+                            'input_tokens' => 42,
+                            'output_tokens' => 7,
+                            'total_tokens' => 49,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        // A decoy rollout without the marker (should not be picked)
+        write_jsonl("{$codexDir}/rollout-2026-07-07T09-00-00-decoy.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'decoy',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T09:00:00Z',
+                    'base_instructions' => ['text' => 'No marker here'],
+                ],
+            ],
+        ]);
+
+        // Simulate solo.db with the process row (for resolution of provider/cwd)
+        $soloDb = "{$temp}/solo.db";
+        // Minimal schema + row for test (capture command must query it)
+        $db = new PDO('sqlite:'.$soloDb);
+        $db->exec(
+            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+        );
+        $db->exec(
+            'CREATE TABLE IF NOT EXISTS spawned_processes (id INTEGER PRIMARY KEY, pid INTEGER, process_name TEXT, command TEXT, project_path TEXT, spawned_at TEXT, owner_pid INTEGER)',
+        );
+        $stmt = $db->prepare(
+            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+        );
+        $stmt->execute([$soloProcessId, 'lane-close-capture-worker', 'php ... codex', $cwd, 'agent']);
+        // Also a spawned_processes row to simulate alive row
+        $db->exec(
+            "INSERT INTO spawned_processes (pid, process_name, command, project_path, spawned_at, owner_pid) VALUES (99999, 'lane-close-capture-worker', 'codex', '{$cwd}', datetime('now'), 800)",
+        );
+
+        $process = new Process(
+            [
+                repo_path('bin/orbit-agent-session-capture'),
+                (string) $soloProcessId,
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--solo-db={$soloDb}",
+                "--orbit-dir={$orbitDir}",
+                "--slug=capture-exact-{$soloProcessId}",
+            ],
+            repo_path(),
+        );
+
+        $process->run();
+
+        // This will be RED until the capture bin exists and implements exact marker + staging
+        expect($process->getExitCode())->toBe(0, 'capture exit: '.$process->getErrorOutput().$process->getOutput());
+
+        $manifestPath = "{$stagingDir}/codex/capture-exact-{$soloProcessId}/manifest.json";
+        expect($manifestPath)->toBeFile('staged manifest missing after exact capture');
+
+        $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
+        expect($manifest['status'] ?? null)
+            ->toBe('ok')
+            ->and($manifest['solo_process_id'] ?? null)
+            ->toBe($soloProcessId)
+            ->and($manifest['marker_match'] ?? null)
+            ->toBe('exact');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('lane-close capture joins Codex sessions when Solo marker is in the first user prompt', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-codex-first-user');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $soloProcessId = 434343;
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        $codexDir = "{$home}/.codex/sessions/2026/07/07";
+        mkdir($codexDir, recursive: true);
+
+        write_jsonl("{$codexDir}/rollout-child-first-user-{$soloProcessId}.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'child-first-user',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T10:10:05Z',
+                    'base_instructions' => ['text' => 'Codex system prompt without the Solo marker.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "Solo process ID: {$soloProcessId}\nImplement the feature.",
+                    ]],
+                ],
+            ],
+        ]);
+
+        write_jsonl("{$codexDir}/rollout-parent-log.jsonl", [[
+            'type' => 'response_item',
+            'payload' => [
+                'type' => 'message',
+                'role' => 'assistant',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => "spawn_agent logged Solo process ID: {$soloProcessId}",
+                ]],
+            ],
+        ]]);
+
+        $soloDb = "{$temp}/solo.db";
+        $db = new PDO('sqlite:'.$soloDb);
+        $db->exec(
+            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+        );
+        $stmt = $db->prepare(
+            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+        );
+        $stmt->execute([$soloProcessId, 'codex-first-user-worker', 'codex', $cwd, 'agent']);
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            (string) $soloProcessId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--solo-db={$soloDb}",
+            "--orbit-dir={$orbitDir}",
+            "--slug=codex-first-user-{$soloProcessId}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifestPath = "{$orbitDir}/agent-sessions/codex/codex-first-user-{$soloProcessId}/manifest.json";
+        $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
+
+        expect($manifest['status'])
+            ->toBe('ok')
+            ->and($manifest['solo_process_id'])
+            ->toBe($soloProcessId)
+            ->and($manifest['artifact'])
+            ->toContain('rollout-child-first-user');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('lane-close capture fails loudly with diagnostics on duplicate markers for same solo process id', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-dupe');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $soloProcessId = 555555;
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        // Two rollouts both containing the exact marker -> ambiguity
+        $codexDir = "{$home}/.codex/sessions/2026/07/07";
+        mkdir($codexDir, recursive: true);
+        foreach (['a', 'b'] as $suffix) {
+            write_jsonl("{$codexDir}/rollout-2026-07-07-dupe-{$suffix}.jsonl", [[
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => "dupe-{$suffix}",
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T11:00:00Z',
+                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                ],
+            ]]);
+        }
+
+        $soloDb = "{$temp}/solo.db";
+        $db = new PDO('sqlite:'.$soloDb);
+        $db->exec(
+            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+        );
+        $stmt = $db->prepare(
+            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+        );
+        $stmt->execute([$soloProcessId, 'dupe-worker', 'codex', $cwd, 'agent']);
+        $db = null; // close to flush
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            (string) $soloProcessId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--solo-db={$soloDb}",
+            "--orbit-dir={$orbitDir}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('ambiguous_duplicate_markers')
+            ->toContain((string) $soloProcessId);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('exact marker join ignores parent-orchestrator transcript containing child marker (does not select parent for child)', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-parent');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $soloProcessId = 777777; // child id
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        $codexDir = "{$home}/.codex/sessions/2026/07/07";
+        mkdir($codexDir, recursive: true);
+
+        // Child's actual session rollout with marker in base_instructions
+        write_jsonl("{$codexDir}/rollout-child-{$soloProcessId}.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'child-session',
+                'cwd' => $cwd,
+                'timestamp' => '2026-07-07T12:00:00Z',
+                'base_instructions' => ['text' => "Child prompt\nSolo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        // Parent orchestrator "transcript" (simulated as another jsonl in sessions dir) that logged the spawn and thus contains child's marker text
+        write_jsonl("{$codexDir}/rollout-parent-orchestrator.jsonl", [[
+            'type' => 'response_item',
+            'payload' => [
+                'type' => 'message',
+                'role' => 'assistant',
+                'content' => [['type' => 'output_text', 'text' => "spawned child Solo process ID: {$soloProcessId}"]],
+            ],
+        ]]);
+
+        $soloDb = "{$temp}/solo.db";
+        $db = new PDO('sqlite:'.$soloDb);
+        $db->exec(
+            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+        );
+        $stmt = $db->prepare(
+            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+        );
+        $stmt->execute([$soloProcessId, 'child-worker', 'codex', $cwd, 'agent']);
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            (string) $soloProcessId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--solo-db={$soloDb}",
+            "--orbit-dir={$orbitDir}",
+            "--slug=child-exact-{$soloProcessId}",
+        ], repo_path());
+
+        $process->run();
+
+        // Expect success with child's session (not the parent log), status ok, not ambiguous
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->not->toContain('ambiguous');
+
+        $manifestPath = "{$orbitDir}/agent-sessions/codex/child-exact-{$soloProcessId}/manifest.json";
+        $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
+        expect($manifest['status'])->toBe('ok')->and($manifest['solo_process_id'])->toBe($soloProcessId);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it(
+    'exact marker join with wrong cwd, stale start, or resumed session still requires exact marker and loud failure on ambiguity',
+    function (): void {
+        $temp = make_agent_session_archive_temp_dir(suffix: 'capture-edge');
+
+        try {
+            $home = "{$temp}/home";
+            $cwd = "{$temp}/worktree";
+            $orbitDir = "{$temp}/.orbit";
+            $soloProcessId = 888888;
+
+            mkdir($home, recursive: true);
+            mkdir($cwd, recursive: true);
+            mkdir($orbitDir, recursive: true);
+
+            $codexDir = "{$home}/.codex/sessions/2026/07/07";
+            mkdir($codexDir, recursive: true);
+
+            // Stale rollout with marker but old time / wrong cwd
+            write_jsonl("{$codexDir}/rollout-stale.jsonl", [[
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'stale',
+                    'cwd' => '/wrong/old/cwd',
+                    'timestamp' => '2020-01-01T00:00:00Z',
+                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                ],
+            ]]);
+
+            // Resumed/new with marker
+            write_jsonl("{$codexDir}/rollout-resumed.jsonl", [[
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'resumed',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-07T13:00:00Z',
+                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                ],
+            ]]);
+
+            $soloDb = "{$temp}/solo.db";
+            $db = new PDO('sqlite:'.$soloDb);
+            $db->exec(
+                'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+            );
+            $stmt = $db->prepare(
+                'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+            );
+            $stmt->execute([$soloProcessId, 'edge-worker', 'codex', $cwd, 'agent']);
+
+            $process = new Process([
+                repo_path('bin/orbit-agent-session-capture'),
+                (string) $soloProcessId,
+                "--home={$home}",
+                "--cwd={$cwd}",
+                "--solo-db={$soloDb}",
+                "--orbit-dir={$orbitDir}",
+                "--slug=edge-{$soloProcessId}",
+            ], repo_path());
+
+            $process->run();
+
+            // With current marker-exact (no time/cwd filter yet in capture for uniqueness), two files have marker -> ambiguous
+            // This documents the required loud failure for non-unique even across stale/resumed/wrong-cwd
+            expect($process->getExitCode())
+                ->toBeGreaterThan(0)
+                ->and($process->getErrorOutput().$process->getOutput())
+                ->toContain('ambiguous');
+        } finally {
+            remove_agent_session_archive_temp_dir(path: $temp);
+        }
+    },
+);

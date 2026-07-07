@@ -323,7 +323,17 @@ function check_merge(string $root, string $target): array
         );
     }
 
-    return final_distillation_check($root, $worktree, $branch, requireAnalyzer: true);
+    $check = final_distillation_check($root, $worktree, $branch, requireAnalyzer: true);
+    if (! $check['ok']) {
+        return $check;
+    }
+
+    $healthProblem = capture_health_problem_for_worktree($root, $worktree, $branch);
+    if ($healthProblem !== null) {
+        return block_result($branch, $healthProblem);
+    }
+
+    return $check;
 }
 
 /**
@@ -400,7 +410,112 @@ function session_archive_problem(string $root, string $branch): ?string
         return "no session archives exist at {$sessionsDirectory}; {$hint}";
     }
 
+    $candidates = matching_session_archive_dirs($root, $branch);
+
+    if ($candidates === []) {
+        return "no session archive matching slug `{$slug}` was found under {$sessionsDirectory}; {$hint}";
+    }
+
+    foreach ($candidates as $candidate) {
+        $loopPath = $candidate.'/loop.md';
+        $agentSessionsDir = $candidate.'/agent-sessions';
+        if (! is_file($loopPath) || agent_session_manifest_paths($agentSessionsDir) === []) {
+            return "session archive for `{$slug}` under {$sessionsDirectory} is missing loop.md or agent session manifests; re-{$hint}";
+        }
+
+        $health = capture_health_problem_for_loop($loopPath, $agentSessionsDir);
+        if ($health !== null) {
+            return $health;
+        }
+
+        return null;
+    }
+
+    return "session archive for `{$slug}` under {$sessionsDirectory} is missing loop.md or agent session manifests; re-{$hint}";
+}
+
+/**
+ * Returns problem string if the packet names lanes and active/archived
+ * manifests contain zero healthy captures without a provider-naming waiver.
+ */
+function capture_health_problem_for_worktree(string $root, string $worktree, string $branch): ?string
+{
+    $loopPath = $worktree.'/.orbit/loop.md';
+
+    if (! is_file($loopPath)) {
+        return null;
+    }
+
+    $agentSessionsDirs = [$worktree.'/.orbit/agent-sessions'];
+
+    foreach (matching_session_archive_dirs($root, $branch) as $archiveDir) {
+        $agentSessionsDirs[] = $archiveDir.'/agent-sessions';
+    }
+
+    return capture_health_problem_for_sources($loopPath, $agentSessionsDirs);
+}
+
+function capture_health_problem_for_loop(string $loopPath, string $agentSessionsDir): ?string
+{
+    return capture_health_problem_for_sources($loopPath, [$agentSessionsDir]);
+}
+
+/**
+ * @param list<string> $agentSessionsDirs
+ */
+function capture_health_problem_for_sources(string $loopPath, array $agentSessionsDirs): ?string
+{
+    $loopContent = (string) file_get_contents($loopPath);
+
+    if (! packet_names_agent_lanes($loopContent)) {
+        return null;
+    }
+
+    foreach ($agentSessionsDirs as $agentSessionsDir) {
+        if (healthy_agent_session_count($agentSessionsDir) > 0) {
+            return null;
+        }
+    }
+
+    if (packet_has_agent_session_capture_waiver($loopContent)) {
+        return null;
+    }
+
+    return 'zero healthy agent session captures for named lanes (worker/reviewer/analyzer) and no explicit waiver row; add captures or waiver label naming providers';
+}
+
+function packet_names_agent_lanes(string $loopContent): bool
+{
+    return preg_match('/^\s*-\s*(Worker|Reviewer|Analyzer):.*\bSolo process(?: ID)?\s+\d+/im', $loopContent) === 1;
+}
+
+function packet_has_agent_session_capture_waiver(string $loopContent): bool
+{
+    if (preg_match('/^-\s*Agent session capture waivers:\s*(.+)$/im', $loopContent, $match) !== 1) {
+        return false;
+    }
+
+    $value = strtolower(trim($match[1]));
+
+    if ($value === '' || $value === 'none') {
+        return false;
+    }
+
+    return preg_match('/\b(codex|claude|grok|antigravity|terminal|opencode|gemini|amp|copilot|kimi|unknown)\b/i', $value) === 1;
+}
+
+/**
+ * @return list<string>
+ */
+function matching_session_archive_dirs(string $root, string $branch): array
+{
+    $sessionsDirectory = $root.'/.orbit/sessions';
+    $slug = archive_slug($branch);
     $candidates = [];
+
+    if (! is_dir($sessionsDirectory)) {
+        return [];
+    }
 
     foreach (new DirectoryIterator($sessionsDirectory) as $entry) {
         if ($entry->isDot() || ! $entry->isDir()) {
@@ -414,17 +529,81 @@ function session_archive_problem(string $root, string $branch): ?string
         }
     }
 
-    if ($candidates === []) {
-        return "no session archive matching slug `{$slug}` was found under {$sessionsDirectory}; {$hint}";
-    }
+    sort($candidates);
 
-    foreach ($candidates as $candidate) {
-        if (is_file($candidate.'/loop.md') && is_file($candidate.'/agent-sessions/manifest.json')) {
-            return null;
+    return $candidates;
+}
+
+function healthy_agent_session_count(string $agentSessionsDir): int
+{
+    $healthy = 0;
+
+    foreach (agent_session_manifest_paths($agentSessionsDir) as $manifestPath) {
+        $manifest = json_decode((string) file_get_contents($manifestPath), true);
+
+        if (! is_array($manifest)) {
+            continue;
+        }
+
+        if (($manifest['status'] ?? null) === 'ok') {
+            $healthy++;
+        }
+
+        if (isset($manifest['sessions']) && is_array($manifest['sessions'])) {
+            foreach ($manifest['sessions'] as $session) {
+                if (is_array($session) && ($session['status'] ?? null) === 'ok') {
+                    $healthy++;
+                }
+            }
+        }
+
+        if (isset($manifest['providers']) && is_array($manifest['providers'])) {
+            foreach ($manifest['providers'] as $provider) {
+                if (is_array($provider) && (int) ($provider['ok'] ?? 0) > 0) {
+                    $healthy += (int) $provider['ok'];
+                }
+            }
         }
     }
 
-    return "session archive for `{$slug}` under {$sessionsDirectory} is missing loop.md or agent-sessions/manifest.json; re-{$hint}";
+    return $healthy;
+}
+
+/**
+ * @return list<string>
+ */
+function agent_session_manifest_paths(string $agentSessionsDir): array
+{
+    if (! is_dir($agentSessionsDir)) {
+        return [];
+    }
+
+    $paths = [];
+    $topLevelManifest = $agentSessionsDir.'/manifest.json';
+
+    if (is_file($topLevelManifest)) {
+        $paths[] = $topLevelManifest;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($agentSessionsDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $entry) {
+        if (! $entry->isFile() || $entry->getFilename() !== 'manifest.json') {
+            continue;
+        }
+
+        $path = $entry->getPathname();
+        if ($path !== $topLevelManifest) {
+            $paths[] = $path;
+        }
+    }
+
+    sort($paths);
+
+    return $paths;
 }
 
 function archive_slug(string $value): string
@@ -602,6 +781,23 @@ function run_lint(string $path): int
         $warnings[] = $reconstructionWarning;
     }
 
+    $agentSessionsDirs = [dirname($path).'/agent-sessions'];
+    $branchName = branch_name_from_loop($contents);
+
+    if ($branchName !== null) {
+        $worktreeRoot = dirname(dirname($path));
+
+        foreach (matching_session_archive_dirs($worktreeRoot, $branchName) as $archiveDir) {
+            $agentSessionsDirs[] = $archiveDir.'/agent-sessions';
+        }
+    }
+
+    $captureHealthProblem = capture_health_problem_for_sources($path, $agentSessionsDirs);
+
+    if ($captureHealthProblem !== null) {
+        $problems[] = $captureHealthProblem;
+    }
+
     foreach ($warnings as $warning) {
         fwrite(STDOUT, "WARNING: {$warning}\n");
     }
@@ -617,6 +813,17 @@ function run_lint(string $path): int
     fwrite(STDOUT, "PASS: {$path} Final Distillation packet shape is valid\n");
 
     return 0;
+}
+
+function branch_name_from_loop(string $contents): ?string
+{
+    if (preg_match('/^-\s*Branch:\s*(.+)$/im', $contents, $match) !== 1) {
+        return null;
+    }
+
+    $branch = trim($match[1]);
+
+    return $branch === '' ? null : $branch;
 }
 
 function markdown_section(string $contents, string $heading): ?string
