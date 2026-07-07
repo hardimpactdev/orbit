@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-reviewer-812",
+    "solo_process_id": 812,
+    "kind": "agent",
+    "started_at": "2026-07-07 08:46:23",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T10-46-23-019f3bc1-c9bb-7b81-b78e-04bd7ff802b8.jsonl",
+    "source": "codex_exact_marker"
+}

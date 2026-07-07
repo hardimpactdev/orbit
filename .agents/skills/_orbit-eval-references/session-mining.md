@@ -7,6 +7,7 @@ Use prior agent sessions as read-only traces for discovering eval cases. Do not 
 Prefer repo-local session archives over raw provider homedir stores. `bin/orbit-session-archive` writes one archive per feature loop under `.orbit/sessions/<timestamp>-<slug>/` in the primary checkout:
 
 ```text
+.orbit/sessions/index.json          # compact deterministic first stop
 .orbit/sessions/<timestamp>-<slug>/
   loop.md              # archived loop state from the source .orbit
   evidence/            # archived lane evidence, when present
@@ -20,7 +21,7 @@ Prefer repo-local session archives over raw provider homedir stores. `bin/orbit-
       raw/             # copied raw provider files
 ```
 
-Archives are already scoped to one feature slug, carry provenance manifests, and pair transcripts with the archived `loop.md` and evidence, so mine them first with scoped `rg` over `messages.jsonl` and the archived loop/evidence files.
+Start with `.orbit/sessions/index.json` to identify candidate archives by outcome, verification status, analyzer verdict, capture status, token totals, blockers, and candidate-signal classifications. Then open only the matching archive directories and mine them with scoped `rg` over `messages.jsonl` and the archived loop/evidence files.
 
 ## Raw Provider Stores (Fallback)
 
@@ -87,4 +88,3 @@ Extract:
 - Do not bulk-copy private sessions into the repo.
 - Do not expose answer keys or reviewer conclusions to an agent under test.
 - Do not mine broad history as part of ordinary feature completion unless the user asks for it.
-- Prefer a future deterministic session indexer only after this manual protocol proves useful.

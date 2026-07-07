@@ -147,6 +147,7 @@ $summary = [
 ];
 
 writeJsonFile("{$archiveDir}/orbit-session-archive.json", $summary);
+refreshSessionIndex(dirname($archiveDir));
 
 echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
 
@@ -607,6 +608,41 @@ function writeJsonFile(string $path, array $payload): void
         $path,
         json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL,
     );
+}
+
+function refreshSessionIndex(string $sessionsDir): void
+{
+    $process = proc_open(
+        [
+            PHP_BINARY,
+            __DIR__ . '/orbit-session-index',
+            "--sessions-dir={$sessionsDir}",
+            '--write',
+        ],
+        [
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ],
+        $pipes,
+        dirname(__DIR__),
+    );
+
+    if (! is_resource($process)) {
+        fwrite(STDERR, "Unable to refresh session index for {$sessionsDir}.\n");
+        exit(2);
+    }
+
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    $exitCode = proc_close($process);
+
+    if ($exitCode !== 0) {
+        fwrite(STDERR, $stderr ?: $stdout ?: "Unable to refresh session index for {$sessionsDir}.\n");
+        exit(2);
+    }
 }
 
 function ensureDirectory(string $directory): void

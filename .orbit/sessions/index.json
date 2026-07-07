@@ -1,0 +1,1411 @@
+{
+    "schema_version": 1,
+    "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
+    "record_count": 53,
+    "records": [
+        {
+            "archive": "2026-06-26-122115-session-archive-contract",
+            "slug": "session-archive-contract",
+            "timestamp": "2026-06-26-122115",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 1,
+                    "promote": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-145719-quality-check-progress-monotonic",
+            "slug": "quality-check-progress-monotonic",
+            "timestamp": "2026-06-26-145719",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed",
+                "Post-merge sanity": "passed"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`; loop quality `proper`; guardrail verdict `correct-noop`",
+            "candidate_signals": {
+                "total": 0,
+                "classifications": []
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-152059-quality-check-active-state",
+            "slug": "quality-check-active-state",
+            "timestamp": "2026-06-26-152059",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "Script self-test": "passed",
+                "Focused Pest state test": "passed",
+                "Docs assertion Pest": "passed",
+                "Docs lint": "passed",
+                "Mago format check": "passed",
+                "Whitespace": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 0,
+                "classifications": []
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-161300-quality-check-final-warnings",
+            "slug": "quality-check-final-warnings",
+            "timestamp": "2026-06-26-161300",
+            "loop_outcome": "unknown",
+            "required_verification": {
+                "Focused Pest for final-check/doc contracts": "passed",
+                "Focused Pest for quality-check scheduler/frame contracts": "passed",
+                "Syntax/format/docs lint": "passed",
+                "`composer quality-check`": "passed",
+                "PTY frame verifier for final capture": "passed",
+                "Quality-gate analyzer after baseline refresh": "passed",
+                "`composer quality-gate:final-check`": "passed",
+                "Retained topology proof": "not applicable",
+                "E2E commands": "not applicable"
+            },
+            "fresh_analyzer_verdict": "unknown",
+            "candidate_signals": {
+                "total": 0,
+                "classifications": []
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-171601-linked-test-lane-c",
+            "slug": "linked-test-lane-c",
+            "timestamp": "2026-06-26-171601",
+            "loop_outcome": "Lane C linked-test drift slice implemented and verified.",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-174315-linked-test-lane-a",
+            "slug": "linked-test-lane-a",
+            "timestamp": "2026-06-26-174315",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "complete; loop quality proper; guardrail verdict correct-noop; blockers none. Analyzer independently reproduced Lane A `18` commands, `42` generated refs, `0` missing, and whole-catalog `206` remaining missing refs.",
+            "candidate_signals": {
+                "total": 4,
+                "classifications": {
+                    "unknown": 4
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-175717-linked-test-lane-a",
+            "slug": "linked-test-lane-a",
+            "timestamp": "2026-06-26-175717",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "complete; loop quality proper; guardrail verdict correct-noop; blockers none. Analyzer independently reproduced Lane A `18` commands, `42` generated refs, `0` missing, and whole-catalog `206` remaining missing refs.",
+            "candidate_signals": {
+                "total": 4,
+                "classifications": {
+                    "unknown": 4
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-180840-linked-test-lane-e",
+            "slug": "linked-test-lane-e",
+            "timestamp": "2026-06-26-180840",
+            "loop_outcome": "Lane E implementation and verification complete pending post-feature analyzer review.",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "Focused catalog drift measure": "passed",
+                "Focused catalog Pest": "passed",
+                "Docs-lint": "passed",
+                "Broad quality gate": "passed",
+                "Quality gate final check": "passed",
+                "E2E": "unknown"
+            },
+            "fresh_analyzer_verdict": "`complete + loop improvement`; loop quality `proper with issues`; guardrail verdict `mixed`.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "unknown": 2
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-191921-linked-test-lane-f",
+            "slug": "linked-test-lane-f",
+            "timestamp": "2026-06-26-191921",
+            "loop_outcome": "Complete for Lane F linked-test drift. Lane F now has 0 missing linked-test refs; whole catalog remains at 131 missing refs in non-Lane-F families.",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer docs-lint`": "passed",
+                "`php artisan test --compact tests/Feature/Librarian/CommandCatalogTest.php`": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "loop was proper; only notable quality note was the under-claim review gap, now addressed in the docs-librarian persona checklist.",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-194810-linked-test-lane-b",
+            "slug": "linked-test-lane-b",
+            "timestamp": "2026-06-26-194810",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`, loop quality `proper`, guardrail verdict `missed`; accepted with docs-librarian guardrail update.",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-212924-llm-affordance-eval-harness",
+            "slug": "llm-affordance-eval-harness",
+            "timestamp": "2026-06-26-212924",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "not applicable"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-213627-linked-test-catalog-drift",
+            "slug": "linked-test-catalog-drift",
+            "timestamp": "2026-06-26-213627",
+            "loop_outcome": "`complete + loop improvement`",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "Focused catalog drift measure": "passed",
+                "Focused catalog Pest": "passed",
+                "Catalog freshness": "passed",
+                "Known stale path scan": "passed",
+                "`composer docs-lint`": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed",
+                "E2E": "not applicable"
+            },
+            "fresh_analyzer_verdict": "`complete + loop improvement`; loop quality `proper with issues`; guardrail verdict `mixed`.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "unknown": 2
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-220313-deploy-log-p4-mapping",
+            "slug": "deploy-log-p4-mapping",
+            "timestamp": "2026-06-26-220313",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "merge-ready; loop quality proper; guardrail verdict correct-noop.",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-26-225714-p4-rawurlencode-mapping",
+            "slug": "p4-rawurlencode-mapping",
+            "timestamp": "2026-06-26-225714",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "complete; loop quality proper; guardrail verdict correct-noop.",
+            "candidate_signals": {
+                "total": 4,
+                "classifications": {
+                    "correct-noop": 1,
+                    "defer": 2,
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-080703-p2b-monorepo-unit-map",
+            "slug": "p2b-monorepo-unit-map",
+            "timestamp": "2026-06-27-080703",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "deferred",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 2,
+                    "defer": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-084515-test-mapping-path-integrity",
+            "slug": "test-mapping-path-integrity",
+            "timestamp": "2026-06-27-084515",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "passed - `bin/orbit-docs-pest --compact --filter='test mapping'`": "unknown",
+                "passed - `composer docs-lint`": "unknown",
+                "passed - Independent content path scan over `apps/docs/content/domains` and `apps/docs/content/testing`": "unknown",
+                "passed - `bin/orbit-docs-pest --compact`": "unknown",
+                "passed - `cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium`": "unknown",
+                "passed - `cd apps/docs && vendor/bin/mago lint app tests config database --reporting-format=medium`": "unknown",
+                "`composer quality-check`": "passed",
+                "passed - `composer quality-gate:final-check`": "unknown",
+                "Retained topology proof": "not applicable"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-085739-boost-app-skills",
+            "slug": "boost-app-skills",
+            "timestamp": "2026-06-27-085739",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "skipped for small single-slice skill-sync branch with direct focused and broad verification",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "already-covered": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-090300-test-mapping-format-roots",
+            "slug": "test-mapping-format-roots",
+            "timestamp": "2026-06-27-090300",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 4,
+                "classifications": {
+                    "unknown": 4
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-093048-core-unattended-upgrades-coverage",
+            "slug": "core-unattended-upgrades-coverage",
+            "timestamp": "2026-06-27-093048",
+            "loop_outcome": "complete.",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-095105-eval-planning-schema",
+            "slug": "eval-planning-schema",
+            "timestamp": "2026-06-27-095105",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "promote": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-102900-json-envelope-empty-meta-contract",
+            "slug": "json-envelope-empty-meta-contract",
+            "timestamp": "2026-06-27-102900",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "defer": 1,
+                    "promote": 1,
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-110600-empty-json-meta-docs-lint",
+            "slug": "empty-json-meta-docs-lint",
+            "timestamp": "2026-06-27-110600",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer docs-lint`": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "`complete + loop improvement`; loop quality `proper with issues`; accepted rule well-targeted; low-severity packet/process notes only.",
+            "candidate_signals": {
+                "total": 4,
+                "classifications": {
+                    "already-covered": 1,
+                    "defer": 2,
+                    "promote": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-113200-agent-fast-path",
+            "slug": "agent-fast-path",
+            "timestamp": "2026-06-27-113200",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "`complete + loop improvement`; loop quality `proper with issues`;",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "defer": 1,
+                    "promote": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-114000-search-hygiene",
+            "slug": "search-hygiene",
+            "timestamp": "2026-06-27-114000",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`git diff --check`": "passed",
+                "`composer docs-lint`": "passed",
+                "`composer quality-check`": "unknown",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "skipped because the accepted diff is a tiny docs-only guidance",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-120600-harness-signal-index",
+            "slug": "harness-signal-index",
+            "timestamp": "2026-06-27-120600",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`php -l bin/orbit-harness-signal-index`": "passed",
+                "`git diff --check`": "passed",
+                "`bin/orbit-harness-signal-index --check`": "passed",
+                "Stale-index demo": "passed",
+                "Index absence demo": "passed",
+                "Focused Pest": "passed",
+                "Mago format checks": "passed",
+                "`composer docs-lint`": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed",
+                "Post-merge `composer docs-lint` on main": "passed",
+                "Post-merge first `composer quality-check` on main": "unknown",
+                "Post-merge rerun `composer quality-check` on main": "passed",
+                "Post-merge `composer quality-gate:final-check` on main": "passed"
+            },
+            "fresh_analyzer_verdict": "complete; loop quality proper; guardrail verdict correct-noop.",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-27-122335-loop-observer-skill",
+            "slug": "loop-observer-skill",
+            "timestamp": "2026-06-27-122335",
+            "loop_outcome": "complete.",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "`complete`, `proper with issues`, `ready`, `correct-noop`.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "defer": 1,
+                    "unknown": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-28-163948-orbit-extension-foundation",
+            "slug": "orbit-extension-foundation",
+            "timestamp": "2026-06-28-163948",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "pass; `POST_FEATURE_ANALYZER_RESULT extension-foundation`",
+            "candidate_signals": {
+                "total": 5,
+                "classifications": {
+                    "correct-noop": 1,
+                    "unknown": 4
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-28-205531-solo-extension-slice-1",
+            "slug": "solo-extension-slice-1",
+            "timestamp": "2026-06-28-205531",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "unknown": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-28-214009-solo-extension-slice-2",
+            "slug": "solo-extension-slice-2",
+            "timestamp": "2026-06-28-214009",
+            "loop_outcome": "Slice 2 complete: gateway Solo proxy foundation implemented and verified.",
+            "required_verification": {
+                "Retained topology proof": "unknown",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "not applicable",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-28-215522-solo-extension-slice-3",
+            "slug": "solo-extension-slice-3",
+            "timestamp": "2026-06-28-215522",
+            "loop_outcome": "Slice 3 complete.",
+            "required_verification": {
+                "Retained topology proof": "unknown",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "pending",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-06-28-222107-solo-extension-slice-4",
+            "slug": "solo-extension-slice-4",
+            "timestamp": "2026-06-28-222107",
+            "loop_outcome": "Slice 4 complete.",
+            "required_verification": {
+                "Retained topology proof": "unknown",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "actionable findings fixed; one duplicate clean review noted.",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-07-01-110013-frankenphp-runtime-ca-trust",
+            "slug": "frankenphp-runtime-ca-trust",
+            "timestamp": "2026-07-01-110013",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "unknown",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-01-112409-orbit-laravel-vite-env",
+            "slug": "orbit-laravel-vite-env",
+            "timestamp": "2026-07-01-112409",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "correct-noop": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-07-01-160500-agent-cli-tools-previous-slice",
+            "slug": "agent-cli-tools-previous-slice",
+            "timestamp": "2026-07-01-160500",
+            "loop_outcome": "complete for implementation and verification. Merge/commit/release remain outside this handoff by explicit boundary.",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed",
+                "`git diff --check`": "passed"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`; loop quality `proper with issues`; guardrail verdict `correct-noop`.",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "legacy"
+        },
+        {
+            "archive": "2026-07-02-053222-dependency-audit-posture-v1",
+            "slug": "dependency-audit-posture-v1",
+            "timestamp": "2026-07-02-053222",
+            "loop_outcome": "app-level storage/parser/presenter slice implemented and verified except unrelated CLI Rector drift in the broad gate",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "unknown"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`; loop quality `proper with issues`; guardrail verdict `correct-noop`",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 42619,
+                "output_tokens": 17250,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-02-053315-dependency-audit-posture-v1",
+            "slug": "dependency-audit-posture-v1",
+            "timestamp": "2026-07-02-053315",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Focused Pest": "passed",
+                "Docs lint": "passed",
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`; loop quality `proper with issues`; guardrail verdict `correct-noop`",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 42619,
+                "output_tokens": 17250,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-02-053614-dependency-audit-posture-v1",
+            "slug": "dependency-audit-posture-v1",
+            "timestamp": "2026-07-02-053614",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Focused Pest": "passed",
+                "Docs lint": "passed",
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`; loop quality `proper with issues`; guardrail verdict `correct-noop`",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 42619,
+                "output_tokens": 17250,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-02-053953-dependency-audit-posture-v1",
+            "slug": "dependency-audit-posture-v1",
+            "timestamp": "2026-07-02-053953",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Focused Pest": "passed",
+                "Docs lint": "passed",
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "loop outcome `complete`; loop quality `proper with issues`; guardrail verdict `correct-noop`",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 42619,
+                "output_tokens": 17250,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-02-073602-macos-workload-roles-before-orbstack-lifecycle",
+            "slug": "macos-workload-roles-before-orbstack-lifecycle",
+            "timestamp": "2026-07-02-073602",
+            "loop_outcome": "blocked - implementation and non-E2E verification are complete, but retained topology proof remains blocked because this gateway has no macOS/darwin workload node and E2E/live target execution was not approved.",
+            "required_verification": {
+                "Retained topology proof": "blocked",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "not applicable",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 33426699,
+                "output_tokens": 110090,
+                "total_tokens": 33536789,
+                "reasoning_tokens": 34503
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-02-104653-loop-plumbing-hardening",
+            "slug": "loop-plumbing-hardening",
+            "timestamp": "2026-07-02-104653",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 1,
+                    "defer": 1,
+                    "promote": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": 1750977,
+                "output_tokens": 122165,
+                "total_tokens": 1712334,
+                "reasoning_tokens": 9859
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-02-140855-loop-hardening-followups",
+            "slug": "loop-hardening-followups",
+            "timestamp": "2026-07-02-140855",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "unknown",
+            "candidate_signals": {
+                "total": 4,
+                "classifications": {
+                    "unknown": 4
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 81425,
+                "output_tokens": 136231,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-02-145743-release-candidate-helper",
+            "slug": "release-candidate-helper",
+            "timestamp": "2026-07-02-145743",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "unknown",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 102892,
+                "output_tokens": 174611,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-02-153528-fix-e2e-checkout-archive-flake",
+            "slug": "fix-e2e-checkout-archive-flake",
+            "timestamp": "2026-07-02-153528",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "unknown",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "unknown": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 111233,
+                "output_tokens": 191964,
+                "total_tokens": 0,
+                "reasoning_tokens": 0
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-02-220949-codex-orbit-agent-v1-contract",
+            "slug": "codex-orbit-agent-v1-contract",
+            "timestamp": "2026-07-02-220949",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "not applicable"
+            },
+            "fresh_analyzer_verdict": "`ANALYZER_VERDICT: complete + loop improvement`.",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 2,
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 35052514,
+                "output_tokens": 68416,
+                "total_tokens": 35120930,
+                "reasoning_tokens": 21010
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-02-231826-codex-orbit-agent-gateway-protocol",
+            "slug": "codex-orbit-agent-gateway-protocol",
+            "timestamp": "2026-07-02-231826",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 2,
+                    "defer": 1
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": 36027853,
+                "output_tokens": 128060,
+                "total_tokens": 36155913,
+                "reasoning_tokens": 44367
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-03-013048-orbit-agent-app",
+            "slug": "orbit-agent-app",
+            "timestamp": "2026-07-03-013048",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed",
+                "Rust agent checks": "passed"
+            },
+            "fresh_analyzer_verdict": "pass after fixing the stale live-proof issue, duplicate accepted",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "defer": 3
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": 33953693,
+                "output_tokens": 108197,
+                "total_tokens": 34061890,
+                "reasoning_tokens": 34359
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-03-013316-codex-orbit-agent-app",
+            "slug": "codex-orbit-agent-app",
+            "timestamp": "2026-07-03-013316",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed",
+                "Rust agent checks": "passed"
+            },
+            "fresh_analyzer_verdict": "pass after fixing the stale live-proof issue, duplicate accepted",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "defer": 3
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": 33953693,
+                "output_tokens": 108197,
+                "total_tokens": 34061890,
+                "reasoning_tokens": 34359
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-03-132053-codex-tauri-agent-quality-gate",
+            "slug": "codex-tauri-agent-quality-gate",
+            "timestamp": "2026-07-03-132053",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "passed with warning-only timing notes on existing broad lanes.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "promote": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-03-135236-codex-host-macos-topology-proof",
+            "slug": "codex-host-macos-topology-proof",
+            "timestamp": "2026-07-03-135236",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "unknown",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "promote": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-06-093219-agent-transport-hardening",
+            "slug": "agent-transport-hardening",
+            "timestamp": "2026-07-06-093219",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "defer": 3
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-07-101537-lane-close-agent-session-capture",
+            "slug": "lane-close-agent-session-capture",
+            "timestamp": "2026-07-07-101537",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "already-covered": 2,
+                    "promote": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 1767241,
+                "output_tokens": 12374,
+                "total_tokens": 1779615,
+                "reasoning_tokens": 5062
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-07-104621-loop-observer-rubric-coach-modes",
+            "slug": "loop-observer-rubric-coach-modes",
+            "timestamp": "2026-07-07-104621",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "already-covered": 1,
+                    "defer": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 1223268,
+                "output_tokens": 7227,
+                "total_tokens": 1230495,
+                "reasoning_tokens": 2213
+            },
+            "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-07-105239-session-index",
+            "slug": "session-index",
+            "timestamp": "2026-07-07-105239",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "already-covered": 1,
+                    "defer": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 1635347,
+                "output_tokens": 9889,
+                "total_tokens": 1645236,
+                "reasoning_tokens": 2731
+            },
+            "capture_status": "partial"
+        }
+    ]
+}

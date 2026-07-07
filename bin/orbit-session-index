@@ -1,0 +1,430 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+const ARCHIVE_NAME_PATTERN = '/^(\d{4}-\d{2}-\d{2}-\d{6})-([a-z0-9-]+)$/';
+
+$options = getopt('', ['sessions-dir:', 'check', 'write', 'help']);
+
+if (array_key_exists('help', $options)) {
+    fwrite(STDOUT, <<<'EOF'
+        Usage:
+          bin/orbit-session-index
+              Print the generated session archive index JSON to stdout.
+          bin/orbit-session-index --write
+              Write .orbit/sessions/index.json from .orbit/sessions/YYYY-*/ archives.
+          bin/orbit-session-index --check
+              Fail when .orbit/sessions/index.json is missing or stale.
+          bin/orbit-session-index --sessions-dir=<path>
+              Use a non-default sessions directory. Intended for tests and archive hooks.
+          bin/orbit-session-index --help
+              Show this help text.
+
+        The index is deterministic metadata for quick session mining before opening archives.
+        Session archives remain trace evidence, not product authority.
+        EOF);
+
+    exit(0);
+}
+
+$root = dirname(__DIR__);
+$sessionsDir = isset($options['sessions-dir'])
+    ? rtrim((string) $options['sessions-dir'], '/')
+    : "{$root}/.orbit/sessions";
+$indexPath = "{$sessionsDir}/index.json";
+$index = build_session_index($sessionsDir);
+
+if (array_key_exists('check', $options)) {
+    if (! is_file($indexPath)) {
+        fwrite(STDERR, "Session index is missing. Run `bin/orbit-session-index --write`.\n");
+
+        exit(1);
+    }
+
+    $committed = file_get_contents($indexPath);
+
+    if ($committed === false) {
+        fwrite(STDERR, "Session index could not be read at {$indexPath}.\n");
+
+        exit(1);
+    }
+
+    if ($committed !== to_json($index)) {
+        fwrite(STDERR, "Session index is stale. Run `bin/orbit-session-index --write`.\n");
+
+        exit(1);
+    }
+
+    fwrite(STDOUT, "Session index is up to date.\n");
+
+    exit(0);
+}
+
+$json = to_json($index);
+
+if (array_key_exists('write', $options)) {
+    if (! is_dir($sessionsDir) && ! mkdir($sessionsDir, permissions: 0o775, recursive: true) && ! is_dir($sessionsDir)) {
+        fwrite(STDERR, "Unable to create session index directory: {$sessionsDir}\n");
+
+        exit(1);
+    }
+
+    if (file_put_contents($indexPath, $json) === false) {
+        fwrite(STDERR, "Unable to write session index: {$indexPath}\n");
+
+        exit(1);
+    }
+
+    fwrite(STDOUT, "Wrote {$indexPath}.\n");
+
+    exit(0);
+}
+
+fwrite(STDOUT, $json);
+
+/**
+ * @return array<string, mixed>
+ */
+function build_session_index(string $sessionsDir): array
+{
+    $paths = glob("{$sessionsDir}/*", GLOB_ONLYDIR) ?: [];
+    $records = [];
+
+    sort($paths, SORT_STRING);
+
+    foreach ($paths as $path) {
+        $basename = basename($path);
+
+        if (preg_match(ARCHIVE_NAME_PATTERN, $basename, $matches) !== 1) {
+            continue;
+        }
+
+        $records[] = parse_archive($path, $matches[1], $matches[2]);
+    }
+
+    return [
+        'schema_version' => 1,
+        'generated_from' => '.orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>',
+        'record_count' => count($records),
+        'records' => $records,
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function parse_archive(string $archiveDir, string $timestamp, string $slug): array
+{
+    $loop = read_file_or_empty("{$archiveDir}/loop.md");
+
+    return [
+        'archive' => basename($archiveDir),
+        'slug' => $slug,
+        'timestamp' => $timestamp,
+        'loop_outcome' => parse_loop_outcome($loop),
+        'required_verification' => parse_required_verification($loop),
+        'fresh_analyzer_verdict' => parse_analyzer_verdict($loop),
+        'candidate_signals' => parse_candidate_signals($loop),
+        'blockers_present' => blockers_present($loop),
+        'token_usage' => token_usage($archiveDir),
+        'capture_status' => capture_status($archiveDir),
+    ];
+}
+
+function parse_loop_outcome(string $loop): string
+{
+    $section = markdown_section($loop, 'Final Distillation');
+
+    if ($section === null) {
+        return 'unknown';
+    }
+
+    if (! preg_match('/^- Loop outcome:\s*\R\s*-\s*(.+)$/m', $section, $matches)) {
+        return 'unknown';
+    }
+
+    return normalize_value($matches[1]);
+}
+
+/**
+ * @return array<string, string>
+ */
+function parse_required_verification(string $loop): array
+{
+    $section = markdown_section($loop, 'Final Distillation');
+
+    if ($section === null || ! preg_match('/^- Required verification:\s*\R(.*?)(?=^- [A-Z`].*?:|\z)/ms', $section, $matches)) {
+        return [];
+    }
+
+    $rows = [];
+
+    foreach (preg_split('/\R/', trim($matches[1])) ?: [] as $line) {
+        $row = parse_markdown_label_row($line);
+
+        if ($row === null) {
+            continue;
+        }
+
+        $rows[$row[0]] = verification_status($row[1]);
+    }
+
+    return $rows;
+}
+
+function parse_analyzer_verdict(string $loop): string
+{
+    $section = markdown_section($loop, 'Final Distillation');
+
+    if ($section === null || ! preg_match('/^- Fresh analyzer:\s*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)) {
+        return 'unknown';
+    }
+
+    if (! preg_match('/Verdict:\s*(.+)$/mi', $matches[1], $verdict)) {
+        return 'unknown';
+    }
+
+    $value = strtolower($verdict[1]);
+
+    if (str_contains($value, 'verdict: yes') || preg_match('/\byes\b/', $value) === 1) {
+        return 'yes';
+    }
+
+    if (preg_match('/\bno\b/', $value) === 1) {
+        return 'no';
+    }
+
+    if (str_contains($value, 'blocked')) {
+        return 'blocked';
+    }
+
+    if (str_contains($value, 'defer')) {
+        return 'deferred';
+    }
+
+    return normalize_value($verdict[1]);
+}
+
+/**
+ * @return array{total: int, classifications: array<string, int>}
+ */
+function parse_candidate_signals(string $loop): array
+{
+    $section = markdown_section($loop, 'Final Distillation');
+    $classifications = [];
+    $total = 0;
+
+    if ($section === null || ! preg_match('/^- Candidate signals:\s*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)) {
+        return [
+            'total' => 0,
+            'classifications' => [],
+        ];
+    }
+
+    foreach (preg_split('/\R/', trim($matches[1])) ?: [] as $line) {
+        if (! preg_match('/^\s*-\s*(.+)$/', $line, $signal)) {
+            continue;
+        }
+
+        $value = trim($signal[1]);
+
+        if ($value === '' || strcasecmp($value, 'none') === 0) {
+            continue;
+        }
+
+        $total++;
+
+        if (preg_match('/\s->\s([a-z-]+)\s->\s/i', $value, $classification) !== 1) {
+            $classifications['unknown'] = ($classifications['unknown'] ?? 0) + 1;
+
+            continue;
+        }
+
+        $key = strtolower($classification[1]);
+        $classifications[$key] = ($classifications[$key] ?? 0) + 1;
+    }
+
+    ksort($classifications);
+
+    return [
+        'total' => $total,
+        'classifications' => $classifications,
+    ];
+}
+
+function blockers_present(string $loop): bool
+{
+    $section = markdown_section($loop, 'Blockers');
+
+    if ($section === null) {
+        return false;
+    }
+
+    $normalized = strtolower(normalize_whitespace($section));
+
+    return $normalized !== '' && $normalized !== '- none' && $normalized !== 'none';
+}
+
+/**
+ * @return array<string, int|null>
+ */
+function token_usage(string $archiveDir): array
+{
+    $totals = [
+        'input_tokens' => 0,
+        'output_tokens' => 0,
+        'total_tokens' => 0,
+        'reasoning_tokens' => 0,
+    ];
+    $found = false;
+
+    foreach (glob("{$archiveDir}/agent-sessions/*/*/usage.json") ?: [] as $path) {
+        $usage = json_decode(read_file_or_empty($path), true);
+
+        if (! is_array($usage)) {
+            continue;
+        }
+
+        $found = true;
+
+        foreach (array_keys($totals) as $key) {
+            $totals[$key] += (int) ($usage[$key] ?? 0);
+        }
+    }
+
+    if (! $found) {
+        return [
+            'input_tokens' => null,
+            'output_tokens' => null,
+            'total_tokens' => null,
+            'reasoning_tokens' => null,
+        ];
+    }
+
+    return $totals;
+}
+
+function capture_status(string $archiveDir): string
+{
+    $agentSessionsDir = "{$archiveDir}/agent-sessions";
+
+    if (! is_dir($agentSessionsDir)) {
+        return 'legacy';
+    }
+
+    $sessionManifests = glob("{$agentSessionsDir}/*/*/manifest.json") ?: [];
+
+    if ($sessionManifests === []) {
+        $aggregate = "{$agentSessionsDir}/manifest.json";
+
+        if (! is_file($aggregate)) {
+            return 'legacy';
+        }
+
+        $manifest = json_decode(read_file_or_empty($aggregate), true);
+        $sessions = is_array($manifest) ? ($manifest['sessions'] ?? []) : [];
+
+        return $sessions === [] ? 'empty' : 'partial';
+    }
+
+    foreach ($sessionManifests as $path) {
+        $manifest = json_decode(read_file_or_empty($path), true);
+
+        if (! is_array($manifest) || ($manifest['status'] ?? null) !== 'ok') {
+            return 'partial';
+        }
+    }
+
+    return 'ok';
+}
+
+function verification_status(string $value): string
+{
+    $value = strtolower(trim($value));
+
+    foreach (['passed', 'blocked', 'not applicable', 'failed', 'unknown'] as $status) {
+        if (str_starts_with($value, $status)) {
+            return $status;
+        }
+    }
+
+    return 'unknown';
+}
+
+/**
+ * @return array{0: string, 1: string}|null
+ */
+function parse_markdown_label_row(string $line): ?array
+{
+    if (! preg_match('/^\s*-\s*(.+)$/', $line, $matches)) {
+        return null;
+    }
+
+    $text = $matches[1];
+    $inCode = false;
+    $length = strlen($text);
+
+    for ($index = 0; $index < $length; $index++) {
+        if ($text[$index] === '`') {
+            $inCode = ! $inCode;
+
+            continue;
+        }
+
+        if ($text[$index] !== ':' || $inCode) {
+            continue;
+        }
+
+        return [
+            trim(substr($text, 0, $index)),
+            trim(substr($text, $index + 1)),
+        ];
+    }
+
+    return null;
+}
+
+function markdown_section(string $contents, string $heading): ?string
+{
+    $pattern = '/^##\s+'.preg_quote($heading, '/').'\s*\R(.*?)(?=^##\s+|\z)/ms';
+
+    if (! preg_match($pattern, $contents, $matches)) {
+        return null;
+    }
+
+    return trim($matches[1]);
+}
+
+function read_file_or_empty(string $path): string
+{
+    if (! is_file($path)) {
+        return '';
+    }
+
+    return (string) file_get_contents($path);
+}
+
+function normalize_value(string $value): string
+{
+    $value = trim($value);
+
+    if ($value === '' || str_contains($value, '<')) {
+        return 'unknown';
+    }
+
+    return normalize_whitespace($value);
+}
+
+function normalize_whitespace(string $value): string
+{
+    return trim((string) preg_replace('/\s+/u', ' ', $value));
+}
+
+/**
+ * @param array<string, mixed> $value
+ */
+function to_json(array $value): string
+{
+    return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
+}

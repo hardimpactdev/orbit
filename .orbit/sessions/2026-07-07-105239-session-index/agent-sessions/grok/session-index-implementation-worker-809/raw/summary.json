@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f3bbb-ec04-7ba3-a3f9-6c4a0380b433",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/session-index"
+  },
+  "session_summary": "TDD Deterministic Session Index for Orbit Slice 3",
+  "created_at": "2026-07-07T08:39:59.332810Z",
+  "updated_at": "2026-07-07T08:40:38.728702Z",
+  "num_messages": 90,
+  "num_chat_messages": 69,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 2,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/session-index/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "04064c36300b38d1ee9fc5cad7a2a7c4fa40f887",
+  "head_branch": "session-index",
+  "request_id": "f6343832-09b2-4e38-9f7c-872508910ee6",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-07T08:40:38.728702Z",
+  "generated_title": "TDD Deterministic Session Index for Orbit Slice 3",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}
