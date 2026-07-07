@@ -62,6 +62,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      *     redact_stdout?: bool,
@@ -1060,13 +1061,23 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             unset($transportOptions['transport']);
         }
 
+        $transportOptions['environment'] = $this->localExecutorEnvironment($transportOptions);
+
+        return $transportOptions;
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     * @return array<string, string>
+     */
+    private function localExecutorEnvironment(array $transportOptions): array
+    {
         $environment = $this->transportEnvironment($transportOptions);
         $environment['HOME'] = self::LOCAL_EXECUTOR_HOME;
         $environment['ORBIT_CONFIG_PATH'] = self::LOCAL_EXECUTOR_HOME.'/.config/orbit/config.json';
         $environment['APP_KEY'] = $this->operationTokenSecret;
-        $transportOptions['environment'] = $environment;
 
-        return $transportOptions;
+        return $environment;
     }
 
     /**
@@ -1086,7 +1097,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             argv: $dispatch['argv'],
             input: $this->input($transportOptions),
             cwd: $this->cwd($transportOptions),
-            environment: $this->transportEnvironment($transportOptions),
+            environment: $this->localExecutorEnvironment($transportOptions),
             timeoutSeconds: $this->timeoutSeconds($transportOptions),
         );
         $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
@@ -1119,7 +1130,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             argv: $dispatch['argv'],
             input: $this->input($transportOptions),
             cwd: $this->cwd($transportOptions),
-            environment: $this->transportEnvironment($transportOptions),
+            environment: $this->localExecutorEnvironment($transportOptions),
             timeoutSeconds: $this->streamTimeoutSeconds($transportOptions),
             stream: true,
         );

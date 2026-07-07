@@ -73,6 +73,9 @@ describe(RemoteLocalExecutor::class, function (): void {
             transportOptions: [
                 'input' => '{"probe":true}',
                 'timeout' => 45,
+                'environment' => [
+                    'ORBIT_REQUEST_MARKER' => 'agent-push-env',
+                ],
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000406',
                 ],
@@ -1341,17 +1344,23 @@ function remoteLocalExecutorActivityLogBlob(): string
 function remote_local_executor_default_agent_push_request_matches(Request $request): bool
 {
     $body = $request->body();
+    $payload = remote_local_executor_json_object($body);
 
-    return $request->url() === 'http://10.44.0.70:9477/v1/commands'
-    && remote_local_executor_request_body_contains_all($body, [
-        '"command_id":"orbit.agent.binary"',
-        '"operation_id":"00000000-0000-4000-8000-000000000406"',
-        '"binary":"orbit"',
-        '"argv":["internal:workspace-adapter:lookup","lookup","polyscope","--state-path=\/home\/orbit\/.polyscope\/state\'s.db","--operation-token=',
-        '--json"',
-        '"input":"{\\"probe\\":true}"',
-        '"timeout_seconds":45',
-    ]);
+    return (
+        $request->url() === 'http://10.44.0.70:9477/v1/commands'
+        && ($payload['environment'] ?? null) === array_merge([
+            'ORBIT_REQUEST_MARKER' => 'agent-push-env',
+        ], remoteLocalExecutorEnvironment())
+        && remote_local_executor_request_body_contains_all($body, [
+            '"command_id":"orbit.agent.binary"',
+            '"operation_id":"00000000-0000-4000-8000-000000000406"',
+            '"binary":"orbit"',
+            '"argv":["internal:workspace-adapter:lookup","lookup","polyscope","--state-path=\/home\/orbit\/.polyscope\/state\'s.db","--operation-token=',
+            '--json"',
+            '"input":"{\\"probe\\":true}"',
+            '"timeout_seconds":45',
+        ])
+    );
 }
 
 function remote_local_executor_stream_agent_push_request_matches(Request $request): bool
