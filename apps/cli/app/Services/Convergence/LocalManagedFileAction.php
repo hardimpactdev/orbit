@@ -11,6 +11,8 @@ final readonly class LocalManagedFileAction
 {
     private const array Actions = ['probe', 'write'];
 
+    private const string USER_ORBIT_PATH_PATTERN = '#^/(?:Users|home)/[A-Za-z0-9._-]+/(?:\.config/orbit|\.local/share/orbit)(?:/|$)#';
+
     private const array AllowedPathPrefixes = [
         '/etc/apt/apt.conf.d/',
         '/etc/orbit/',
@@ -107,13 +109,26 @@ final readonly class LocalManagedFileAction
             throw $this->invalidPath();
         }
 
+        if ($this->containsPathTraversal($value)) {
+            throw $this->invalidPath();
+        }
+
         foreach (self::AllowedPathPrefixes as $prefix) {
             if (str_starts_with($value, $prefix)) {
                 return $value;
             }
         }
 
+        if (preg_match(self::USER_ORBIT_PATH_PATTERN, $value) === 1) {
+            return $value;
+        }
+
         throw $this->invalidPath();
+    }
+
+    private function containsPathTraversal(string $path): bool
+    {
+        return array_any(explode('/', $path), static fn ($segment) => $segment === '.' || $segment === '..');
     }
 
     private function fileExists(string $path): bool

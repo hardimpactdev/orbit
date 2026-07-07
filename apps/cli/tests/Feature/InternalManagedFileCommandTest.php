@@ -11,7 +11,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 describe('internal managed file command', function (): void {
     beforeEach(function (): void {
-        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
@@ -58,6 +58,47 @@ describe('internal managed file command', function (): void {
             ->and($output)
             ->toContain('"message":"Managed file path is invalid."');
     });
+
+    it('rejects path traversal inside managed roots after token validation', function (): void {
+        [$exitCode, $output] = run_internal_managed_file_command(
+            [
+                'action' => 'probe',
+                '--operation-token' => managed_file_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode(['path' => '/Users/nckrtl/.config/orbit/../.ssh/id_rsa'], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('"code":"validation_failed"')
+            ->and($output)
+            ->toContain('"message":"Managed file path is invalid."');
+    });
+
+    it('allows user orbit roots after token validation', function (string $path): void {
+        fake_managed_file_sudo_binary(fileExists: false);
+
+        [$exitCode, $output] = run_internal_managed_file_command(
+            [
+                'action' => 'probe',
+                '--operation-token' => managed_file_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode(['path' => $path], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('"exists":false');
+    })->with([
+        '/Users/orbit-test-user/.config/orbit/ca/root.crt',
+        '/Users/orbit-test-user/.local/share/orbit/caddy/data',
+        '/home/orbit-test-user/.config/orbit/ca/root.crt',
+        '/home/orbit-test-user/.local/share/orbit/caddy/data',
+    ]);
 
     it('probes managed file state through fixed argv commands', function (): void {
         fake_managed_file_sudo_binary(fileExists: true);
