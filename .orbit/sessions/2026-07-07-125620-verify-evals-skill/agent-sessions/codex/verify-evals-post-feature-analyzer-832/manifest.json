@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "verify-evals-post-feature-analyzer-832",
+    "solo_process_id": 832,
+    "kind": "agent",
+    "started_at": "2026-07-07 10:49:48",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T12-49-49-019f3c32-c909-70e2-90e4-be464d9a72b7.jsonl",
+    "source": "codex_exact_marker"
+}

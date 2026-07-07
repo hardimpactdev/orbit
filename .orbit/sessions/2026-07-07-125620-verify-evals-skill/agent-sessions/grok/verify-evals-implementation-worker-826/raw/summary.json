@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f3c21-a5fc-7141-822b-9302d41c431b",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/verify-evals-skill"
+  },
+  "session_summary": "Implement verifying-evals Skill Golden Set Verify/Update",
+  "created_at": "2026-07-07T10:31:06.077009Z",
+  "updated_at": "2026-07-07T10:32:45.631760Z",
+  "num_messages": 165,
+  "num_chat_messages": 98,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 2,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/verify-evals-skill/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "fb299a52f4bdef379806ed70a275889030775d52",
+  "head_branch": "verify-evals-skill",
+  "request_id": "cca5740e-ef78-4c6f-8b78-544cad38039c",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-07T10:32:45.631760Z",
+  "generated_title": "Implement verifying-evals Skill Golden Set Verify/Update",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

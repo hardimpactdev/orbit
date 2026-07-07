@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "verify-evals-smoke-placeholder-trial-830",
+    "solo_process_id": 830,
+    "kind": "agent",
+    "started_at": "2026-07-07 10:42:50",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T12-42-50-019f3c2c-65ba-71d0-837b-a21a7630df32.jsonl",
+    "source": "codex_exact_marker"
+}

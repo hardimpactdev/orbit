@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "verify-evals-replacement-worker-827",
+    "solo_process_id": 827,
+    "kind": "agent",
+    "started_at": "2026-07-07 10:33:25",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T12-33-25-019f3c23-c872-7550-b290-0a9ab74cc16f.jsonl",
+    "source": "codex_exact_marker"
+}

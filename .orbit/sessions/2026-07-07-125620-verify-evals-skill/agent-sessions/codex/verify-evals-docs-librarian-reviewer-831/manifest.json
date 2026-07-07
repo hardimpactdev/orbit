@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "verify-evals-docs-librarian-reviewer-831",
+    "solo_process_id": 831,
+    "kind": "agent",
+    "started_at": "2026-07-07 10:45:21",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T12-45-22-019f3c2e-b6e4-7711-96ee-476cfc4af145.jsonl",
+    "source": "codex_exact_marker"
+}
