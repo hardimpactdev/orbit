@@ -21,6 +21,7 @@ use App\Services\ActivityLogger;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodesProbe;
+use App\Services\Nodes\Roles\NodeToolBaselineConfigRenderer;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Platform\PlatformDetector;
@@ -877,6 +878,7 @@ describe('external service stubs', function (): void {
                 '',
             ]),
         );
+        nodes_probe_create_caddy_tool($node);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.role_'));
@@ -899,6 +901,7 @@ describe('external service stubs', function (): void {
             'status' => 'active',
             'settings' => ['tld' => 'test'],
         ]);
+        nodes_probe_create_caddy_tool($node);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $mapping = array_values(array_filter(
@@ -936,6 +939,7 @@ describe('external service stubs', function (): void {
                 '',
             ]),
         );
+        nodes_probe_create_caddy_tool($node);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $mapping = array_values(array_filter(
@@ -945,6 +949,70 @@ describe('external service stubs', function (): void {
 
         expect($mapping)->toHaveCount(1);
         expect($mapping[0]->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects stale app-dev caddy baseline tool config', function (): void {
+        $node = Node::create([
+            'name' => 'nmbp',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'tld' => 'nmbp',
+            'platform' => 'macos_26-5-1',
+            'user' => 'nckrtl',
+            'wireguard_address' => '10.6.0.3',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => ['tld' => 'nmbp'],
+        ]);
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(
+            nodesProbeDevelopmentDnsPath('nmbp.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=nmbp',
+                '# bind-scope=orbit_network',
+                'address=/nmbp/10.6.0.3',
+                '',
+            ]),
+        );
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'config' => [
+                'container' => [
+                    'name' => 'orbit-caddy',
+                    'image' => 'caddy:2-alpine',
+                    'network' => 'orbit-network',
+                    'restart_policy' => 'unless-stopped',
+                    'published_ports' => ['10.6.0.3:80:80'],
+                    'mounts' => [
+                        [
+                            'source' => '/private/etc/caddy/sites',
+                            'target' => '/etc/caddy/sites',
+                            'read_only' => true,
+                        ],
+                    ],
+                    'network_aliases' => ['orbit-caddy'],
+                    'extra_hosts' => ['host.docker.internal' => 'host-gateway'],
+                ],
+            ],
+        ]);
+
+        $drift = $this->probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => (
+                $e->key === 'node.role_baseline_mismatch'
+                && ($e->detail['component'] ?? null) === 'tool_config'
+                && ($e->detail['tool'] ?? null) === 'caddy'
+            ),
+        ));
+
+        expect($baseline)->toHaveCount(1);
+        expect($baseline[0]->kind)->toBe(DriftKind::Divergent);
     });
 
     it('detects public gateway development dns resolver exposure', function (): void {
@@ -973,6 +1041,7 @@ describe('external service stubs', function (): void {
                 '',
             ]),
         );
+        nodes_probe_create_caddy_tool($node);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $exposure = array_values(array_filter(
@@ -1152,6 +1221,68 @@ describe('reconciliation', function (): void {
         expect(File::get(nodesProbeDevelopmentDnsPath('test.conf')))
             ->toContain('# bind-scope=orbit_network')
             ->toContain('address=/test/10.6.0.5');
+    });
+
+    it('repairs stale app-dev caddy baseline tool config on reconcile', function (): void {
+        $node = Node::create([
+            'name' => 'nmbp',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'tld' => 'nmbp',
+            'platform' => 'macos_26-5-1',
+            'user' => 'nckrtl',
+            'wireguard_address' => '10.6.0.3',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'app-dev',
+            'status' => 'active',
+            'settings' => ['tld' => 'nmbp'],
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'config' => [
+                'container' => [
+                    'mounts' => [
+                        [
+                            'source' => '/private/etc/caddy/sites',
+                            'target' => '/etc/caddy/sites',
+                            'read_only' => true,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $entry = new DriftEntry(
+            family: 'nodes',
+            key: 'node.role_baseline_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'test',
+            detail: [
+                'role' => 'app-dev',
+                'component' => 'tool_config',
+                'tool' => 'caddy',
+            ],
+        );
+
+        $this->probe->reconcile($node, $entry);
+
+        $mountSources = collect(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'caddy')
+                ->sole()
+                ->config['container']['mounts'] ?? [],
+        )
+            ->pluck('source')->all();
+
+        expect($mountSources)
+            ->toContain('/Users/nckrtl/.config/orbit/caddy/Caddyfile')
+            ->toContain('/Users/nckrtl/.config/orbit/caddy/sites')
+            ->toContain('/Users/nckrtl/.config/orbit')
+            ->not->toContain('/private/etc/caddy/sites');
     });
 });
 
@@ -2193,6 +2324,15 @@ function nodes_probe_agent_runtime_request_matches(Request $request): bool
         && $request['argv'][2] === '--json'
         && $request['operation_id'] === 'node-agent-runtime.probe'
     );
+}
+
+function nodes_probe_create_caddy_tool(Node $node): NodeTool
+{
+    return NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'caddy',
+        'config' => app(NodeToolBaselineConfigRenderer::class)->render('caddy', $node),
+    ]);
 }
 
 final class NodesProbeRecordingRemoteShell implements RemoteShell

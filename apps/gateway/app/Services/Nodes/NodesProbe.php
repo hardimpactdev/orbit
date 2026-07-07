@@ -25,6 +25,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use App\Services\Nodes\Roles\NodeRoleDefinition;
 use App\Services\Nodes\Roles\NodeRoleRegistry;
+use App\Services\Nodes\Roles\NodeToolBaselineConfigRenderer;
 use App\Services\Platform\PlatformDetector;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
@@ -355,6 +356,7 @@ final readonly class NodesProbe
             return [];
         }
 
+        $toolDrift = $this->baselineToolConfigDrift($node, $assignment, 'caddy');
         $mapping = $this->developmentDnsMappingProbe()->inspect(
             $this->developmentNodeFromAssignment($node, $tld),
         );
@@ -370,8 +372,10 @@ final readonly class NodesProbe
                         ...$mapping,
                         'role' => $assignment->role,
                         'tld' => $tld,
+                        'component' => 'dns_mapping',
                     ],
                 ),
+                ...$toolDrift,
             ];
         }
 
@@ -391,12 +395,97 @@ final readonly class NodesProbe
                         ...$mapping,
                         'role' => $assignment->role,
                         'tld' => $tld,
+                        'component' => 'dns_mapping',
+                    ],
+                ),
+                ...$toolDrift,
+            ];
+        }
+
+        return $toolDrift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function baselineToolConfigDrift(Node $node, NodeRoleAssignment $assignment, string $tool): array
+    {
+        $expectedConfig = app(NodeToolBaselineConfigRenderer::class)->render($tool, $node);
+
+        if ($expectedConfig === null) {
+            return [];
+        }
+
+        $record = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', $tool)
+            ->first();
+
+        if (! $record instanceof NodeTool) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'node.role_baseline_mismatch',
+                    kind: DriftKind::Missing,
+                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing required tool {$tool}.",
+                    detail: [
+                        'role' => $assignment->role,
+                        'component' => 'tool_config',
+                        'tool' => $tool,
                     ],
                 ),
             ];
         }
 
-        return [];
+        $actualConfig = is_array($record->config) ? $record->config : [];
+
+        if ($this->canonicalBaselineConfig($actualConfig) === $this->canonicalBaselineConfig($expectedConfig)) {
+            return [];
+        }
+
+        return [
+            new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_baseline_mismatch',
+                kind: DriftKind::Divergent,
+                summary: "Role baseline for '{$assignment->role}' on node {$node->name} has stale tool {$tool} config.",
+                detail: [
+                    'role' => $assignment->role,
+                    'component' => 'tool_config',
+                    'tool' => $tool,
+                ],
+            ),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function canonicalBaselineConfig(array $config): string
+    {
+        $this->sortRecursive($config);
+
+        return json_encode($config, JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $value
+     */
+    private function sortRecursive(array &$value): void
+    {
+        foreach ($value as &$item) {
+            if (is_array($item)) {
+                $this->sortRecursive($item);
+            }
+        }
+
+        unset($item);
+
+        if (array_is_list($value)) {
+            return;
+        }
+
+        ksort($value);
     }
 
     /**
@@ -442,18 +531,20 @@ final readonly class NodesProbe
         }
 
         foreach (['caddy'] as $tool) {
-            if (! NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists()) {
-                $drift[] = new DriftEntry(
-                    family: $this->key(),
-                    key: 'node.role_baseline_mismatch',
-                    kind: DriftKind::Missing,
-                    summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing required tool {$tool}.",
-                    detail: [
-                        'role' => $assignment->role,
-                        'tool' => $tool,
-                    ],
-                );
+            if (NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists()) {
+                continue;
             }
+
+            $drift[] = new DriftEntry(
+                family: $this->key(),
+                key: 'node.role_baseline_mismatch',
+                kind: DriftKind::Missing,
+                summary: "Role baseline for '{$assignment->role}' on node {$node->name} is missing required tool {$tool}.",
+                detail: [
+                    'role' => $assignment->role,
+                    'tool' => $tool,
+                ],
+            );
         }
 
         if (($node->orbit_agent_capable ?? false) === true) {

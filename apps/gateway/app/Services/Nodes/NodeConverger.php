@@ -73,7 +73,7 @@ final readonly class NodeConverger
     ): NodeConvergenceResult {
         $actions = [];
         $remainingIssues = [];
-        $nodeIssues = $this->filterNodeIssues($issues);
+        $nodeIssues = $this->mergeIssuePayloads($this->filterNodeIssues($issues), []);
         $toolIssues = $this->filterToolIssues($issues);
 
         if ($nodeIssues !== []) {
@@ -586,6 +586,30 @@ final readonly class NodeConverger
             return "{$family}:{$key}:{$code}:{$tool}";
         }
 
+        if (
+            $family === 'node'
+            && $key === 'node.role_baseline_mismatch'
+            && ($role = $this->roleNameFromIssue($item)) !== null
+        ) {
+            return "{$family}:{$key}:{$code}:{$role}";
+        }
+
         return "{$family}:{$key}:{$code}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function roleNameFromIssue(array $item): ?string
+    {
+        if (is_array($item['detail'] ?? null)) {
+            return is_string($item['detail']['role'] ?? null) ? $item['detail']['role'] : null;
+        }
+
+        if (is_array($item['details'] ?? null)) {
+            return is_string($item['details']['role'] ?? null) ? $item['details']['role'] : null;
+        }
+
+        return null;
     }
 }

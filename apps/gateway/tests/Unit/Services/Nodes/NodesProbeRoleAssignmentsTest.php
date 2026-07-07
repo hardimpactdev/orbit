@@ -247,7 +247,7 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
     $roleDrift = roleDriftEntries($node);
 
     expect($roleDrift)
-        ->toHaveCount(1)
+        ->toHaveCount(2)
         ->and($roleDrift[0]->key)
         ->toBe('node.role_baseline_mismatch')
         ->and($roleDrift[0]->kind)
@@ -255,6 +255,16 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
         ->and($roleDrift[0]->detail)
         ->toMatchArray([
             'tld' => 'test',
+            'component' => 'dns_mapping',
+        ]);
+
+    expect($roleDrift[1])
+        ->key->toBe('node.role_baseline_mismatch')
+        ->kind->toBe(DriftKind::Missing)
+        ->detail->toMatchArray([
+            'role' => 'app-dev',
+            'component' => 'tool_config',
+            'tool' => 'caddy',
         ]);
 });
 

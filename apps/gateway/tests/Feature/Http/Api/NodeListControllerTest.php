@@ -430,7 +430,7 @@ describe('NodeListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.meta.doctor.checked', 1)
-            ->assertJsonPath('success.meta.doctor.issues', 2);
+            ->assertJsonPath('success.meta.doctor.issues', 3);
 
         $failure = collect($response->json('success.meta.doctor.failures'))
             ->first(fn (array $failure): bool => $failure['code'] === 'node.record_incomplete');
