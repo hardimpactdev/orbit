@@ -156,6 +156,10 @@ impl GatewayCommandAuthorizer {
 
 impl CommandAuthorizer for GatewayCommandAuthorizer {
     fn authorize(&self, request: &CommandPushRequest) -> Result<(), String> {
+        if request.binary != "orbit" {
+            return Err("unsupported Orbit Agent binary".to_string());
+        }
+
         let command = request
             .argv
             .first()
@@ -220,10 +224,6 @@ async fn command_push_stream(
         }
     };
 
-    if request.binary != "orbit" {
-        return command_error(StatusCode::BAD_REQUEST, "unsupported Orbit Agent binary");
-    }
-
     match execute_binary_stream(request) {
         Ok(stream) => (
             StatusCode::OK,
@@ -249,13 +249,6 @@ fn command_push_blocking(
     }
 
     let authorization_ms = elapsed_millis(authorization_start);
-
-    if request.binary != "orbit" {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "unsupported Orbit Agent binary".to_string(),
-        ));
-    }
 
     let execution = execute_binary(&request);
 
@@ -713,10 +706,8 @@ impl DrainedCommandOutput {
 }
 
 fn command_binary(request: &CommandPushRequest) -> String {
-    if request.binary != "orbit" {
-        return request.binary.clone();
-    }
-
+    // Binary gate is now enforced once in CommandAuthorizer::authorize.
+    // Only "orbit" binaries reach execution paths.
     if let Some(path) = request_env_path(request, "ORBIT_BIN_PATH") {
         return path;
     }
@@ -786,7 +777,8 @@ fn should_retry_stale_fleet_update_without_legacy_flags(
     request: &CommandPushRequest,
     execution: &CommandExecution,
 ) -> bool {
-    if request.binary != "orbit" || execution.exit_code == Some(0) {
+    // Binary gate is enforced at the authorizer; only "orbit" reaches here.
+    if execution.exit_code == Some(0) {
         return false;
     }
 
@@ -979,7 +971,10 @@ mod tests {
     }
 
     impl CommandAuthorizer for StaticCommandAuthorizer {
-        fn authorize(&self, _request: &CommandPushRequest) -> Result<(), String> {
+        fn authorize(&self, request: &CommandPushRequest) -> Result<(), String> {
+            if request.binary != "orbit" {
+                return Err("unsupported Orbit Agent binary".to_string());
+            }
             if self.allowed {
                 return Ok(());
             }
@@ -1010,11 +1005,14 @@ mod tests {
     fn execute_binary_writes_request_input_to_stdin() {
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
-            binary: "/bin/cat".to_string(),
+            binary: "orbit".to_string(),
             argv: vec![],
             input: Some("agent stdin\n".to_string()),
             cwd: None,
-            environment: None,
+            environment: Some(HashMap::from([(
+                "ORBIT_BIN_PATH".to_string(),
+                "/bin/cat".to_string(),
+            )])),
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -1041,17 +1039,17 @@ mod tests {
             .expect("temp dir should canonicalize");
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
-            binary: "/bin/sh".to_string(),
+            binary: "orbit".to_string(),
             argv: vec![
                 "-c".to_string(),
                 "printf '%s:%s' \"$PWD\" \"$ORBIT_AGENT_TEST_VALUE\"".to_string(),
             ],
             input: None,
             cwd: Some(cwd.to_string_lossy().to_string()),
-            environment: Some(HashMap::from([(
-                "ORBIT_AGENT_TEST_VALUE".to_string(),
-                "from-env".to_string(),
-            )])),
+            environment: Some(HashMap::from([
+                ("ORBIT_BIN_PATH".to_string(), "/bin/sh".to_string()),
+                ("ORBIT_AGENT_TEST_VALUE".to_string(), "from-env".to_string()),
+            ])),
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -1072,11 +1070,14 @@ mod tests {
     fn execute_binary_does_not_quantize_fast_completion_to_scheduler_delay() {
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
-            binary: "/usr/bin/true".to_string(),
+            binary: "orbit".to_string(),
             argv: vec![],
             input: None,
             cwd: None,
-            environment: None,
+            environment: Some(HashMap::from([(
+                "ORBIT_BIN_PATH".to_string(),
+                "/usr/bin/true".to_string(),
+            )])),
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 30,
             stream: true,
@@ -1090,7 +1091,7 @@ mod tests {
     fn execute_binary_drains_large_stdout_while_child_runs() {
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_agent_test_123".to_string(),
-            binary: "/bin/sh".to_string(),
+            binary: "orbit".to_string(),
             argv: vec![
                 "-c".to_string(),
                 "i=0; while [ $i -lt 8192 ]; do printf 0123456789abcdef; i=$((i + 1)); done"
@@ -1098,7 +1099,10 @@ mod tests {
             ],
             input: None,
             cwd: None,
-            environment: None,
+            environment: Some(HashMap::from([(
+                "ORBIT_BIN_PATH".to_string(),
+                "/bin/sh".to_string(),
+            )])),
             operation_token: "op_test_123".to_string(),
             timeout_seconds: 5,
             stream: true,
@@ -1120,11 +1124,14 @@ mod tests {
         let start = Instant::now();
         let execution = execute_binary(&CommandPushRequest {
             operation_id: "op_timeout_test".to_string(),
-            binary: "/bin/sleep".to_string(),
+            binary: "orbit".to_string(),
             argv: vec!["5".to_string()],
             input: None,
             cwd: None,
-            environment: None,
+            environment: Some(HashMap::from([(
+                "ORBIT_BIN_PATH".to_string(),
+                "/bin/sleep".to_string(),
+            )])),
             operation_token: "op_test".to_string(),
             timeout_seconds: 1,
             stream: true,
@@ -1276,23 +1283,6 @@ mod tests {
         assert!(should_retry_stale_fleet_update_without_legacy_flags(
             &request, &execution
         ));
-    }
-
-    #[test]
-    fn command_binary_preserves_non_orbit_binaries() {
-        let request = CommandPushRequest {
-            operation_id: "op_agent_test_123".to_string(),
-            binary: "/bin/cat".to_string(),
-            argv: vec![],
-            input: None,
-            cwd: None,
-            environment: None,
-            operation_token: "op_test_123".to_string(),
-            timeout_seconds: 30,
-            stream: true,
-        };
-
-        assert_eq!(command_binary(&request), "/bin/cat");
     }
 
     #[test]
@@ -1457,7 +1447,7 @@ mod tests {
             .await
             .expect("response");
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -1484,7 +1474,7 @@ mod tests {
             .await
             .expect("response");
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -1570,6 +1560,31 @@ mod tests {
             verify_invocations.load(Ordering::SeqCst),
             2,
             "token verification must be invoked twice"
+        );
+    }
+
+    #[tokio::test]
+    async fn command_authorizer_rejects_non_orbit_binary() {
+        // The binary gate is now inside authorize; non-"orbit" must be rejected at the boundary.
+        let authorizer: Arc<dyn CommandAuthorizer> = Arc::new(GatewayCommandAuthorizer::new());
+        let request = CommandPushRequest {
+            operation_id: "op_bin_test".to_string(),
+            binary: "not-orbit".to_string(),
+            argv: vec!["version".to_string()],
+            input: None,
+            cwd: None,
+            environment: None,
+            operation_token: "op_token".to_string(),
+            timeout_seconds: 30,
+            stream: false,
+        };
+
+        let result = authorizer.authorize(&request);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("unsupported Orbit Agent binary"),
+            "expected binary rejection message, got: {err}"
         );
     }
 

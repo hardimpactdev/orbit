@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -9,6 +10,7 @@ use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Enums\InternalCommand;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -810,6 +812,39 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             );
         }],
     ]);
+
+    it('keys allowlist by InternalCommand enum and NodeRoleName values (MIG-05 enum-to-allowlist consistency)', function (): void {
+        expect(class_exists(InternalCommand::class))->toBeTrue();
+        expect(class_exists(NodeRoleName::class))->toBeTrue();
+
+        $public = LocalExecutorCommandBuilder::allowedCommandRoles();
+
+        // Public return shape preserved exactly.
+        expect($public)->toBeArray();
+        $expectedPublicKeys = array_map(
+            fn (InternalCommand $case): string => $case->value,
+            InternalCommand::cases(),
+        );
+        // Order-independent equality for the public string-keyed shape (declaration order in const vs enum may differ).
+        expect(array_keys($public))->toEqualCanonicalizing($expectedPublicKeys);
+
+        // Internal const: keys are strings (from InternalCommand values), values are NodeRoleName lists.
+        $ref = new \ReflectionClass(LocalExecutorCommandBuilder::class);
+        $const = $ref->getReflectionConstant('ALLOWED_COMMAND_ROLES');
+        $typed = $const->getValue();
+
+        expect($typed)->toBeArray();
+
+        foreach (InternalCommand::cases() as $case) {
+            $key = $case->value;
+            expect($typed)->toHaveKey($key);
+            $roleList = $typed[$key];
+            expect($roleList)->toBeArray();
+            foreach ($roleList as $role) {
+                expect($role)->toBeInstanceOf(NodeRoleName::class);
+            }
+        }
+    });
 });
 
 function localExecutorCommandBuilder(): LocalExecutorCommandBuilder
