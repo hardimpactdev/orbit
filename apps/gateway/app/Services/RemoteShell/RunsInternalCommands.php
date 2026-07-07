@@ -18,6 +18,7 @@ interface RunsInternalCommands
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      *     redact_stdout?: bool,
