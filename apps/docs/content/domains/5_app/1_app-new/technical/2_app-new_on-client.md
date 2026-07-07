@@ -16,7 +16,7 @@ response.
   endpoint. The gateway identifies the WireGuard peer and decides whether the
   request is allowed.
 - **Apply:** The gateway writes app configuration locally and orchestrates all
-  remote work to the target node over SSH via `RemoteShell`.
+  remote work to the target node through the classified host execution lane.
 - **Progress:** The CLI consumes the gateway's progress stream and renders the
   human-facing tree or JSON envelope.
 

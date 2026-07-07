@@ -18,6 +18,7 @@ use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Security\OperationToken;
@@ -88,22 +89,53 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->toBeEmpty();
 
         Http::assertSent(
-            fn ($request): bool => (
-                $request->url() === 'http://10.44.0.70:9477/v1/commands'
-                && $request['binary'] === 'orbit'
-                && $request['argv'][0] === 'internal:workspace-adapter:lookup'
-                && $request['argv'][1] === 'lookup'
-                && $request['argv'][2] === 'polyscope'
-                && $request['argv'][3] === "--state-path=/home/orbit/.polyscope/state's.db"
-                && str_starts_with((string) $request['argv'][4], '--operation-token=')
-                && $request['argv'][5] === '--json'
-                && $request['input'] === '{"probe":true}'
-                && $request['command_id'] === 'orbit.agent.binary'
-                && $request['operation_id'] === '00000000-0000-4000-8000-000000000406'
-                && $request['payload']['operation_id'] === '00000000-0000-4000-8000-000000000406'
-                && $request['payload']['argv'] === $request['argv']
-                && $request['timeout_seconds'] === 45
+            fn (Request $request): bool => remote_local_executor_default_agent_push_request_matches($request),
+        );
+    });
+
+    it('streams node-local internal command output through agent-push without calling ssh transport', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands/stream' => Http::response("line one\nline two\n"),
+        ]);
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            static fn (): RemoteShellResult => throw new RuntimeException(
+                'SSH transport should not be called by agent-push streams.',
             ),
+        );
+        $executor = remoteLocalExecutor(
+            transport: $transport,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+        $chunks = [];
+
+        $executor->streamInternal(
+            node: $node,
+            commandName: 'internal:process-logs',
+            transportOptions: [
+                'input' => '{"follow":true}',
+                'timeout' => 0,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000407',
+                ],
+            ],
+            onOutput: static function (string $chunk) use (&$chunks): void {
+                $chunks[] = $chunk;
+            },
+        );
+
+        expect(implode('', $chunks))
+            ->toBe("line one\nline two\n")
+            ->and($transport->calls)
+            ->toBeEmpty();
+
+        Http::assertSent(
+            fn (Request $request): bool => remote_local_executor_stream_agent_push_request_matches($request),
         );
     });
 
@@ -536,7 +568,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 transportOptions: ['throw' => true],
             );
 
-            $this->fail('Expected the local executor transport to throw.');
+            throw new RuntimeException('Expected the local executor transport to throw.');
         } catch (RemoteShellFailed $exception) {
             $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
@@ -576,7 +608,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 commandOptions: [],
             );
 
-            $this->fail('Expected the local executor transport to throw.');
+            throw new RuntimeException('Expected the local executor transport to throw.');
         } catch (RuntimeException $exception) {
             $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
@@ -616,7 +648,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 commandOptions: [],
             );
 
-            $this->fail('Expected the local executor transport to throw.');
+            throw new RuntimeException('Expected the local executor transport to throw.');
         } catch (RuntimeException $exception) {
             $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
@@ -638,36 +670,42 @@ describe(RemoteLocalExecutor::class, function (): void {
         }
     });
 
-    it('redacts operation-token output variant :dataset from any operation before storing summaries', function (
-        Closure $output,
-        string $expected,
-    ): void {
-        $otherOperationToken = 'external-operation-token-402';
-        $transport = new RemoteLocalExecutorRecordingTransport(
-            static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
-                exitCode: 0,
-                stdout: $output($otherOperationToken),
-                stderr: '',
-                durationMs: 6,
-            ),
-        );
-        $executor = remoteLocalExecutor($transport);
+    it(
+        'redacts operation-token output variant :dataset from any operation before storing summaries',
+        /**
+         * @param  Closure(string): string  $output
+         */
+        function (
+            Closure $output,
+            string $expected,
+        ): void {
+            $otherOperationToken = 'external-operation-token-402';
+            $transport = new RemoteLocalExecutorRecordingTransport(
+                static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: $output($otherOperationToken),
+                    stderr: '',
+                    durationMs: 6,
+                ),
+            );
+            $executor = remoteLocalExecutor($transport);
 
-        $executor->runInternal(
-            node: remoteLocalExecutorNode(),
-            commandName: 'internal:executor:verify',
-            arguments: [],
-            commandOptions: [],
-        );
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                commandOptions: [],
+            );
 
-        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+            $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($completedProperties['stdout_summary'])
-            ->not
-            ->toContain($otherOperationToken)
-            ->and($completedProperties['stdout_summary'])
-            ->toBe($expected);
-    })->with([
+            expect($completedProperties['stdout_summary'])
+                ->not
+                ->toContain($otherOperationToken)
+                ->and($completedProperties['stdout_summary'])
+                ->toBe($expected);
+        },
+    )->with([
         'no spaces around equals' => [
             static fn (string $token): string => "--operation-token={$token}",
             '--operation-token=<redacted>',
@@ -766,7 +804,10 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->toContain($token)
             ->and($completedProperties['stdout_summary'])
             ->toContain('<redacted>')
-            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))
+            ->and(str_ends_with(
+                remote_local_executor_activity_property_string($completedProperties, key: 'stdout_summary'),
+                '[truncated]',
+            ))
             ->toBeTrue();
     });
 
@@ -790,53 +831,62 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect(strlen($completedProperties['stdout_summary']))
+        $stdoutSummary = remote_local_executor_activity_property_string($completedProperties, key: 'stdout_summary');
+        $stderrSummary = remote_local_executor_activity_property_string($completedProperties, key: 'stderr_summary');
+
+        expect(strlen($stdoutSummary))
             ->toBe(4_107)
-            ->and(strlen($completedProperties['stderr_summary']))
+            ->and(strlen($stderrSummary))
             ->toBe(4_107)
-            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))
+            ->and(str_ends_with($stdoutSummary, '[truncated]'))
             ->toBeTrue()
-            ->and(str_ends_with($completedProperties['stderr_summary'], '[truncated]'))
+            ->and(str_ends_with($stderrSummary, '[truncated]'))
             ->toBeTrue();
     });
 
-    it('suppresses requested output summaries and strips redaction flags before dispatch :dataset', function (
-        array $transportOptions,
-        string $expectedStdoutSummary,
-        string $expectedStderrSummary,
-    ): void {
-        $transport = new RemoteLocalExecutorRecordingTransport(
-            new RemoteShellResult(
-                exitCode: 0,
-                stdout: '{"api_token":"poly-token-secret"}',
-                stderr: 'stderr secret',
-                durationMs: 12,
-            ),
-        );
-        $executor = remoteLocalExecutor($transport);
+    it(
+        'suppresses requested output summaries and strips redaction flags before dispatch :dataset',
+        /**
+         * @param  array{timeout: int, redact_stdout?: bool, redact_stderr?: bool}  $transportOptions
+         */
+        function (
+            array $transportOptions,
+            string $expectedStdoutSummary,
+            string $expectedStderrSummary,
+        ): void {
+            $transport = new RemoteLocalExecutorRecordingTransport(
+                new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: '{"api_token":"poly-token-secret"}',
+                    stderr: 'stderr secret',
+                    durationMs: 12,
+                ),
+            );
+            $executor = remoteLocalExecutor($transport);
 
-        $executor->runInternal(
-            node: remoteLocalExecutorNode(),
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: [],
-            commandOptions: [
-                'adapter' => 'polyscope',
-                'lookup' => 'config',
-                'app-path' => '/srv/docs',
-            ],
-            transportOptions: $transportOptions,
-        );
+            $executor->runInternal(
+                node: remoteLocalExecutorNode(),
+                commandName: 'internal:workspace-adapter:lookup',
+                arguments: [],
+                commandOptions: [
+                    'adapter' => 'polyscope',
+                    'lookup' => 'config',
+                    'app-path' => '/srv/docs',
+                ],
+                transportOptions: $transportOptions,
+            );
 
-        $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
+            $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($transport->calls[0]['options'])
-            ->not
-            ->toHaveKeys(['redact_stdout', 'redact_stderr'])
-            ->and($completedProperties['stdout_summary'])
-            ->toBe($expectedStdoutSummary)
-            ->and($completedProperties['stderr_summary'])
-            ->toBe($expectedStderrSummary);
-    })->with([
+            expect($transport->calls[0]['options'])
+                ->not
+                ->toHaveKeys(['redact_stdout', 'redact_stderr'])
+                ->and($completedProperties['stdout_summary'])
+                ->toBe($expectedStdoutSummary)
+                ->and($completedProperties['stderr_summary'])
+                ->toBe($expectedStderrSummary);
+        },
+    )->with([
         'no redaction flags' => [
             ['timeout' => 30],
             '{"api_token":"poly-token-secret"}',
@@ -940,7 +990,7 @@ describe(RemoteLocalExecutor::class, function (): void {
                 transportOptions: ['redact_stdout' => true],
             );
 
-            $this->fail('Expected the local executor transport to throw.');
+            throw new RuntimeException('Expected the local executor transport to throw.');
         } catch (RuntimeException $exception) {
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
@@ -971,7 +1021,7 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         expect($rows)->toHaveCount(1);
 
-        $row = $rows->first();
+        $row = remote_local_executor_operation_run($operationId);
         expect($row->status)
             ->toBe('succeeded')
             ->and($row->internal_command)
@@ -1012,20 +1062,23 @@ describe(RemoteLocalExecutor::class, function (): void {
                 commandName: 'internal:executor:verify',
                 transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
             );
-            test()->fail('Expected RemoteShellFailed.');
+            throw new RuntimeException('Expected RemoteShellFailed.');
         } catch (RemoteShellFailed) {
             // expected
         }
 
-        $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
+        $row = remote_local_executor_operation_run($operationId);
 
-        expect($row)
-            ->not->toBeNull()->and($row->status)->toBe('failed')->and((int) $row->exit_code)->toBe(
-                13,
-            )->and($row->stdout_summary)->toBe('leak --operation-token=<redacted>')->and($row->stdout_summary)
+        expect($row->status)
+            ->toBe('failed')
+            ->and((int) $row->exit_code)
+            ->toBe(13)
+            ->and($row->stdout_summary)
+            ->toBe('leak --operation-token=<redacted>')
+            ->and($row->stdout_summary)
             ->not->toContain('operation-token=eyJ');
 
-        $error = json_decode((string) $row->error, true, flags: JSON_THROW_ON_ERROR);
+        $error = remote_local_executor_json_object($row->error);
         expect($error['code'])->toBe('remote_shell_failed');
     });
 
@@ -1044,22 +1097,19 @@ describe(RemoteLocalExecutor::class, function (): void {
                 commandName: 'internal:executor:verify',
                 transportOptions: ['metadata' => ['ORBIT_OPERATION_ID' => $operationId]],
             );
-            test()->fail('Expected transport exception.');
+            throw new RuntimeException('Expected transport exception.');
         } catch (RemoteLocalExecutorTransportFailed) {
             // expected
         }
 
-        $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
+        $row = remote_local_executor_operation_run($operationId);
 
-        expect($row)
-            ->not
-            ->toBeNull()
-            ->and($row->status)
+        expect($row->status)
             ->toBe('failed')
             ->and($row->exit_code)
             ->toBeNull();
 
-        $error = json_decode((string) $row->error, true, flags: JSON_THROW_ON_ERROR);
+        $error = remote_local_executor_json_object($row->error);
         expect($error['code'])->toBe('transport_failed')->and($error['message'])->toContain('transport boom');
     });
 
@@ -1191,6 +1241,9 @@ function remoteLocalExecutorStartUnsupportedMessage(): string
     return 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See apps/docs/content/execution-lanes.md.';
 }
 
+/**
+ * @param  (Closure(): int)|null  $clock
+ */
 function remoteLocalExecutorTokenFactory(?Closure $clock = null): OperationTokenFactory
 {
     return new OperationTokenFactory(
@@ -1218,9 +1271,13 @@ function remoteLocalExecutorNode(array $roles = ['app-dev']): Node
         'host_key_pinned_at' => now(),
     ]);
 
+    if (! $node instanceof Node) {
+        throw new RuntimeException('Expected node factory to create a node model.');
+    }
+
     foreach ($roles as $role) {
         NodeRoleAssignment::factory()->create([
-            'node_id' => $node->id,
+            'node_id' => remote_local_executor_node_id($node),
             'role' => $role,
             'status' => 'active',
         ]);
@@ -1231,29 +1288,45 @@ function remoteLocalExecutorNode(array $roles = ['app-dev']): Node
 
 function remoteLocalExecutorTokenFromScript(string $script): string
 {
+    $matches = [];
+
     preg_match("/--operation-token='([^']+)'/", $script, $matches);
 
     return $matches[1] ?? '';
 }
 
 /**
- * @return list<object>
+ * @return list<stdClass>
  */
 function remoteLocalExecutorActivityRows(): array
 {
-    return DB::table('activity_log')
+    $rows = DB::table('activity_log')
         ->where('log_name', 'local_executor')
         ->orderBy('id')
         ->get()
         ->all();
+
+    return array_values($rows);
 }
 
 /**
- * @return array<string, mixed>
+ * @return array<array-key, mixed>
  */
-function remoteLocalExecutorActivityProperties(object $activity): array
+function remoteLocalExecutorActivityProperties(stdClass $activity): array
 {
-    return json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR);
+    return remote_local_executor_json_object($activity->properties ?? null);
+}
+
+/**
+ * @param  array<array-key, mixed>  $properties
+ */
+function remote_local_executor_activity_property_string(array $properties, string $key): string
+{
+    if (! array_key_exists($key, $properties) || ! is_string($properties[$key])) {
+        throw new RuntimeException("Expected activity property [{$key}] to be a string.");
+    }
+
+    return $properties[$key];
 }
 
 function remoteLocalExecutorActivityLogBlob(): string
@@ -1261,8 +1334,87 @@ function remoteLocalExecutorActivityLogBlob(): string
     return DB::table('activity_log')
         ->orderBy('id')
         ->get()
-        ->map(fn (object $activity): string => json_encode((array) $activity, JSON_THROW_ON_ERROR))
+        ->map(fn (stdClass $activity): string => json_encode(get_object_vars($activity), JSON_THROW_ON_ERROR))
         ->implode("\n");
+}
+
+function remote_local_executor_default_agent_push_request_matches(Request $request): bool
+{
+    $body = $request->body();
+
+    return $request->url() === 'http://10.44.0.70:9477/v1/commands'
+    && remote_local_executor_request_body_contains_all($body, [
+        '"command_id":"orbit.agent.binary"',
+        '"operation_id":"00000000-0000-4000-8000-000000000406"',
+        '"binary":"orbit"',
+        '"argv":["internal:workspace-adapter:lookup","lookup","polyscope","--state-path=\/home\/orbit\/.polyscope\/state\'s.db","--operation-token=',
+        '--json"',
+        '"input":"{\\"probe\\":true}"',
+        '"timeout_seconds":45',
+    ]);
+}
+
+function remote_local_executor_stream_agent_push_request_matches(Request $request): bool
+{
+    $body = $request->body();
+
+    return $request->url() === 'http://10.44.0.70:9477/v1/commands/stream'
+    && remote_local_executor_request_body_contains_all($body, [
+        '"command_id":"orbit.agent.binary"',
+        '"operation_id":"00000000-0000-4000-8000-000000000407"',
+        '"binary":"orbit"',
+        '"argv":["internal:process-logs","--operation-token=',
+        '--json"',
+        '"input":"{\\"follow\\":true}"',
+        '"stream":true',
+    ]);
+}
+
+function remote_local_executor_node_id(Node $node): int
+{
+    return $node->id;
+}
+
+/**
+ * @param  list<string>  $needles
+ */
+function remote_local_executor_request_body_contains_all(string $body, array $needles): bool
+{
+    foreach ($needles as $needle) {
+        if (! str_contains($body, $needle)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function remote_local_executor_operation_run(string $operationId): stdClass
+{
+    $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
+
+    if (! $row instanceof stdClass) {
+        throw new RuntimeException("Expected operation run [{$operationId}] to exist.");
+    }
+
+    return $row;
+}
+
+/**
+ * @return array<array-key, mixed>
+ *
+ * @mago-expect lint:inline-variable-return
+ */
+function remote_local_executor_json_object(mixed $json): array
+{
+    if (! is_string($json)) {
+        throw new RuntimeException('Expected JSON value to be a string.');
+    }
+
+    /** @var array<array-key, mixed> $decoded */
+    $decoded = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+
+    return $decoded;
 }
 
 final class RemoteLocalExecutorRecordingTransport implements RemoteExecutor

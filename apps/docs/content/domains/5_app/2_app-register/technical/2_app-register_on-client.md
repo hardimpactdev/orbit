@@ -11,7 +11,7 @@ an operator identity.
   WireGuard peer identity.
 - **Apply:** The gateway runs the full registration and apply pipeline. App
   configuration is written to the gateway database, and app-role artifacts are
-  applied over SSH to the target node via `RemoteShell`.
+  applied to the target node through the classified host execution lane.
 - **No CLI shortcut:** The CLI forwards the request to the gateway API. There
   is no operator-node branch that performs SSH directly from the invoking host.
 

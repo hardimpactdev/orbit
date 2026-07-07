@@ -48,6 +48,40 @@ final readonly class NodeAgentPushClient
         return NodeAgentPushResult::fromAgentPayload($payload, $gatewayPostMs);
     }
 
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    public function stream(
+        Node $node,
+        NodeCommandEnvelope $envelope,
+        #[SensitiveParameter]
+        string $operationToken,
+        callable $onOutput,
+    ): void {
+        $this->assertAllowlisted($envelope);
+
+        $operationToken = trim($operationToken);
+
+        if ($operationToken === '') {
+            throw new InvalidArgumentException('Agent-push operation token is required.');
+        }
+
+        $response = Http::withOptions([
+            'stream' => true,
+            'read_timeout' => 0,
+            'timeout' => 0,
+        ])
+            ->accept('text/plain')
+            ->withToken($operationToken)
+            ->post($this->streamUrlFor($node), $this->payloadForTransport($envelope, $operationToken));
+
+        if (! $response->successful()) {
+            throw new RuntimeException("Orbit Agent push stream request failed with HTTP {$response->status()}.");
+        }
+
+        new NodeAgentPushStreamReader()->read($response, $onOutput);
+    }
+
     private function assertAllowlisted(NodeCommandEnvelope $envelope): void
     {
         $isAllowlisted =
@@ -67,13 +101,23 @@ final readonly class NodeAgentPushClient
 
     private function urlFor(Node $node): string
     {
+        return $this->nodeUrlFor($node, '/v1/commands');
+    }
+
+    private function streamUrlFor(Node $node): string
+    {
+        return $this->nodeUrlFor($node, '/v1/commands/stream');
+    }
+
+    private function nodeUrlFor(Node $node, string $path): string
+    {
         $host = trim((string) $node->wireguard_address);
 
         if ($host === '') {
             throw new InvalidArgumentException('Agent-push target node must have a WireGuard address.');
         }
 
-        return "http://{$host}:9477/v1/commands";
+        return "http://{$host}:9477{$path}";
     }
 
     private function requestTimeoutSeconds(NodeCommandEnvelope $envelope): int

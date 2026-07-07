@@ -3,19 +3,28 @@ use crate::{
     ServiceStatusSnapshot,
 };
 use axum::{
+    body::Body,
     extract::State,
-    http::StatusCode,
+    http::{header, StatusCode},
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
+use bytes::Bytes;
+use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
+    convert::Infallible,
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, ExitStatus, Stdio},
-    sync::{Arc, Mutex},
+    pin::Pin,
+    process::{Child, Command, ExitStatus, Stdio},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    task::{Context, Poll},
     thread,
     time::{Duration, Instant},
 };
@@ -64,6 +73,7 @@ fn app_with_authorizer(authorizer: Arc<dyn CommandAuthorizer>) -> Router {
         .route("/health", get(health))
         .route("/status", get(status))
         .route("/v1/commands", post(command_push))
+        .route("/v1/commands/stream", post(command_push_stream))
         .with_state(AgentHttpState { authorizer })
 }
 
@@ -176,6 +186,55 @@ async fn command_push(
     }
 }
 
+async fn command_push_stream(
+    State(state): State<AgentHttpState>,
+    Json(request): Json<CommandPushRequest>,
+) -> axum::response::Response {
+    let authorization = tokio::task::spawn_blocking({
+        let state = state.clone();
+        let request = request.clone();
+
+        move || {
+            state
+                .authorizer
+                .authorize(&request)
+                .map(|()| request)
+                .map_err(|reason| {
+                    (
+                        StatusCode::UNAUTHORIZED,
+                        format!("agent-push operation token was rejected: {reason}"),
+                    )
+                })
+        }
+    })
+    .await;
+
+    let request = match authorization {
+        Ok(Ok(request)) => request,
+        Ok(Err((status, message))) => return command_error(status, &message),
+        Err(error) => {
+            return command_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("agent-push stream worker failed: {error}"),
+            );
+        }
+    };
+
+    if request.binary != "orbit" {
+        return command_error(StatusCode::BAD_REQUEST, "unsupported Orbit Agent binary");
+    }
+
+    match execute_binary_stream(request) {
+        Ok(stream) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/plain; charset=UTF-8")],
+            Body::from_stream(stream),
+        )
+            .into_response(),
+        Err((status, message)) => command_error(status, &message),
+    }
+}
+
 fn command_push_blocking(
     state: AgentHttpState,
     request: CommandPushRequest,
@@ -236,6 +295,188 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
     }
 
     execution
+}
+
+fn execute_binary_stream(
+    request: CommandPushRequest,
+) -> Result<CommandOutputStream, (StatusCode, String)> {
+    let mut command = Command::new(command_binary(&request));
+    command
+        .args(&request.argv)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if let Some(cwd) = &request.cwd {
+        command.current_dir(cwd);
+    }
+
+    if let Some(environment) = &request.environment {
+        command.envs(environment);
+    }
+
+    if request.input.is_some() {
+        command.stdin(Stdio::piped());
+    } else {
+        command.stdin(Stdio::null());
+    }
+
+    let mut child = command.spawn().map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to execute allowlisted binary: {error}"),
+        )
+    })?;
+    let child_id = child.id();
+
+    if let Some(input) = &request.input {
+        if let Some(mut stdin) = child.stdin.take() {
+            if let Err(error) = stdin.write_all(input.as_bytes()) {
+                let _ = child.kill();
+                let _ = child.wait();
+
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to write binary stdin: {error}"),
+                ));
+            }
+        }
+    }
+
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let completed = Arc::new(AtomicBool::new(false));
+
+    if let Some(stdout) = child.stdout.take() {
+        spawn_stream_drain(stdout, sender.clone(), child_id);
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        spawn_stream_drain(stderr, sender.clone(), child_id);
+    }
+
+    spawn_stream_waiter(
+        child,
+        child_id,
+        request.timeout_seconds,
+        sender,
+        completed.clone(),
+    );
+
+    Ok(CommandOutputStream {
+        receiver,
+        child_id,
+        completed,
+    })
+}
+
+fn spawn_stream_drain<R>(
+    mut reader: R,
+    sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
+    child_id: u32,
+) where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut buffer = [0_u8; 8192];
+
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => {
+                    if sender
+                        .send(Ok(Bytes::copy_from_slice(&buffer[..read])))
+                        .is_err()
+                    {
+                        terminate_process(child_id);
+
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = sender.send(Ok(Bytes::from(format!(
+                        "failed to read command stream: {error}\n"
+                    ))));
+
+                    break;
+                }
+            }
+        }
+    });
+}
+
+fn spawn_stream_waiter(
+    child: Child,
+    child_id: u32,
+    timeout_seconds: u64,
+    sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
+    completed: Arc<AtomicBool>,
+) {
+    thread::spawn(move || {
+        let timeout_seconds = timeout_seconds.min(300);
+        let (wait_sender, wait_receiver) = std::sync::mpsc::channel();
+
+        thread::spawn(move || {
+            let mut child = child;
+            let _ = wait_sender.send(child.wait());
+        });
+
+        let wait_result = if timeout_seconds == 0 {
+            wait_receiver
+                .recv()
+                .map_err(|_| std::sync::mpsc::RecvTimeoutError::Disconnected)
+        } else {
+            wait_receiver.recv_timeout(Duration::from_secs(timeout_seconds))
+        };
+
+        match wait_result {
+            Ok(Ok(_status)) => {}
+            Ok(Err(error)) => {
+                let _ = sender.send(Ok(Bytes::from(format!(
+                    "failed to wait for allowlisted binary: {error}\n"
+                ))));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                terminate_process(child_id);
+                if wait_receiver.recv_timeout(Duration::from_secs(2)).is_err() {
+                    force_terminate_process(child_id);
+                    let _ = wait_receiver.recv_timeout(Duration::from_secs(2));
+                }
+                let _ = sender.send(Ok(Bytes::from(format!(
+                    "binary execution timed out after {timeout_seconds} seconds\n"
+                ))));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = sender.send(Ok(Bytes::from(
+                    "failed to wait for allowlisted binary: wait worker disconnected\n",
+                )));
+            }
+        }
+
+        completed.store(true, Ordering::SeqCst);
+    });
+}
+
+struct CommandOutputStream {
+    receiver: tokio::sync::mpsc::UnboundedReceiver<Result<Bytes, Infallible>>,
+    child_id: u32,
+    completed: Arc<AtomicBool>,
+}
+
+impl Stream for CommandOutputStream {
+    type Item = Result<Bytes, Infallible>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let stream = self.get_mut();
+
+        Pin::new(&mut stream.receiver).poll_recv(cx)
+    }
+}
+
+impl Drop for CommandOutputStream {
+    fn drop(&mut self) {
+        if !self.completed.load(Ordering::SeqCst) {
+            terminate_process(self.child_id);
+        }
+    }
 }
 
 fn execute_binary_once(
@@ -1066,6 +1307,70 @@ mod tests {
         assert!(payload["timings"]["process_spawn_ms"].is_u64());
         assert!(payload["timings"]["process_wait_ms"].is_u64());
         assert!(payload["timings"]["result_serialization_ms"].is_u64());
+    }
+
+    #[tokio::test]
+    async fn command_push_stream_endpoint_streams_allowlisted_binary_output() {
+        let response = app_with_static_authorizer(true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands/stream")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_stream_test_123",
+                            "binary": "orbit",
+                            "argv": ["version"],
+                            "operation_token": "op_test_123",
+                            "timeout_seconds": 30,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("body bytes");
+        let output = String::from_utf8(body.to_vec()).expect("utf8 output");
+
+        assert!(
+            output.contains("Version"),
+            "expected raw version output, got: {output:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn command_push_stream_endpoint_rejects_non_allowlisted_binaries() {
+        let response = app_with_static_authorizer(true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands/stream")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_stream_test_123",
+                            "binary": "rm",
+                            "argv": ["-rf", "/tmp/orbit-agent-push-test"],
+                            "operation_token": "op_test_123",
+                            "timeout_seconds": 30,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

@@ -122,7 +122,7 @@ the exact shape of both modes.
 - The gateway authorizes the calling WireGuard peer with gateway-admin authority
   (`*` on the active gateway node).
 - The gateway can reach every selected node through its node execution path
-  (currently SSH via `RemoteShell`; a later Orbit Agent update slice may use
+  (currently the classified host SSH update lane; a later Orbit Agent update slice may use
   typed Orbit Agent update jobs for agent-capable nodes, with SSH retained for
   bootstrap, recovery, and fallback).
 - The gateway can persist operation rows, event journal rows, immutable update

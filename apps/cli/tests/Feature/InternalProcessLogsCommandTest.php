@@ -69,6 +69,30 @@ describe('internal process logs command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('logs --tail 25 orbit_docs_main_queue');
     });
+
+    it('streams followed docker logs as raw output through fixed argv', function (): void {
+        $bin = install_process_logs_fake_bin();
+
+        [$exitCode, $output] = run_internal_process_logs_command(
+            [
+                '--operation-token' => process_logs_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode([
+                'backend' => 'docker',
+                'runtime_unit' => 'orbit_docs_main_queue',
+                'lines' => 25,
+                'follow' => true,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Vite ready\n")
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('logs --tail 25 --follow orbit_docs_main_queue');
+    });
 });
 
 function process_logs_signed_operation_token(
@@ -115,7 +139,7 @@ function run_internal_process_logs_command(array $parameters = [], string $stdin
     $command = Artisan::all()['internal:process-logs'];
     $exitCode = $command->run($input, $output);
 
-    return [$exitCode, trim($output->fetch())];
+    return [$exitCode, $output->fetch()];
 }
 
 function install_process_logs_fake_bin(): string

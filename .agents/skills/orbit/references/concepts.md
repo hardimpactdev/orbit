@@ -27,9 +27,9 @@ runs the CLI.
 Orbit Agent capability is explicit gateway registry state for supported nodes,
 including explicitly agent-capable Linux/Ubuntu and macOS `app-dev` or
 self-managed workload nodes. The local runtime is split between `apps/agent`,
-the headless Rust/Axum service that polls for typed Orbit jobs and reports
-lifecycle events back to the gateway, and `apps/macos`, the Tauri tray UI that
-runs only on macOS.
+the headless Rust/Axum service that listens for gateway-pushed typed command
+envelopes and reports lifecycle events back to the gateway, and `apps/macos`,
+the Tauri tray UI that runs only on macOS.
 
 The `agent` workload role is separate from Orbit Agent capability. The role owns
 autonomous agent tools and internal agent-tool routes on Ubuntu nodes. It does
@@ -49,7 +49,7 @@ CLI caller (client / gateway-local / workload node)
         | HTTPS over WireGuard
         v
 Gateway (Laravel app, SQLite intent, typed API, doctor)
-        | SSH / execution lane over WireGuard
+        | agent-push typed envelopes over WireGuard
         v
 Role-bearing nodes (orbit-caddy, FrankenPHP, systemd, Docker, SeaweedFS, Reverb)
 ```
@@ -82,9 +82,13 @@ Doctor modes:
 
 Scope flags: `--node`, `--self`, `--all`, `--app`, `--workspace`, `--family=<key>` (repeatable). Without scope flags, doctor targets the configured local default node, then falls back to the caller identity. Use `--all` for fleet verification.
 
-## RemoteShell and where commands run
+## Node execution and where commands run
 
-Every CLI call lands on the gateway (HTTPS over WireGuard). The gateway then enacts node changes via `RemoteShell` (`run` / `stream` / `upload` / `download`) over SSH using the steady-state user recorded on the node row (typically `orbit`).
+Every CLI call lands on the gateway (HTTPS over WireGuard). For supported
+node-local command execution, the gateway pushes an allowlisted typed command
+envelope to the node's Orbit Agent listener. SSH-backed `RemoteShell` remains
+available for explicit `transitional-ssh-fallback`, migration, recovery,
+uploads/downloads, and host utility seams that are not yet agent-push native.
 
 `node:new --user` is a bootstrap credential only; the steady-state user is
 created during provisioning and stored on the node record.

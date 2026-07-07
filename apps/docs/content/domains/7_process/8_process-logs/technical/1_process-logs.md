@@ -9,7 +9,9 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for `process:logs` on the process owning node.
-- Log access requires gateway reachability to the owning node.
+- Log access requires gateway reachability to the owning node's Agent listener
+  for the normal agent-push lane, or explicit transitional SSH fallback for
+  migration/recovery.
 
 ## Signature
 
@@ -44,10 +46,12 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 1. Resolve target node, app, or workspace context from supplied input or local context, and resolve the process definition.
 2. Send the request to the gateway, which validates the authenticated peer's authorization.
 3. Derive the runtime-unit identity for the selected context.
-4. Open a log read through the gateway on the owning node.
+4. Open a typed `internal:process-logs` local-executor request through the
+   gateway on the owning node.
 5. Read up to `lines` prior log lines.
 6. For bounded service process log reads, include process-owned connection metadata: definition name, version, service name, endpoint, and credential field names. Credential values are excluded.
-7. If `--follow` is present, keep streaming appended log lines until the operator interrupts the command.
+7. If `--follow` is present, keep streaming appended log lines over the Agent
+   stream endpoint until the operator interrupts the command.
 8. Render the selected output.
 
 `process:logs` does not mutate process configuration, runtime state, or durable lifecycle events.

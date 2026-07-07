@@ -19,13 +19,7 @@ final readonly class LocalProcessLogsAction
     public function read(array $payload): array
     {
         $input = LocalProcessLogsPayload::from($payload);
-        $command = $this->snapshotCommand($input);
-
-        if ($input->follow) {
-            $command = $this->withFollowFlag($input, $command);
-        }
-
-        $result = $this->run($command);
+        $result = $this->run($this->command($input));
 
         if (! $result->isSuccessful()) {
             throw new LocalProcessLogsFailure(
@@ -48,6 +42,35 @@ final readonly class LocalProcessLogsAction
             ],
             'meta' => [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  callable(string): void  $onOutput
+     */
+    public function stream(array $payload, callable $onOutput): int
+    {
+        $input = LocalProcessLogsPayload::from($payload);
+        $process = new Process($this->command($input));
+        $process->setTimeout(null);
+
+        return $process->run(function (string $_type, string $buffer) use ($onOutput): void {
+            $onOutput($buffer);
+        });
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function command(LocalProcessLogsPayload $input): array
+    {
+        $command = $this->snapshotCommand($input);
+
+        if ($input->follow) {
+            return $this->withFollowFlag($input, $command);
+        }
+
+        return $command;
     }
 
     /**

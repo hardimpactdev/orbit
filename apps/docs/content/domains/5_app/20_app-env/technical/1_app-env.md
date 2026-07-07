@@ -70,7 +70,8 @@ owning node. These defaults are not stored as explicit instance env rows.
 5. **Secret redaction.** Rendered database password values are marked
    `secret=true` and redacted from responses.
 6. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
-   writes the app's live `.env` on the owning node through `RemoteShell`.
+   writes the app's live `.env` on the owning node through the classified host
+   execution lane.
 7. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
    Laravel config/bootstrap cache on the host PHP toolchain and reapplies the
    FrankenPHP runtime container through `AppRuntimeContainerManager`.

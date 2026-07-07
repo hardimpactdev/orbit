@@ -13,8 +13,8 @@ executes the workspace creation flow locally:
   directly.
 - **Identity Write:** Writes the gateway workspace row to local SQLite.
 - **Apply:** Same as the client path: the gateway orchestrates
-  remote work over SSH to the parent app's owning node and runs the
-  workspace setup pipeline through `RemoteShell`.
+  remote work through the classified host execution lane and runs the
+  workspace setup pipeline there.
 - **Identity:** Uses the gateway's own node identity for authorization.
 
 ## Constraints

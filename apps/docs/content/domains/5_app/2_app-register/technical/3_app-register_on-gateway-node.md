@@ -15,7 +15,7 @@ a peer the gateway identifies as a **gateway node**.
 - **Path resolution:** `--path` is resolved on the target node through
   gateway-owned SSH inspection and application, not on the gateway filesystem.
 - **Apply:** The gateway writes app configuration locally and applies app-role
-  artifacts over SSH to the target node via `RemoteShell` — even when the
+  artifacts to the target node through the classified host execution lane — even when the
   CLI invocation originated on the gateway host. The CLI still calls the
   gateway API; there is no client-side bypass.
 

@@ -13,11 +13,13 @@ path = "src/main.rs"
 
 [dependencies]
 axum = "0.8"
+bytes = "1"
+futures-core = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rustls-pemfile = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
 toml = "0.8"
 ureq = { version = "2", features = ["native-certs"] }
 url = "2"

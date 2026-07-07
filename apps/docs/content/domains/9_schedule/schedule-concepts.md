@@ -12,8 +12,8 @@ These terms define the core entities in the schedule domain.
 - **Schedule scope:** Ownership scope of the schedule. One of `app`, `node`, or
   `orbit`.
 - **App-scoped schedule:** Schedule whose scope is `app`. Executes in the app
-  context on the app's owning node; the gateway dispatches over `RemoteShell`
-  when the target is not the gateway itself.
+  context on the app's owning node; the gateway dispatches over the explicitly
+  gated host SSH pool when the target is not the gateway itself.
 - **Node-scoped schedule:** Schedule whose scope is `node`. Executes on the
   selected node, dispatched by the gateway scheduler.
 - **Orbit-scoped schedule:** Schedule whose scope is `orbit`. Used for
@@ -43,7 +43,7 @@ These terms describe how schedules run and how their history is captured.
 - **Orbit Scheduler:** Resident `orbit-scheduler` Swarm service using the
   Orbit gateway image.
   - Owns schedule evaluation, due-run dispatch, lock claim, and overlap policy for every schedule across the fleet.
-  - Dispatches to non-gateway targets through `RemoteShell` (SSH). The scheduled command runs on the target, but the gateway orchestrates and tracks every result.
+  - Dispatches to non-gateway targets through the explicit host SSH pool. The scheduled command runs on the target, but the gateway orchestrates and tracks every result.
   - Records run history and writes its own heartbeat directly to the gateway database.
 - **Scheduler heartbeat:** Periodic timestamp the Orbit Scheduler writes to
   the gateway database so doctor can verify daemon liveness.
@@ -60,7 +60,8 @@ These terms describe how schedules run and how their history is captured.
 - **Run-history hook:** Orbit-managed material the scheduler uses to
   capture stdout/exit-status from a schedule run. For gateway-target runs
   this is local; for non-gateway-target runs the captured output streams
-  back to the gateway through `RemoteShell` before history is finalized.
+  back to the gateway through the explicit host SSH pool before history is
+  finalized.
 
 ## Boundaries
 
@@ -70,4 +71,4 @@ These terms define what the schedule family owns and what belongs elsewhere.
   - They do not own app or node identity or process configuration.
   - Live scheduler reality belongs to `doctor --family=schedule`.
 - **Gateway-only scheduler invariant:** All schedule evaluation, dispatch, locking, and history live on the gateway.
-- **No node-side scheduler:** Targets receive dispatched commands via `RemoteShell` at execution time and hold no local mirror.
+- **No node-side scheduler:** Targets receive dispatched commands via the explicit host SSH pool at execution time and hold no local mirror.

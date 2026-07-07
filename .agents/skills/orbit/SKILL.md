@@ -22,6 +22,8 @@ fallbacks.
 Orbit Agent is a separate native lane. The headless Orbit Agent service lives
 under `apps/agent` as a Rust/Axum service binary for supported explicitly
 agent-capable Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes.
+It listens on the node's Agent process port for gateway-pushed typed command
+envelopes; it does not run a background retrieval or polling loop.
 The macOS tray UI lives under `apps/macos` as a Tauri/Rust menu-bar app that
 does not own the long-running service loop. It is not the `agent` workload role
 and is not an agent tool installed through `tool:install`.
@@ -32,9 +34,10 @@ product surface does not install, start, update, restart, or uninstall the
 macOS app.
 
 The CLI is the public product contract. Gateway Artisan is maintenance/internal
-automation only. When work must happen on a node, the gateway uses SSH
-execution lanes (`RemoteShell`, local executor, or gateway runtime executor)
-over the Orbit/WireGuard network.
+automation only. When node-local command execution is supported by Orbit Agent,
+the gateway pushes typed envelopes to the node over the Orbit/WireGuard
+network. SSH/RemoteShell remains an explicit migration, recovery, or utility
+fallback, not the default managed execution path.
 
 ## Universal output rules
 

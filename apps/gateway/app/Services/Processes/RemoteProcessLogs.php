@@ -34,4 +34,29 @@ final readonly class RemoteProcessLogs
             ],
         );
     }
+
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    public function follow(Node $node, string $backend, string $runtimeUnit, int $lines, callable $onOutput): void
+    {
+        $this->localExecutor->streamInternal(
+            node: $node,
+            commandName: 'internal:process-logs',
+            transportOptions: [
+                'input' => json_encode([
+                    'backend' => $backend,
+                    'runtime_unit' => $runtimeUnit,
+                    'lines' => $lines,
+                    'follow' => true,
+                ], JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'process.logs.follow',
+                ],
+                'strict' => false,
+                'timeout' => 0,
+            ],
+            onOutput: $onOutput,
+        );
+    }
 }

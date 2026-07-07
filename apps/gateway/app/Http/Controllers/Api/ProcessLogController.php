@@ -11,6 +11,7 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -64,49 +65,7 @@ final class ProcessLogController implements Loggable
         }
 
         if ($request->boolean('follow')) {
-            if ($request->header(self::NODE_TRANSPORT_HEADER) !== 'transitional-ssh-fallback') {
-                return $this->error(
-                    'agent_push_streaming_unavailable',
-                    'process:logs --follow requires explicit --node-transport=transitional-ssh-fallback until agent-push streaming is available.',
-                    [
-                        'field' => 'node-transport',
-                        'required' => 'transitional-ssh-fallback',
-                    ],
-                    422,
-                );
-            }
-
-            try {
-                $target = $showProcessLogs->streamTarget($context, $name, $this->lines($request));
-            } catch (GatewayApiException $e) {
-                return $this->error(
-                    $e->errorCode() ?? 'validation_failed',
-                    $e->getMessage(),
-                    $e->errorMeta(),
-                    $this->statusFor($e),
-                );
-            }
-
-            $this->activitySubject = $context->subject();
-
-            return response()->stream(
-                function () use ($showProcessLogs, $target): void {
-                    $showProcessLogs->followTarget($target, function (string $output): void {
-                        echo $output;
-
-                        if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
-                            @ob_flush();
-                            @flush();
-                        }
-                    });
-                },
-                200,
-                [
-                    'Cache-Control' => 'no-cache',
-                    'Content-Type' => 'text/plain; charset=UTF-8',
-                    'X-Accel-Buffering' => 'no',
-                ],
-            );
+            return $this->followResponse($request, $showProcessLogs, $context, $name);
         }
 
         try {
@@ -148,6 +107,53 @@ final class ProcessLogController implements Loggable
             ],
             403,
         );
+    }
+
+    private function followResponse(
+        Request $request,
+        ShowProcessLogs $showProcessLogs,
+        ProcessOwnerContext $context,
+        string $name,
+    ): JsonResponse|StreamedResponse {
+        try {
+            $target = $showProcessLogs->streamTarget($context, $name, $this->lines($request));
+        } catch (GatewayApiException $e) {
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
+        }
+
+        $this->activitySubject = $context->subject();
+        $useRemoteShellFallback = $request->header(self::NODE_TRANSPORT_HEADER) === 'transitional-ssh-fallback';
+
+        return response()->stream(
+            function () use ($showProcessLogs, $target, $useRemoteShellFallback): void {
+                $follow = $useRemoteShellFallback
+                    ? $showProcessLogs->followTargetViaRemoteShell(...)
+                    : $showProcessLogs->followTarget(...);
+
+                $follow($target, $this->writeStreamChunk(...));
+            },
+            200,
+            [
+                'Cache-Control' => 'no-cache',
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'X-Accel-Buffering' => 'no',
+            ],
+        );
+    }
+
+    private function writeStreamChunk(string $output): void
+    {
+        echo $output;
+
+        if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
+            @ob_flush();
+            @flush();
+        }
     }
 
     private function lines(Request $request): int

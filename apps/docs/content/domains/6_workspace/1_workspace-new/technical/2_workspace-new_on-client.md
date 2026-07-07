@@ -15,8 +15,8 @@ When run from a client with an operator identity, `workspace:new` acts as a gate
 - **Gateway Dispatch:** Forwards the resolved configuration to the gateway
   over HTTPS through WireGuard.
 - **Apply:** The gateway performs the gateway workspace row write and
-  orchestrates owning-node application over SSH via `RemoteShell`. The client
-  never opens an SSH connection to the node.
+  orchestrates owning-node application through the classified host execution
+  lane. The client never opens an SSH connection to the node.
 - **Progress Streaming:** Human output streams the step tree and apply
   progress from the gateway to the local renderer. JSON output uses the typed
   gateway response envelope and does not render a progress tree.

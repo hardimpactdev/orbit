@@ -54,8 +54,8 @@ RemoteGatewayRuntimeExecutor:
   Laravel/artisan/PDO work.
 
 RemoteLocalExecutor:
-  SSH then invoke the node-local Orbit CLI entry point's internal executor
-  command.
+  Agent-push to the node Agent, then invoke the node-local Orbit CLI entry
+  point's internal executor command.
   It is for packaged node-local helper logic that needs host file access
   and PHP/PDO without relying on ad hoc python3/sqlite3 snippets.
   Production installs still use the native CLI binary artifact; source-dev
@@ -139,20 +139,22 @@ Forbidden work:
 
 ### RemoteLocalExecutor
 
-`RemoteLocalExecutor` SSHs to the node and invokes the node-local Orbit CLI
-entry point's internal executor command. It is for packaged node-local helper
-logic that needs host file access and PHP/PDO without relying on ad hoc
+`RemoteLocalExecutor` invokes the node-local Orbit CLI entry point's internal
+executor command through the selected typed node transport. The normal managed
+transport is `agent-push`; explicit `transitional-ssh-fallback` is reserved for
+migration/recovery. It is for packaged node-local helper logic that needs host
+file access and PHP/PDO without relying on ad hoc
 `python3` or `sqlite3` snippets. In source-mounted nodes, `/usr/local/bin/orbit`
 points directly at `<source>/apps/cli/orbit`, and mutable node-local Orbit
 state lives under `~/.config/orbit`.
 
 The gateway primitive composes `/usr/local/bin/orbit internal:* ...` commands
 with `LocalExecutorCommandBuilder`, mints a short-lived gateway operation token,
-and dispatches that host command through the SSH transport. It never wraps local
-executor work in gateway container execution. `RemoteLocalExecutor` cannot
-invoke public commands; internal executor commands verify operation tokens
-through the gateway API before any side effects, and nodes do not store
-executor token signing material.
+and dispatches the command as an allowlisted `binary + argv` Agent envelope.
+It never wraps local executor work in gateway container execution.
+`RemoteLocalExecutor` cannot invoke public commands; internal executor commands
+verify operation tokens through the gateway API before any side effects, and
+nodes do not store executor token signing material.
 
 #### Result-boundary redaction patterns
 
@@ -202,14 +204,18 @@ operation id when the caller did not provide one.
 Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
 gateway-owned activity records on the `local_executor` channel:
 
-- `local_executor.dispatching` before SSH dispatch, after command validation and
-  token minting. It records `lane=local-executor`, operation id, target node id
-  and name, internal command name, scalar arguments/options, and the
-  `LocalExecutorCommandBuilder::buildAuditLine()` command shape.
+- `local_executor.dispatching` before transport dispatch, after command
+  validation and token minting. It records `lane=local-executor`, operation id,
+  target node id and name, internal command name, scalar arguments/options, and
+  the `LocalExecutorCommandBuilder::buildAuditLine()` command shape.
 - `local_executor.completed` after the transport returns or throws. It records
   the same operation id, target node, command name, success/failure status, exit
   code when available, duration, and stdout/stderr summaries capped at 4 KiB
   with a `[truncated]` suffix.
+
+`RemoteLocalExecutor::streamInternal()` uses the same dispatch/completion
+activity shape for approved raw streams, but it does not buffer streamed payload
+content into the gateway activity or operation result.
 
 Operation tokens are secret material. Activity descriptions, subjects,
 properties, stdout/stderr summaries, and sanitized local-executor shell-failure
@@ -235,6 +241,7 @@ Current allowed hidden CLI commands:
 | `internal:executor:verify` | any active workload role |
 | `internal:wg-easy:state` | `vpn` |
 | `internal:database-query-local` | `app-dev`, `app-prod`, `database` |
+| `internal:process-logs` | `app-dev`, `app-prod`, `database`, `agent` |
 | `internal:workspace-adapter:lookup` | `app-dev` |
 | `internal:workspace-adapter:update` | `app-dev` |
 
@@ -247,8 +254,9 @@ RemoteLocalExecutor::runInternal(Node $node, string $commandName, array $argumen
 Long-running `start()` and `startInternal()` dispatch is unsupported for
 `RemoteLocalExecutor` until async audit semantics are designed. Local-executor
 work must use `runInternal()` for completion-based dispatch and result
-recording; asynchronous workflows should route through `runInternal()` plus
-polling, or through a different execution lane with its own audit contract.
+recording, or `streamInternal()` for an approved raw stream such as
+`process:logs --follow`. Other asynchronous workflows should route through a
+lane with its own audit contract.
 
 The inherited `RemoteShell::run()` method is reserved for command-name-only
 internal invocations such as `internal:executor:verify`; callers must not encode
@@ -271,7 +279,9 @@ Use these rules for every new or migrated gateway-to-node execution path.
   command envelopes. V1 Agent envelopes carry `operation_id`, `binary`, `argv`,
   `operation_token`, `timeout_seconds`, and `stream`; the gateway builds the
   argv and owns caller authorization, while the Agent enforces the node-local
-  binary allowlist and uses no-shell process execution. Transport selection
+  binary allowlist and uses no-shell process execution. Completion endpoints
+  return collected stdout/stderr/status frames; stream endpoints forward raw
+  stdout/stderr chunks for scoped long-running commands. Transport selection
   (`gateway-only`, `agent-push`, `auto`, or explicit
   `transitional-ssh-fallback`) decides the delivery path for a given envelope.
   Gateway-only envelopes stay on the gateway; agent execution is explicit per
@@ -307,10 +317,10 @@ worker mode, or app runtime rendering.
 
 ## Current Consumer Classification
 
-Inventory basis: `grep -rn 'SshRemoteShell\|RemoteShell' app/ bin/ tests/`,
+Inventory basis: `rg 'SshRemoteShell|RemoteShell|ExplicitRemoteShellFallback|RemoteShellStream' apps/gateway/app apps/gateway/tests`,
 plus the consumers of `App\Contracts\RemoteShell`,
 `App\Contracts\RemoteShellStream`, and
-`App\Contracts\StartsRemoteShellProcesses`, on May 24, 2026.
+`App\Contracts\StartsRemoteShellProcesses`, refreshed on July 6, 2026.
 
 The production table lists runtime-affecting call sites. Container bindings,
 transport implementations, and direct `SshRemoteShell` transport tests are
@@ -336,7 +346,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Actions/Processes/EditProcess.php:125` | `RemoteHostExecutor` | Restarts process runtime units when requested. |
 | `apps/gateway/app/Actions/Processes/RemoveProcess.php:98` | `RemoteHostExecutor` | Removes process runtime units. |
 | `apps/gateway/app/Actions/Processes/RestartProcesses.php:105` | `RemoteHostExecutor` | Restarts process runtime units. |
-| `apps/gateway/app/Actions/Processes/ShowProcessLogs.php:59` | `RemoteHostExecutor` | Reads process logs from runtime backend artifacts. |
+| `apps/gateway/app/Actions/Processes/ShowProcessLogs.php` | `RemoteLocalExecutor` | Reads bounded process logs and follows process log streams through the typed `internal:process-logs` command over agent-push. Explicit transitional fallback may still use `RemoteShellStream` for recovery. |
 | `apps/gateway/app/Actions/Processes/StartProcesses.php:106` | `RemoteHostExecutor` | Starts process runtime units. |
 | `apps/gateway/app/Actions/Processes/StopProcesses.php:106` | `RemoteHostExecutor` | Stops process runtime units. |
 | `apps/gateway/app/Actions/Workspaces/CreateWorkspace.php:113` | `RemoteHostExecutor` | Preflights target node reachability before workspace creation. |
@@ -407,7 +417,7 @@ or `RemoteShell` infrastructure hits from the inventory.
 | Consumer | Lane | Classification |
 |---|---|---|
 | `apps/gateway/app/Providers/AppServiceProvider.php:83` | `RemoteHostExecutor` | Current container binding from `RemoteShell` to `SshRemoteShell`; runtime-lane Orbit PHP must not keep using this binding as host PHP. |
-| `apps/gateway/app/Providers/AppServiceProvider.php:84` | `RemoteHostExecutor` | Current container binding from `RemoteShellStream` to `SshRemoteShellStream` for host/tool log streams. |
+| `apps/gateway/app/Providers/AppServiceProvider.php:84` | `RemoteHostExecutor` | Current container binding from `RemoteShellStream` to `SshRemoteShellStream` for explicit transitional fallback streams and host/tool streams. |
 | `apps/gateway/app/Services/RemoteShell/SshRemoteShell.php:31,82` | `RemoteHostExecutor` | SSH transport implementation for host-lane `run`/`start`; runtime executor may reuse SSH but must add gateway container execution. |
 | `apps/gateway/app/Services/RemoteShell/SshRemoteShellStream.php:30` | `RemoteHostExecutor` | SSH streaming transport for host/tool log streams. |
 | `apps/gateway/tests/Feature/Services/SshRemoteShellTest.php:32,64,85,105,137,168,204,224,246,263` | `RemoteHostExecutor` | Direct transport tests for `SshRemoteShell`; no product PHP workload. |

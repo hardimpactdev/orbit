@@ -5,7 +5,10 @@
 Show or follow logs for a process runtime context.
 
 `process:logs` reads process logs from the owning node process manager through
-the gateway for a resolved node, app, or workspace context.
+the gateway for a resolved node, app, or workspace context. On agent-capable
+nodes, bounded reads and follow streams use the typed `internal:process-logs`
+local-executor command over agent-push; explicit SSH fallback is reserved for
+migration or recovery.
 
 ## Usage
 

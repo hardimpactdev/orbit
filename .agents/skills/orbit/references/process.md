@@ -104,4 +104,7 @@ orbit process:logs [<name>] [--app=<name>] [--workspace=<name>]
                    [--follow] [--lines=100] [--json]
 ```
 
-`--follow` streams new lines as they arrive (Ctrl-C to stop).
+`--follow` streams new lines as they arrive (Ctrl-C to stop). On agent-capable
+nodes, bounded reads and follow streams use the gateway-to-Agent command
+transport; explicit transitional SSH fallback is reserved for migration and
+recovery.

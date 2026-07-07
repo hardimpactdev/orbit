@@ -490,6 +490,8 @@ name = "orbit-agent"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bytes",
+ "futures-core",
  "rustls",
  "rustls-pemfile",
  "serde",

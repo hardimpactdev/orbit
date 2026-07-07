@@ -269,7 +269,8 @@ The expected target shape per calling context:
   node update continues.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts and required role image metadata.
-- Remote update execution is gateway-owned node execution through `RemoteShell`.
+- Remote update execution is gateway-owned node execution through the
+  classified host update lane.
   Clients do not SSH directly to the gateway, nodes, or other operator
   workstations as part of the command contract. The gateway does not SSH to
   operator workstations as part of the command contract.

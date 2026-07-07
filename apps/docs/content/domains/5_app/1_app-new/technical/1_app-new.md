@@ -75,7 +75,8 @@ This command follows the shared
 If `--repo` is supplied, clone the repository into the app path on the target
 node. Otherwise, create an empty directory at the app path.
 - App path is derived from the app name and the target node's app root.
-- All remote work is applied through the gateway over SSH via `RemoteShell`.
+- Remote source creation is applied through the gateway's classified host
+  execution lane.
 - `--repo` accepts either a full Git URL or a GitHub-only `owner/repo` shorthand.
   GitHub shorthand and GitHub URLs are cloned with `gh repo clone` on the
   target node. Full Git URLs for other hosts are cloned with `git clone` as

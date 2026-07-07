@@ -73,7 +73,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}
      */
     public function streamTarget(ProcessOwnerContext $context, string $name, int $lines): array
     {
@@ -81,10 +81,25 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string}  $target
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}  $target
      * @param  callable(string): void  $onOutput
      */
     public function followTarget(array $target, callable $onOutput): void
+    {
+        $this->remoteLogs->follow(
+            node: $target['node'],
+            backend: $target['backend'],
+            runtimeUnit: $target['runtime_unit'],
+            lines: $target['lines'],
+            onOutput: $onOutput,
+        );
+    }
+
+    /**
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}  $target
+     * @param  callable(string): void  $onOutput
+     */
+    public function followTargetViaRemoteShell(array $target, callable $onOutput): void
     {
         $exitCode = $this->remoteShellStream->stream($target['node'], $target['script'], $onOutput);
 
@@ -101,7 +116,7 @@ final readonly class ShowProcessLogs
     }
 
     /**
-     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string}
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int}
      */
     private function target(ProcessOwnerContext $context, string $name, int $lines, bool $follow): array
     {
@@ -134,6 +149,7 @@ final readonly class ShowProcessLogs
             'runtime_unit' => $runtimeUnit,
             'backend' => $this->backend($driver),
             'script' => $driver->logScript($app, $process, $workspace, $runtimeUnit, $lines, $follow),
+            'lines' => $lines,
         ];
     }
 

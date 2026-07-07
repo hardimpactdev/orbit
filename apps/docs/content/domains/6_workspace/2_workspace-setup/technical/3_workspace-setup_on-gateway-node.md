@@ -13,8 +13,8 @@ This contract defines behavior when `workspace:setup` is invoked from a
   the gateway database.
 - **Local path resolution**: Resolves the workspace path on the owning app
   node through gateway-owned SSH inspection, not on the gateway filesystem.
-- **Remote apply**: Connects to the node over SSH to apply runtime
-  artifacts and run setup steps via `RemoteShell`.
+- **Remote apply**: Applies runtime artifacts and setup steps through the
+  classified host execution lane.
 - **Target eligibility**: The owning node must be an active node;
   the gateway is never a valid app target.
 

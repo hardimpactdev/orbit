@@ -25,7 +25,17 @@ final class ProcessLogsCommand extends InternalExecutorCommand
         }
 
         try {
-            $result = $logs->read($this->readPayload());
+            $payload = $this->readPayload();
+
+            if (($payload['follow'] ?? false) === true) {
+                return $logs->stream($payload, function (string $output): void {
+                    $this->output->write($output);
+                }) === self::SUCCESS
+                    ? self::SUCCESS
+                    : self::FAILURE;
+            }
+
+            $result = $logs->read($payload);
         } catch (LocalProcessLogsFailure $failure) {
             return $this->renderFailure($failure->errorCode, $failure->getMessage(), $failure->meta);
         } catch (InvalidArgumentException|JsonException) {

@@ -250,9 +250,10 @@ containers. See
 the target node Agent listener. The gateway owns caller authorization, grants,
 node targeting, and argv construction. The Agent validates the bearer token and
 operation token, enforces a node-local binary allowlist beginning with `orbit`,
-and executes the binary with a no-shell process API. The Agent returns collected
-stdout, stderr, status, and exit frames. V1 does not add a gateway-side Orbit
-command whitelist.
+and executes the binary with a no-shell process API. Completion requests return
+collected stdout, stderr, status, and exit frames; stream requests forward raw
+stdout/stderr chunks for scoped long-running commands such as process log
+follow. V1 does not add a gateway-side Orbit command whitelist.
 
 VPN-role runtime administration is the one runtime exception to the normal
 gateway-to-node flow. Commands that administer VPN clients (`vpn-client:*`) or
@@ -377,7 +378,8 @@ Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
 from one another. Production PHP apps get a dedicated FrankenPHP runtime container
 as well. The PHP version for an app or workspace is gateway-tracked
 configuration; changing it recreates the affected runtime artifact from the
-selected PHP image on the owning node through `RemoteShell`. In production installs the CLI/local-
+selected PHP image on the owning node through the classified host execution
+lane. In production installs the CLI/local-
 executor artifact runs in the native CLI binary's embedded PHP; source-mounted
 Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
 PHP and PHP-FPM are not app/workspace runtime fallbacks.
@@ -578,8 +580,8 @@ configured Linux host command processes are systemd services.
 The Orbit Scheduler is a long-running PHP loop in the one-replica
 `orbit-scheduler` Swarm service using the Orbit gateway image. There is no
 scheduler daemon on non-gateway nodes; the gateway dispatches schedule
-execution to other nodes over `RemoteShell` when a schedule's target is not the
-gateway itself.
+execution to other nodes through the explicitly gated host SSH pool when a
+schedule's target is not the gateway itself.
 
 The daemon runs an internal loop that aligns to wall-clock minute boundaries, performs one evaluation tick, and sleeps until the next boundary:
 
@@ -594,7 +596,7 @@ Each tick:
 
 1. Queries the gateway database for every enabled schedule and selects the ones that are due in the current minute.
 2. Claims a per-schedule lock in the gateway database (`schedule_locks`). Locks are gateway-owned; there is no node-local lock state.
-3. Dispatches the due schedules in parallel. Schedules whose target resolves to the gateway run locally; schedules targeting any other node run on that node through `RemoteShell` (SSH). The scheduled command physically executes on the target, but the gateway is orchestrating it.
+3. Dispatches the due schedules in parallel. Schedules whose target resolves to the gateway run locally; schedules targeting any other node run on that node through the explicitly gated host SSH pool. The scheduled command physically executes on the target, but the gateway is orchestrating it.
 4. Records the run result — success, failure, exit code, captured output, dispatch failure — in `schedule_runs` immediately as durable gateway history.
 5. Releases the lock.
 

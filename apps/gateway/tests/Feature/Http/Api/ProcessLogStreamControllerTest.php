@@ -7,64 +7,76 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
+
+use function Pest\Laravel\call;
 
 uses(RefreshDatabase::class);
 
 const PROCESS_LOG_STREAM_CALLER_WG_IP = '10.6.0.96';
 
+const PROCESS_LOG_STREAM_TARGET_WG_IP = '10.6.0.97';
+
+const PROCESS_LOG_STREAM_URI = '/api/processes/vite/log?app=docs&lines=5&follow=1';
+
 describe('ProcessLogController follow stream', function (): void {
-    it('rejects followed process logs unless RemoteShell fallback is explicit', function (): void {
+    it('streams followed process log output through agent-push by default', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream' => Http::response(
+                "streamed vite line\n",
+                200,
+                ['Content-Type' => 'text/plain; charset=UTF-8'],
+            ),
+        ]);
         createTestGatewayNode([
             'name' => 'caller',
             'host' => PROCESS_LOG_STREAM_CALLER_WG_IP,
             'wireguard_address' => PROCESS_LOG_STREAM_CALLER_WG_IP,
         ]);
-        $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        $appNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'host' => PROCESS_LOG_STREAM_TARGET_WG_IP,
+            'wireguard_address' => PROCESS_LOG_STREAM_TARGET_WG_IP,
+            'orbit_agent_capable' => true,
+            'status' => 'active',
+        ]);
+        $app = process_log_stream_create_app(['name' => 'docs', 'node_id' => $appNode->id]);
+        process_log_stream_create_process($app, name: 'vite');
         $stream = new ProcessLogApiRecordingRemoteStream;
         app()->instance(RemoteShellStream::class, $stream);
 
-        $response = $this->call(
-            'GET',
-            '/api/processes/vite/log?app=docs&lines=5&follow=1',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP],
-        );
+        $response = process_log_stream_api_call('agent-push');
 
         $response
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'agent_push_streaming_unavailable')
-            ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+            ->assertStreamed()
+            ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
+            ->assertStreamedContent("streamed vite line\n");
 
         expect($stream->scripts)->toBeEmpty();
+
+        Http::assertSent(
+            fn (Illuminate\Http\Client\Request $request): bool => process_log_stream_agent_push_request_matches(
+                $request,
+            ),
+        );
     });
 
     it('streams followed process log output only through explicit RemoteShell fallback', function (): void {
+        Http::preventStrayRequests();
         createTestGatewayNode([
             'name' => 'caller',
             'host' => PROCESS_LOG_STREAM_CALLER_WG_IP,
             'wireguard_address' => PROCESS_LOG_STREAM_CALLER_WG_IP,
         ]);
         $appNode = createTestAppHostNode(['name' => 'app-1']);
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        $app = process_log_stream_create_app(['name' => 'docs', 'node_id' => $appNode->id]);
+        process_log_stream_create_process($app, name: 'vite');
         $stream = new ProcessLogApiRecordingRemoteStream;
         app()->instance(RemoteShellStream::class, $stream);
 
-        $response = $this->call(
-            'GET',
-            '/api/processes/vite/log?app=docs&lines=5&follow=1',
-            [],
-            [],
-            [],
-            [
-                'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
-                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
-            ],
-        );
+        $response = process_log_stream_api_call('transitional-ssh-fallback');
 
         $response
             ->assertStreamed()
@@ -76,6 +88,82 @@ describe('ProcessLogController follow stream', function (): void {
         ]);
     });
 });
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function process_log_stream_create_app(array $attributes): App
+{
+    $app = App::factory()->create($attributes);
+
+    if (! $app instanceof App) {
+        throw new RuntimeException('Expected app factory to create an app model.');
+    }
+
+    return $app;
+}
+
+function process_log_stream_create_process(App $app, string $name): Process
+{
+    $process = Process::factory()->create([
+        'node_id' => $app->node_id,
+        'owner_type' => $app->getMorphClass(),
+        'owner_id' => $app->getKey(),
+        'name' => $name,
+    ]);
+
+    if (! $process instanceof Process) {
+        throw new RuntimeException('Expected process factory to create a process model.');
+    }
+
+    return $process;
+}
+
+function process_log_stream_api_call(string $transportPreference): TestResponse
+{
+    return call(
+        'GET',
+        PROCESS_LOG_STREAM_URI,
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => $transportPreference,
+        ],
+    );
+}
+
+function process_log_stream_agent_push_request_matches(Illuminate\Http\Client\Request $request): bool
+{
+    $body = $request->body();
+
+    return $request->url() === 'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream'
+    && process_log_stream_body_contains_all($body, [
+        '"command_id":"orbit.agent.binary"',
+        '"binary":"orbit"',
+        '"argv":["internal:process-logs"',
+        '"stream":true',
+        '\\"backend\\":\\"systemd\\"',
+        '\\"runtime_unit\\":\\"orbit_docs_main_vite\\"',
+        '\\"lines\\":5',
+        '\\"follow\\":true',
+    ]);
+}
+
+/**
+ * @param  list<string>  $needles
+ */
+function process_log_stream_body_contains_all(string $body, array $needles): bool
+{
+    foreach ($needles as $needle) {
+        if (! str_contains($body, $needle)) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 final class ProcessLogApiRecordingRemoteStream implements RemoteShellStream
 {

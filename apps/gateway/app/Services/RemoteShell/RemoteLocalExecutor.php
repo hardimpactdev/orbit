@@ -118,7 +118,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             operationId: $operationId,
             lane: 'local',
             internalCommand: $commandName,
-            targetNodeId: $node->getKey(),
+            targetNodeId: $this->nodeId($node),
         );
         $this->operationRuns->running($run->id);
 
@@ -172,9 +172,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             $this->logCompleted(
                 node: $node,
                 commandName: $commandName,
-                operationId: $operationId,
+                dispatch: $dispatch,
                 result: $sanitizedResult,
-                operationToken: $dispatch['operationToken'],
                 transportOptions: $transportOptions,
             );
 
@@ -239,13 +238,127 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         $this->logCompleted(
             node: $node,
             commandName: $commandName,
-            operationId: $operationId,
+            dispatch: $dispatch,
             result: $result,
-            operationToken: $dispatch['operationToken'],
             transportOptions: $transportOptions,
         );
 
         return $result;
+    }
+
+    /**
+     * @param  callable(string): void  $onOutput
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     redact_stdout?: bool,
+     *     redact_stderr?: bool,
+     *     redact_command_options?: list<string>,
+     *     transport?: NodeTransportPreference|string,
+     * }  $transportOptions
+     */
+    public function streamInternal(
+        Node $node,
+        string $commandName,
+        callable $onOutput,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): void {
+        $operationId = $this->operationId($transportOptions);
+        $dispatch = $this->dispatchCommand(
+            node: $node,
+            commandName: $commandName,
+            arguments: $arguments,
+            commandOptions: $commandOptions,
+            operationId: $operationId,
+        );
+
+        $run = $this->operationRuns->queued(
+            operationId: $operationId,
+            lane: 'local',
+            internalCommand: $commandName,
+            targetNodeId: $this->nodeId($node),
+        );
+        $this->operationRuns->running($run->id);
+        $startedAt = $this->monotonicNanoseconds();
+
+        try {
+            $this->logDispatching(
+                node: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                commandOptions: $commandOptions,
+                operationId: $operationId,
+                auditLine: $dispatch['auditLine'],
+                transportOptions: $transportOptions,
+            );
+
+            $this->streamAgentPush(
+                node: $node,
+                dispatch: $dispatch,
+                operationId: $operationId,
+                transportOptions: $transportOptions,
+                onOutput: $onOutput,
+            );
+        } catch (Throwable $throwable) {
+            $redactedMessage = $this->transportExceptionMessageSummary(
+                throwable: $throwable,
+                operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
+                commandOptions: $commandOptions,
+            );
+            $redactedMetadata = $this->transportExceptionMetadata(
+                throwable: $throwable,
+                operationToken: $dispatch['operationToken'],
+                transportOptions: $transportOptions,
+                commandOptions: $commandOptions,
+            );
+
+            $this->operationRuns->failed(
+                id: $run->id,
+                error: [
+                    'code' => 'transport_failed',
+                    'class' => $throwable::class,
+                    'message' => $redactedMessage,
+                ],
+            );
+
+            $this->logTransportException(
+                node: $node,
+                commandName: $commandName,
+                operationId: $operationId,
+                throwable: $throwable,
+                exceptionMessage: $redactedMessage,
+            );
+
+            throw new RemoteLocalExecutorTransportFailed(
+                message: "Remote local executor transport failed: {$redactedMessage}",
+                meta: $redactedMetadata,
+                code: (int) $throwable->getCode(),
+            );
+        }
+
+        $result = new RemoteShellResult(
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            durationMs: $this->elapsedMilliseconds($startedAt),
+        );
+
+        $this->operationRuns->succeeded(id: $run->id, exitCode: 0);
+        $this->logCompleted(
+            node: $node,
+            commandName: $commandName,
+            dispatch: $dispatch,
+            result: $result,
+            transportOptions: $transportOptions,
+        );
     }
 
     /**
@@ -297,7 +410,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
-     * @return array{operationToken: string, script: string, auditLine: string, argv: list<string>}
+     * @return array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}
      */
     private function dispatchCommand(
         Node $node,
@@ -323,6 +436,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             ->toString();
 
         return [
+            'operationId' => $operationId,
             'operationToken' => $operationToken,
             'script' => $this->commands->build(
                 targetNode: $node,
@@ -384,7 +498,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'lane' => 'local-executor',
                     'status' => 'dispatching',
                     'operation_id' => $operationId,
-                    'target_node_id' => $node->getKey(),
+                    'target_node_id' => $this->nodeId($node),
                     'target_node_name' => $node->name,
                     'command' => $commandName,
                     'arguments' => $this->scalarPayload($arguments),
@@ -397,12 +511,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         );
     }
 
+    /**
+     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     */
     private function logCompleted(
         Node $node,
         string $commandName,
-        string $operationId,
+        array $dispatch,
         RemoteShellResult $result,
-        string $operationToken,
         array $transportOptions,
     ): void {
         $status = $result->successful() ? 'succeeded' : 'failed';
@@ -415,19 +531,19 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 properties: [
                     'lane' => 'local-executor',
                     'status' => $status,
-                    'operation_id' => $operationId,
-                    'target_node_id' => $node->getKey(),
+                    'operation_id' => $dispatch['operationId'],
+                    'target_node_id' => $this->nodeId($node),
                     'target_node_name' => $node->name,
                     'command' => $commandName,
                     'exit_code' => $result->exitCode,
                     'stdout_summary' => $this->outputSummary(
                         $result->stdout,
-                        $operationToken,
+                        $dispatch['operationToken'],
                         (bool) ($transportOptions['redact_stdout'] ?? false),
                     ),
                     'stderr_summary' => $this->outputSummary(
                         $result->stderr,
-                        $operationToken,
+                        $dispatch['operationToken'],
                         (bool) ($transportOptions['redact_stderr'] ?? false),
                     ),
                     'duration_ms' => $result->durationMs,
@@ -454,7 +570,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     'lane' => 'local-executor',
                     'status' => 'failed',
                     'operation_id' => $operationId,
-                    'target_node_id' => $node->getKey(),
+                    'target_node_id' => $this->nodeId($node),
                     'target_node_name' => $node->name,
                     'command' => $commandName,
                     'exit_code' => null,
@@ -805,6 +921,22 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         return substr($value, 0, self::OUTPUT_SUMMARY_BYTES).self::TRUNCATED_SUFFIX;
     }
 
+    private function elapsedMilliseconds(int $startedAt): int
+    {
+        return max(0, (int) round(($this->monotonicNanoseconds() - $startedAt) / 1_000_000));
+    }
+
+    private function monotonicNanoseconds(): int
+    {
+        $now = hrtime(true);
+
+        if (! is_int($now)) {
+            throw new RuntimeException('Could not read monotonic clock.');
+        }
+
+        return $now;
+    }
+
     /**
      * @param  array<int|string, mixed>  $values
      * @param  list<string>  $redactedKeys
@@ -938,7 +1070,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
      * @param  array<string, mixed>  $transportOptions
      */
     private function runAgentPush(
@@ -966,6 +1098,38 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         $result = app(NodeAgentPushClient::class)->execute($node, $envelope, $dispatch['operationToken']);
 
         return $this->agentPushResult($result);
+    }
+
+    /**
+     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array<string, mixed>  $transportOptions
+     * @param  callable(string): void  $onOutput
+     */
+    private function streamAgentPush(
+        Node $node,
+        array $dispatch,
+        string $operationId,
+        array $transportOptions,
+        callable $onOutput,
+    ): void {
+        $preference = $this->transportPreference($transportOptions);
+        $envelope = NodeCommandEnvelope::agentPushBinary(
+            operationId: $operationId,
+            binary: 'orbit',
+            argv: $dispatch['argv'],
+            input: $this->input($transportOptions),
+            cwd: $this->cwd($transportOptions),
+            environment: $this->transportEnvironment($transportOptions),
+            timeoutSeconds: $this->streamTimeoutSeconds($transportOptions),
+            stream: true,
+        );
+        $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
+
+        if ($transport !== NodeTransport::AgentPush) {
+            throw new RuntimeException('agent-push streaming transport is unavailable');
+        }
+
+        app(NodeAgentPushClient::class)->stream($node, $envelope, $dispatch['operationToken'], $onOutput);
     }
 
     private function agentPushResult(NodeAgentPushResult $result): RemoteShellResult
@@ -1006,23 +1170,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      */
     private function transportPreference(array $transportOptions): NodeTransportPreference
     {
-        $transport = $transportOptions['transport'] ?? null;
-
-        if ($transport === null) {
+        if (! array_key_exists('transport', $transportOptions)) {
             return $this->requestTransportPreference() ?? $this->defaultTransportPreference;
         }
 
-        if ($transport instanceof NodeTransportPreference) {
-            return $transport;
+        if ($transportOptions['transport'] === null) {
+            return $this->requestTransportPreference() ?? $this->defaultTransportPreference;
         }
 
-        if (! is_string($transport)) {
+        if ($transportOptions['transport'] instanceof NodeTransportPreference) {
+            return $transportOptions['transport'];
+        }
+
+        if (! is_string($transportOptions['transport'])) {
             throw new RuntimeException('transport must be a valid node transport preference.');
         }
 
         return (
-            NodeTransportPreference::tryFrom($transport) ?? throw new RuntimeException(
-                "Invalid node transport preference [{$transport}].",
+            NodeTransportPreference::tryFrom($transportOptions['transport']) ?? throw new RuntimeException(
+                "Invalid node transport preference [{$transportOptions['transport']}].",
             )
         );
     }
@@ -1047,13 +1213,31 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      */
     private function timeoutSeconds(array $transportOptions): int
     {
-        $timeout = $transportOptions['timeout'] ?? 30;
+        if (! array_key_exists('timeout', $transportOptions)) {
+            return 30;
+        }
 
-        if (is_int($timeout) && $timeout > 0) {
-            return $timeout;
+        if (is_int($transportOptions['timeout']) && $transportOptions['timeout'] > 0) {
+            return $transportOptions['timeout'];
         }
 
         throw new RuntimeException('timeout must be a positive integer.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $transportOptions
+     */
+    private function streamTimeoutSeconds(array $transportOptions): int
+    {
+        if (! array_key_exists('timeout', $transportOptions)) {
+            return 0;
+        }
+
+        if (is_int($transportOptions['timeout']) && $transportOptions['timeout'] >= 0) {
+            return $transportOptions['timeout'];
+        }
+
+        throw new RuntimeException('stream timeout must be a non-negative integer.');
     }
 
     /**
@@ -1094,27 +1278,36 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      */
     private function transportEnvironment(array $transportOptions): array
     {
-        $environment = $transportOptions['environment'] ?? [];
-
-        if ($environment === []) {
+        if (! array_key_exists('environment', $transportOptions)) {
             return [];
         }
 
-        if (! is_array($environment)) {
+        if ($transportOptions['environment'] === []) {
+            return [];
+        }
+
+        if (! is_array($transportOptions['environment'])) {
             throw new RuntimeException('environment must be an array of string values.');
         }
 
         $resolved = [];
 
-        foreach ($environment as $key => $value) {
+        array_walk($transportOptions['environment'], static function (mixed $value, int|string $key) use (
+            &$resolved,
+        ): void {
             if (! is_string($key) || ! is_string($value)) {
                 throw new RuntimeException('environment must be an array of string values.');
             }
 
             $resolved[$key] = $value;
-        }
+        });
 
         return $resolved;
+    }
+
+    private function nodeId(Node $node): int
+    {
+        return $node->id;
     }
 }
 
