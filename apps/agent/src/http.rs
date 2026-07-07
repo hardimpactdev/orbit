@@ -997,8 +997,18 @@ mod tests {
     }
 
     #[test]
-    fn default_bind_addr_targets_reachable_agent_port() {
-        assert_eq!(default_http_bind_addr(), "0.0.0.0:9477");
+    fn default_bind_addr_defaults_to_loopback_and_honors_override() {
+        let original_bind = std::env::var_os("ORBIT_AGENT_HTTP_BIND");
+
+        std::env::set_var("ORBIT_AGENT_HTTP_BIND", "10.6.0.2:9477");
+        assert_eq!(default_http_bind_addr(), "10.6.0.2:9477");
+
+        std::env::remove_var("ORBIT_AGENT_HTTP_BIND");
+        assert_eq!(default_http_bind_addr(), "127.0.0.1:9477");
+
+        if let Some(bind) = original_bind {
+            std::env::set_var("ORBIT_AGENT_HTTP_BIND", bind);
+        }
     }
 
     #[test]

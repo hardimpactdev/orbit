@@ -60,6 +60,7 @@ it('writes gateway host agent config and converges the systemd service', functio
         ->and($systemdUnit)
         ->toContain('User=orbit')
         ->toContain('Environment=ORBIT_AGENT_CONFIG='.$path)
+        ->toContain('Environment=ORBIT_AGENT_HTTP_BIND=10.6.0.2:9477')
         ->toContain('ExecStart=/usr/local/bin/orbit-agent')
         ->and($gateway->fresh()->orbit_agent_capable)
         ->toBeTrue();
@@ -80,3 +81,41 @@ it('writes gateway host agent config and converges the systemd service', functio
     Process::assertRan('sudo systemctl enable orbit-agent');
     Process::assertRan('sudo systemctl restart orbit-agent');
 });
+
+it('fails closed when the gateway node has no wireguard address for agent http bind', function (?string $wireguardAddress): void {
+    $systemdUnit = null;
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'user' => 'orbit',
+            'wireguard_address' => $wireguardAddress,
+            'orbit_agent_capable' => false,
+        ]);
+    File::ensureDirectoryExists("{$this->configRoot}/ca");
+    File::put("{$this->configRoot}/config.json", '{"schema_version":1}');
+    File::put("{$this->configRoot}/ca/root.crt", 'root-ca');
+
+    Process::fake(function ($process) use (&$systemdUnit) {
+        if ($process->command === 'sudo tee /etc/systemd/system/orbit-agent.service > /dev/null') {
+            $systemdUnit = $process->input;
+        }
+
+        return Process::result();
+    });
+
+    expect(fn () => app(GatewayHostAgentConverger::class)->converge($gateway))
+        ->toThrow(RuntimeException::class, 'WireGuard address');
+
+    expect($systemdUnit)
+        ->toBeNull()
+        ->and($gateway->fresh()->orbit_agent_capable)
+        ->toBeFalse();
+
+    Process::assertRan('test -x \'/usr/local/bin/orbit-agent\'');
+    Process::assertNotRan('sudo tee /etc/systemd/system/orbit-agent.service > /dev/null');
+})->with([
+    'null' => [null],
+    'empty string' => [''],
+    'whitespace only' => ['   '],
+]);

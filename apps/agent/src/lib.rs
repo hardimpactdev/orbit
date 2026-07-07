@@ -355,7 +355,7 @@ pub fn default_http_bind_addr() -> String {
         }
     }
 
-    "0.0.0.0:9477".to_string()
+    "127.0.0.1:9477".to_string()
 }
 
 pub struct HttpAgentGateway {

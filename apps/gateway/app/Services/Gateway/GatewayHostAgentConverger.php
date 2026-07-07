@@ -37,6 +37,7 @@ class GatewayHostAgentConverger
     private function unit(Node $gatewayNode, string $binary, string $configPath): string
     {
         $user = $gatewayNode->user ?: 'orbit';
+        $httpBind = $this->httpBindAddress($gatewayNode);
 
         return <<<UNIT
             [Unit]
@@ -48,6 +49,7 @@ class GatewayHostAgentConverger
             Type=simple
             User={$user}
             Environment=ORBIT_AGENT_CONFIG={$configPath}
+            Environment=ORBIT_AGENT_HTTP_BIND={$httpBind}
             ExecStart={$binary}
             Restart=always
             RestartSec=3
@@ -55,6 +57,21 @@ class GatewayHostAgentConverger
             [Install]
             WantedBy=multi-user.target
             UNIT;
+    }
+
+    private function httpBindAddress(Node $gatewayNode): string
+    {
+        $wireguardAddress = is_string($gatewayNode->wireguard_address)
+            ? trim($gatewayNode->wireguard_address)
+            : '';
+
+        if ($wireguardAddress === '') {
+            throw new RuntimeException(
+                "Gateway node [{$gatewayNode->name}] must have a WireGuard address for the Orbit Agent HTTP bind.",
+            );
+        }
+
+        return "{$wireguardAddress}:9477";
     }
 
     private function binaryPath(): string
