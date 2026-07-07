@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "loop-review-docs-librarian-reviewer-822",
+    "solo_process_id": 822,
+    "kind": "agent",
+    "started_at": "2026-07-07 10:11:27",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T12-11-27-019f3c0f-ab79-7960-b602-d37a7631fd10.jsonl",
+    "source": "codex_exact_marker"
+}

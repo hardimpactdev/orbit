@@ -99,8 +99,14 @@ recurring verification-lane, setup, or process gap.
 
 ## Current Manual Cadence
 
-Run the loop during implementation handoff and final reporting. Periodic
-distillation over CI, Solo todos, and review comments is intentionally deferred
-until a later automation slice proves the manual guardrail-target map is stable.
-Broad history or worktree mining is separate from the regular feature loop and
-should run only when explicitly requested.
+Run the per-feature loop during implementation handoff and final reporting.
+When a human explicitly asks for aggregate recurrence review, use
+`.agents/skills/loop-review/SKILL.md` after roughly 10 new session archives or
+monthly, whichever comes first. That batch review writes a findings scratchpad;
+the human still adjudicates any `promote`, `tighten`, `reject`, or `defer`
+candidate through the promotion gate above.
+
+Unattended continuous mining over CI, Solo todos, review comments, or historical
+worktrees remains deferred. Broad history mining beyond the `loop-review`
+budget is separate from the regular feature loop and should run only when
+explicitly requested.

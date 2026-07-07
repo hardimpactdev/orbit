@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-07T10:10:59Z",
+    "ended_at": "2026-07-07T10:11:05Z",
+    "duration_seconds": 6,
+    "exit_code": 0,
+    "git": {
+        "branch": "loop-review-skill",
+        "commit": "388f1d15f482b31f1dc4e73f8bc917d21684137f"
+    },
+    "subgates": []
+}

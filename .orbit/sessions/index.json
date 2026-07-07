@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 54,
+    "record_count": 55,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -1432,6 +1432,31 @@
                 "reasoning_tokens": null
             },
             "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-07-122041-loop-review-skill",
+            "slug": "loop-review-skill",
+            "timestamp": "2026-07-07-122041",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "correct-noop": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 2387669,
+                "output_tokens": 18141,
+                "total_tokens": 2405810,
+                "reasoning_tokens": 10568
+            },
+            "capture_status": "partial"
         }
     ]
 }
