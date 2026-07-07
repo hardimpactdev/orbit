@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\App;
 
+use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Exceptions\OrbitConfigStoreException;
+use App\Services\OrbitConfigStore;
 
 use function Laravel\Prompts\table;
 
 final class AppListCommand extends GatewayCommand
 {
+    use ResolvesHostContext;
+
     /**
      * App registry rows are desired-state rows; the gateway emits no per-app
      * status field, so the human table shows the desired-state marker.
@@ -29,12 +34,9 @@ final class AppListCommand extends GatewayCommand
     public function handle(): int
     {
         try {
-            $response = $this->gatewayGet('/api/apps', array_filter(
-                [
-                    'node' => $this->option('node'),
-                ],
-                fn (mixed $v): bool => $v !== null,
-            ));
+            $response = $this->gatewayGet('/api/apps', $this->appListQuery());
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -54,6 +56,18 @@ final class AppListCommand extends GatewayCommand
         $this->renderAppTables($apps);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function appListQuery(): array
+    {
+        return new AppListQueryResolver(
+            node: $this->stringOption('node'),
+            defaultNode: app(OrbitConfigStore::class)->defaultNode(),
+            gateway: $this->gateway(),
+        )->resolve();
     }
 
     /**

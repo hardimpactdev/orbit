@@ -26,11 +26,12 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `node` | `--node` | Optional. | Never. | None. | App-role name in the gateway registry. Single value only. |
+| `node` | `--node`, configured default node, or gateway-reported caller node | Optional. | Never. | Effective node. | App-role name in the gateway registry. Single value only. |
 | `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-`--node` is a scalar filter. Multi-value semantics are not part of the initial
+`--node` is a scalar filter and overrides the configured default node and
+gateway-reported caller node. Multi-value semantics are not part of the initial
 contract.
 
 ## Visibility Behavior
@@ -49,7 +50,11 @@ authenticated identity is authorized to see.
 ## Input Resolution
 
 1. Resolve `app_list.node` from `--node` when present. Validate immediately.
-2. Select the output renderer and query the gateway for visible app registry
+2. When `--node` is omitted, resolve `app_list.node` from the configured
+   default node.
+3. When no configured default node exists, query the gateway for the caller node
+   identity and use that node as `app_list.node`.
+4. Select the output renderer and query the gateway for visible app registry
    configuration.
 
 ## Behavior Contract
@@ -58,7 +63,9 @@ authenticated identity is authorized to see.
 
 1. **Query gateway registry.** Read visible app registry configuration scoped to the
    current consuming node's access policy. No host probing is performed.
-2. **Apply filters.** If `--node` is present, include only apps on that node.
+2. **Apply filters.** Include only apps on the effective node. `--node` is the
+   explicit effective node; otherwise the effective node is the configured
+   default node or, when no default exists, the gateway-reported caller node.
 3. **Sort results.** Apps are sorted by owning node name (ascending,
    case-insensitive) and then by app name (ascending, case-insensitive). Every
    output renderer uses this single ordering.
