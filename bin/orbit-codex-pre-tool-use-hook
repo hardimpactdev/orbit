@@ -1364,7 +1364,7 @@ function signal_outcome_problem(string $section): ?string
 function fresh_analyzer_problem(string $section): ?string
 {
     if (! markdown_label_exists($section, 'Fresh analyzer')) {
-        return 'has no `- Fresh analyzer:` row in `Final Distillation`; record the analyzer verdict, or `deferred - <reason>` when analyzer infrastructure failed';
+        return 'has no `- Fresh analyzer:` row in `Final Distillation`; record the analyzer verdict, `not used - <rationale>` for a compact loop, or `deferred - <reason>` when analyzer infrastructure failed';
     }
 
     foreach (markdown_list_values($section, ['Fresh analyzer']) as $value) {
@@ -1373,7 +1373,7 @@ function fresh_analyzer_problem(string $section): ?string
         }
     }
 
-    return 'has an empty `- Fresh analyzer:` row in `Final Distillation`; record the analyzer verdict, or `deferred - <reason>` when analyzer infrastructure failed';
+    return 'has an empty `- Fresh analyzer:` row in `Final Distillation`; record the analyzer verdict, `not used - <rationale>` for a compact loop, or `deferred - <reason>` when analyzer infrastructure failed';
 }
 
 function fresh_analyzer_deferred_value(string $section): ?string
@@ -1661,7 +1661,7 @@ Before merging or deleting the feature worktree, review `.orbit/` evidence,
 fill `.orbit/loop.md` -> `Final Distillation`, and record one of:
 - an exact loop outcome: `complete` or `complete + loop improvement`,
 - required verification rows with `passed`, `blocked`, or `not applicable`,
-- a fresh analyzer verdict (or `deferred - <reason>`) for merge boundaries,
+- a fresh analyzer verdict, `not used - <rationale>`, or `deferred - <reason>` for merge boundaries,
 - an accepted durable guardrail update,
 - a rejected or already-covered signal,
 - a deferred follow-up with owner and trigger, or

@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 59,
+    "record_count": 60,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -1561,6 +1561,32 @@
                 "reasoning_tokens": null
             },
             "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-08-010023-loop-analyzer-on-demand",
+            "slug": "loop-analyzer-on-demand",
+            "timestamp": "2026-07-08-010023",
+            "loop_outcome": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "already-covered": 1,
+                    "promote": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 754360,
+                "output_tokens": 5950,
+                "total_tokens": 760310,
+                "reasoning_tokens": 2435
+            },
+            "capture_status": "ok"
         }
     ]
 }

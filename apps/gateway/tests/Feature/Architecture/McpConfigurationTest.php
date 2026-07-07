@@ -259,6 +259,33 @@ it('routes post-feature analysis through the analyzer persona', function (): voi
         ->not->toContain('post-feature-distillation');
 });
 
+it('keeps post-feature analyzers on demand for compact loops', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $loopTemplate = file_get_contents(repo_path('LOOP.md.example')) ?: '';
+    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $normalizedHarness = preg_replace('/\s+/', ' ', $harness) ?: '';
+
+    expect($harness)
+        ->toContain('Default compact loops do not run a standing post-feature analyzer.')
+        ->toContain('Run the fresh post-feature analyzer only when explicitly requested')
+        ->toContain('`not used - <rationale>`')
+        ->not->toContain('Fresh Solo Codex analyzer report for non-trivial loops');
+
+    expect($normalizedHarness)
+        ->toContain(
+            'multi-slice, parallel workers, topology/live-node proof, product-contract change, release scope, messy human steering, reviewer dispute, suspected guardrail drift, or changes to analyzer/loop guardrails',
+        );
+
+    expect($loopTemplate)
+        ->toContain('`not used - <rationale>`')
+        ->toContain('normal compact-loop analyzer result');
+
+    expect($implementingFeatures)
+        ->toContain('record `not used - <rationale>` for compact loops')
+        ->toContain('analyzer/loop guardrail changes')
+        ->not->toContain('request fresh-context post-feature analysis when the loop was non-trivial');
+});
+
 it('keeps the Solo Codex analyzer spawn recipe canonical in the HARNESS role matrix', function (): void {
     $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
     $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
