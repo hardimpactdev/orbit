@@ -392,7 +392,7 @@ final readonly class LocalCaddyConfigAction
         $directories = $this->hostMountDirectories($spec['mounts']);
 
         foreach ($directories as $directory) {
-            $this->ensureHostDirectory($directory);
+            $this->ensureHostDirectory($this->hostPreparationPath($directory));
         }
 
         $exists = $this->runPrivilegedProcess(['test', '-f', self::GLOBAL_CADDYFILE]);
@@ -724,7 +724,24 @@ final readonly class LocalCaddyConfigAction
     {
         $canonical = realpath($source);
 
-        return is_string($canonical) && $canonical !== '' ? $canonical : $source;
+        return is_string($canonical) && $canonical !== '' ? $canonical : $this->hostPreparationPath($source);
+    }
+
+    private function hostPreparationPath(string $path): string
+    {
+        if (PHP_OS_FAMILY !== 'Darwin') {
+            return $path;
+        }
+
+        if ($path === '/run') {
+            return '/private/var/run';
+        }
+
+        if (str_starts_with($path, '/run/')) {
+            return '/private/var/run/'.substr($path, strlen('/run/'));
+        }
+
+        return $path;
     }
 
     private function mountField(string $key, string $value): string

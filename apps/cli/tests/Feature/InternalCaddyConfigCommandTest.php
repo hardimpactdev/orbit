@@ -198,8 +198,10 @@ describe('internal caddy config command', function (): void {
     it('applies caddy container specs through fixed argv commands', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'a', times: 64);
-        putenv('ORBIT_CADDY_CONFIG_MISSING_DIRS=/etc/caddy:/etc/caddy/sites:/run/php');
-        $_SERVER['ORBIT_CADDY_CONFIG_MISSING_DIRS'] = '/etc/caddy:/etc/caddy/sites:/run/php';
+        $runPhpHostSource = caddy_config_host_preparation_path('/run/php');
+        $missingDirectories = "/etc/caddy:/etc/caddy/sites:{$runPhpHostSource}";
+        putenv("ORBIT_CADDY_CONFIG_MISSING_DIRS={$missingDirectories}");
+        $_SERVER['ORBIT_CADDY_CONFIG_MISSING_DIRS'] = $missingDirectories;
 
         [$exitCode, $output] = run_internal_caddy_config_command(
             [
@@ -232,9 +234,9 @@ describe('internal caddy config command', function (): void {
             ->toContain('test -d /etc/caddy/sites')
             ->toContain('sudo -n test -d /etc/caddy/sites')
             ->toContain('install -d -m 0755 /etc/caddy/sites')
-            ->toContain('test -d /run/php')
-            ->toContain('sudo -n test -d /run/php')
-            ->toContain('install -d -m 0755 /run/php')
+            ->toContain("test -d {$runPhpHostSource}")
+            ->toContain("sudo -n test -d {$runPhpHostSource}")
+            ->toContain("install -d -m 0755 {$runPhpHostSource}")
             ->not
             ->toContain('sudo test -d')
             ->toContain('docker image inspect caddy:2-alpine')
@@ -258,6 +260,7 @@ describe('internal caddy config command', function (): void {
     it('does not chmod existing caddy container mount directories', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'b', times: 64);
+        $runPhpHostSource = caddy_config_host_preparation_path('/run/php');
 
         [$exitCode] = run_internal_caddy_config_command(
             [
@@ -276,9 +279,9 @@ describe('internal caddy config command', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($calls)
-            ->toContain('test -d /run/php')
+            ->toContain("test -d {$runPhpHostSource}")
             ->not->toContain('sudo test -d')
-            ->not->toContain('install -d -m 0755 /run/php');
+            ->not->toContain("install -d -m 0755 {$runPhpHostSource}");
     });
 
     it('canonicalizes docker bind mount sources before running the caddy container', function (): void {
@@ -542,7 +545,24 @@ function caddy_config_docker_bind_source(string $source): string
 {
     $canonical = realpath($source);
 
-    return is_string($canonical) && $canonical !== '' ? $canonical : $source;
+    return is_string($canonical) && $canonical !== '' ? $canonical : caddy_config_host_preparation_path($source);
+}
+
+function caddy_config_host_preparation_path(string $path): string
+{
+    if (PHP_OS_FAMILY !== 'Darwin') {
+        return $path;
+    }
+
+    if ($path === '/run') {
+        return '/private/var/run';
+    }
+
+    if (str_starts_with($path, '/run/')) {
+        return '/private/var/run/'.substr($path, strlen('/run/'));
+    }
+
+    return $path;
 }
 
 function delete_caddy_config_file(string $path): void
