@@ -717,6 +717,10 @@ fn command_binary(request: &CommandPushRequest) -> String {
         return request.binary.clone();
     }
 
+    if let Some(path) = request_env_path(request, "ORBIT_BIN_PATH") {
+        return path;
+    }
+
     resolve_orbit_binary().unwrap_or_else(|| request.binary.clone())
 }
 
@@ -760,6 +764,16 @@ fn orbit_binary_candidates_for(home: Option<String>, macos: bool) -> Vec<String>
 
 fn existing_env_path(key: &str) -> Option<String> {
     let path = std::env::var(key).ok()?.trim().to_string();
+
+    if path.is_empty() || !Path::new(&path).exists() {
+        return None;
+    }
+
+    Some(path)
+}
+
+fn request_env_path(request: &CommandPushRequest, key: &str) -> Option<String> {
+    let path = request.environment.as_ref()?.get(key)?.trim().to_string();
 
     if path.is_empty() || !Path::new(&path).exists() {
         return None;
@@ -1279,6 +1293,33 @@ mod tests {
         };
 
         assert_eq!(command_binary(&request), "/bin/cat");
+    }
+
+    #[test]
+    fn command_binary_prefers_request_orbit_bin_path() {
+        let binary = std::env::temp_dir().join(format!(
+            "orbit-agent-request-bin-path-{}",
+            std::process::id()
+        ));
+        std::fs::write(&binary, "#!/usr/bin/env sh\n").expect("write temp orbit binary");
+        let binary = binary.to_string_lossy().to_string();
+
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec![],
+            input: None,
+            cwd: None,
+            environment: Some(HashMap::from([(
+                "ORBIT_BIN_PATH".to_string(),
+                binary.clone(),
+            )])),
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+
+        assert_eq!(command_binary(&request), binary);
     }
 
     #[test]
