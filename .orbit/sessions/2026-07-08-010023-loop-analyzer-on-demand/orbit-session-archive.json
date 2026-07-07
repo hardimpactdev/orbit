@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-07T23:00:23+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/loop-analyzer-on-demand/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-08-010023-loop-analyzer-on-demand",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-08-010023-loop-analyzer-on-demand/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

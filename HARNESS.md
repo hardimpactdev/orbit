@@ -257,11 +257,17 @@ summary evidence, verify the artifact exists and is non-empty or record why no
 output is expected, then stop or delete the process in a separate command. Do
 not run output capture and process deletion in parallel.
 
-Run a fresh-context post-feature analyzer from that packet when the feature had
-implementation workers, reviewer corrections, retained terminal/PTY evidence,
-quality-gate artifacts, human steering, or guardrail decisions. Use
-`.agents/review-personas/post-feature-analyzer.md` as a Solo-managed Codex
-analyzer. The analyzer reviews the orchestrator/Solo
+Default compact loops do not run a standing post-feature analyzer. The
+orchestrator still fills `.orbit/loop.md`, records verification, classifies
+obvious signals, and keeps the `- Fresh analyzer:` row. When no analyzer
+escalation trigger applies, record `not used - <rationale>` in that row.
+
+Run the fresh post-feature analyzer only when explicitly requested, or when the
+loop hits an escalation trigger: multi-slice, parallel workers,
+topology/live-node proof, product-contract change, release scope, messy human
+steering, reviewer dispute, suspected guardrail drift, or changes to
+analyzer/loop guardrails. Use `.agents/review-personas/post-feature-analyzer.md`
+as a Solo-managed Codex analyzer. The analyzer reviews the orchestrator/Solo
 session messages and worktree artifacts, then reports whether the loop was
 performed properly and whether guardrails were missed, redundant, correctly
 omitted, or aimed at the wrong target. It does not edit code, update the
@@ -361,9 +367,10 @@ support the explanation, but they do not satisfy the gate by themselves. Both
 the compact default packet and `Appendix: Full Multi-Slice Variant` in
 `LOOP.md.example` keep every mechanical label and pass the same `--lint` check.
 
-Merge packets must include a `- Fresh analyzer:` row; `deferred - <reason>` is
-accepted as a non-blocking WARNING so analyzer infrastructure failures are
-recorded honestly. The gate also warns without blocking when
+Merge packets must include a `- Fresh analyzer:` row. Valid values include an
+analyzer verdict, `not used - <rationale>` for a normal compact-loop analyzer
+result, or `deferred - <reason>` as a non-blocking WARNING when analyzer
+infrastructure fails. The gate also warns without blocking when
 `Candidate Signals While Working` is empty or `none` while accepted durable
 updates are non-none — that shape suggests signals were reconstructed post-hoc
 instead of collected during the loop.
@@ -421,19 +428,19 @@ default finalization path.
 
 ## Post-Feature Signal Audit
 
-Normal feature work runs without a standing watcher by default. An explicitly
-requested loop-observer lane may run during a loop; see
+Normal feature work runs without a standing watcher or default analyzer by
+default. An explicitly requested loop-observer lane may run during a loop; see
 `.agents/skills/loop-observer/SKILL.md`. It runs in `observe` mode by default
 without steering the run, or in opt-in `coach` mode with logged,
 non-authoritative process-rubric corrections only. Kick off the feature
 implementer through the implementation workflow, let it complete the feature
-loop, and preserve the worktree and `.orbit/` artifacts. The fresh post-feature
-analyzer runs before merge as part of final distillation — the merge packet's
-`- Fresh analyzer:` row records the result — and signal-audit adjudication
-completes before cleanup.
+loop, and preserve the worktree and `.orbit/` artifacts. The final packet's
+`- Fresh analyzer:` row records either the analyzer result, `not used -
+<rationale>` for a compact loop, or a deferred infrastructure reason.
+Signal-audit adjudication completes before cleanup.
 
-The analyzer is read-only. It inspects the feature orchestrator/Solo session
-messages, active `.orbit/loop.md`, `.orbit/evidence/`,
+When used, the analyzer is read-only. It inspects the feature
+orchestrator/Solo session messages, active `.orbit/loop.md`, `.orbit/evidence/`,
 `.orbit/quality-gates/`, persisted `.orbit/sessions/` archives when present,
 Solo scratchpads, worker and reviewer reports, retained terminal or PTY
 evidence, verification output, human corrections, and the final diff or commit.
@@ -441,7 +448,8 @@ It reports whether the loop was proper, flawed, or blocked by missing evidence.
 The analyzer may use `.orbit/sessions/` archives as trace evidence when they
 exist.
 
-The analyzer checks guardrail decisions instead of supervising live work:
+When used, the analyzer checks guardrail decisions instead of supervising live
+work:
 
 - `correct-noop`: no durable guardrail was needed, and the evidence supports
   that result.
@@ -453,12 +461,12 @@ The analyzer checks guardrail decisions instead of supervising live work:
 - `defer`: the concern may be real, but evidence, ownership, or recurrence risk
   is not clear enough yet.
 
-The feature owner or human adjudicates the analyzer report. Patch Orbit only
-when the report identifies a concrete recurring or costly signal, the smallest
-guardrail target is clear, and the verification for that target is reachable.
-If the report finds only local cleanup, existing coverage, stale artifacts, or
-ordinary feature work, record the no-new-signal rationale and do not add a new
-rule.
+The feature owner or human adjudicates analyzer reports and direct final-packet
+evidence. Patch Orbit only when the evidence identifies a concrete recurring or
+costly signal, the smallest guardrail target is clear, and the verification for
+that target is reachable. If the evidence shows only local cleanup, existing
+coverage, stale artifacts, or ordinary feature work, record the no-new-signal
+rationale and do not add a new rule.
 
 ## Feature Slices
 
@@ -517,14 +525,17 @@ make the gate clear.
 `LOOP.md.example` leads with the compact single-slice packet because most
 feature loops should not carry multi-slice ceremony by default. Escalate to the
 full multi-slice packet in `LOOP.md.example` when the slice has any of these
-properties: multi-slice feature, parallel workers, topology-relevant diff,
+properties: multi-slice feature, parallel workers, topology/live-node proof,
 product-contract change, or release scope.
 
-Escalated loops use the full packet, the reviewer persona selected by the
-`Root Routing` table, and a fresh post-feature analyzer before merge. Otherwise,
-use the compact packet, the reviewer selected by the routing table when that
-table requires one, and record the no-analysis rationale in the final packet
-when skipping the analyzer.
+Analyzer escalation is related but narrower than packet size. Run a fresh
+post-feature analyzer when explicitly requested, or when the loop has
+multi-slice, parallel workers, topology/live-node proof, product-contract
+change, release scope, messy human steering, reviewer dispute, suspected
+guardrail drift, or changes to analyzer/loop guardrails. Otherwise, use the
+compact packet, the reviewer selected by the routing table when that table
+requires one, and record `not used - <rationale>` in the final packet when
+skipping the analyzer.
 
 Packet tiering reduces coordination ceremony only. It never tiers down TDD,
 the verification evidence required by the final branch diff, retained topology
@@ -775,10 +786,10 @@ command address/output transcript.
 Merge and cleanup are separate boundaries.
 
 - Merge happens after the feature branch is committed, verified, final
-  distillation is filled — including the fresh post-feature analyzer, which
-  runs before merge as part of final distillation — and the merge boundary
-  gate passes. Leave the completed feature worktree and branch intact after
-  merge by default.
+  distillation is filled — with the `- Fresh analyzer:` row recording an
+  analyzer result, `not used - <rationale>`, or a deferred infrastructure
+  reason — and the merge boundary gate passes. Leave the completed feature
+  worktree and branch intact after merge by default.
 - Signal-audit adjudication completes before cleanup, while the worktree is
   still available. Review `.orbit/loop.md`, `.orbit/evidence/`,
   `.orbit/quality-gates/`, Solo scratchpads, reviewer output, and retained
@@ -909,7 +920,7 @@ Use this table to pick the smallest workflow that can prove the change.
 | Docs-only | `updating-documentation`; `auditing-docs-drift` only for an explicit consistency scan | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | `.agents/review-personas/docs-librarian.md` or human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
 | Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Codex documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
 | Quality-gate failure or slowdown | `quality-gate-triage`, plus `pest-testing`, `e2e-verification-lanes`, or `cli-output-pty-capture` by lane | `apps/docs/content/testing/README.md`, `quality-gates.md`, `in-memory/performance.md`, `e2e/environment.md`, `e2e/performance.md` | Inspect existing evidence under `.orbit/quality-gates/` and `.orbit/evidence/`; do not rerun expensive gates just to classify | Owner/human only after classification points at product behavior | Record recurring flakes, missing baselines, or confusing lane failures | Aggregate provision command, live-node mutation, or product fix before classification |
-| Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, orchestrator/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh Solo Codex analyzer report for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
+| Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, orchestrator/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh Solo Codex analyzer only on explicit request or escalation; compact loops record `not used - <rationale>`; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
 | CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; retained topology proof; PTY frame capture and reviewer analysis before human UX review | `.agents/review-personas/cli-command.md` via Solo Antigravity, or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained topology proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
 | Orbit Agent Rust services | `.agents/skills/tauri-agent-development/SKILL.md`, `implementing-features` | `apps/agent/**`, `apps/macos/**`, `apps/docs/content/architecture.md`, `apps/docs/content/tech-stack.md`, `apps/docs/content/domains/1_node/node-concepts.md` | Focused Cargo checks from `apps/agent` and `apps/macos`; `composer quality-check` for broad handoff; host-Mac topology proof on the implementing Darwin machine for native `apps/macos` diffs; Computer Use for native tray/menu rendering changes | `.agents/review-personas/tauri-agent.md` via Solo Antigravity, or human for native UX/product contract changes | Record repeated native-menu, Cargo-gate, host-Mac proof, or docs/unit-map drift | No current Cargo proof, no `host-macos` topology row for native macOS UI diffs, no Computer Use evidence when native tray rendering changed, non-Darwin implementation host, or the change expands installer/signing/privileged execution scope without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; retained topology proof when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |

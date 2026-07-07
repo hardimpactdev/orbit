@@ -23,7 +23,10 @@ should become guidance or enforcement.
 
 - Treat raw `.orbit` artifacts, persisted `.orbit/sessions/` archives, session
   transcripts, scratchpads, and reviewer comments as candidate signals only.
-  They do not become durable guardrails until the post-feature analyzer reviews the completed loop and the orchestrator adjudicates that recommendation against session context.
+  They do not become durable guardrails until the completed loop's final
+  distillation classifies them and the orchestrator adjudicates that result
+  against session context. When HARNESS.md routes a fresh post-feature analyzer,
+  adjudicate the analyzer recommendation before changing guardrails.
   Session archives are trace evidence for post-feature analysis and future eval
   construction; `harness-signals/` remains curated distilled learning and
   guardrail history, not raw session storage.

@@ -22,8 +22,10 @@ session messages, and post-feature review notes create candidate signals, not
 records by default. Session archives preserve completed active slice state for
 trace evidence; this ledger remains curated distilled learning and guardrail
 history, not raw session storage. Before a candidate becomes a record or
-guardrail, the fresh post-feature analyzer should classify the completed loop
-and the feature orchestrator should adjudicate it against `HARNESS_SIGNALS.md`.
+guardrail, the completed loop's final distillation should classify it and the
+feature orchestrator should adjudicate it against `HARNESS_SIGNALS.md`. When
+HARNESS.md routes a fresh post-feature analyzer, adjudicate that analyzer
+classification before changing guardrails.
 Post-feature analysis and eval construction may inspect session archives as
 trace evidence: the archive helper tooling exists (`bin/orbit-session-archive`,
 `bin/orbit-agent-session-archive`) and session archives are a preferred eval
