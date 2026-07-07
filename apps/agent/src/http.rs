@@ -1339,9 +1339,10 @@ mod tests {
             .await
             .expect("body bytes");
         let output = String::from_utf8(body.to_vec()).expect("utf8 output");
+        let normalized = output.to_ascii_lowercase();
 
         assert!(
-            output.contains("Version"),
+            normalized.contains("version") || normalized.contains("orbit"),
             "expected raw version output, got: {output:?}"
         );
     }

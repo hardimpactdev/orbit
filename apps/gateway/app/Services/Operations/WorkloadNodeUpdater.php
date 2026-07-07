@@ -14,6 +14,7 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
 use Throwable;
@@ -145,13 +146,21 @@ final readonly class WorkloadNodeUpdater
             'metadata' => $this->remoteShellMetadata($operationRun, $node),
         ];
 
-        $result = $this->runCliInstall($node, $transportOptions);
+        try {
+            $result = $this->runCliInstall($node, $transportOptions);
+        } catch (RemoteLocalExecutorTransportFailed $exception) {
+            if (! $this->isAgentRestartDisconnect($exception)) {
+                throw $exception;
+            }
 
-        if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
+            $result = null;
+        }
+
+        if ($result instanceof RemoteShellResult && $this->shouldRetryCliInstallAfterSelfUpdate($result)) {
             $result = $this->runCliInstall($node, $transportOptions);
         }
 
-        if (! $result->successful()) {
+        if ($result instanceof RemoteShellResult && ! $result->successful()) {
             return [
                 ...$this->targetPayload($node),
                 'status' => 'failed',
@@ -195,6 +204,11 @@ final readonly class WorkloadNodeUpdater
             [],
             $transportOptions,
         );
+    }
+
+    private function isAgentRestartDisconnect(RemoteLocalExecutorTransportFailed $exception): bool
+    {
+        return str_contains($exception->getMessage(), 'Empty reply from server');
     }
 
     private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool

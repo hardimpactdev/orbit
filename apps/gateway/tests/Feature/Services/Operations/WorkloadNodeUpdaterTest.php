@@ -25,6 +25,7 @@ use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\WorkloadNodeUpdateFailed;
 use App\Services\Operations\WorkloadNodeUpdater;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -383,6 +384,91 @@ it('retries workload CLI installs when the previous launcher exits during self u
         ->toBe($shell->calls[1]['options']['input'])
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0');
+});
+
+it('records workload CLI installs when the agent transport disconnects during self update', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => new RemoteLocalExecutorTransportFailed(
+            'Remote local executor transport failed: cURL error 52: Empty reply from server',
+        ),
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
+                    'sha256' => str_repeat('9', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(1)
+        ->and($node->fresh()->installed_cli?->version)
+        ->toBe('2.0.0')
+        ->and($node->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('9', times: 64));
+});
+
+it('keeps workload transport failures that are not agent restart disconnects failed', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'app-dev-1' => new RemoteLocalExecutorTransportFailed(
+            'Remote local executor transport failed: cURL error 7: Failed to connect',
+        ),
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'failed',
+                'failed_step' => 'remote_update',
+                'output' => 'Remote local executor transport failed: cURL error 7: Failed to connect',
+            ],
+        ])
+        ->and($node->fresh()->installed_cli?->version)
+        ->toBe('1.0.0');
 });
 
 it('does not send role images to macos workload cli installers', function (): void {
@@ -1256,7 +1342,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
     public array $activeLeases = [];
 
     /**
-     * @param  array<string, RemoteShellResult|list<RemoteShellResult>>  $failures  Keyed by node name; applied to the remote update script call.
+     * @param  array<string, RemoteShellResult|RemoteLocalExecutorTransportFailed|list<RemoteShellResult|RemoteLocalExecutorTransportFailed>>  $failures  Keyed by node name; applied to the remote update script call.
      * @param  array<string, string>  $versions  Probed version output keyed by node name (defaults to the target).
      * @param  array<string, int>  $doctorIssues  Per-node doctor issue counts keyed by node name.
      * @param  array<string, Throwable>  $doctorFailures  Per-node doctor exceptions keyed by node name.
@@ -1367,12 +1453,20 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
             return $failure;
         }
 
+        if ($failure instanceof RemoteLocalExecutorTransportFailed) {
+            throw $failure;
+        }
+
         if (is_array($failure) && $failure !== []) {
             $result = array_shift($failure);
             $this->failures[$node->name] = $failure;
 
             if ($result instanceof RemoteShellResult) {
                 return $result;
+            }
+
+            if ($result instanceof RemoteLocalExecutorTransportFailed) {
+                throw $result;
             }
         }
 
