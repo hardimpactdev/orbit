@@ -127,7 +127,17 @@ class GatewayServiceUpdater
             ],
         ];
 
-        $result = $this->runCliInstallWithSelfUpdateRetry($gatewayNode, $transportOptions);
+        try {
+            $result = $this->runCliInstall($gatewayNode, $transportOptions);
+        } catch (RemoteLocalExecutorTransportFailed $exception) {
+            if (! $this->isGatewayHostAgentRestartDisconnect($exception)) {
+                throw $exception;
+            }
+
+            $this->recordInstalledGatewayHostCli($operationRun, $plan, $gatewayNode);
+
+            return null;
+        }
 
         if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
             $result = $this->runCliInstall($gatewayNode, $transportOptions);
@@ -156,18 +166,9 @@ class GatewayServiceUpdater
         );
     }
 
-    /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
-     */
-    private function runCliInstallWithSelfUpdateRetry(Node $gatewayNode, array $transportOptions): RemoteShellResult
+    private function isGatewayHostAgentRestartDisconnect(RemoteLocalExecutorTransportFailed $exception): bool
     {
-        try {
-            return $this->runCliInstall($gatewayNode, $transportOptions);
-        } catch (RemoteLocalExecutorTransportFailed) {
-            Sleep::for(1)->second();
-
-            return $this->runCliInstall($gatewayNode, $transportOptions);
-        }
+        return str_contains($exception->getMessage(), 'Empty reply from server');
     }
 
     private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool

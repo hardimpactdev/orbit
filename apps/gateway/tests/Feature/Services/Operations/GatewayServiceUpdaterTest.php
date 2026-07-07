@@ -199,15 +199,14 @@ it('retries gateway host CLI install when the previous launcher exits during sel
         ->toBe('1.2.3');
 });
 
-it('retries gateway host CLI install when the gateway agent transport disconnects during self update', function (): void {
-    Sleep::fake();
-
+it('records gateway host CLI install when the gateway agent transport disconnects during self update', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $localExecutor = gateway_service_updater_fake_local_executor([
-        new RemoteLocalExecutorTransportFailed('Remote local executor transport failed: cURL error 52'),
-        new RemoteShellResult(exitCode: 0, stdout: "updated\n", stderr: '', durationMs: 20),
+        new RemoteLocalExecutorTransportFailed(
+            'Remote local executor transport failed: cURL error 52: Empty reply from server',
+        ),
     ]);
     app()->instance(RunsInternalCommands::class, $localExecutor);
     $gateway = Node::factory()
@@ -245,13 +244,64 @@ it('retries gateway host CLI install when the gateway agent transport disconnect
     app(GatewayServiceUpdater::class)->update($run, $plan);
 
     expect($localExecutor->calls)
-        ->toHaveCount(2)
-        ->and($localExecutor->payloads()[0])
-        ->toEqual($localExecutor->payloads()[1])
+        ->toHaveCount(1)
         ->and($gateway->fresh()->installed_cli?->version)
-        ->toBe('1.2.3');
+        ->toBe('1.2.3')
+        ->and($gateway->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('d', times: 64));
+});
 
-    Sleep::assertSleptTimes(1);
+it('fails gateway host CLI install when the transport failure is not an agent restart disconnect', function (): void {
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $localExecutor = gateway_service_updater_fake_local_executor([
+        new RemoteLocalExecutorTransportFailed(
+            'Remote local executor transport failed: cURL error 7: Failed to connect',
+        ),
+    ]);
+    app()->instance(RunsInternalCommands::class, $localExecutor);
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('migrate', ['--force' => true, '--no-interaction' => true])
+        ->andReturn(0);
+
+    Process::fake(function ($process) use ($plan, $previousImage) {
+        $command = (string) $process->command;
+
+        return match ($command) {
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
+                => Process::result(output: "{$previousImage}\n"),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
+                => Process::result(),
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
+                => Process::result(),
+            "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
+                => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    expect(fn () => app(GatewayServiceUpdater::class)->update($run, $plan))
+        ->toThrow(RemoteLocalExecutorTransportFailed::class, 'cURL error 7');
+
+    expect($localExecutor->calls)
+        ->toHaveCount(1)
+        ->and($gateway->fresh()->installed_cli)
+        ->toBeNull();
 });
 
 it('restores the scheduler previous image and replica when gateway migrations fail', function (): void {
