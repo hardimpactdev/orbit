@@ -36,7 +36,7 @@ final readonly class AppRuntimeContainerManager
 
     public function apply(Node $node, AppRuntimeContainer $container): AppRuntimeContainerApplyOutcome
     {
-        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             return $this->applyThroughLocalExecutor($node, $container);
         }
 
@@ -232,12 +232,14 @@ final readonly class AppRuntimeContainerManager
      */
     private function runRuntimeAction(Node $node, string $action, array $payload, string $operation): RemoteShellResult
     {
-        if (! $this->localExecutor instanceof RemoteLocalExecutor) {
+        $localExecutor = $this->localExecutor($node);
+
+        if (! $localExecutor instanceof RemoteLocalExecutor) {
             throw new RuntimeException('App runtime local executor is unavailable.');
         }
 
         try {
-            return $this->localExecutor->runInternal(
+            return $localExecutor->runInternal(
                 node: $node,
                 commandName: 'internal:app-runtime-container',
                 arguments: [$action],
@@ -601,7 +603,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function remove(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
-        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             return $this->removeThroughLocalExecutor($node, "orbit-app-{$appSlug}");
         }
 
@@ -633,7 +635,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function removeRuntimeConfigFile(Node $node, string $appSlug): AppRuntimeArtifactRemovalOutcome
     {
-        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             return $this->removeRuntimeConfigFileThroughLocalExecutor(
                 $node,
                 $this->runtimeConfigPath($node, $appSlug),
@@ -714,7 +716,7 @@ final readonly class AppRuntimeContainerManager
      */
     public function writeRuntimeConfigFile(Node $node, AppRuntimeContainer $container): void
     {
-        if ($this->localExecutor instanceof RemoteLocalExecutor) {
+        if ($this->localExecutor($node) instanceof RemoteLocalExecutor) {
             $this->writeRuntimeConfigFileThroughLocalExecutor($node, $container);
 
             return;
@@ -1041,5 +1043,18 @@ final readonly class AppRuntimeContainerManager
         $message = $output !== '' ? $output : 'unknown error';
 
         throw new RuntimeException("Failed to {$step} on {$node->name}: {$message}");
+    }
+
+    private function localExecutor(Node $node): ?RemoteLocalExecutor
+    {
+        if (! $this->localExecutor instanceof RemoteLocalExecutor) {
+            return null;
+        }
+
+        if (! $node->orbit_agent_capable) {
+            return null;
+        }
+
+        return $this->localExecutor;
     }
 }

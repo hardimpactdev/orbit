@@ -29,7 +29,7 @@ function appProxyRouteCaddyInstallerUseAgentPush(): void
     );
 }
 
-it('skips caddy container update shell when transitional fallback is not explicit', function (): void {
+it('applies caddy container updates on the typed agent path without fallback', function (): void {
     appProxyRouteCaddyInstallerUseAgentPush();
 
     $node = Node::factory()
@@ -50,6 +50,12 @@ it('skips caddy container update shell when transitional fallback is not explici
         'http://10.47.0.41:9477/v1/commands' => Http::sequence()
             ->push(app_proxy_installer_agent_response('caddy-config.write-site', [
                 'path' => '/etc/caddy/sites/docs.test.caddy',
+            ]))
+            ->push(app_proxy_installer_agent_response('caddy-config.apply-container', [
+                'container' => 'orbit-caddy',
+            ]))
+            ->push(app_proxy_installer_agent_response('caddy-config.reload', [
+                'container' => 'orbit-caddy',
             ])),
     ]);
 
@@ -60,15 +66,17 @@ it('skips caddy container update shell when transitional fallback is not explici
     );
 
     expect($result->successful())
-        ->toBeFalse()
-        ->and($result->stderr)
-        ->toBe(
-            'proxy caddy container update still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-        )
+        ->toBeTrue()
         ->and($shell->scripts)
         ->toBe([])
         ->and(app_proxy_installer_agent_requests('10.47.0.41'))
-        ->toHaveCount(1);
+        ->toHaveCount(3)
+        ->and(app_proxy_installer_agent_actions('10.47.0.41'))
+        ->toBe([
+            'write-site',
+            'apply-container',
+            'reload',
+        ]);
 });
 
 it('keeps route config writes and reloads on the typed agent path when no caddy tool update is needed', function (): void {
@@ -162,4 +170,36 @@ function app_proxy_installer_agent_requests(string $wireguardAddress): array
         ->map(fn (array $record): Request => $record[0])
         ->values()
         ->all();
+}
+
+/**
+ * @return list<string>
+ */
+function app_proxy_installer_agent_actions(string $wireguardAddress): array
+{
+    return array_values(array_filter(
+        array_map(
+            static function (Request $request): ?string {
+                /** @var mixed $payload */
+                $payload = $request->data();
+
+                if (! is_array($payload)) {
+                    return null;
+                }
+
+                /** @var mixed $argv */
+                $argv = $payload['argv'] ?? null;
+
+                if (! is_array($argv)) {
+                    return null;
+                }
+
+                $action = $argv[1] ?? null;
+
+                return is_string($action) ? $action : null;
+            },
+            app_proxy_installer_agent_requests($wireguardAddress),
+        ),
+        is_string(...),
+    ));
 }

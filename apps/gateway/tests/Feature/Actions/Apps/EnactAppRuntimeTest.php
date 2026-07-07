@@ -15,9 +15,11 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -128,6 +130,14 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
     app()->instance(OrbitCaService::class, new EnactAppRuntimeTestCa);
+    app()->bind(
+        AppRuntimeContainerManager::class,
+        fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(DockerCommandBuilder::class),
+            app(OrbitCaService::class),
+        ),
+    );
 });
 
 final readonly class EnactAppRuntimeTestCa extends OrbitCaService

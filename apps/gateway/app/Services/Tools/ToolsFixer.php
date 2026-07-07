@@ -6,6 +6,7 @@ namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -14,6 +15,7 @@ use App\Models\ProxyRoute;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use InvalidArgumentException;
@@ -29,6 +31,7 @@ final readonly class ToolsFixer
         private ?ToolCatalog $catalog = null,
         private ?ProxyRouteRenderer $proxyRouteRenderer = null,
         private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RemoteCaddyConfig $caddyConfig = null,
     ) {}
 
     /**
@@ -48,7 +51,7 @@ final readonly class ToolsFixer
             'tool.container_missing',
             'tool.container_not_running',
             'tool.container_spec_mismatch',
-                => $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry),
+                => $this->repairContainer($tool, $entry),
             'tool.agent_route_missing' => $this->fixAgentRoute($tool, $entry),
             'tool.agent_credentials_missing' => $this->fixAgentCredentials($tool, $entry),
             'tool.agent_user_missing' => $this->fixAgentUser($tool, $entry),
@@ -74,6 +77,43 @@ final readonly class ToolsFixer
         }
 
         $this->remoteShell->run($tool->node, $command, ['throw' => true]);
+
+        return $this->fixResult($tool, $entry);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function repairContainer(NodeTool $tool, DriftEntry $entry): ?array
+    {
+        if ($tool->name !== 'caddy') {
+            return $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry);
+        }
+
+        $tool->loadMissing('node');
+
+        if ($tool->node === null) {
+            return null;
+        }
+
+        $config = is_array($tool->config) ? $tool->config : [];
+        $container = $config['container'] ?? null;
+
+        if (! is_array($container) || $container === []) {
+            return null;
+        }
+
+        $containerConfig = [];
+
+        foreach ($container as $key => $value) {
+            $containerConfig[(string) $key] = $value;
+        }
+
+        $result = $this->caddyConfig()->applyContainer($tool->node, $containerConfig);
+
+        if (! $result->successful()) {
+            return $this->failedResult($tool, $entry, $this->remoteFailureSummary($result));
+        }
 
         return $this->fixResult($tool, $entry);
     }
@@ -155,6 +195,18 @@ final readonly class ToolsFixer
         $catalog = $this->catalog ?? app(ToolCatalog::class);
 
         return $catalog->updateScript($tool->name, is_array($tool->config) ? $tool->config : []);
+    }
+
+    private function caddyConfig(): RemoteCaddyConfig
+    {
+        return $this->caddyConfig ?? app(RemoteCaddyConfig::class);
+    }
+
+    private function remoteFailureSummary(RemoteShellResult $result): string
+    {
+        $output = trim($result->stderr.' '.$result->stdout);
+
+        return $output !== '' ? $output : "Remote repair exited with code {$result->exitCode}.";
     }
 
     /**

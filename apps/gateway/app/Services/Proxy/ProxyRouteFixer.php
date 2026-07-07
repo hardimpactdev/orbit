@@ -7,15 +7,14 @@ namespace App\Services\Proxy;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitContainerNames;
-use App\Tools\CaddyTool;
 
 final readonly class ProxyRouteFixer
 {
@@ -24,7 +23,7 @@ final readonly class ProxyRouteFixer
         private ProxyRouteRenderer $renderer,
         private OrbitCaService $ca,
         private SiteCertificateInstaller $siteCertificateInstaller,
-        private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
+        private ?RemoteCaddyConfig $caddyConfig = null,
     ) {}
 
     /**
@@ -91,10 +90,7 @@ final readonly class ProxyRouteFixer
         $this->ensureRouteTlsMaterial($route);
         $this->ensureRuntimeTrustPool($route->node, $route);
 
-        $this->requireExplicitFallback('proxy route repair');
-        $this->remoteShell->run($route->node, $this->installScript($route->node, $route->domain, $content), [
-            'throw' => true,
-        ]);
+        $this->writeSiteAndReload($route->node, $route->domain, $content);
 
         $route->forceFill([
             'config' => $route->config,
@@ -130,10 +126,7 @@ final readonly class ProxyRouteFixer
 
         $content = $this->renderer->renderRouterRoute($route);
         $this->ensureRouterTrustPool($routerNode, $route);
-        $this->requireExplicitFallback('proxy router route repair');
-        $this->remoteShell->run($routerNode, $this->installScript($routerNode, $route->domain, $content), [
-            'throw' => true,
-        ]);
+        $this->writeSiteAndReload($routerNode, $route->domain, $content);
 
         $this->updateRouterArtifactHash($route, hash('sha256', $content));
 
@@ -172,12 +165,7 @@ final readonly class ProxyRouteFixer
 
         $content = $this->renderer->renderPrivateBackend($route, $artifact);
         $this->ensureRuntimeTrustPool($backendNode, $route);
-        $this->requireExplicitFallback('proxy backend route repair');
-        $this->remoteShell->run(
-            $backendNode,
-            $this->installScript($backendNode, $route->domain, $content, backend: true),
-            ['throw' => true],
-        );
+        $this->writeSiteAndReload($backendNode, $route->domain, $content, backend: true);
 
         $this->updateBackendArtifactHash($route, $nodeId, hash('sha256', $content));
 
@@ -205,18 +193,20 @@ final readonly class ProxyRouteFixer
         $leaf = $this->ca->issueLeaf($route->domain);
         $paths = $this->tlsPaths($route);
 
-        $this->requireExplicitFallback('proxy TLS repair');
-        $this->remoteShell->run(
-            $route->node,
-            $this->tlsInstallScript(
-                $paths['cert'],
-                $paths['key'],
-                (string) file_get_contents($leaf['cert']),
-                (string) file_get_contents($leaf['key']),
-                $this->caddyReloadCommand($route->node),
-            ),
-            ['throw' => true],
-        );
+        $this->applyManagedFile($route->node, new ManagedFile(
+            path: $paths['cert'],
+            content: (string) file_get_contents($leaf['cert']),
+            mode: '0644',
+            directoryMode: '0755',
+        ));
+        $this->applyManagedFile($route->node, new ManagedFile(
+            path: $paths['key'],
+            content: (string) file_get_contents($leaf['key']),
+            mode: '0600',
+            directoryMode: '0755',
+            sensitive: true,
+        ));
+        $this->reloadCaddy($route->node);
     }
 
     private function ensureSiteCertificateForOwnedPhpRoute(ProxyRoute $route): bool
@@ -270,23 +260,6 @@ final readonly class ProxyRouteFixer
         return ($config['placement'] ?? null) === 'ingress';
     }
 
-    private function installScript(Node $node, string $domain, string $content, bool $backend = false): string
-    {
-        $suffix = $backend ? '.backend' : '';
-        $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
-
-        return sprintf(
-            <<<'SH'
-                sudo install -d -m 0755 /etc/caddy/sites
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                %s
-                SH,
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg($sitePath),
-            $this->caddyReloadCommand($node),
-        );
-    }
-
     private function ensureRouterTrustPool(Node $node, ProxyRoute $route): void
     {
         $config = is_array($route->config) ? $route->config : [];
@@ -329,6 +302,11 @@ final readonly class ProxyRouteFixer
             mode: '0644',
             directoryMode: '0755',
         );
+        $this->applyManagedFile($node, $file);
+    }
+
+    private function applyManagedFile(Node $node, ManagedFile $file): void
+    {
         $plan = $file->plan($file->probe($node, $this->remoteShell));
         $result = $file->apply($node, $this->remoteShell, $plan);
 
@@ -453,34 +431,6 @@ final readonly class ProxyRouteFixer
         ];
     }
 
-    private function tlsInstallScript(
-        string $certPath,
-        string $keyPath,
-        string $cert,
-        string $key,
-        string $reloadCommand,
-    ): string {
-        return sprintf(
-            <<<'SH'
-                sudo install -d -m 0755 %s %s
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                printf %%s %s | base64 -d | sudo tee %s >/dev/null
-                sudo chmod 0644 %s
-                sudo chmod 0600 %s
-                %s
-                SH,
-            escapeshellarg(dirname($certPath)),
-            escapeshellarg(dirname($keyPath)),
-            escapeshellarg(base64_encode($cert)),
-            escapeshellarg($certPath),
-            escapeshellarg(base64_encode($key)),
-            escapeshellarg($keyPath),
-            escapeshellarg($certPath),
-            escapeshellarg($keyPath),
-            $reloadCommand,
-        );
-    }
-
     /**
      * Restore the orbit-caddy container on a serving node when proxy probing
      * reports the container is missing or stopped. `proxy.caddy_container_down`
@@ -495,10 +445,12 @@ final readonly class ProxyRouteFixer
         $caddyName = $this->caddyContainerName($node);
 
         if ($entry->key === 'proxy.caddy_container_down') {
-            $script = $this->caddyStartCommand($node);
+            $spec = $this->managedCaddyContainerSpec($node);
+            $result = $spec === null
+                ? $this->caddyConfig()->startContainer($node, $caddyName)
+                : $this->caddyConfig()->applyContainer($node, $spec);
 
-            $this->requireExplicitFallback('proxy caddy container start');
-            $this->remoteShell->run($node, $script, ['throw' => true]);
+            $this->ensureSuccessful($result, "Failed to start orbit-caddy container on {$node->name}");
 
             return [
                 'family' => 'proxy',
@@ -533,10 +485,8 @@ final readonly class ProxyRouteFixer
                 ];
             }
 
-            $script = new CaddyTool()->updateScript(['container' => $spec]);
-
-            $this->requireExplicitFallback('proxy caddy container reconcile');
-            $this->remoteShell->run($node, $script, ['throw' => true]);
+            $result = $this->caddyConfig()->applyContainer($node, $spec);
+            $this->ensureSuccessful($result, "Failed to reconcile orbit-caddy container on {$node->name}");
 
             return [
                 'family' => 'proxy',
@@ -589,25 +539,8 @@ final readonly class ProxyRouteFixer
      */
     public function removeExtra(Node $node, string $domain): array
     {
-        $sitePath = "/etc/caddy/sites/{$domain}.caddy";
-        $certPath = "/etc/orbit/certs/{$domain}.crt";
-        $keyPath = "/etc/orbit/certs/{$domain}.key";
-
-        $script = sprintf(
-            <<<'SH'
-                sudo rm -f %s
-                sudo rm -f %s
-                sudo rm -f %s
-                %s || true
-                SH,
-            escapeshellarg($sitePath),
-            escapeshellarg($certPath),
-            escapeshellarg($keyPath),
-            $this->caddyReloadCommand($node),
-        );
-
-        $this->requireExplicitFallback('proxy route removal');
-        $this->remoteShell->run($node, $script, ['throw' => true]);
+        $result = $this->caddyConfig()->removeSite($node, $domain, $this->caddyContainerName($node));
+        $this->ensureSuccessful($result, "Failed to remove extra proxy route {$domain} from {$node->name}");
 
         return [
             'family' => 'proxy',
@@ -618,32 +551,6 @@ final readonly class ProxyRouteFixer
             'status' => 'completed',
             'summary' => "Removed extra proxy route {$domain} from node.",
         ];
-    }
-
-    private function caddyReloadCommand(Node $node): string
-    {
-        $spec = $this->managedCaddyContainerSpec($node);
-        $containerName = $this->caddyContainerNameFromSpec($spec);
-        $reloadCommand = $spec === null
-            ? CaddyTool::reloadCommand($containerName)
-            : CaddyTool::reloadWithRetryCommand($containerName);
-
-        if ($spec === null) {
-            return $reloadCommand;
-        }
-
-        return new CaddyTool()->updateScript(['container' => $spec])."\n".$reloadCommand;
-    }
-
-    private function caddyStartCommand(Node $node): string
-    {
-        $spec = $this->managedCaddyContainerSpec($node);
-
-        if ($spec === null) {
-            return 'docker start '.escapeshellarg($this->caddyContainerNameFromSpec(null));
-        }
-
-        return new CaddyTool()->updateScript(['container' => $spec]);
     }
 
     private function caddyContainerName(Node $node): string
@@ -665,13 +572,34 @@ final readonly class ProxyRouteFixer
         return new OrbitContainerNames()->caddy();
     }
 
-    private function requireExplicitFallback(string $surface): void
+    private function writeSiteAndReload(Node $node, string $domain, string $content, bool $backend = false): void
     {
-        if ($this->explicitFallback->allowed()) {
+        $write = $this->caddyConfig()->writeSite($node, $domain, $content, $backend);
+        $this->ensureSuccessful($write, "Failed to write Caddy site {$domain} on {$node->name}");
+
+        $this->reloadCaddy($node);
+    }
+
+    private function reloadCaddy(Node $node): void
+    {
+        $reload = $this->caddyConfig()->reload($node, $this->caddyContainerName($node));
+        $this->ensureSuccessful($reload, "Failed to reload Caddy on {$node->name}");
+    }
+
+    private function caddyConfig(): RemoteCaddyConfig
+    {
+        return $this->caddyConfig ?? app(RemoteCaddyConfig::class);
+    }
+
+    private function ensureSuccessful(RemoteShellResult $result, string $summary): void
+    {
+        if ($result->successful()) {
             return;
         }
 
-        throw new \RuntimeException($this->explicitFallback->message($surface));
+        $output = trim($result->stderr.' '.$result->stdout);
+
+        throw new \RuntimeException($output !== '' ? "{$summary}: {$output}" : $summary);
     }
 
     private function validatedAbsolutePath(ProxyRoute $route, string $value, string $suffix): string

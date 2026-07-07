@@ -73,11 +73,10 @@ final class ToolRemoveController implements Loggable
             );
         }
 
-        $target = $this->authorizedToolTarget(
+        $target = $this->authorizedToolRemovalTarget(
             $request,
             $caller,
             $visibleNodeIds,
-            allowAnyActiveNode: true,
             tool: $tool,
         );
 

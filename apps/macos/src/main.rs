@@ -476,13 +476,8 @@ fn get_gateway_json<T: DeserializeOwned>(
     path: &str,
 ) -> Result<T, orbit_agent::GatewayError> {
     let url = client.absolute_url(path)?;
-    let mut request = ureq::get(&url).timeout(Duration::from_secs(5));
-
-    if let Some(token) = client.config().bearer_token.as_deref() {
-        request = request.set("Authorization", &format!("Bearer {token}"));
-    }
-
-    let response = request
+    let response = ureq::get(&url)
+        .timeout(Duration::from_secs(5))
         .call()
         .map_err(|error| orbit_agent::GatewayError::Transport(error.to_string()))?;
     let body = response

@@ -20,7 +20,6 @@ pub struct AgentConfig {
     pub node_name: String,
     pub gateway_name: String,
     pub ca_pem_path: Option<PathBuf>,
-    pub bearer_token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +108,6 @@ struct AgentConfigFile {
     node_name: String,
     gateway_name: String,
     ca_pem_path: Option<String>,
-    bearer_token: Option<String>,
 }
 
 impl TryFrom<AgentConfigFile> for AgentConfig {
@@ -125,16 +123,6 @@ impl TryFrom<AgentConfigFile> for AgentConfig {
             ConfigError::InvalidConfig(format!("gateway_url must be an absolute URL: {error}"))
         })?;
 
-        let bearer_token = value.bearer_token.and_then(|token| {
-            let token = token.trim();
-
-            if token.is_empty() {
-                return None;
-            }
-
-            Some(token.to_string())
-        });
-
         Ok(Self {
             gateway_url: value.gateway_url.trim_end_matches('/').to_string(),
             node_id: value.node_id,
@@ -149,7 +137,6 @@ impl TryFrom<AgentConfigFile> for AgentConfig {
 
                 Some(PathBuf::from(path))
             }),
-            bearer_token,
         })
     }
 }
@@ -176,7 +163,6 @@ pub fn default_config_path() -> PathBuf {
 pub struct RequestSpec {
     pub method: String,
     pub path: String,
-    pub bearer_token: Option<String>,
     pub body: Option<String>,
 }
 
@@ -209,18 +195,14 @@ impl GatewayClient {
         operation_token: &str,
         command: &str,
     ) -> RequestSpec {
-        let mut request = self.request(
+        self.request(
             "POST",
             "/api/internal-executor/token/verify",
             Some(json!({
                 "operation_token": operation_token,
                 "command": command,
             })),
-        );
-
-        request.bearer_token = self.config.bearer_token.clone();
-
-        request
+        )
     }
 
     pub fn parse_verify_operation_token_response(
@@ -246,7 +228,6 @@ impl GatewayClient {
         RequestSpec {
             method: method.to_string(),
             path: path.to_string(),
-            bearer_token: None,
             body: body.map(|value| value.to_string()),
         }
     }
@@ -319,10 +300,6 @@ pub fn ping_gateway_connection(config: &AgentConfig) -> ConnectionStatus {
 
     let mut ping = agent.get(&url);
     ping = ping.timeout(GATEWAY_TIMEOUT);
-
-    if let Some(token) = request.bearer_token {
-        ping = ping.set("Authorization", &format!("Bearer {token}"));
-    }
 
     match ping.call() {
         Ok(response) => connection_status_from_ping(response.status()),
@@ -404,7 +381,7 @@ impl HttpAgentGateway {
         request: RequestSpec,
     ) -> Result<Option<String>, GatewayError> {
         let url = self.client.absolute_url(&request.path)?;
-        let mut http_request = match request.method.as_str() {
+        let http_request = match request.method.as_str() {
             "GET" => self.agent.get(&url),
             "POST" => self.agent.post(&url),
             method => {
@@ -413,10 +390,6 @@ impl HttpAgentGateway {
                 )))
             }
         };
-
-        if let Some(token) = request.bearer_token {
-            http_request = http_request.set("Authorization", &format!("Bearer {token}"));
-        }
 
         let response = if let Some(body) = request.body {
             http_request
@@ -519,7 +492,6 @@ mod tests {
             node_name: "NMBP".to_string(),
             gateway_name: "dev-gateway".to_string(),
             ca_pem_path: Some(PathBuf::from("/home/orbit/.config/orbit/ca/root.crt")),
-            bearer_token: Some("dev-token-placeholder".to_string()),
         }
     }
 
@@ -544,7 +516,7 @@ node_id = "node_123"
 node_name = "NMBP"
 gateway_name = "dev-gateway"
 ca_pem_path = "/home/orbit/.config/orbit/ca/root.crt"
-bearer_token = "dev-token-placeholder"
+bearer_token = "legacy-token-that-should-be-ignored"
 "#,
         )
         .expect("fixture config should be writable");
@@ -575,7 +547,6 @@ bearer_token = "dev-token-placeholder"
 
         assert_eq!(request.method, "GET");
         assert_eq!(request.path, "/api/status");
-        assert_eq!(request.bearer_token, None);
         assert_eq!(request.body, None);
         assert_eq!(
             client
@@ -598,10 +569,6 @@ bearer_token = "dev-token-placeholder"
 
         assert_eq!(request.method, "POST");
         assert_eq!(request.path, "/api/internal-executor/token/verify");
-        assert_eq!(
-            request.bearer_token,
-            Some("dev-token-placeholder".to_string())
-        );
         assert_eq!(body["operation_token"], "signed-operation-token");
         assert_eq!(body["command"], "internal:fleet-update:install-cli");
     }

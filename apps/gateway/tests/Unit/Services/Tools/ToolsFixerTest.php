@@ -994,6 +994,11 @@ final class ToolsFixerRemoteShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * @var list<array<string, mixed>>
+     */
+    public array $payloads = [];
+
+    /**
      * @var list<array{command: string, result: RemoteShellResult}>
      */
     public array $calls = [];
@@ -1003,13 +1008,16 @@ final class ToolsFixerRemoteShell implements RemoteShell
      */
     public function __construct(
         private readonly array $responses = [],
-    ) {}
+    ) {
+        app()->instance(RemoteShell::class, $this);
+    }
 
     /**
      * @param  array<string, mixed>  $options
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $payload = tools_fixer_decode_input($options['input'] ?? null);
         $result = $this->responses[$script] ?? new RemoteShellResult(
             exitCode: 0,
             stdout: '',
@@ -1017,11 +1025,50 @@ final class ToolsFixerRemoteShell implements RemoteShell
             durationMs: 1,
         );
 
-        $this->scripts[] = $script;
+        $this->scripts[] = tools_fixer_synthetic_script($script, $payload);
+        $this->payloads[] = $payload;
         $this->calls[] = ['command' => $script, 'result' => $result];
 
         return $result;
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function tools_fixer_decode_input(mixed $input): array
+{
+    if (! is_string($input) || $input === '') {
+        return [];
+    }
+
+    /** @var mixed $payload */
+    $payload = json_decode($input, associative: true);
+
+    return is_array($payload) ? $payload : [];
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ */
+function tools_fixer_synthetic_script(string $script, array $payload): string
+{
+    if ($payload === []) {
+        return $script;
+    }
+
+    $synthetic =
+        $script
+        ."\n# ORBIT_TEST_PAYLOAD "
+        .base64_encode(json_encode($payload, JSON_THROW_ON_ERROR))
+        ."\n# ORBIT_TEST_JSON "
+        .json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+    if (str_contains($script, "internal:caddy-config 'apply-container'")) {
+        $synthetic .= "\ndocker container inspect\ndocker run\ndocker start\nexpected_hash=\norbit.caddy.spec_hash";
+    }
+
+    return $synthetic;
 }
 
 final class ToolsFixerAgentToolDefinition implements ToolDefinition

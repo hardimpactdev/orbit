@@ -6,8 +6,10 @@ namespace App\Services\Proxy;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\Runtime\OrbitCaddyContainer;
 use JsonException;
 
 final readonly class RemoteCaddyConfig
@@ -47,15 +49,49 @@ final readonly class RemoteCaddyConfig
         ]);
     }
 
+    public function removeSite(Node $node, string $domain, string $container = 'orbit-caddy'): RemoteShellResult
+    {
+        return $this->run($node, 'remove-site', [
+            'domain' => $domain,
+            'container' => $container,
+        ]);
+    }
+
     public function reload(Node $node, string $container = 'orbit-caddy'): RemoteShellResult
     {
         return $this->run($node, 'reload', ['container' => $container]);
     }
 
     /**
+     * @param  array<string, mixed>  $spec
+     */
+    public function applyContainer(Node $node, array $spec): RemoteShellResult
+    {
+        $container = OrbitCaddyContainer::fromConfig($spec);
+
+        return $this->run(
+            $node,
+            'apply-container',
+            [
+                'container' => [
+                    ...$container->spec(),
+                    'expected_hash' => $container->specHash(),
+                ],
+                'global_config' => new CaddyGlobalConfig()->fresh(),
+            ],
+            timeout: 120,
+        );
+    }
+
+    public function startContainer(Node $node, string $container = 'orbit-caddy'): RemoteShellResult
+    {
+        return $this->run($node, 'start-container', ['container' => $container], timeout: 60);
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
-    private function run(Node $node, string $action, array $payload): RemoteShellResult
+    private function run(Node $node, string $action, array $payload, int $timeout = 30): RemoteShellResult
     {
         return $this->localExecutor->runInternal(
             node: $node,
@@ -68,7 +104,7 @@ final readonly class RemoteCaddyConfig
                 ],
                 'redact_stdout' => $action !== 'read-global',
                 'redact_stderr' => false,
-                'timeout' => 30,
+                'timeout' => $timeout,
                 'throw' => false,
             ],
         );

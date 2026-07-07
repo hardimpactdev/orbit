@@ -8,8 +8,10 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +23,14 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
     app()->instance(OrbitCaService::class, new AppRegisterControllerTestCa);
+    app()->bind(
+        AppRuntimeContainerManager::class,
+        fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(DockerCommandBuilder::class),
+            app(OrbitCaService::class),
+        ),
+    );
 });
 
 const APP_REGISTER_CALLER_WG_IP = '10.6.0.78';

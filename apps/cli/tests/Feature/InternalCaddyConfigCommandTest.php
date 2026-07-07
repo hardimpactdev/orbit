@@ -106,6 +106,82 @@ describe('internal caddy config command', function (): void {
             ->and(file_get_contents("{$bin}/stdin.log"))
             ->toContain("docs.test {\n  respond ok\n}");
     });
+
+    it('removes site configs, orbit tls material, and reloads caddy', function (): void {
+        $bin = install_caddy_config_fake_bin();
+
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'remove-site',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.remove-site'),
+                '--json' => true,
+            ],
+            json_encode([
+                'domain' => 'docs.test',
+                'container' => 'orbit-caddy',
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['path'] ?? null)
+            ->toBe('/etc/caddy/sites/docs.test.caddy')
+            ->and($calls)
+            ->toContain(
+                'sudo rm -f /etc/caddy/sites/docs.test.caddy /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key',
+            )
+            ->toContain(
+                'docker exec orbit-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019',
+            );
+    });
+
+    it('applies caddy container specs through fixed argv commands', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'a', times: 64);
+
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => caddy_config_container_spec($expectedHash),
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['container'] ?? null)
+            ->toBe('orbit-caddy')
+            ->and($payload['success']['data']['expected_hash'] ?? null)
+            ->toBe($expectedHash)
+            ->and($calls)
+            ->toContain('sudo install -d -m 0755 /etc/caddy /etc/caddy/sites /run/php')
+            ->toContain('docker image inspect caddy:2-alpine')
+            ->toContain('docker network inspect orbit-network')
+            ->toContain(
+                'docker run -d --pull never --name orbit-caddy --restart unless-stopped --network orbit-network',
+            )
+            ->toContain('--publish 10.6.0.50:80:80')
+            ->toContain('--add-host host.docker.internal:host-gateway')
+            ->toContain('--network-alias orbit-caddy')
+            ->toContain('--label orbit.container.kind=caddy')
+            ->toContain('--label orbit.managed=true')
+            ->toContain("--label orbit.caddy.spec_hash={$expectedHash}")
+            ->toContain('--mount type=bind,source=/etc/caddy/Caddyfile,target=/etc/caddy/Caddyfile,readonly')
+            ->toContain('--mount type=bind,source=/etc/caddy/sites,target=/etc/caddy/sites,readonly')
+            ->toContain('--mount type=bind,source=/run/php,target=/run/php')
+            ->toContain('caddy:2-alpine')
+            ->toContain('docker start orbit-caddy');
+    });
 });
 
 function caddy_config_signed_operation_token(
@@ -133,6 +209,50 @@ function caddy_config_signed_operation_token(
 function caddy_config_operation_secret(): string
 {
     return implode('-', ['gateway', 'secret']);
+}
+
+/**
+ * @return array{
+ *     name: string,
+ *     image: string,
+ *     network: string,
+ *     restart_policy: string,
+ *     published_ports: list<string>,
+ *     mounts: list<array{source: string, target: string, read_only: bool}>,
+ *     network_aliases: list<string>,
+ *     extra_hosts: array<string, string>,
+ *     expected_hash: string,
+ * }
+ */
+function caddy_config_container_spec(string $expectedHash): array
+{
+    return [
+        'name' => 'orbit-caddy',
+        'image' => 'caddy:2-alpine',
+        'network' => 'orbit-network',
+        'restart_policy' => 'unless-stopped',
+        'published_ports' => ['10.6.0.50:80:80'],
+        'mounts' => [
+            [
+                'source' => '/etc/caddy/Caddyfile',
+                'target' => '/etc/caddy/Caddyfile',
+                'read_only' => true,
+            ],
+            [
+                'source' => '/etc/caddy/sites',
+                'target' => '/etc/caddy/sites',
+                'read_only' => true,
+            ],
+            [
+                'source' => '/run/php',
+                'target' => '/run/php',
+                'read_only' => false,
+            ],
+        ],
+        'network_aliases' => ['orbit-caddy'],
+        'extra_hosts' => ['host.docker.internal' => 'host-gateway'],
+        'expected_hash' => $expectedHash,
+    ];
 }
 
 /**

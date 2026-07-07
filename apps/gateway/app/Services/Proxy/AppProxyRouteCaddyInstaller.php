@@ -4,22 +4,17 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Tools\CaddyTool;
 use RuntimeException;
 
 final readonly class AppProxyRouteCaddyInstaller
 {
     public function __construct(
-        private RemoteShell $remoteShell,
         private CaddyGlobalConfig $caddyGlobalConfig,
         private RemoteCaddyConfig $caddyConfig,
-        private ExplicitRemoteShellFallback $transport,
     ) {}
 
     public function installRouteConfig(
@@ -37,18 +32,7 @@ final readonly class AppProxyRouteCaddyInstaller
         $caddyToolConfig = $this->caddyToolConfig($node);
 
         if ($caddyToolConfig !== null) {
-            if (! $this->transport->allowed()) {
-                return new RemoteShellResult(
-                    exitCode: 1,
-                    stdout: '',
-                    stderr: $this->transport->message('proxy caddy container update'),
-                    durationMs: 0,
-                );
-            }
-
-            $update = $this->remoteShell->run($node, new CaddyTool()->updateScript($caddyToolConfig), [
-                'throw' => false,
-            ]);
+            $update = $this->caddyConfig->applyContainer($node, $this->containerConfig($caddyToolConfig));
 
             if (! $update->successful()) {
                 return $update;
@@ -94,5 +78,24 @@ final readonly class AppProxyRouteCaddyInstaller
         }
 
         return $tool->config;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function containerConfig(array $config): array
+    {
+        $container = is_array($config['container'] ?? null)
+            ? $config['container']
+            : $config;
+
+        $normalized = [];
+
+        foreach ($container as $key => $value) {
+            $normalized[(string) $key] = $value;
+        }
+
+        return $normalized;
     }
 }

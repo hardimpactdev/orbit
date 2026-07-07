@@ -67,6 +67,22 @@ beforeEach(function (): void {
         RemoteLocalExecutor::class,
         fn (): RemoteLocalExecutor => doctorRunnerLocalExecutor(app(RemoteShell::class)),
     );
+    app()->bind(
+        \App\Services\Apps\AppRuntimeContainerManager::class,
+        fn (): \App\Services\Apps\AppRuntimeContainerManager => new \App\Services\Apps\AppRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(\App\Services\Runtime\DockerCommandBuilder::class),
+            doctor_runner_fake_ca(),
+        ),
+    );
+    app()->bind(
+        \App\Services\Workspaces\WorkspaceRuntimeContainerManager::class,
+        fn (): \App\Services\Workspaces\WorkspaceRuntimeContainerManager => new \App\Services\Workspaces\WorkspaceRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(\App\Services\Runtime\DockerCommandBuilder::class),
+            doctor_runner_fake_ca(),
+        ),
+    );
 
     Http::fake(function (Request $request): mixed {
         if (! str_ends_with($request->url(), ':9477/v1/commands')) {
@@ -2369,11 +2385,11 @@ describe('DoctorReportRunner', function (): void {
                 'status' => 'completed',
             ])
             ->and($shell->scripts[1])
-            ->toContain('docker container inspect')
+            ->toContain('internal:caddy-config')
             ->and($shell->scripts[1])
-            ->toContain('10.6.0.50:80:80')
+            ->toContain('apply-container')
             ->and($shell->scripts[1])
-            ->toContain('orbit.caddy.spec_hash');
+            ->toContain('--json');
     })->with([
         'missing container' => ['tool.container_missing', 'missing', '0'],
         'stopped container' => ['tool.container_not_running', 'stopped', '1'],

@@ -39,7 +39,11 @@ final readonly class NodeAgentPushClient
         $gatewayPostMs = $this->elapsedMilliseconds($gatewayPostStartedAt);
 
         if (! $response->successful()) {
-            throw new RuntimeException("Orbit Agent push request failed with HTTP {$response->status()}.");
+            throw new RuntimeException(NodeAgentPushFailureMessage::forResponse(
+                prefix: 'Orbit Agent push request failed',
+                response: $response,
+                operationToken: $operationToken,
+            ));
         }
 
         /** @var array<string, mixed> $payload */
@@ -76,7 +80,11 @@ final readonly class NodeAgentPushClient
             ->post($this->streamUrlFor($node), $this->payloadForTransport($envelope, $operationToken));
 
         if (! $response->successful()) {
-            throw new RuntimeException("Orbit Agent push stream request failed with HTTP {$response->status()}.");
+            throw new RuntimeException(NodeAgentPushFailureMessage::forResponse(
+                prefix: 'Orbit Agent push stream request failed',
+                response: $response,
+                operationToken: $operationToken,
+            ));
         }
 
         new NodeAgentPushStreamReader()->read($response, $onOutput);

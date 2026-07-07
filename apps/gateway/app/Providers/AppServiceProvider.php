@@ -24,6 +24,9 @@ use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
 use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
 use App\Services\AgentIde\SdkOpenCodeClientFactory;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
+use App\Services\Apps\AppRuntimeContainerManager;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Ca\OrbitSiteCertificateInstaller;
 use App\Services\CurlRequestProfiler;
 use App\Services\Dns\DnsmasqConfigBuilder;
@@ -32,16 +35,19 @@ use App\Services\Dns\LocalResolver;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Gateway\SdkUpdateAllGatewayStream;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RemoteShell\SshRemoteShellStream;
+use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Solo\HttpSoloUpstreamClient;
 use App\Services\Solo\SoloUpstreamClient;
 use App\Services\Tools\ToolDefinitionRegistry;
@@ -58,6 +64,7 @@ use App\Services\Vpn\WgEasyVpnBackend;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
 use App\Services\Workspaces\PolyscopeWorkspaceDriver;
+use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
@@ -156,6 +163,44 @@ class AppServiceProvider extends ServiceProvider
             operationRuns: $app->make(OperationRunRecorder::class),
             operationTokenSecret: $this->operationTokenSigningKey(),
         ));
+        $this->app->bind(AppRuntimeContainerManager::class, function (Application $app): AppRuntimeContainerManager {
+            $remoteShell = $app->make(RemoteShell::class);
+            $commands = $app->make(DockerCommandBuilder::class);
+            $ca = $app->make(OrbitCaService::class);
+            $innerTlsPolicy = $app->make(AppDevelopmentInnerTlsPolicy::class);
+            $explicitFallback = $app->make(ExplicitRemoteShellFallback::class);
+            $nodeHostPaths = $app->make(NodeHostPaths::class);
+            $localExecutor = $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null;
+
+            return new AppRuntimeContainerManager(
+                remoteShell: $remoteShell,
+                commands: $commands,
+                ca: $ca,
+                innerTlsPolicy: $innerTlsPolicy,
+                explicitFallback: $explicitFallback,
+                nodeHostPaths: $nodeHostPaths,
+                localExecutor: $localExecutor,
+            );
+        });
+        $this->app->bind(WorkspaceRuntimeContainerManager::class, function (Application $app): WorkspaceRuntimeContainerManager {
+            $remoteShell = $app->make(RemoteShell::class);
+            $commands = $app->make(DockerCommandBuilder::class);
+            $ca = $app->make(OrbitCaService::class);
+            $innerTlsPolicy = $app->make(AppDevelopmentInnerTlsPolicy::class);
+            $explicitFallback = $app->make(ExplicitRemoteShellFallback::class);
+            $nodeHostPaths = $app->make(NodeHostPaths::class);
+            $localExecutor = $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null;
+
+            return new WorkspaceRuntimeContainerManager(
+                remoteShell: $remoteShell,
+                commands: $commands,
+                ca: $ca,
+                innerTlsPolicy: $innerTlsPolicy,
+                explicitFallback: $explicitFallback,
+                nodeHostPaths: $nodeHostPaths,
+                localExecutor: $localExecutor,
+            );
+        });
         $this->app->bind(RemoteShellStream::class, SshRemoteShellStream::class);
         $this->app->bind(PolyscopeWorkspaceDriver::class, fn ($app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
             branchAligner: $app->make(PolyscopeWorkspaceBranchAligner::class),

@@ -57,6 +57,32 @@ it('applies app runtime containers through the agent-push local executor', funct
     );
 });
 
+it('uses the resolved local executor for agent-capable app runtime nodes', function (): void {
+    config()->set('app.key', app_runtime_manager_operation_secret());
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_agent_response('created')),
+    ]);
+    app()->instance(RemoteLocalExecutor::class, app_runtime_manager_executor());
+    $node = app_runtime_manager_node();
+    $container = app_runtime_manager_app_container();
+
+    app(AppRuntimeContainerManager::class)->apply($node, $container);
+
+    Http::assertSent(
+        fn (Request $request): bool => app_runtime_manager_request_matches(
+            $request,
+            [
+                'operation_id' => 'app-runtime-container-apply',
+                'kind' => 'app',
+                'container_name' => 'orbit-app-docs',
+                'expected_hash' => $container->specHash(),
+                'config_path' => '/home/orbit/.config/orbit/apps/docs.ini',
+            ],
+        ),
+    );
+});
+
 it('applies workspace runtime containers through the agent-push local executor', function (): void {
     Http::preventStrayRequests();
     Http::fake([
@@ -71,6 +97,33 @@ it('applies workspace runtime containers through the agent-push local executor',
         app_runtime_manager_ca(),
         localExecutor: app_runtime_manager_executor(),
     )->apply($node, $container);
+
+    Http::assertSent(
+        fn (Request $request): bool => app_runtime_manager_request_matches(
+            $request,
+            [
+                'operation_id' => 'workspace-runtime-container-apply',
+                'kind' => 'workspace',
+                'container_name' => 'orbit-ws-docs-feature-a',
+                'expected_hash' => $container->specHash(),
+                'config_path' => '/home/orbit/.config/orbit/workspaces/docs-feature-a.ini',
+                'workspace_slug' => 'feature-a',
+            ],
+        ),
+    );
+});
+
+it('uses the resolved local executor for agent-capable workspace runtime nodes', function (): void {
+    config()->set('app.key', app_runtime_manager_operation_secret());
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_agent_response('recreated')),
+    ]);
+    app()->instance(RemoteLocalExecutor::class, app_runtime_manager_executor());
+    $node = app_runtime_manager_node();
+    $container = app_runtime_manager_workspace_container();
+
+    app(WorkspaceRuntimeContainerManager::class)->apply($node, $container);
 
     Http::assertSent(
         fn (Request $request): bool => app_runtime_manager_request_matches(

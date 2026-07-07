@@ -169,6 +169,49 @@ it('pushes runtime cwd and environment context to the target node agent listener
     );
 });
 
+it('includes a redacted agent response body when command push fails', function (): void {
+    Http::preventStrayRequests();
+    $operationToken = agent_push_client_test_operation_token();
+
+    Http::fake([
+        'http://10.6.0.23:9477/v1/commands' => Http::response([
+            'error' => [
+                'message' => "operation token {$operationToken} was rejected by the gateway callback",
+            ],
+        ], 401),
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'mini',
+        'host' => 'mini.local',
+        'wireguard_address' => '10.6.0.23',
+        'status' => NodeStatus::Active,
+        'orbit_agent_capable' => true,
+    ]);
+
+    try {
+        new NodeAgentPushClient()->execute(
+            node: $node,
+            envelope: NodeCommandEnvelope::agentPushBinary(
+                operationId: 'op_gateway_test_rejected',
+                binary: 'orbit',
+                argv: ['doctor', '--node=mini', '--json'],
+            ),
+            operationToken: $operationToken,
+        );
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())
+            ->toContain('Orbit Agent push request failed with HTTP 401')
+            ->toContain('was rejected by the gateway callback')
+            ->toContain('[redacted-operation-token]')
+            ->not->toContain($operationToken);
+
+        return;
+    }
+
+    $this->fail('Expected agent-push failure to throw.');
+});
+
 it('uses the envelope command timeout with a small HTTP buffer', function (): void {
     $method = new ReflectionMethod(NodeAgentPushClient::class, 'requestTimeoutSeconds');
     $method->setAccessible(true);

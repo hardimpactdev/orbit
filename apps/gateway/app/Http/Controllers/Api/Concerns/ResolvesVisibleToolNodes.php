@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Api\Concerns;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\AgentToolAuthorizer;
@@ -75,6 +77,62 @@ trait ResolvesVisibleToolNodes
         bool $allowAnyActiveNode = false,
         ?string $tool = null,
     ): array|JsonResponse {
+        return $this->authorizedToolTargetWithUnsupportedPolicy(
+            request: $request,
+            caller: $caller,
+            visibleNodeIds: $visibleNodeIds,
+            options: [
+                'allow_only_visible_fallback' => $allowOnlyVisibleFallback,
+                'allow_any_active_node' => $allowAnyActiveNode,
+                'tool' => $tool,
+                'unsupported_policy' => 'strict',
+            ],
+        );
+    }
+
+    /**
+     * @param  list<int>  $visibleNodeIds
+     * @return array{node: ?string, app: ?string}|JsonResponse
+     */
+    private function authorizedToolRemovalTarget(
+        Request $request,
+        Node $caller,
+        array $visibleNodeIds,
+        ?string $tool = null,
+    ): array|JsonResponse {
+        return $this->authorizedToolTargetWithUnsupportedPolicy(
+            request: $request,
+            caller: $caller,
+            visibleNodeIds: $visibleNodeIds,
+            options: [
+                'allow_only_visible_fallback' => true,
+                'allow_any_active_node' => true,
+                'tool' => $tool,
+                'unsupported_policy' => 'stale-removal',
+            ],
+        );
+    }
+
+    /**
+     * @param  list<int>  $visibleNodeIds
+     * @param  array{
+     *     allow_only_visible_fallback: bool,
+     *     allow_any_active_node: bool,
+     *     tool: ?string,
+     *     unsupported_policy: string,
+     * }  $options
+     * @return array{node: ?string, app: ?string}|JsonResponse
+     */
+    private function authorizedToolTargetWithUnsupportedPolicy(
+        Request $request,
+        Node $caller,
+        array $visibleNodeIds,
+        array $options,
+    ): array|JsonResponse {
+        $allowOnlyVisibleFallback = $options['allow_only_visible_fallback'];
+        $allowAnyActiveNode = $options['allow_any_active_node'];
+        $tool = $options['tool'];
+        $unsupportedPolicy = $options['unsupported_policy'];
         $node = $this->toolTargetString($request, 'node');
         $app = $this->toolTargetString($request, 'app');
         $nodeFilter = null;
@@ -86,7 +144,7 @@ trait ResolvesVisibleToolNodes
                 return $this->toolTargetFailure($node, 'node', $caller, $visibleNodeIds, $allowAnyActiveNode);
             }
 
-            if ($this->shouldRejectUnsupportedToolNode($tool, $nodeFilter)) {
+            if ($this->shouldRejectUnsupportedToolNode($tool, $nodeFilter, $unsupportedPolicy)) {
                 return $this->toolTargetUnsupportedNode((string) $tool, $nodeFilter);
             }
         }
@@ -106,7 +164,7 @@ trait ResolvesVisibleToolNodes
                 );
             }
 
-            if ($this->shouldRejectUnsupportedToolNode($tool, $appNode)) {
+            if ($this->shouldRejectUnsupportedToolNode($tool, $appNode, $unsupportedPolicy)) {
                 return $this->toolTargetUnsupportedNode((string) $tool, $appNode);
             }
 
@@ -130,8 +188,10 @@ trait ResolvesVisibleToolNodes
                 ->get();
 
             if ($nodes->count() === 1) {
+                $fallbackNodeName = $nodes->first()?->name;
+
                 return [
-                    'node' => $nodes->first()?->name,
+                    'node' => is_string($fallbackNodeName) ? $fallbackNodeName : null,
                     'app' => null,
                 ];
             }
@@ -158,7 +218,7 @@ trait ResolvesVisibleToolNodes
             ->where('status', NodeStatus::Active->value)
             ->when(
                 ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
-                fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds),
+                fn (Builder $query) => $query->whereIn('id', $visibleNodeIds),
             );
 
         if (! $allowAnyActiveNode) {
@@ -179,7 +239,7 @@ trait ResolvesVisibleToolNodes
             ->with('node')
             ->when(
                 ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
-                fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds),
+                fn (Builder $query) => $query->whereIn('node_id', $visibleNodeIds),
             )
             ->where(function (Builder $query) use ($app): void {
                 $query->where('name', $app)
@@ -195,7 +255,7 @@ trait ResolvesVisibleToolNodes
                     ->with('node')
                     ->when(
                         ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
-                        fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds),
+                        fn (Builder $query) => $query->whereIn('node_id', $visibleNodeIds),
                     )
                     ->where('name', $appName)
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
@@ -452,7 +512,7 @@ trait ResolvesVisibleToolNodes
         ], 422);
     }
 
-    private function shouldRejectUnsupportedToolNode(?string $tool, Node $node): bool
+    private function shouldRejectUnsupportedToolNode(?string $tool, Node $node, string $unsupportedPolicy): bool
     {
         if ($tool === null) {
             return false;
@@ -464,6 +524,31 @@ trait ResolvesVisibleToolNodes
             return false;
         }
 
-        return ! $catalog->supportsNode($tool, $node);
+        if ($catalog->supportsNode($tool, $node)) {
+            return false;
+        }
+
+        if ($unsupportedPolicy === 'stale-removal' && $this->hasStaleToolIntent($tool, $node)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function hasStaleToolIntent(string $tool, Node $node): bool
+    {
+        if (NodeTool::query()->where('node_id', $node->id)->where('name', $tool)->exists()) {
+            return true;
+        }
+
+        return ProxyRoute::query()
+            ->where('node_id', $node->id)
+            ->where('owner_type', 'tool')
+            ->get()
+            ->contains(static function (ProxyRoute $route) use ($tool): bool {
+                $config = is_array($route->config) ? $route->config : [];
+
+                return ($config['owner_name'] ?? null) === $tool;
+            });
     }
 }

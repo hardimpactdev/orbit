@@ -13,6 +13,7 @@ final readonly class ToolRemover
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
         private RemoteShell $remoteShell,
+        private StaleToolIntentRemover $staleIntentRemover,
     ) {}
 
     /**
@@ -23,6 +24,12 @@ final readonly class ToolRemover
         $model = $this->registry->show(tool: $tool, node: $node, app: $app);
 
         if ($model instanceof ToolRegistryFailure) {
+            $staleRouteCleanup = $this->staleIntentRemover->withoutRecord($tool, $node, $app);
+
+            if ($staleRouteCleanup !== null) {
+                return $staleRouteCleanup;
+            }
+
             return $model;
         }
 
@@ -32,16 +39,8 @@ final readonly class ToolRemover
             return ToolRegistryFailure::remoteActionFailed($tool, '', 'remove', 1, 'Target node is missing.');
         }
 
-        if (! $this->catalog->supports($tool)) {
-            $model->credentials = null;
-            $model->save();
-            $model->delete();
-
-            return [
-                'name' => $tool,
-                'node' => $model->node->name,
-                'stale_record' => true,
-            ];
+        if (! $this->catalog->supports($tool) || ! $this->catalog->supportsNode($tool, $model->node)) {
+            return $this->staleIntentRemover->withRecord($tool, $model);
         }
 
         if (! $this->catalog->hasCapability($tool, 'remove')) {

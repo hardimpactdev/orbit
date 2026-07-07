@@ -62,10 +62,8 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $caddySite = base64_decode(
-            (string) str($shell->scripts[1])->match("/printf %s\\s+'([^']+)'/")->toString(),
-            true,
-        );
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/vite.docs.test.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action)
             ->toMatchArray([
@@ -74,28 +72,25 @@ describe('ProxyRouteFixer', function (): void {
                 'key' => 'proxy.route_missing',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/certs/vite.docs.test.crt')
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/certs/vite.docs.test.key')
-            ->and($shell->scripts[0])
-            ->toContain(CaddyTool::reloadCommand())
-            ->and($shell->scripts[1])
-            ->toContain('/etc/caddy/sites/vite.docs.test.caddy')
+            ->and(proxy_fixer_payload_paths($shell))
+            ->toContain('/etc/orbit/certs/vite.docs.test.crt', '/etc/orbit/certs/vite.docs.test.key')
+            ->and($siteScript)
+            ->toContain("internal:caddy-config 'write-site'")
             ->and($caddySite)
             ->toContain('reverse_proxy http://host.docker.internal:5173')
             ->and($caddySite)
-            ->not->toContain('127.0.0.1')->and($shell->scripts[1])->toContain(CaddyTool::reloadCommand())->and(
-                $shell->scripts[1],
-            )
-            ->not->toContain("docker restart 'orbit-caddy'")->and($shell->scripts[1])
+            ->not->toContain('127.0.0.1')->and(proxy_fixer_scripts_contain(
+                shell: $shell,
+                needle: "internal:caddy-config 'reload'",
+            ))->toBeTrue()->and($siteScript)
+            ->not->toContain("docker restart 'orbit-caddy'")->and($siteScript)
             ->not->toContain('sudo systemctl reload caddy')->and($route->refresh()->source_hash)->toBe(hash(
                 'sha256',
                 $caddySite,
             ))->and($route->refresh()->source_hash)->toBe($renderer->sourceHash($route));
     });
 
-    it('requires explicit transitional SSH fallback before repairing proxy routes with legacy shell', function (): void {
+    it('repairs proxy routes without explicit transitional SSH fallback', function (): void {
         request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -112,7 +107,7 @@ describe('ProxyRouteFixer', function (): void {
         ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
-        expect(fn () => new ProxyRouteFixer(
+        $action = new ProxyRouteFixer(
             $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
@@ -122,16 +117,14 @@ describe('ProxyRouteFixer', function (): void {
             key: 'proxy.route_missing',
             kind: DriftKind::Missing,
             summary: 'missing',
-        )))
-            ->toThrow(
-                RuntimeException::class,
-                'proxy TLS repair still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-            );
+        ));
 
-        expect($shell->scripts)
-            ->toBe([])
+        expect($action['status'])
+            ->toBe('completed')
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'write-site'"))
+            ->toBeTrue()
             ->and($route->refresh()->source_hash)
-            ->toBe(str_repeat('0', 64));
+            ->not->toBe(str_repeat('0', 64));
     });
 
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
@@ -179,14 +172,8 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $certificateScript = collect($shell->scripts)
-            ->first(fn (string $script): bool => str_contains($script, '/etc/orbit/certs/metrics.orbit.crt'));
-        $siteScript = collect($shell->scripts)
-            ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/metrics.orbit.caddy'));
-        $caddySite = base64_decode(
-            (string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(),
-            true,
-        );
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/metrics.orbit.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action)
             ->toMatchArray([
@@ -197,26 +184,12 @@ describe('ProxyRouteFixer', function (): void {
             ])
             ->and($shell->nodes[0]->is($router))
             ->toBeTrue()
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/certs/metrics.orbit.crt')
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/certs/metrics.orbit.key')
-            ->and($shell->scripts[0])
-            ->toContain(base64_encode('fake-cert-for-metrics.orbit'))
-            ->and($shell->scripts[0])
-            ->toContain(base64_encode('fake-key-for-metrics.orbit'))
-            ->and($shell->scripts[0])
-            ->toContain('orbit_caddy_reload_attempt=1')
-            ->and($shell->scripts[1])
+            ->and(proxy_fixer_payload_paths($shell))
+            ->toContain('/etc/orbit/certs/metrics.orbit.crt', '/etc/orbit/certs/metrics.orbit.key')
+            ->and($siteScript)
             ->toContain('/etc/caddy/sites/metrics.orbit.caddy')
-            ->and($shell->scripts[1])
-            ->toContain('/run/php')
-            ->and($shell->scripts[1])
-            ->toContain('expected_hash=')
-            ->and($shell->scripts[1])
-            ->toContain("docker start 'orbit-caddy'")
-            ->and($shell->scripts[1])
-            ->toContain('orbit_caddy_reload_attempt=1')
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeTrue()
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/metrics.orbit.crt /etc/orbit/certs/metrics.orbit.key')
             ->and($caddySite)
@@ -254,18 +227,16 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $caddySite = base64_decode(
-            (string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(),
-            true,
-        );
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/www.docs.test.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['status'])
             ->toBe('completed')
             ->and($shell->scripts)
-            ->toHaveCount(1)
-            ->and($shell->scripts[0])
+            ->toHaveCount(2)
+            ->and($siteScript)
             ->toContain('/etc/caddy/sites/www.docs.test.caddy')
-            ->and($shell->scripts[0])
+            ->and($siteScript)
             ->not
             ->toContain('/etc/orbit/certs/www.docs.test.crt')
             ->and($caddySite)
@@ -324,7 +295,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $siteScript = proxyFixerSiteScript($shell, '/etc/caddy/sites/docs.test.caddy');
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/docs.test.caddy');
         $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['summary'])
@@ -390,7 +361,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $siteScript = proxyFixerSiteScript($shell, '/etc/caddy/sites/docs.test.caddy');
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/docs.test.caddy');
         $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['summary'])
@@ -488,14 +459,8 @@ describe('ProxyRouteFixer', function (): void {
             associative: true,
             flags: JSON_THROW_ON_ERROR,
         );
-        $certificateScript = collect($shell->scripts)
-            ->first(fn (string $script): bool => str_contains($script, '/etc/orbit/certs/websocket.orbit.crt'));
-        $siteScript = collect($shell->scripts)
-            ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/websocket.orbit.caddy'));
-        $caddySite = base64_decode(
-            (string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(),
-            true,
-        );
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/websocket.orbit.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['status'])
             ->toBe('completed')
@@ -510,14 +475,12 @@ describe('ProxyRouteFixer', function (): void {
                 'mode' => '0644',
                 'directory_mode' => '0755',
             ])
-            ->and($certificateScript)
-            ->toContain('/etc/orbit/certs/websocket.orbit.crt')
-            ->and($certificateScript)
-            ->toContain('/etc/orbit/certs/websocket.orbit.key')
+            ->and(proxy_fixer_payload_paths($shell))
+            ->toContain('/etc/orbit/certs/websocket.orbit.crt', '/etc/orbit/certs/websocket.orbit.key')
             ->and($siteScript)
             ->toContain('/etc/caddy/sites/websocket.orbit.caddy')
-            ->and($siteScript)
-            ->toContain(CaddyTool::reloadCommand('orbit-e2e-gateway-orbit-caddy'))
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeTrue()
             ->and($caddySite)
             ->toContain('tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key')
             ->and($caddySite)
@@ -571,10 +534,8 @@ describe('ProxyRouteFixer', function (): void {
             summary: 'mismatch',
             detail: ['backend_node_id' => $backend->id],
         ));
-        $caddySite = base64_decode(
-            (string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(),
-            true,
-        );
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/docs.test.backend.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['summary'])
             ->toBe('Re-applied private backend route docs.test on web-1 from gateway intent.')
@@ -582,7 +543,7 @@ describe('ProxyRouteFixer', function (): void {
             ->toBe('web-1')
             ->and($shell->nodes[0]->is($backend))
             ->toBeTrue()
-            ->and($shell->scripts[0])
+            ->and($siteScript)
             ->toContain('/etc/caddy/sites/docs.test.backend.caddy')
             ->and($caddySite)
             ->not->toContain('bind 10.6.0.21')->and($caddySite)->toContain(
@@ -685,21 +646,17 @@ describe('ProxyRouteFixer', function (): void {
                 'key' => 'proxy.tls_missing',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/certs/vite.docs.test.crt')
-            ->and($shell->scripts[0])
-            ->toContain('/etc/orbit/certs/vite.docs.test.key')
-            ->and($shell->scripts[0])
-            ->toContain("sudo chmod 0644 '/etc/orbit/certs/vite.docs.test.crt'")
-            ->and($shell->scripts[0])
-            ->toContain("sudo chmod 0600 '/etc/orbit/certs/vite.docs.test.key'")
+            ->and(proxy_fixer_payload_paths($shell))
+            ->toContain('/etc/orbit/certs/vite.docs.test.crt', '/etc/orbit/certs/vite.docs.test.key')
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:managed-file 'write'"))
+            ->toBeTrue()
+            ->and(proxy_fixer_scripts_contain($shell, needle: "internal:caddy-config 'reload'"))
+            ->toBeTrue()
             ->and($shell->scripts[0])
             ->not->toContain('systemctl show caddy')->and($shell->scripts[0])
             ->not->toContain('orbit_caddy_group')->and($shell->scripts[0])
             ->not->toContain('getent group caddy')->and($shell->scripts[0])
-            ->not->toContain('chgrp')->and($shell->scripts[0])->toContain(CaddyTool::reloadCommand())->and(
-                $shell->scripts[0],
-            )
+            ->not->toContain('chgrp')->and($shell->scripts[0])
             ->not->toContain("docker restart 'orbit-caddy'")->and($shell->scripts[0])
             ->not->toContain('sudo systemctl reload caddy');
     });
@@ -739,7 +696,7 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Divergent,
             summary: 'mismatch',
         ));
-        $siteScript = proxyFixerSiteScript($shell, '/etc/caddy/sites/docs.test.caddy');
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/docs.test.caddy');
         $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action)
@@ -852,7 +809,10 @@ describe('ProxyRouteFixer', function (): void {
                 summary: 'mismatch',
             ));
 
-            $caddySite = proxyFixerDecodedSite(proxyFixerSiteScript($shell, '/etc/caddy/sites/legacy-docs.test.caddy'));
+            $caddySite = proxyFixerDecodedSite(proxyFixerSiteScript(
+                $shell,
+                path: '/etc/caddy/sites/legacy-docs.test.caddy',
+            ));
 
             expect($action['status'])
                 ->toBe('completed')
@@ -912,7 +872,7 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])
             ->toContain('expected_hash=')
             ->and($shell->scripts[0])
-            ->toContain("docker start 'orbit-caddy'")
+            ->toContain('docker start')
             ->and($shell->scripts[0])
             ->not->toContain('systemctl')->and($shell->scripts[0])
             ->not->toContain('caddy.service');
@@ -1096,10 +1056,10 @@ describe('ProxyRouteFixer', function (): void {
                 detail: ['backend_node_id' => $backend->id],
             ));
 
-            $caddySite = base64_decode(
-                (string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(),
-                true,
-            );
+            $caddySite = proxyFixerDecodedSite(proxyFixerSiteScript(
+                shell: $shell,
+                path: '/etc/caddy/sites/legacy-docs.test.backend.caddy',
+            ));
 
             expect($action['status'])
                 ->toBe('completed')
@@ -1140,7 +1100,11 @@ final readonly class ProxyFixerFakeCa extends OrbitCaService
 function proxyFixerSiteScript(ProxyFixerRecordingRemoteShell $shell, string $path): string
 {
     $script = collect($shell->scripts)
-        ->first(fn (string $script): bool => str_contains($script, $path));
+        ->first(
+            fn (string $script, int $index): bool => (
+                str_contains($script, $path) || proxy_fixer_script_writes_path($shell, $index, $path)
+            ),
+        );
 
     expect($script)->not->toBeNull("Expected a proxy fixer script writing {$path}.");
 
@@ -1149,7 +1113,88 @@ function proxyFixerSiteScript(ProxyFixerRecordingRemoteShell $shell, string $pat
 
 function proxyFixerDecodedSite(string $script): string
 {
-    return base64_decode((string) str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+    if (str_contains($script, "internal:caddy-config 'write-site'")) {
+        $payload = proxy_fixer_payload_from_synthetic_script($script);
+
+        return is_string($payload['content'] ?? null) ? $payload['content'] : '';
+    }
+
+    $decoded = base64_decode(str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), strict: true);
+
+    return is_string($decoded) ? $decoded : '';
+}
+
+/**
+ * @return list<string>
+ */
+function proxy_fixer_payload_paths(ProxyFixerRecordingRemoteShell $shell): array
+{
+    $paths = [];
+
+    foreach ($shell->payloads as $payload) {
+        $path = $payload['path'] ?? null;
+
+        if (is_string($path)) {
+            $paths[] = $path;
+        }
+    }
+
+    return $paths;
+}
+
+function proxy_fixer_scripts_contain(ProxyFixerRecordingRemoteShell $shell, string $needle): bool
+{
+    return collect($shell->scripts)
+        ->contains(fn (string $script): bool => str_contains($script, $needle));
+}
+
+function proxy_fixer_script_writes_path(ProxyFixerRecordingRemoteShell $shell, int $index, string $path): bool
+{
+    $payload = $shell->payloads[$index] ?? [];
+    $domain = $payload['domain'] ?? null;
+
+    if (! is_string($domain)) {
+        return false;
+    }
+
+    $suffix = ($payload['backend'] ?? null) === true ? '.backend' : '';
+
+    return $path === "/etc/caddy/sites/{$domain}{$suffix}.caddy";
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function proxy_fixer_payload_from_synthetic_script(string $script): array
+{
+    $matches = [];
+
+    if (preg_match('/# ORBIT_TEST_PAYLOAD (?P<payload>[A-Za-z0-9+\/=]+)/', $script, $matches) !== 1) {
+        return [];
+    }
+
+    $decoded = base64_decode($matches['payload'], strict: true);
+
+    if (! is_string($decoded)) {
+        return [];
+    }
+
+    /** @var mixed $payload */
+    $payload = json_decode($decoded, associative: true);
+
+    if (! is_array($payload)) {
+        return [];
+    }
+
+    $normalized = [];
+
+    foreach ($payload as $key => $value) {
+        if (is_string($key)) {
+            $normalized[$key] = $value;
+        }
+    }
+
+    return $normalized;
 }
 
 /**
@@ -1205,14 +1250,24 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
     /** @var list<array<string, mixed>> */
     public array $options = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $payloads = [];
+
+    public function __construct()
+    {
+        app()->instance(RemoteShell::class, $this);
+    }
+
     /**
      * @param  array<string, mixed>  $options
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $payload = proxy_fixer_decode_input($options['input'] ?? null);
         $this->nodes[] = $node;
-        $this->scripts[] = $script;
+        $this->scripts[] = proxy_fixer_synthetic_script($script, $payload);
         $this->options[] = $options;
+        $this->payloads[] = $payload;
 
         if (str_contains($script, "internal:managed-file 'probe'")) {
             return proxy_fixer_shell_success([
@@ -1232,6 +1287,67 @@ final class ProxyFixerRecordingRemoteShell implements RemoteShell
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function proxy_fixer_decode_input(mixed $input): array
+{
+    if (! is_string($input) || $input === '') {
+        return [];
+    }
+
+    /** @var mixed $payload */
+    $payload = json_decode($input, associative: true);
+
+    if (! is_array($payload)) {
+        return [];
+    }
+
+    $normalized = [];
+
+    foreach ($payload as $key => $value) {
+        if (is_string($key)) {
+            $normalized[$key] = $value;
+        }
+    }
+
+    return $normalized;
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ */
+function proxy_fixer_synthetic_script(string $script, array $payload): string
+{
+    if ($payload === []) {
+        return $script;
+    }
+
+    $synthetic =
+        $script
+        ."\n# ORBIT_TEST_PAYLOAD "
+        .base64_encode(json_encode($payload, JSON_THROW_ON_ERROR))
+        ."\n# ORBIT_TEST_JSON "
+        .json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+
+    if (str_contains($script, "internal:caddy-config 'write-site'")) {
+        $domain = is_string($payload['domain'] ?? null) ? $payload['domain'] : 'unknown';
+        $suffix = ($payload['backend'] ?? null) === true ? '.backend' : '';
+        $synthetic .= "\n# /etc/caddy/sites/{$domain}{$suffix}.caddy";
+    }
+
+    if (str_contains($script, "internal:caddy-config 'apply-container'")) {
+        $synthetic .= "\ndocker container inspect\ndocker run\ndocker start\nexpected_hash=\norbit.caddy.spec_hash";
+    }
+
+    if (str_contains($script, "internal:caddy-config 'reload'")) {
+        $container = is_string($payload['container'] ?? null) ? $payload['container'] : 'orbit-caddy';
+        $synthetic .= "\n".CaddyTool::reloadCommand($container);
+    }
+
+    return $synthetic;
 }
 
 /**

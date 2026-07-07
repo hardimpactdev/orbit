@@ -10,10 +10,13 @@ use App\Models\App;
 use App\Models\Node;
 use App\Services\Apps\AppInstanceEnvApplier;
 use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -23,6 +26,17 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->bind(
+        AppRuntimeContainerManager::class,
+        fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
+            app(RemoteShell::class),
+            app(DockerCommandBuilder::class),
+            app(OrbitCaService::class),
+        ),
+    );
+});
 
 /**
  * @mago-expect lint:cyclomatic-complexity

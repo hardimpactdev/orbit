@@ -568,7 +568,9 @@ final class BakeAppNodeRemoteShell implements RemoteShell
     private function toolForRepairScript(string $script): ?string
     {
         return match (true) {
-            str_contains($script, 'orbit.caddy.spec_hash') => 'caddy',
+            str_contains($script, 'orbit.caddy.spec_hash')
+                || str_contains($script, 'internal:caddy-config') && str_contains($script, 'apply-container')
+                => 'caddy',
             str_contains($script, '# orbit install php-cli') => 'php-cli',
             str_contains($script, '# orbit install composer') => 'composer',
             str_contains($script, '# orbit install gh') => 'gh',

@@ -6,6 +6,7 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
+use App\Models\ProxyRoute;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Spatie\Activitylog\Models\Activity;
@@ -126,7 +127,7 @@ describe('ToolRemoveController', function (): void {
             ->not
             ->toBeNull()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('removes stale tool records whose catalog definition no longer exists', function (): void {
@@ -163,7 +164,58 @@ describe('ToolRemoveController', function (): void {
         expect(NodeTool::find($tool->id))
             ->toBeNull()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
+    });
+
+    it('removes stale unsupported tool-owned proxy routes without running remote scripts', function (): void {
+        $caller = createToolRemoveApiCallerNode();
+        $node = createTestAppHostNode([
+            'name' => 'nmbp',
+            'platform' => 'macos_26-5-1',
+            'status' => 'active',
+        ]);
+        grantToolRemoveApiAccess($caller, $node);
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'hermes.nmbp.test',
+            'owner_type' => 'tool',
+            'kind' => 'proxy',
+            'config' => [
+                'owner_name' => 'hermes',
+                'upstream' => 'http://host.docker.internal:8080',
+                'target' => [
+                    'type' => 'upstream',
+                    'value' => 'http://host.docker.internal:8080',
+                ],
+            ],
+        ]);
+        $shell = new ToolRemoveApiRecordingShell;
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/hermes',
+            [
+                'node' => 'nmbp',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.tool.name', 'hermes')
+            ->assertJsonPath('success.data.tool.node', 'nmbp')
+            ->assertJsonPath('success.data.tool.stale_record', true)
+            ->assertJsonPath('success.data.tool.stale_routes_removed', 1);
+
+        expect(ProxyRoute::find($route->id))
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBeEmpty();
     });
 
     it('records explicit destructive consent source for a streamed human removal', function (): void {
@@ -242,7 +294,7 @@ describe('ToolRemoveController', function (): void {
             ->not
             ->toBeNull()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
@@ -278,7 +330,7 @@ describe('ToolRemoveController', function (): void {
             ->not
             ->toBeNull()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('rejects unauthenticated and unauthorized removals with documented codes', function (): void {
