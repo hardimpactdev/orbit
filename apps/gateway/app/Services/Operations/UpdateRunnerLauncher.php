@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use App\Models\OperationRun;
-use App\Models\OperationUpdatePlan;
-use App\Services\Gateway\GatewayImageReference;
-use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
@@ -23,15 +20,13 @@ final readonly class UpdateRunnerLauncher
     private const string ContainerSshRoot = '/root/.ssh';
 
     public function __construct(
-        private OperationUpdatePlanStore $plans,
-        private GatewaySwarmManager $swarm,
+        private UpdateRunnerImageResolver $images,
     ) {}
 
     public function launch(OperationRun|string $operationRun): ProcessResult
     {
         $operationRunId = $this->operationRunId($operationRun);
-        $plan = $this->plans->forOperationRun($operationRunId);
-        $image = $this->runnerImage($plan);
+        $image = $this->images->resolve($operationRun);
 
         $configRoot = $this->configRoot();
         File::ensureDirectoryExists($configRoot, 0700);
@@ -60,45 +55,6 @@ final readonly class UpdateRunnerLauncher
         }
 
         return $operationRunId;
-    }
-
-    private function runnerImage(?OperationUpdatePlan $plan): string
-    {
-        if ($plan instanceof OperationUpdatePlan) {
-            return $plan->gateway_image;
-        }
-
-        return $this->bootstrapGatewayImage();
-    }
-
-    private function bootstrapGatewayImage(): string
-    {
-        $configured = config('orbit.updates.gateway_image');
-
-        if (is_string($configured) && trim($configured) !== '') {
-            return $this->digestPinnedImage($configured, 'Orbit gateway bootstrap image');
-        }
-
-        $running = $this->swarm->serviceImage(GatewaySwarmManager::DeployedGatewayService);
-
-        if ($running === null) {
-            throw new RuntimeException(
-                'Orbit gateway bootstrap image is not configured and the running gateway service image could not be resolved.',
-            );
-        }
-
-        return $this->digestPinnedImage($running, 'Running gateway service image');
-    }
-
-    private function digestPinnedImage(string $image, string $label): string
-    {
-        $reference = GatewayImageReference::fromString($image);
-
-        if (! $reference->isDigestPinned()) {
-            throw new RuntimeException("{$label} must be digest-pinned.");
-        }
-
-        return $reference->canonical();
     }
 
     private function dockerRunCommand(string $operationRunId, string $image, string $hostConfigRoot): string

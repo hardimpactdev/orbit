@@ -53,11 +53,19 @@ afterEach(function (): void {
 });
 
 it('starts a durable update all operation and stores its immutable plan', function (): void {
+    $agentArtifacts = [
+        'linux-amd64' => [
+            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-amd64',
+            'sha256' => str_repeat('e', 64),
+        ],
+    ];
+    $manifest = updateAllStartManifest(['agent_artifacts' => $agentArtifacts]);
+
     $response = updateAllStartRequest([
         'target_version' => '1.2.3',
         'manifest_source' => 'github-release',
         'manifest_version' => '1.2.3',
-        'manifest' => updateAllStartManifest(),
+        'manifest' => $manifest,
     ]);
 
     $response
@@ -84,7 +92,9 @@ it('starts a durable update all operation and stores its immutable plan', functi
     expect($run->status)
         ->toBe(OperationStatus::Queued)
         ->and($plan->manifest_snapshot)
-        ->toBe(updateAllStartManifest())
+        ->toBe($manifest)
+        ->and($plan->agent_artifacts)
+        ->toBe($agentArtifacts)
         ->and($run->events()->pluck('event_type')->all())
         ->toBe(['tree', 'step']);
 
@@ -194,19 +204,25 @@ it('accepts configured local testing gateway image overrides when digest pinned'
         );
 });
 
-it('returns the event stream before resolving a remote manifest when the request omits an inline manifest', function (): void {
+it('launches the deferred runner from the target image when the request omits an inline manifest', function (): void {
     $manifest = updateAllStartManifest([
         'version' => '2.0.0',
         'images' => [
             'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
         ],
     ]);
+    $agentArtifacts = [
+        'linux-amd64' => [
+            'url' => 'https://artifacts.orbit/releases/candidates/build/orbit-agent-linux-amd64',
+            'sha256' => str_repeat('e', 64),
+        ],
+    ];
 
     Http::fake([
         'github.com/*' => Http::response($manifest, 200),
     ]);
 
-    $response = updateAllStartRequest([]);
+    $response = updateAllStartRequest(['agent_artifacts' => $agentArtifacts]);
 
     $response
         ->assertStatus(202)
@@ -224,16 +240,18 @@ it('returns the event stream before resolving a remote manifest when the request
         ->toBe(0)
         ->and(OperationRun::query()->findOrFail($operationRunId)->result)
         ->toMatchArray([
-            'update_start_request' => [],
+            'update_start_request' => [
+                'agent_artifacts' => $agentArtifacts,
+            ],
         ]);
 
-    Http::assertNothingSent();
+    Http::assertSentCount(1);
 
     Process::assertRan(function ($process): bool {
         $command = (string) $process->command;
 
         expect($command)->toContain(
-            'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
         );
 
         return true;

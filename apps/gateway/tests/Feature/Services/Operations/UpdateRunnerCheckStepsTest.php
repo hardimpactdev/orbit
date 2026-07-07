@@ -18,6 +18,7 @@ use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\UpdateRunnerPipeline;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
@@ -173,7 +174,16 @@ it('does not short-circuit topology candidate manifests when the candidate CLI h
 
     app(OperationUpdatePlanStore::class)->create(
         $run,
-        checkStepsSnapshot('2.0.0', manifestSource: 'topology-candidate'),
+        checkStepsSnapshot(
+            '2.0.0',
+            manifestSource: 'topology-candidate',
+            agentArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-agent-linux-amd64',
+                    'sha256' => str_repeat('e', 64),
+                ],
+            ],
+        ),
     );
 
     app(UpdateRunner::class)->run($run->id);
@@ -199,7 +209,9 @@ it('does not short-circuit topology candidate manifests when the candidate CLI h
         ->and(checkStepsFleetDonePayload($run)['update_targets'] ?? null)
         ->toBe(['gateway', 'local', 'agent-1'])
         ->and($run->refresh()->result['cli_artifacts']['linux-amd64']['url'] ?? null)
-        ->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64');
+        ->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64')
+        ->and($run->refresh()->result['agent_artifacts']['linux-amd64']['url'] ?? null)
+        ->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-agent-linux-amd64');
 });
 
 it('clears the deferred start payload from the operation result when manifest resolution fails', function (): void {
@@ -234,6 +246,11 @@ it('clears the deferred start payload from the operation result when manifest re
 it('resolves the release manifest during check-updates when no plan was persisted at start', function (): void {
     config()->set('app.version', '2.0.0');
 
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('migrate', ['--force' => true, '--no-interaction' => true])
+        ->andReturn(0);
+
     $manifest = [
         'schema_version' => 1,
         'version' => '2.0.0',
@@ -245,6 +262,12 @@ it('resolves the release manifest during check-updates when no plan was persiste
             'linux-amd64' => [
                 'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
                 'sha256' => str_repeat('b', 64),
+            ],
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-agent-linux-amd64',
+                'sha256' => str_repeat('e', 64),
             ],
         ],
         'role_images' => [
@@ -280,9 +303,13 @@ it('resolves the release manifest during check-updates when no plan was persiste
         ->toBeNull()
         ->and($plan->target_version)
         ->toBe('2.0.0')
+        ->and($plan->agent_artifacts['linux-amd64']['sha256'] ?? null)
+        ->toBe(str_repeat('e', 64))
         ->and(checkStepsEvents($run))
         ->toContain(
             ['check-updates', 'running', 'Checking'],
+            ['migrations.preflight', 'running', 'Preparing gateway schema'],
+            ['migrations.preflight', 'done', 'Gateway schema prepared'],
             ['check-updates', 'done', 'Done: latest version is 2.0.0'],
             ['check-fleet-versions', 'running', 'Checking'],
         );
@@ -362,6 +389,7 @@ function checkStepsFleetDonePayload(OperationRun $run): array
 function checkStepsSnapshot(
     string $targetVersion,
     string $manifestSource = 'github-release',
+    array $agentArtifacts = [],
 ): OperationUpdatePlanSnapshot {
     $gatewayImage =
         'ghcr.io/hardimpactdev/orbit-gateway:'
@@ -395,10 +423,12 @@ function checkStepsSnapshot(
             ...($manifestSource === 'topology-candidate' ? ['build_id' => 'candidate-build'] : []),
             'images' => ['gateway' => $gatewayImage],
             'cli_artifacts' => $cliArtifacts,
+            ...($agentArtifacts === [] ? [] : ['agent_artifacts' => $agentArtifacts]),
             'role_images' => $roleImages,
         ],
         cliArtifacts: $cliArtifacts,
         roleImages: $roleImages,
+        agentArtifacts: $agentArtifacts,
     );
 }
 

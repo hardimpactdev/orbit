@@ -9,6 +9,7 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunnerLauncher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
@@ -93,6 +94,41 @@ it('launches the runner from the configured bootstrap gateway image when no plan
 
         return true;
     });
+});
+
+it('launches a deferred runner from the resolved target gateway image when no plan exists yet', function (): void {
+    $targetImage = 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+
+    Http::fake([
+        'github.com/*' => Http::response(updateRunnerLaunchManifest(
+            targetVersion: '2.0.0',
+            gatewayImage: $targetImage,
+        ), 200),
+    ]);
+
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+        result: ['update_start_request' => []],
+    );
+
+    Process::fake([
+        'docker run *' => Process::result(output: "runner\n"),
+    ]);
+
+    app(UpdateRunnerLauncher::class)->launch($run);
+
+    Process::assertRan(function ($process) use ($targetImage): bool {
+        expect((string) $process->command)
+            ->toContain("'{$targetImage}'")
+            ->not->toContain(
+                'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+            );
+
+        return true;
+    });
+    Http::assertSentCount(1);
 });
 
 it('resolves the running gateway swarm service image when no plan or config override exists', function (): void {
@@ -186,7 +222,34 @@ function updateRunnerLaunchSnapshot(
     string $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     array $manifestOverrides = [],
 ): OperationUpdatePlanSnapshot {
-    $manifest = array_replace_recursive([
+    $manifest = updateRunnerLaunchManifest(
+        targetVersion: $targetVersion,
+        gatewayImage: $gatewayImage,
+        manifestOverrides: $manifestOverrides,
+    );
+
+    return new OperationUpdatePlanSnapshot(
+        targetVersion: $targetVersion,
+        gatewayImage: $gatewayImage,
+        manifestSource: 'github-release',
+        manifestVersion: $targetVersion,
+        manifestSnapshot: $manifest,
+        cliArtifacts: $manifest['cli_artifacts'],
+        roleImages: $manifest['role_images'],
+    );
+}
+
+/**
+ * @param  array<string, mixed>  $manifestOverrides
+ *
+ * @return array<string, mixed>
+ */
+function updateRunnerLaunchManifest(
+    string $targetVersion,
+    string $gatewayImage,
+    array $manifestOverrides = [],
+): array {
+    return array_replace_recursive([
         'version' => $targetVersion,
         'source' => 'github-release',
         'images' => [
@@ -203,14 +266,4 @@ function updateRunnerLaunchSnapshot(
             'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
         ],
     ], $manifestOverrides);
-
-    return new OperationUpdatePlanSnapshot(
-        targetVersion: $targetVersion,
-        gatewayImage: $gatewayImage,
-        manifestSource: 'github-release',
-        manifestVersion: $targetVersion,
-        manifestSnapshot: $manifest,
-        cliArtifacts: $manifest['cli_artifacts'],
-        roleImages: $manifest['role_images'],
-    );
 }

@@ -9,6 +9,7 @@ use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\ActivityLogger;
+use Illuminate\Support\Facades\Artisan;
 use RuntimeException;
 use Throwable;
 
@@ -154,9 +155,12 @@ final readonly class UpdateRunner
         $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'running', 'Checking');
 
         if (! $plan instanceof OperationUpdatePlan) {
+            $snapshot = $this->updatePlanBuilder->fromStoredStartRequest($operationRun);
+            $this->runDeferredPlanMigrations($operationRun);
+
             $plan = $this->updatePlans->create(
                 $operationRun,
-                $this->updatePlanBuilder->fromStoredStartRequest($operationRun),
+                $snapshot,
             );
             $this->markStarted($operationRun, $plan);
         }
@@ -289,6 +293,7 @@ final readonly class UpdateRunner
             'manifest_source' => $plan->manifest_source,
             'manifest_version' => $plan->manifest_version,
             ...($plan->usesTopologyCandidateManifest() ? ['cli_artifacts' => $plan->cli_artifacts] : []),
+            ...($plan->usesTopologyCandidateManifest() ? ['agent_artifacts' => $plan->agent_artifacts ?? []] : []),
             ...($allCurrent ? ['skipped' => true] : []),
         ];
 
@@ -429,6 +434,36 @@ final readonly class UpdateRunner
         $message = trim($exception->getMessage());
 
         return $message !== '' ? $message : 'Update phase failed.';
+    }
+
+    private function runDeferredPlanMigrations(OperationRun $operationRun): void
+    {
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            'migrations.preflight',
+            'running',
+            'Preparing gateway schema',
+        );
+
+        $exitCode = Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]);
+
+        if ($exitCode !== 0) {
+            $this->operationRuns->appendStep(
+                $operationRun->id,
+                'migrations.preflight',
+                'fail',
+                'Gateway schema preparation failed',
+            );
+
+            throw new RuntimeException('Gateway schema preparation failed.');
+        }
+
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            'migrations.preflight',
+            'done',
+            'Gateway schema prepared',
+        );
     }
 
     /**
