@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verifying Evals"
+  short_description: "Verify and refresh Orbit eval golden sets"
+  default_prompt: "Use $verifying-evals to verify or update Orbit eval golden sets on request."

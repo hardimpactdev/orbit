@@ -28,6 +28,7 @@ Use the specialized skill that matches the current stage:
 | Need | Use |
 | --- | --- |
 | Design a suite, case, golden set, scorer, or rubric | `construct-eval` |
+| Verify or update Orbit golden sets, process eval cases, or eval drift after a human asks | `verifying-evals` |
 | Run isolated trials, capture transcripts/outcomes, or aggregate results | `execute-eval` |
 | Judge whether a run, scorer, transcript set, or gate recommendation is trustworthy | `evaluate-eval-execution` |
 | Compare fresh-agent baseline vs treatment behavior for skills, catalogs, prompts, or maps | construct, then execute, then evaluate |
