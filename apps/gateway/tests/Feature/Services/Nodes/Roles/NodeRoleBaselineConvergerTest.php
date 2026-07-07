@@ -113,6 +113,10 @@ describe('node role caddy baseline convergence', function (): void {
 
         expect($mountSources->all())
             ->toContain('/Users')
+            ->toContain('/Users/nicky/.config/orbit')
+            ->toContain('/Users/nicky/.config/orbit/caddy/Caddyfile')
+            ->toContain('/Users/nicky/.config/orbit/caddy/orbit')
+            ->toContain('/Users/nicky/.config/orbit/caddy/sites')
             ->toContain('/Users/nicky/.local/share/orbit/caddy/data')
             ->toContain('/Users/nicky/.local/share/orbit/caddy/config')
             ->not->toContain('/run/php');

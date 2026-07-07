@@ -395,18 +395,19 @@ final readonly class LocalCaddyConfigAction
             $this->ensureHostDirectory($this->hostPreparationPath($directory));
         }
 
-        $exists = $this->runPrivilegedProcess(['test', '-f', self::GLOBAL_CADDYFILE]);
+        $globalCaddyfile = $this->hostPathFromDeclaredMounts(self::GLOBAL_CADDYFILE, $spec['mounts']);
+        $exists = $this->runPrivilegedProcess(['test', '-f', $globalCaddyfile]);
 
         if ($exists['exit_code'] === 0) {
             return;
         }
 
         $this->mustRunPrivilegedWithInput(
-            ['tee', self::GLOBAL_CADDYFILE],
+            ['tee', $globalCaddyfile],
             $globalConfig,
             'caddy_container.global_config_failed',
         );
-        $this->mustRunPrivileged(['chmod', '0644', self::GLOBAL_CADDYFILE], 'caddy_container.global_config_failed');
+        $this->mustRunPrivileged(['chmod', '0644', $globalCaddyfile], 'caddy_container.global_config_failed');
     }
 
     /**
@@ -570,8 +571,39 @@ final readonly class LocalCaddyConfigAction
             }
 
             if ($bestTarget === null || strlen($target) > strlen($bestTarget)) {
-                $bestTarget = rtrim($target, '/');
-                $bestSource = rtrim($source, '/');
+                $bestTarget = rtrim(string: $target, characters: '/');
+                $bestSource = rtrim(string: $source, characters: '/');
+            }
+        }
+
+        if ($bestTarget === null || $bestSource === null) {
+            return $containerPath;
+        }
+
+        $suffix = substr($containerPath, strlen($bestTarget));
+
+        return $bestSource.$suffix;
+    }
+
+    /**
+     * @param  list<array{source: string, target: string, read_only: bool}>  $mounts
+     */
+    private function hostPathFromDeclaredMounts(string $containerPath, array $mounts): string
+    {
+        $bestTarget = null;
+        $bestSource = null;
+
+        foreach ($mounts as $mount) {
+            $source = $mount['source'];
+            $target = $mount['target'];
+
+            if (! $this->pathIsWithinMount($containerPath, $target)) {
+                continue;
+            }
+
+            if ($bestTarget === null || strlen($target) > strlen($bestTarget)) {
+                $bestTarget = rtrim(string: $target, characters: '/');
+                $bestSource = rtrim(string: $source, characters: '/');
             }
         }
 
@@ -586,7 +618,7 @@ final readonly class LocalCaddyConfigAction
 
     private function pathIsWithinMount(string $path, string $mountTarget): bool
     {
-        $mountTarget = rtrim($mountTarget, '/');
+        $mountTarget = rtrim(string: $mountTarget, characters: '/');
 
         return $path === $mountTarget || str_starts_with($path, "{$mountTarget}/");
     }
@@ -896,14 +928,10 @@ final readonly class LocalCaddyConfigAction
             return;
         }
 
-        throw new LocalCaddyConfigFailure(
-            errorCode: $errorCode,
-            message: 'Caddy config command failed.',
-            meta: [
-                'exit_code' => $result['exit_code'],
-                'output' => $result['output'],
-            ],
-        );
+        throw new LocalCaddyConfigFailure(errorCode: $errorCode, message: 'Caddy config command failed.', meta: [
+            'exit_code' => $result['exit_code'],
+            'output' => $result['output'],
+        ]);
     }
 
     /**
@@ -917,14 +945,10 @@ final readonly class LocalCaddyConfigAction
             return;
         }
 
-        throw new LocalCaddyConfigFailure(
-            errorCode: $errorCode,
-            message: 'Caddy config command failed.',
-            meta: [
-                'exit_code' => $result['exit_code'],
-                'output' => $result['output'],
-            ],
-        );
+        throw new LocalCaddyConfigFailure(errorCode: $errorCode, message: 'Caddy config command failed.', meta: [
+            'exit_code' => $result['exit_code'],
+            'output' => $result['output'],
+        ]);
     }
 
     /**
@@ -938,14 +962,10 @@ final readonly class LocalCaddyConfigAction
             return;
         }
 
-        throw new LocalCaddyConfigFailure(
-            errorCode: $errorCode,
-            message: 'Caddy config command failed.',
-            meta: [
-                'exit_code' => $result['exit_code'],
-                'output' => $result['output'],
-            ],
-        );
+        throw new LocalCaddyConfigFailure(errorCode: $errorCode, message: 'Caddy config command failed.', meta: [
+            'exit_code' => $result['exit_code'],
+            'output' => $result['output'],
+        ]);
     }
 
     /**
@@ -959,14 +979,10 @@ final readonly class LocalCaddyConfigAction
             return;
         }
 
-        throw new LocalCaddyConfigFailure(
-            errorCode: $errorCode,
-            message: 'Caddy config command failed.',
-            meta: [
-                'exit_code' => $result['exit_code'],
-                'output' => $result['output'],
-            ],
-        );
+        throw new LocalCaddyConfigFailure(errorCode: $errorCode, message: 'Caddy config command failed.', meta: [
+            'exit_code' => $result['exit_code'],
+            'output' => $result['output'],
+        ]);
     }
 
     /**

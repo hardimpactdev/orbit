@@ -263,6 +263,21 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
                 'target' => '/data/caddy',
                 'read_only' => false,
             ])
+            ->toContain([
+                'source' => '/Users/nckrtl/.config/orbit/caddy/Caddyfile',
+                'target' => '/etc/caddy/Caddyfile',
+                'read_only' => true,
+            ])
+            ->toContain([
+                'source' => '/Users/nckrtl/.config/orbit/caddy/sites',
+                'target' => '/etc/caddy/sites',
+                'read_only' => true,
+            ])
+            ->toContain([
+                'source' => '/Users/nckrtl/.config/orbit',
+                'target' => '/etc/orbit',
+                'read_only' => true,
+            ])
             ->not->toContain([
                 'source' => '/home',
                 'target' => '/home',

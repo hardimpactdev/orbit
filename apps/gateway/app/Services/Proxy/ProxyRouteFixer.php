@@ -377,7 +377,7 @@ final readonly class ProxyRouteFixer
 
     private function publicRouteSummary(ProxyRoute $route, DriftEntry $entry): string
     {
-        if (in_array($entry->key, ['proxy.public_route_missing', 'proxy.public_route_mismatch'], true)) {
+        if (in_array($entry->key, ['proxy.public_route_missing', 'proxy.public_route_mismatch'], strict: true)) {
             return "Re-applied public proxy route {$route->domain} from gateway intent.";
         }
 
@@ -505,52 +505,12 @@ final readonly class ProxyRouteFixer
 
     private function hostPathForCaddyContainerPath(Node $node, string $containerPath): string
     {
-        $spec = $this->managedCaddyContainerSpec($node);
-        $mounts = is_array($spec) ? $spec['mounts'] ?? null : null;
-
-        if (! is_array($mounts)) {
-            return $containerPath;
-        }
-
-        $bestTarget = null;
-        $bestSource = null;
-
-        foreach ($mounts as $mount) {
-            if (! is_array($mount)) {
-                continue;
-            }
-
-            $source = $mount['source'] ?? null;
-            $target = $mount['target'] ?? null;
-
-            if (! is_string($source) || ! is_string($target) || $source === '' || $target === '') {
-                continue;
-            }
-
-            if (! $this->pathIsWithinMount($containerPath, $target)) {
-                continue;
-            }
-
-            if ($bestTarget === null || strlen($target) > strlen($bestTarget)) {
-                $bestTarget = rtrim($target, '/');
-                $bestSource = rtrim($source, '/');
-            }
-        }
-
-        if ($bestTarget === null || $bestSource === null) {
-            return $containerPath;
-        }
-
-        $suffix = substr($containerPath, strlen($bestTarget));
-
-        return $bestSource.$suffix;
+        return $this->caddyHostPathResolver()->resolve($node, $containerPath);
     }
 
-    private function pathIsWithinMount(string $path, string $mountTarget): bool
+    private function caddyHostPathResolver(): CaddyContainerHostPathResolver
     {
-        $mountTarget = rtrim($mountTarget, '/');
-
-        return $path === $mountTarget || str_starts_with($path, "{$mountTarget}/");
+        return app(CaddyContainerHostPathResolver::class);
     }
 
     /**

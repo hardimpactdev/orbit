@@ -21,7 +21,9 @@ describe('internal caddy config command', function (): void {
     afterEach(function (): void {
         putenv("PATH={$this->originalPath}");
         putenv('ORBIT_CADDY_CONFIG_MISSING_DIRS');
+        putenv('ORBIT_CADDY_CONFIG_MISSING_FILES');
         unset($_SERVER['ORBIT_CADDY_CONFIG_MISSING_DIRS']);
+        unset($_SERVER['ORBIT_CADDY_CONFIG_MISSING_FILES']);
 
         $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-caddy-config-bin-*');
 
@@ -43,10 +45,7 @@ describe('internal caddy config command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'missing_token',
-                'Operation token is required.',
-            ));
+            ->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
     it('rejects invalid actions after token validation', function (): void {
@@ -257,6 +256,49 @@ describe('internal caddy config command', function (): void {
             ->toContain('docker start orbit-caddy');
     });
 
+    it('writes the global Caddyfile through the declared container bind source', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'd', times: 64);
+        $configRoot = '/Users/nckrtl/.config/orbit';
+        $spec = caddy_config_container_spec($expectedHash);
+        $spec['mounts'][0]['source'] = "{$configRoot}/caddy/Caddyfile";
+        $spec['mounts'][1]['source'] = "{$configRoot}/caddy/sites";
+        $missingDirectories = "{$configRoot}/caddy:{$configRoot}/caddy/sites";
+        $missingFiles = "{$configRoot}/caddy/Caddyfile";
+        putenv("ORBIT_CADDY_CONFIG_MISSING_DIRS={$missingDirectories}");
+        putenv("ORBIT_CADDY_CONFIG_MISSING_FILES={$missingFiles}");
+        $_SERVER['ORBIT_CADDY_CONFIG_MISSING_DIRS'] = $missingDirectories;
+        $_SERVER['ORBIT_CADDY_CONFIG_MISSING_FILES'] = $missingFiles;
+
+        [$exitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => $spec,
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($calls)
+            ->toContain("test -d {$configRoot}/caddy")
+            ->toContain("install -d -m 0755 {$configRoot}/caddy")
+            ->toContain("test -d {$configRoot}/caddy/sites")
+            ->toContain("install -d -m 0755 {$configRoot}/caddy/sites")
+            ->toContain("test -f {$configRoot}/caddy/Caddyfile")
+            ->toContain("tee {$configRoot}/caddy/Caddyfile")
+            ->toContain("chmod 0644 {$configRoot}/caddy/Caddyfile")
+            ->toContain("--mount type=bind,source={$configRoot}/caddy/Caddyfile,target=/etc/caddy/Caddyfile,readonly")
+            ->toContain("--mount type=bind,source={$configRoot}/caddy/sites,target=/etc/caddy/sites,readonly")
+            ->not->toContain('tee /etc/caddy/Caddyfile');
+    });
+
     it('does not chmod existing caddy container mount directories', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'b', times: 64);
@@ -293,10 +335,7 @@ describe('internal caddy config command', function (): void {
 
         mkdir($targetDirectory, recursive: true);
         symlink($targetDirectory, $linkDirectory);
-        file_put_contents(
-            filename: "{$targetDirectory}/Caddyfile",
-            data: "import /etc/caddy/sites/*.caddy\n",
-        );
+        file_put_contents(filename: "{$targetDirectory}/Caddyfile", data: "import /etc/caddy/sites/*.caddy\n");
 
         $spec = caddy_config_container_spec($expectedHash);
         $spec['mounts'][0]['source'] = "{$linkDirectory}/Caddyfile";
@@ -444,7 +483,11 @@ function install_caddy_config_fake_bin(): string
             $arguments = array_slice($arguments, 1);
         }
         $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
+        $missingFiles = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_FILES') ?: ''));
         if (($arguments[0] ?? null) === 'test' && ($arguments[1] ?? null) === '-d' && in_array($arguments[2] ?? '', $missingDirectories, true)) {
+            exit(1);
+        }
+        if (($arguments[0] ?? null) === 'test' && ($arguments[1] ?? null) === '-f' && in_array($arguments[2] ?? '', $missingFiles, true)) {
             exit(1);
         }
         exit(0);
@@ -460,7 +503,11 @@ function install_caddy_config_fake_bin(): string
                 file_put_contents(__DIR__.'/stdin.log', $stdin, FILE_APPEND);
             }
             $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
+            $missingFiles = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_FILES') ?: ''));
             if ($command === 'test' && ($argv[1] ?? null) === '-d' && in_array($argv[2] ?? '', $missingDirectories, true)) {
+                exit(1);
+            }
+            if ($command === 'test' && ($argv[1] ?? null) === '-f' && in_array($argv[2] ?? '', $missingFiles, true)) {
                 exit(1);
             }
             exit(0);

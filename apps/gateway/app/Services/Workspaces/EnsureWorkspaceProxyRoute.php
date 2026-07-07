@@ -15,6 +15,7 @@ use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
+use App\Services\Proxy\CaddyContainerHostPathResolver;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
 use RuntimeException;
@@ -31,6 +32,7 @@ final readonly class EnsureWorkspaceProxyRoute
         private ProxyRouteRenderer $proxyRouteRenderer,
         private OrbitCaService $ca,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
     ) {}
 
     /**
@@ -247,7 +249,7 @@ final readonly class EnsureWorkspaceProxyRoute
             : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
 
         $file = new ManagedFile(
-            path: $caPath,
+            path: $this->caddyHostPathResolver()->resolve($node, $caPath),
             content: $this->ca->rootCert(),
             mode: '0644',
             directoryMode: '0755',
@@ -258,6 +260,11 @@ final readonly class EnsureWorkspaceProxyRoute
         if (! $result->successful()) {
             throw new RuntimeException($result->summary);
         }
+    }
+
+    private function caddyHostPathResolver(): CaddyContainerHostPathResolver
+    {
+        return $this->caddyHostPathResolver ?? app(CaddyContainerHostPathResolver::class);
     }
 
     private function domain(Workspace $workspace, App $app, Node $node): string

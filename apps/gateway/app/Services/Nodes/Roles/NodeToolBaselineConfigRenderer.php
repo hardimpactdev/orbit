@@ -66,10 +66,12 @@ class NodeToolBaselineConfigRenderer
             return $container;
         }
 
-        $dataRoot = NodeHostPaths::homeDirectoryFor($node->platform, $node->user).'/.local/share/orbit/caddy';
+        $home = NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
+        $configRoot = "{$home}/.config/orbit";
+        $dataRoot = "{$home}/.local/share/orbit/caddy";
         $mounts = array_values(array_filter(
             array_map(
-                fn (array $mount): ?array => $this->macosCaddyMount($mount, $dataRoot),
+                fn (array $mount): ?array => $this->macosCaddyMount($mount, $configRoot, $dataRoot),
                 $container->mounts(),
             ),
             static fn (?array $mount): bool => $mount !== null,
@@ -85,7 +87,7 @@ class NodeToolBaselineConfigRenderer
      * @param  array{source: string, target: string, read_only: bool}  $mount
      * @return array{source: string, target: string, read_only: bool}|null
      */
-    private function macosCaddyMount(array $mount, string $dataRoot): ?array
+    private function macosCaddyMount(array $mount, string $configRoot, string $dataRoot): ?array
     {
         return match ($mount['source']) {
             '/var/lib/orbit/caddy/data' => [
@@ -95,6 +97,22 @@ class NodeToolBaselineConfigRenderer
             '/var/lib/orbit/caddy/config' => [
                 ...$mount,
                 'source' => "{$dataRoot}/config",
+            ],
+            '/etc/caddy/Caddyfile' => [
+                ...$mount,
+                'source' => "{$configRoot}/caddy/Caddyfile",
+            ],
+            '/etc/caddy/orbit' => [
+                ...$mount,
+                'source' => "{$configRoot}/caddy/orbit",
+            ],
+            '/etc/caddy/sites' => [
+                ...$mount,
+                'source' => "{$configRoot}/caddy/sites",
+            ],
+            '/etc/orbit' => [
+                ...$mount,
+                'source' => $configRoot,
             ],
             '/home' => [
                 ...$mount,
