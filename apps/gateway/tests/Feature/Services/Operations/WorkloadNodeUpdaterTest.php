@@ -345,7 +345,9 @@ it('retries agent artifact installs after an old cli installer ignores the agent
     expect($results[0]['status'])
         ->toBe('completed')
         ->and($shell->updateScriptCallsFor('mini'))
-        ->toBe(2)
+        ->toBe(3)
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
         ->and(workload_updater_install_payload($shell, node: 'mini')['agent_artifact'])
@@ -419,7 +421,79 @@ it('records agent artifact installs when the retry disconnects during agent rest
         ->and($shell->updateScriptCallsFor('mini'))
         ->toBe(2)
         ->and(workloadUpdaterStepMessages($run))
-        ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
+        ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
+        ->and($node->fresh()->installed_agent?->sha256)
+        ->toBe(str_repeat('7', times: 64));
+});
+
+it('bridges stale macos agents that still resolve the legacy system orbit binary first', function (): void {
+    $oldInstallerResult = new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => [
+                'data' => [
+                    'installed' => true,
+                    'bin_path' => '/Users/nckrtl/.local/bin/orbit',
+                    'stdout' => "download_cli\ninstall_cli\nverify_cli\nverify",
+                ],
+                'meta' => [],
+            ],
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 15,
+    );
+    $shell = new WorkloadUpdaterFakeShell(failures: [
+        'mini' => [
+            $oldInstallerResult,
+            $oldInstallerResult,
+        ],
+    ]);
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '1.0.0'),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-macos-arm64',
+                    'sha256' => str_repeat('8', times: 64),
+                ],
+            ],
+            agentArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64',
+                    'sha256' => str_repeat('7', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+    $payloads = workload_updater_install_payloads($shell, node: 'mini');
+
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and($shell->updateScriptCallsFor('mini'))
+        ->toBe(3)
+        ->and($payloads[0]['bin_path'])
+        ->toBe('/Users/nckrtl/.local/bin/orbit')
+        ->and($payloads[1]['bin_path'])
+        ->toBe('/usr/local/bin/orbit')
+        ->and($payloads[2]['bin_path'])
+        ->toBe('/Users/nckrtl/.local/bin/orbit')
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
         ->and($node->fresh()->installed_agent?->sha256)
         ->toBe(str_repeat('7', times: 64));
 });
@@ -1404,7 +1478,8 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
     #[Override]
     public function agentArtifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): ?array
     {
-        $artifact = (($plan->agent_artifacts ?? []))[$platform] ?? null;
+        $agentArtifacts = $plan->agent_artifacts ?? [];
+        $artifact = $agentArtifacts[$platform] ?? null;
 
         if ($artifact === null) {
             return null;
@@ -1518,6 +1593,35 @@ function workload_updater_install_payload(WorkloadUpdaterFakeShell $shell, strin
 
     /** @var array<string, mixed> $payload */
     return $payload;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function workload_updater_install_payloads(WorkloadUpdaterFakeShell $shell, string $node): array
+{
+    return array_values(array_filter(array_map(
+        static function (array $call) use ($node): ?array {
+            if (
+                $call['node'] !== $node
+                || workloadUpdaterIsVersionProbe($call['script'])
+                || str_contains($call['script'], 'doctor')
+            ) {
+                return null;
+            }
+
+            /** @var mixed $payload */
+            $payload = json_decode((string) ($call['options']['input'] ?? ''), associative: true);
+
+            if (! is_array($payload)) {
+                return null;
+            }
+
+            /** @var array<string, mixed> $payload */
+            return $payload;
+        },
+        $shell->calls,
+    )));
 }
 
 final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommands

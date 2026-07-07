@@ -7,8 +7,10 @@ namespace App\Services\Operations;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
+use JsonException;
 use RuntimeException;
 
 final readonly class FleetUpdateNodeInstaller
@@ -43,6 +45,24 @@ final readonly class FleetUpdateNodeInstaller
         }
 
         if ($this->installResults->shouldRetryAgentInstallAfterCliSelfUpdate($result, $transportOptions['input'])) {
+            if (NodeHostPaths::isMacosPlatform($node->platform)) {
+                $this->operationRuns->appendStep(
+                    $operationRun->id,
+                    $eventKey,
+                    'running',
+                    'Refreshing legacy macOS Orbit CLI path',
+                );
+
+                $bridgeResult = $this->runCliInstallAllowingAgentRestartDisconnect(
+                    $node,
+                    $this->legacyMacosOrbitBinaryTransportOptions($transportOptions),
+                );
+
+                if (! $bridgeResult instanceof RemoteShellResult) {
+                    return null;
+                }
+            }
+
             $this->operationRuns->appendStep(
                 $operationRun->id,
                 $eventKey,
@@ -104,5 +124,29 @@ final readonly class FleetUpdateNodeInstaller
     private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool
     {
         return $result->exitCode === 255 && trim($result->stdout) === '' && trim($result->stderr) === '';
+    }
+
+    /**
+     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
+     * @return array{timeout: int, input: string, metadata: array<string, string>}
+     *
+     * @throws JsonException
+     */
+    private function legacyMacosOrbitBinaryTransportOptions(array $transportOptions): array
+    {
+        /** @var mixed $payload */
+        $payload = json_decode($transportOptions['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+        if (! is_array($payload)) {
+            throw new RuntimeException('Fleet update CLI install payload must be an object.');
+        }
+
+        $payload['bin_path'] = '/usr/local/bin/orbit';
+        $payload['shared_binary_path'] = null;
+
+        return [
+            ...$transportOptions,
+            'input' => json_encode($payload, JSON_THROW_ON_ERROR),
+        ];
     }
 }
