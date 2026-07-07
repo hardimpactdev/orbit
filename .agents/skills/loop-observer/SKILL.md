@@ -1,6 +1,6 @@
 ---
 name: loop-observer
-description: Use when an LLM should act as a live read-only loop observer while another orchestrator implements a feature through implementing-features; measure wrong turns and friction without steering normal implementation work.
+description: Use when an LLM should act as a live loop observer while another orchestrator implements a feature through implementing-features; measure wrong turns and friction in observe mode by default, or provide opt-in process-rubric coaching when explicitly requested.
 ---
 
 # Loop Observer
@@ -12,6 +12,9 @@ agent owns implementation through `implementing-features`. You measure whether
 harness and LLM-facing affordances reduce practical friction during the active
 loop. You do not edit product files, implementation files, committed docs,
 spawn workers, approve merges, or decide feature completion.
+
+The default invocation mode is `observe`. `coach` is allowed only when the
+orchestrator explicitly requests it for this invocation.
 
 Read `HARNESS.md` (Harness vs Loop, Post-Feature Signal Audit) and
 `.orbit/loop.md` when present for slice context. Do not treat observer output as
@@ -48,6 +51,18 @@ Prefer objective counts and timestamps over subjective quality scores.
 
 ## Measurement Modes
 
+**Observe mode** is the default. It is pure measurement with zero steering. The
+observer records events, counts friction, and raises only safety/validity
+interrupts listed below. Use observe mode for before/after comparisons and
+baseline claims.
+
+**Coach mode** is opt-in per invocation. In coach mode, every intervention must
+be logged in the observer report, and each intervention is non-authoritative:
+the feature orchestrator may decline it. Coach interventions are limited to
+short named process-rubric corrections from the rubric below. They must not
+include product, design, or code suggestions, and they must not make completion
+decisions. Exclude coached loops from comparative measurement claims.
+
 **Single-loop observation** describes what happened in one active feature loop.
 It can identify wrong turns, friction themes, and whether the orchestrator caught
 issues quickly. It cannot prove that a new affordance improved LLM performance by
@@ -70,6 +85,26 @@ State the evidence level plainly:
 Do not count prompt-forced usage of a tool or catalog as natural discoverability.
 When in doubt, label the result directional and hand it to the post-feature
 analyzer or eval workflow for review.
+
+## Process Rubric
+
+Use this rubric to classify wrong turns and friction consistently. In observe
+mode, record the event without steering unless it also meets the safety/validity
+interrupt rules below. In coach mode, the `Intervene?` flag authorizes only the
+named process-rubric correction; it does not authorize product, design, or code
+advice.
+
+| Failure class | Detection cue | Record shape | Intervene? |
+| --- | --- | --- | --- |
+| First-diff budget miss / broad-discovery drift | After required reads, the orchestrator keeps broad-searching or reading unrelated areas instead of producing the first narrow diff or explicit blocker. | `first_diff_budget_miss`: elapsed time or turn count, extra reads/searches, expected owned surface, next correct action. | Coach mode only: name the class and ask for first narrow diff or explicit blocker. |
+| Wrong checkout | `pwd`, branch, or git status does not match the assigned worktree/branch before reads, edits, verification, or merge work. | `wrong_checkout`: observed path, branch/status, expected path/branch, command about to run, corrected or open. | Observe and coach: safety/validity interrupt before edits, verification, destructive commands, or merge. |
+| Lane-close capture skipped | A worker, reviewer, analyzer, or terminal is stopped/deleted without prior `bin/orbit-agent-session-capture` output or an explicit waiver. | `lane_capture_skipped`: process id/name, provider, expected capture command, cleanup action, recovered or lost. | Observe and coach: safety/validity interrupt before cleanup completes. |
+| Ceremony disproportionate to change | A tiny docs/local change grows into unnecessary worker fan-out, full-suite runs, broad audits, or unrelated planning artifacts. | `ceremony_disproportionate`: requested scope, ceremony added, commands/processes spawned, cheaper valid path. | Coach mode only: name the class and ask to scale ceremony to the diff. |
+| Placeholder verification rows | `.orbit/loop.md`, report, or handoff keeps placeholder verification/final-distillation rows while the loop is nearing commit, merge, archive, or completion. | `placeholder_verification`: file/section, placeholder text, required evidence row, completion gate risk. | Coach mode only; observe mode records unless the placeholder would bypass a gate. |
+| Post-hoc signal reconstruction | Candidate signals are invented after the loop without matching live evidence, timestamps, worker output, or `.orbit/loop.md` notes. | `posthoc_signal_reconstruction`: claimed signal, missing live evidence, nearest actual event, classification risk. | Coach mode only: ask to mark it `defer`, `reject`, or tie it to live evidence. |
+| Fuzzy done criteria | The Done Contract, stop-if conditions, or verification target changes mid-loop without an explicit pivot, deferral, or user decision. | `fuzzy_done_criteria`: original criterion, changed wording/action, source of change, accepted pivot or open mismatch. | Coach mode only; interrupt in either mode if scope drift would violate a user stop-if. |
+| Normal-phase approval stall | The orchestrator pauses for user acknowledgement between normal phases despite an instruction to run continuously, or asks for approval where the handoff already authorizes execution. | `normal_phase_approval_stall`: phase, stalled prompt/action, contract that authorized continuation, elapsed/turn cost. | Coach mode only: name the class and ask to continue until a real blocker or stop-if. |
+| Comparative-claim contamination | A coached, prompt-forced, dirty-state, or non-comparable loop is used to claim before/after improvement. | `comparative_claim_contamination`: claim, contamination source, evidence level that still applies, correction made. | Observe and coach: validity interrupt before publishing the claim. |
 
 ## Event Taxonomy
 
@@ -104,20 +139,22 @@ implementation choices, style preferences, or slow but valid verification.
 
 1. **Attach** - Confirm feature worktree, branch, and active slice from
    `.orbit/loop.md` or the handoff. Note the orchestrator Solo process or session
-   to follow.
+   to follow. Record the selected mode. If no mode is named, use `observe`.
 2. **Tail** - Follow orchestrator and worker output (Solo terminals, session
    messages, retained PTY summaries). Sample on meaningful events: tool batches,
    verification commands, worktree checks, worker spawn/stop.
 3. **Record** - Maintain running counters and a short chronological log. Prefer
    facts: command, path, turn index or time, category, corrected or not.
-4. **Stay implementation-read-only** - No coaching, hints, or implementation
-   suggestions during normal work. Do not edit `.orbit/loop.md` unless the
-   orchestrator explicitly asks you to append observer summary lines. Do not
-   write any file unless it is an observer evidence artifact requested by the
-   orchestrator.
-5. **Interrupt only** - On intervention-worthy events, send a minimal factual
-   alert (what happened, why it is invalid, required stop or fix). Then resume
-   observation.
+4. **Stay implementation-read-only** - In observe mode, provide no coaching,
+   hints, or implementation suggestions during normal work. In coach mode, limit
+   live corrections to the named process-rubric classes above. Do not edit
+   `.orbit/loop.md` unless the orchestrator explicitly asks you to append
+   observer summary lines. Do not write any file unless it is an observer
+   evidence artifact requested by the orchestrator.
+5. **Intervene only within mode** - In observe mode, interrupt only for
+   intervention-worthy safety or validity events. In coach mode, send minimal
+   named process-rubric corrections when a rubric item fires. Log every
+   intervention and then resume observation.
 6. **Close** - When the slice ends or the orchestrator dismisses you, produce the
    report template below.
 
@@ -148,6 +185,7 @@ section.
 
 - Slice: <current slice from .orbit/loop.md or handoff>
 - Window: <start-end or turn range>
+- Mode: <observe | coach>
 - Observer: read-only, concurrent
 
 ### Counts
@@ -169,7 +207,7 @@ section.
 
 ### Interventions
 
-- <none, or each interrupt with trigger and outcome>
+- <none, or each interrupt/correction with rubric class, trigger, and outcome>
 
 ### Affordance read
 

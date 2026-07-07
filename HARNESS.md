@@ -400,11 +400,13 @@ default finalization path.
 ## Post-Feature Signal Audit
 
 Normal feature work runs without a standing watcher by default. An explicitly
-requested read-only loop-observer lane may run during a loop; see
-`.agents/skills/loop-observer/SKILL.md`. Kick off the feature implementer
-through the implementation workflow, let it complete the feature loop, and
-preserve the worktree and `.orbit/` artifacts. The fresh post-feature analyzer
-runs before merge as part of final distillation — the merge packet's
+requested loop-observer lane may run during a loop; see
+`.agents/skills/loop-observer/SKILL.md`. It runs in `observe` mode by default
+without steering the run, or in opt-in `coach` mode with logged,
+non-authoritative process-rubric corrections only. Kick off the feature
+implementer through the implementation workflow, let it complete the feature
+loop, and preserve the worktree and `.orbit/` artifacts. The fresh post-feature
+analyzer runs before merge as part of final distillation — the merge packet's
 `- Fresh analyzer:` row records the result — and signal-audit adjudication
 completes before cleanup.
 
@@ -564,7 +566,7 @@ only when ownership can stay clear.
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
 | Code / CLI reviewer persona | Solo-managed Antigravity reviewer | Focused code or CLI review from the assigned persona, changed diff, implementation report, and evidence | Implementation, product redefinition, merge approval, cleanup, or final promotion decisions |
 | Post-feature analyzer | Solo-managed Codex analyzer | Read-only review of orchestrator/Solo session messages, `.orbit` artifacts, verification evidence, final diff, and guardrail decisions | Live steering, implementation, harness edits, merge approval, cleanup, or final promotion decisions |
-| Loop observer | Solo-managed read-only observer; explicit request only, never a default lane | Live read-only observation of an active loop per `.agents/skills/loop-observer`: wrong turns, friction, and timing notes without interrupting the run | Steering, implementation, reviews, merge approval, cleanup, or spawning workers |
+| Loop observer / loop coach | Solo-managed observer; explicit request only, never a default lane; `observe` is default and `coach` is opt-in per invocation | Live observation of an active loop per `.agents/skills/loop-observer`: wrong turns, friction, and timing notes in observe mode, or logged non-authoritative process-rubric corrections in coach mode | Product/design/code suggestions, completion decisions, automation/triggers, implementation, reviews, merge approval, cleanup, or spawning workers |
 | Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
 
 The active feature-owner thread is the source of work. It can start in Codex
