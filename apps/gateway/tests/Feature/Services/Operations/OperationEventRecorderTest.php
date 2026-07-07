@@ -3,9 +3,12 @@
 declare(strict_types=1);
 
 use App\Models\OperationEvent;
+use App\Services\Operations\DatabaseLockRetry;
 use App\Services\Operations\OperationEventRecorder;
 use App\Services\Operations\OperationPayloadRejected;
 use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\ResultBoundaryRedactionPolicy;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 
@@ -126,4 +129,101 @@ it('uses SQLite defaults that support concurrent event reads and writes', functi
         ->toBe('wal')
         ->and(config('database.connections.sqlite.synchronous'))
         ->toBe('NORMAL');
+});
+
+it('retries append transactions when SQLite reports the database is locked', function (): void {
+    $retry = new class extends DatabaseLockRetry {
+        public bool $failNextTransaction = true;
+
+        public int $databaseLockRetries = 0;
+
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->failNextTransaction) {
+                $this->failNextTransaction = false;
+
+                throw new QueryException(
+                    'sqlite',
+                    'insert into "operation_events" ("operation_run_id", "sequence") values (?, ?)',
+                    [],
+                    new \PDOException('SQLSTATE[HY000]: General error: 5 database is locked', 5),
+                );
+            }
+
+            return parent::runTransaction($callback);
+        }
+
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->databaseLockRetries++;
+        }
+    };
+
+    $recorder = new OperationEventRecorder(app(ResultBoundaryRedactionPolicy::class), $retry);
+
+    $event = $recorder->step($this->run, 'workload.mini', 'running', 'Updating workload node mini');
+
+    expect($event->sequence)
+        ->toBe(1)
+        ->and($event->payload)
+        ->toMatchArray([
+            'key' => 'workload.mini',
+            'status' => 'running',
+            'message' => 'Updating workload node mini',
+        ])
+        ->and($retry->databaseLockRetries)
+        ->toBe(1);
+});
+
+it('retries batched step transactions when SQLite reports the database is locked', function (): void {
+    $retry = new class extends DatabaseLockRetry {
+        public bool $failNextTransaction = true;
+
+        public int $databaseLockRetries = 0;
+
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->failNextTransaction) {
+                $this->failNextTransaction = false;
+
+                throw new QueryException(
+                    'sqlite',
+                    'insert into "operation_events" ("operation_run_id", "sequence") values (?, ?)',
+                    [],
+                    new \PDOException('SQLSTATE[HY000]: General error: 5 database is locked', 5),
+                );
+            }
+
+            return parent::runTransaction($callback);
+        }
+
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->databaseLockRetries++;
+        }
+    };
+
+    $recorder = new OperationEventRecorder(app(ResultBoundaryRedactionPolicy::class), $retry);
+
+    $events = $recorder->steps($this->run, [
+        [
+            'key' => 'workload.mini',
+            'status' => 'running',
+            'message' => 'Updating workload node mini',
+        ],
+        [
+            'key' => 'workload.mini',
+            'status' => 'done',
+            'message' => 'Workload node mini updated',
+        ],
+    ]);
+
+    expect($events)
+        ->toHaveCount(2)
+        ->and($events[0]->sequence)
+        ->toBe(1)
+        ->and($events[1]->sequence)
+        ->toBe(2)
+        ->and($retry->databaseLockRetries)
+        ->toBe(1);
 });

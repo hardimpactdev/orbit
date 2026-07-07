@@ -6,13 +6,13 @@ namespace App\Services\Operations;
 
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
-use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 final readonly class OperationEventRecorder
 {
     public function __construct(
         private ResultBoundaryRedactionPolicy $redaction,
+        private DatabaseLockRetry $databaseLockRetry,
     ) {}
 
     /**
@@ -36,7 +36,12 @@ final readonly class OperationEventRecorder
             'metadata' => $metadata,
         ], 'progress');
 
-        return DB::transaction(function () use ($operationRun, $eventType, $payload, $metadata): OperationEvent {
+        return $this->databaseLockRetry->transaction(function () use (
+            $operationRun,
+            $eventType,
+            $payload,
+            $metadata,
+        ): OperationEvent {
             $operationRun = $this->findOrFail($operationRun);
 
             $sequence =
@@ -148,7 +153,7 @@ final readonly class OperationEventRecorder
             ];
         }
 
-        return DB::transaction(function () use ($operationRun, $records): array {
+        return $this->databaseLockRetry->transaction(function () use ($operationRun, $records): array {
             $operationRun = $this->findOrFail($operationRun);
 
             $sequence =
