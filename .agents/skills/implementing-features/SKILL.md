@@ -99,9 +99,10 @@ Responsibilities:
   `.agents/review-personas/docs-librarian.md`; for CLI command changes, use
   `.agents/review-personas/cli-command.md`; for Orbit Agent Tauri changes, use
   `.agents/review-personas/tauri-agent.md` before accepting the slice.
-- Build the local post-feature packet before completion, request fresh-context
-  post-feature analysis when the loop was non-trivial, and adjudicate analyzer
-  findings before any durable guardrail is changed.
+- Build the local post-feature packet before completion, classify obvious
+  signals, and record `not used - <rationale>` for compact loops unless
+  HARNESS.md calls for a fresh analyzer. Adjudicate analyzer findings before
+  any durable guardrail is changed when an analyzer runs.
 - Follow `HARNESS.md` for final-distillation, merge-boundary, post-feature
   signal-audit, session-archive, and cleanup policy. Use `LOOP.md.example` for
   the local packet shape and `bin/orbit-feature-finalization-check` for the
@@ -363,12 +364,13 @@ harness signals, and whether the docs contract is stable enough for code work.
 ## Post-Feature Analyzer Delegation
 
 Use a fresh-context analyzer before commit, merge-back, final reporting, or
-post-feature signal audit when the feature loop used implementation workers,
-reviewer corrections, retained terminal or PTY proof, quality-gate artifacts,
-human steering, guardrail decisions, or any other non-trivial evidence. Skip
-only for tiny local changes where `.orbit/loop.md` can honestly record that no
-worker, reviewer, terminal, quality-gate, guardrail, or human-correction
-evidence exists.
+post-feature signal audit only when HARNESS.md calls for it: explicit user
+request, multi-slice work, parallel workers, topology/live-node proof,
+product-contract change, release scope, messy human steering, reviewer dispute,
+suspected guardrail drift, or analyzer/loop guardrail changes. Compact loops
+still fill `.orbit/loop.md`, record verification, classify obvious signals, and
+write `not used - <rationale>` in the `- Fresh analyzer:` row when no trigger
+applies.
 
 First write a small local packet under `.orbit/evidence/` or the final section
 of `.orbit/loop.md`. Do not commit the packet. Include objective, final diff or
@@ -379,11 +381,11 @@ orchestrator steering notes. Include the source thread id or transcript path for
 the feature orchestrator when available, plus Solo scratchpads or process ids
 needed to inspect worker and reviewer reports.
 
-Spawn a fresh Solo-managed Codex analyzer: discover the enabled `Codex` tool with
-`list_agent_tools`, then `spawn_agent`. If Codex is not available through Solo,
-stop and report the blocker instead of substituting another model. Give it only
-the packet, orchestrator/Solo session pointers, changed diff, relevant harness
-docs, and named evidence pointers. Use
+When the analyzer runs, spawn a fresh Solo-managed Codex analyzer: discover the
+enabled `Codex` tool with `list_agent_tools`, then `spawn_agent`. If Codex is
+not available through Solo, stop and report the blocker instead of substituting
+another model. Give it only the packet, orchestrator/Solo session pointers,
+changed diff, relevant harness docs, and named evidence pointers. Use
 `.agents/review-personas/post-feature-analyzer.md`. The analyzer reports
 whether the loop was performed properly and classifies guardrail decisions as
 `correct-noop`, `missed`, `redundant`, `wrong-target`, or `defer`. It must not
@@ -709,12 +711,13 @@ below preserve when to invoke that gate and what evidence to record.
     row status but does not run topology commands.
 25. Before committing or reporting completion, run the Post-Feature Session
     Review in `HARNESS.md`: fill `.orbit/loop.md` as the canonical final packet,
-    run or explicitly defer the fresh analyzer, classify guardrail candidates,
-    record required verification rows, and archive the completed active
-    `.orbit/` state with `bin/orbit-session-archive` before cleanup or before a
-    later `.orbit/loop.md` rewrite. `HARNESS.md` owns analyzer adjudication,
-    signal promotion, final packet labels, session archive policy, and the
-    exact required verification evidence.
+    run the fresh analyzer only for explicit requests or escalation triggers,
+    record `not used - <rationale>` for compact loops, classify guardrail
+    candidates, record required verification rows, and archive the completed
+    active `.orbit/` state with `bin/orbit-session-archive` before cleanup or
+    before a later `.orbit/loop.md` rewrite. `HARNESS.md` owns analyzer
+    adjudication, signal promotion, final packet labels, session archive policy,
+    and the exact required verification evidence.
 26. Commit the verified worktree changes on the worktree branch.
 27. Merge the branch back into `main` from the primary `~/orbit` checkout by
     following `HARNESS.md` -> `Merge Boundary Gate` and `Feature Cleanup`. Run

@@ -487,7 +487,8 @@ it('blocks a merge when the fresh analyzer row is missing', function (): void {
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('Fresh analyzer');
+            ->toContain('Fresh analyzer')
+            ->toContain('not used - <rationale>');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
@@ -536,6 +537,53 @@ it('accepts a deferred fresh analyzer row with a warning instead of blocking', f
             ->and($process->getErrorOutput())
             ->toContain('WARNING')
             ->toContain('Fresh analyzer deferred');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('accepts a not used fresh analyzer row without a warning', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - harness markdown diff
+          - `composer quality-check`: not applicable - docs-only diff
+        - Fresh analyzer:
+          - not used - compact loop with no escalation trigger
+        - Accepted durable updates:
+          - HARNESS.md clarified the workflow.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'harness-signals/2026-07-02-example.md',
+        contents: "# Example\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'docs-lint',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->not->toContain('Fresh analyzer deferred');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }

@@ -100,6 +100,12 @@ one of `- Accepted durable updates:`, `- Rejected or already-covered signals:`,
 `- Deferred follow-ups:`, or `- No-new-signal rationale:` must contain a
 meaningful value.
 
+Keep the `- Fresh analyzer:` row even for compact loops. Use an analyzer verdict
+when an explicit request or escalation trigger ran the Solo analyzer; use
+`not used - <rationale>` as the normal compact-loop analyzer result when no
+trigger applies; use `deferred - <reason>` only when analyzer infrastructure was
+required but unavailable.
+
 - Loop outcome:
   - <complete | blocked | complete + loop improvement>
 - Required verification:
@@ -260,6 +266,12 @@ merge-boundary contract. Equivalent custom headings, bare label lines without
 one of `- Accepted durable updates:`, `- Rejected or already-covered signals:`,
 `- Deferred follow-ups:`, or `- No-new-signal rationale:` must contain a
 meaningful value.
+
+Keep the `- Fresh analyzer:` row even for compact loops. Use an analyzer verdict
+when an explicit request or escalation trigger ran the Solo analyzer; use
+`not used - <rationale>` as the normal compact-loop analyzer result when no
+trigger applies; use `deferred - <reason>` only when analyzer infrastructure was
+required but unavailable.
 
 - Loop outcome:
   - <complete | blocked | complete + loop improvement>
