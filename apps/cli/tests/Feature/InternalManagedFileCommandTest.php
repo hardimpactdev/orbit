@@ -107,11 +107,11 @@ describe('internal managed file command', function (): void {
             ->and($output)
             ->toContain('"path":"/etc/apt/apt.conf.d/20auto-upgrades"')
             ->and($commands)
-            ->toContain('install -d -m 0755 /etc/apt/apt.conf.d')
+            ->toContain('-n install -d -m 0755 /etc/apt/apt.conf.d')
             ->and($commands)
-            ->toContain('tee /etc/apt/apt.conf.d/20auto-upgrades')
+            ->toContain('-n tee /etc/apt/apt.conf.d/20auto-upgrades')
             ->and($commands)
-            ->toContain('chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades');
+            ->toContain('-n chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades');
     });
 });
 
@@ -174,6 +174,10 @@ function fake_managed_file_sudo_binary(bool $fileExists = true): string
     $script = <<<SH
         #!/bin/sh
         printf '%s\n' "\$*" >> '$log'
+
+        if [ "\$1" = "-n" ]; then
+          shift
+        fi
 
         if [ "\$1" = "test" ]; then
           [ '$exists' = '1' ] && exit 0

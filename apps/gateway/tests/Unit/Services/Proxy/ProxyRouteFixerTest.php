@@ -836,14 +836,16 @@ describe('ProxyRouteFixer', function (): void {
             ->and($certificates->hosts)
             ->toBe(['docs.test'])
             ->and($caddySite)
-            ->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
+            ->toContain(
+                'tls /home/orbit/.config/orbit/certs/docs.test.crt /home/orbit/.config/orbit/certs/docs.test.key',
+            )
             ->and($caddySite)
             ->not
-            ->toContain('/home/orbit/.config/orbit/certs/docs.test.crt')
+            ->toContain('/etc/orbit/certs/docs.test.crt')
             ->and($route->refresh()->config['tls'])
             ->toMatchArray([
-                'cert_path' => '/etc/orbit/certs/docs.test.crt',
-                'key_path' => '/etc/orbit/certs/docs.test.key',
+                'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
             ]);
     });
 

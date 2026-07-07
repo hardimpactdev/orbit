@@ -269,8 +269,10 @@ final readonly class ProxyRouteFixer
         $config = is_array($route->config) ? $route->config : [];
         $tls = is_array($config['tls'] ?? null) ? $config['tls'] : [];
 
-        $tls['cert_path'] = "/etc/orbit/certs/{$route->domain}.crt";
-        $tls['key_path'] = "/etc/orbit/certs/{$route->domain}.key";
+        $paths = $this->siteCertificateInstaller->expectedPathsFor($route->node, $route->domain);
+
+        $tls['cert_path'] = $paths['cert'];
+        $tls['key_path'] = $paths['key'];
         $config['tls'] = $tls;
         $route->config = $config;
     }

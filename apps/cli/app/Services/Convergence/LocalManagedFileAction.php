@@ -47,9 +47,7 @@ final readonly class LocalManagedFileAction
      */
     private function probe(string $path): array
     {
-        $exists = $this->runProcess(['sudo', 'test', '-f', $path]);
-
-        if ($exists['exit_code'] !== 0) {
+        if (! $this->fileExists($path)) {
             return [
                 'exists' => false,
                 'hash' => null,
@@ -71,9 +69,17 @@ final readonly class LocalManagedFileAction
     {
         $directory = dirname($path);
 
-        $this->mustRun(['sudo', 'install', '-d', '-m', $directoryMode, $directory], 'managed_file.directory_failed');
-        $this->mustRunWithInput(['sudo', 'tee', $path], $content, 'managed_file.write_failed');
-        $this->mustRun(['sudo', 'chmod', $mode, $path], 'managed_file.chmod_failed');
+        $this->mustRun([
+            'sudo',
+            '-n',
+            'install',
+            '-d',
+            '-m',
+            $directoryMode,
+            $directory,
+        ], 'managed_file.directory_failed');
+        $this->mustRunWithInput(['sudo', '-n', 'tee', $path], $content, 'managed_file.write_failed');
+        $this->mustRun(['sudo', '-n', 'chmod', $mode, $path], 'managed_file.chmod_failed');
 
         return [
             'path' => $path,
@@ -108,6 +114,15 @@ final readonly class LocalManagedFileAction
         }
 
         throw $this->invalidPath();
+    }
+
+    private function fileExists(string $path): bool
+    {
+        if (is_file($path)) {
+            return true;
+        }
+
+        return $this->runProcess(['sudo', '-n', 'test', '-f', $path])['exit_code'] === 0;
     }
 
     private function content(mixed $value): string
@@ -147,7 +162,15 @@ final readonly class LocalManagedFileAction
 
     private function hash(string $path): ?string
     {
-        foreach ([['sudo', 'sha256sum', $path], ['sudo', 'shasum', '-a', '256', $path]] as $command) {
+        if (is_readable($path)) {
+            $hash = hash_file('sha256', $path);
+
+            if (is_string($hash) && $hash !== '') {
+                return $hash;
+            }
+        }
+
+        foreach ([['sudo', '-n', 'sha256sum', $path], ['sudo', '-n', 'shasum', '-a', '256', $path]] as $command) {
             $result = $this->runProcess($command);
 
             if ($result['exit_code'] !== 0) {
@@ -164,9 +187,15 @@ final readonly class LocalManagedFileAction
 
     private function fileMode(string $path): ?string
     {
+        $mode = is_file($path) ? fileperms($path) : false;
+
+        if (is_int($mode)) {
+            return substr(sprintf('%o', $mode), -4);
+        }
+
         foreach ([
-            ['sudo', 'stat', '-c', '%a',  $path],
-            ['sudo', 'stat', '-f', '%Lp', $path],
+            ['sudo', '-n', 'stat', '-c', '%a',  $path],
+            ['sudo', '-n', 'stat', '-f', '%Lp', $path],
         ] as $command) {
             $result = $this->runProcess($command);
 

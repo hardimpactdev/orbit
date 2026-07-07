@@ -127,11 +127,11 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         ->toBeNull()
         ->and($route->config['tls'])
         ->toBe([
-            'cert_path' => '/etc/orbit/certs/docs.test.crt',
-            'key_path' => '/etc/orbit/certs/docs.test.key',
+            'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+            'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
         ])
         ->and($caddySite)
-        ->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
+        ->toContain('tls /home/orbit/.config/orbit/certs/docs.test.crt /home/orbit/.config/orbit/certs/docs.test.key')
         ->and($caddySite)
         ->toContain('reverse_proxy http://orbit-app-docs:8080')
         ->and($caddySite)

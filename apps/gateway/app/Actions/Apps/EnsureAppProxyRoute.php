@@ -296,7 +296,7 @@ final readonly class EnsureAppProxyRoute
         $runtimeUpstream = $isPhp ? $this->appRuntimeContainerRenderer->upstreamUrl($app) : null;
 
         if ($app->environment !== 'production') {
-            $certificatePaths = $this->caddyContainerCertificatePaths($domain);
+            $certificatePaths = $this->siteCertificatePaths($owningNode, $domain);
             $config = [
                 'document_root' => $app->documentRootPath(),
                 'runtime_upstream' => $runtimeUpstream,
@@ -316,7 +316,7 @@ final readonly class EnsureAppProxyRoute
 
         $ingressNode = $this->ingressResolver->forAppNode($owningNode);
         $routerNode = $this->ingressResolver->router();
-        $certificatePaths = $this->caddyContainerCertificatePaths($domain);
+        $certificatePaths = $this->siteCertificatePaths($ingressNode, $domain);
         $backendArtifact = [
             'node_id' => $owningNode->id,
             'domain' => $domain,
@@ -388,12 +388,9 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return array{cert: string, key: string}
      */
-    private function caddyContainerCertificatePaths(string $domain): array
+    private function siteCertificatePaths(Node $node, string $domain): array
     {
-        return [
-            'cert' => "/etc/orbit/certs/{$domain}.crt",
-            'key' => "/etc/orbit/certs/{$domain}.key",
-        ];
+        return $this->siteCertificateInstaller->expectedPathsFor($node, $domain);
     }
 
     /**
