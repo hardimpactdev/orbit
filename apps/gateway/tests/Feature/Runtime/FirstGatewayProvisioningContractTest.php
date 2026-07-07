@@ -108,11 +108,11 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
                 $shellScripts[] = (string) $process->input;
             }
 
-            if (str_contains($process->command, 'docker container inspect')) {
+            if (str_contains((string) $process->command, 'docker container inspect')) {
                 return Process::result(exitCode: 1);
             }
 
-            if (str_contains($process->command, 'docker network inspect')) {
+            if (str_contains((string) $process->command, 'docker network inspect')) {
                 return Process::result(exitCode: 1);
             }
 
@@ -151,11 +151,11 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
                 $shellScripts[] = (string) $process->input;
             }
 
-            if (str_contains($process->command, 'docker container inspect')) {
+            if (str_contains((string) $process->command, 'docker container inspect')) {
                 return Process::result(exitCode: 1);
             }
 
-            if (str_contains($process->command, 'docker network inspect')) {
+            if (str_contains((string) $process->command, 'docker network inspect')) {
                 return Process::result(exitCode: 1);
             }
 
@@ -197,15 +197,15 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
         File::put("{$containerConfigRoot}/certs/10.6.0.2.key", 'test-key');
 
         Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
-            if (str_contains($process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
+            if (str_contains((string) $process->command, 'tee /etc/caddy/orbit/orbit-api.caddy')) {
                 $writtenGatewayApiCaddyfile = (string) $process->input;
             }
 
-            if (str_contains($process->command, 'docker container inspect')) {
+            if (str_contains((string) $process->command, 'docker container inspect')) {
                 return Process::result(exitCode: 1);
             }
 
-            if (str_contains($process->command, 'docker network inspect')) {
+            if (str_contains((string) $process->command, 'docker network inspect')) {
                 return Process::result(exitCode: 1);
             }
 
@@ -267,11 +267,11 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
 
     it('writes the gateway API Caddyfile through the host bind mount that orbit-caddy reads', function (): void {
         Process::fake(function ($process) {
-            if (str_contains($process->command, 'docker container inspect')) {
+            if (str_contains((string) $process->command, 'docker container inspect')) {
                 return Process::result(exitCode: 1);
             }
 
-            if (str_contains($process->command, 'docker network inspect')) {
+            if (str_contains((string) $process->command, 'docker network inspect')) {
                 return Process::result(exitCode: 1);
             }
 
@@ -320,21 +320,21 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
 
         Process::fake(function ($process) use ($existingCaddyfile, &$writtenGlobalCaddyfile) {
             if (str_contains(
-                $process->command,
+                (string) $process->command,
                 "sudo test -f '/etc/caddy/Caddyfile' && sudo cat '/etc/caddy/Caddyfile'",
             )) {
                 return Process::result($existingCaddyfile);
             }
 
-            if (str_contains($process->command, 'tee /etc/caddy/Caddyfile')) {
+            if (str_contains((string) $process->command, 'tee /etc/caddy/Caddyfile')) {
                 $writtenGlobalCaddyfile = (string) $process->input;
             }
 
-            if (str_contains($process->command, 'docker container inspect')) {
+            if (str_contains((string) $process->command, 'docker container inspect')) {
                 return Process::result(exitCode: 1);
             }
 
-            if (str_contains($process->command, 'docker network inspect')) {
+            if (str_contains((string) $process->command, 'docker network inspect')) {
                 return Process::result(exitCode: 1);
             }
 
@@ -354,6 +354,17 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
 
         // Force-touch CaddyGlobalConfig so the imports list is the source of truth.
         expect(new CaddyGlobalConfig()->fresh())
+            ->toContain('import /etc/caddy/orbit/*.caddy')
+            ->toContain('import /etc/caddy/sites/*.caddy');
+
+        $mergedLegacyConfig = new CaddyGlobalConfig()->ensure(<<<'CADDY'
+            legacy.test {
+                respond legacy
+            }
+            CADDY);
+
+        expect($mergedLegacyConfig)
+            ->toContain('legacy.test')
             ->toContain('import /etc/caddy/orbit/*.caddy')
             ->toContain('import /etc/caddy/sites/*.caddy');
     });

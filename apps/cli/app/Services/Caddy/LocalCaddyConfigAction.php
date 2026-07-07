@@ -398,16 +398,123 @@ final readonly class LocalCaddyConfigAction
         $globalCaddyfile = $this->hostPathFromDeclaredMounts(self::GLOBAL_CADDYFILE, $spec['mounts']);
         $exists = $this->runPrivilegedProcess(['test', '-f', $globalCaddyfile]);
 
-        if ($exists['exit_code'] === 0) {
+        if ($exists['exit_code'] !== 0) {
+            $this->writeGlobalCaddyfile($globalCaddyfile, $globalConfig);
+
             return;
         }
 
+        $current = $this->runPrivilegedProcess(['cat', $globalCaddyfile]);
+
+        if ($current['exit_code'] !== 0) {
+            throw new LocalCaddyConfigFailure(
+                errorCode: 'caddy_container.global_config_failed',
+                message: 'Caddy global config could not be read.',
+                meta: [
+                    'path' => $globalCaddyfile,
+                    'exit_code' => $current['exit_code'],
+                    'output' => $current['output'],
+                ],
+            );
+        }
+
+        $desiredConfig = $this->mergedGlobalConfig(
+            currentConfig: $current['output'],
+            desiredConfig: $globalConfig,
+        );
+
+        if (hash_equals($desiredConfig, $current['output'])) {
+            return;
+        }
+
+        $this->writeGlobalCaddyfile($globalCaddyfile, $desiredConfig);
+    }
+
+    private function writeGlobalCaddyfile(string $globalCaddyfile, string $globalConfig): void
+    {
         $this->mustRunPrivilegedWithInput(
             ['tee', $globalCaddyfile],
             $globalConfig,
             'caddy_container.global_config_failed',
         );
         $this->mustRunPrivileged(['chmod', '0644', $globalCaddyfile], 'caddy_container.global_config_failed');
+    }
+
+    private function mergedGlobalConfig(string $currentConfig, string $desiredConfig): string
+    {
+        $currentConfig = rtrim($currentConfig);
+
+        if ($currentConfig === '') {
+            return $desiredConfig;
+        }
+
+        $updated = $currentConfig;
+
+        foreach ($this->caddyNamedBlocks($desiredConfig) as $name => $block) {
+            if (str_contains($updated, "({$name})")) {
+                continue;
+            }
+
+            $updated .= "\n\n{$block}";
+        }
+
+        foreach ($this->caddyImportLines($desiredConfig) as $line) {
+            if (str_contains($updated, $line)) {
+                continue;
+            }
+
+            $updated .= "\n\n{$line}";
+        }
+
+        return rtrim($updated)."\n";
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function caddyNamedBlocks(string $config): array
+    {
+        $blocks = [];
+        $lines = explode("\n", str_replace(search: ["\r\n", "\r"], replace: "\n", subject: $config));
+        $count = count($lines);
+
+        for ($index = 0; $index < $count; $index++) {
+            $line = $lines[$index];
+            $match = [];
+
+            if (preg_match('/^\s*\((?P<name>[A-Za-z0-9_-]+)\)\s*\{\s*$/', $line, $match) !== 1) {
+                continue;
+            }
+
+            $name = $match['name'];
+            $blockLines = [$line];
+            $depth = substr_count(haystack: $line, needle: '{') - substr_count(haystack: $line, needle: '}');
+
+            while ($depth > 0 && ++$index < $count) {
+                $line = $lines[$index];
+                $blockLines[] = $line;
+                $depth += substr_count(haystack: $line, needle: '{') - substr_count(haystack: $line, needle: '}');
+            }
+
+            $blocks[$name] = rtrim(implode("\n", $blockLines));
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function caddyImportLines(string $config): array
+    {
+        $matches = [];
+
+        preg_match_all('/^\s*import\s+\S+\s*$/m', $config, $matches);
+
+        return array_values(array_unique(array_map(
+            trim(...),
+            $matches[0] ?? [],
+        )));
     }
 
     /**

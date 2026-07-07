@@ -10,7 +10,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
 
 describe('internal caddy config command', function (): void {
     beforeEach(function (): void {
-        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
@@ -22,8 +22,10 @@ describe('internal caddy config command', function (): void {
         putenv("PATH={$this->originalPath}");
         putenv('ORBIT_CADDY_CONFIG_MISSING_DIRS');
         putenv('ORBIT_CADDY_CONFIG_MISSING_FILES');
+        putenv('ORBIT_CADDY_CONFIG_READ_GLOBAL');
         unset($_SERVER['ORBIT_CADDY_CONFIG_MISSING_DIRS']);
         unset($_SERVER['ORBIT_CADDY_CONFIG_MISSING_FILES']);
+        unset($_SERVER['ORBIT_CADDY_CONFIG_READ_GLOBAL']);
 
         $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-caddy-config-bin-*');
 
@@ -299,6 +301,58 @@ describe('internal caddy config command', function (): void {
             ->not->toContain('tee /etc/caddy/Caddyfile');
     });
 
+    it('updates an existing global Caddyfile through the declared container bind source', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        $expectedHash = str_repeat(string: 'e', times: 64);
+        $configRoot = '/Users/nckrtl/.config/orbit';
+        $spec = caddy_config_container_spec($expectedHash);
+        $spec['mounts'][0]['source'] = "{$configRoot}/caddy/Caddyfile";
+        $spec['mounts'][1]['source'] = "{$configRoot}/caddy/sites";
+        $legacyConfig = <<<'CADDY'
+            legacy.test {
+                respond legacy
+            }
+
+            CADDY;
+        $desiredConfig = <<<'CADDY'
+            (profiling_headers) {
+                header {
+                    X-Caddy-End "{time.now.unix_ms}"
+                    defer
+                }
+            }
+
+            import /etc/caddy/sites/*.caddy
+            CADDY;
+        file_put_contents("{$bin}/read-global.txt", $legacyConfig);
+
+        [$exitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => $spec,
+                'global_config' => $desiredConfig,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($calls)
+            ->toContain("test -f {$configRoot}/caddy/Caddyfile")
+            ->toContain("cat {$configRoot}/caddy/Caddyfile")
+            ->toContain("tee {$configRoot}/caddy/Caddyfile")
+            ->toContain("chmod 0644 {$configRoot}/caddy/Caddyfile")
+            ->and(file_get_contents("{$bin}/stdin.log"))
+            ->toContain('legacy.test')
+            ->toContain('(profiling_headers)')
+            ->toContain('import /etc/caddy/sites/*.caddy');
+    });
+
     it('does not chmod existing caddy container mount directories', function (): void {
         $bin = install_caddy_config_fake_bin();
         $expectedHash = str_repeat(string: 'b', times: 64);
@@ -470,7 +524,7 @@ function install_caddy_config_fake_bin(): string
     $dir = sys_get_temp_dir().'/orbit-caddy-config-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
 
-    file_put_contents("{$dir}/sudo", <<<'PHP'
+    file_put_contents("{$dir}/sudo", <<<'PHP_WRAP'
         #!/usr/bin/env php
         <?php
         file_put_contents(__DIR__.'/calls.log', 'sudo '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
@@ -491,9 +545,9 @@ function install_caddy_config_fake_bin(): string
             exit(1);
         }
         exit(0);
-        PHP);
+        PHP_WRAP);
     foreach (['cat', 'chmod', 'install', 'rm', 'tee', 'test'] as $command) {
-        file_put_contents("{$dir}/{$command}", <<<'PHP'
+        file_put_contents("{$dir}/{$command}", <<<'PHP_WRAP'
             #!/usr/bin/env php
             <?php
             $command = basename($argv[0]);
@@ -501,6 +555,9 @@ function install_caddy_config_fake_bin(): string
             $stdin = stream_get_contents(STDIN);
             if ($stdin !== '') {
                 file_put_contents(__DIR__.'/stdin.log', $stdin, FILE_APPEND);
+            }
+            if ($command === 'cat' && is_file(__DIR__.'/read-global.txt')) {
+                echo file_get_contents(__DIR__.'/read-global.txt');
             }
             $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
             $missingFiles = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_FILES') ?: ''));
@@ -511,10 +568,10 @@ function install_caddy_config_fake_bin(): string
                 exit(1);
             }
             exit(0);
-            PHP);
+            PHP_WRAP);
         chmod(filename: "{$dir}/{$command}", permissions: 0o755);
     }
-    file_put_contents("{$dir}/docker", <<<'PHP'
+    file_put_contents("{$dir}/docker", <<<'PHP_WRAP'
         #!/usr/bin/env php
         <?php
         file_put_contents(__DIR__.'/calls.log', 'docker '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
@@ -525,7 +582,7 @@ function install_caddy_config_fake_bin(): string
             }
         }
         exit(0);
-        PHP);
+        PHP_WRAP);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
     chmod(filename: "{$dir}/docker", permissions: 0o755);
 
@@ -556,6 +613,7 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/calls.log");
     delete_caddy_config_file("{$path}/stdin.log");
     delete_caddy_config_file("{$path}/container-inspect.json");
+    delete_caddy_config_file("{$path}/read-global.txt");
 
     if (is_dir($path)) {
         rmdir($path);
