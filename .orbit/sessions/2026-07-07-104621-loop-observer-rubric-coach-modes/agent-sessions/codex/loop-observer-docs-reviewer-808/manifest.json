@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "loop-observer-docs-reviewer-808",
+    "solo_process_id": 808,
+    "kind": "agent",
+    "started_at": "2026-07-07 08:39:18",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T10-39-19-019f3bbb-4f2c-7f01-bb6e-d1f2241e4673.jsonl",
+    "source": "codex_exact_marker"
+}

@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-07T08:39:00Z",
+    "ended_at": "2026-07-07T08:39:07Z",
+    "duration_seconds": 7,
+    "exit_code": 0,
+    "git": {
+        "branch": "loop-observer-rubric-coach-modes",
+        "commit": "04064c36300b38d1ee9fc5cad7a2a7c4fa40f887"
+    },
+    "subgates": []
+}
