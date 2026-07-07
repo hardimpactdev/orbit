@@ -92,11 +92,21 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             '--json',
         ]);
     })->with([
+        'vpn',
+        'router',
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        'websocket',
+        's3',
         'metrics',
         'analytics',
     ]);
 
     it('allows internal commands for pending role convergence', function (): void {
+        /** @var Node $node */
         $node = Node::factory()->create(['name' => 'target']);
 
         NodeRoleAssignment::factory()->for($node)->create([
@@ -243,15 +253,14 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             operationToken: local_executor_test_operation_token(),
         );
 
-        expect($auditLine)
-            ->toBe(implode(' ', [
-                '/usr/local/bin/orbit',
-                'internal:workspace-adapter:lookup',
-                '--state-path='.escapeshellarg('/home/orbit/.polyscope/polyscope.db'),
-                '--operation-token=<redacted>',
-                '--json',
-            ]))
-            ->not->toContain('token-abc');
+        expect($auditLine)->toBe(implode(' ', [
+            '/usr/local/bin/orbit',
+            'internal:workspace-adapter:lookup',
+            '--state-path='.escapeshellarg('/home/orbit/.polyscope/polyscope.db'),
+            '--operation-token=<redacted>',
+            '--json',
+        ]));
+        expect($auditLine)->not->toContain('token-abc');
     });
 
     it('rejects bad command names', function (string $commandName): void {
@@ -414,7 +423,20 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
             'internal:process-docker-container' => ['app-dev', 'app-prod', 'database'],
             'internal:process-docker-swarm-service' => ['app-dev', 'app-prod', 'database', 'metrics'],
-            'internal:process-logs' => ['app-dev', 'app-prod', 'database', 'agent'],
+            'internal:process-logs' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
             'internal:process-systemd-service' => [
                 'gateway',
                 'vpn',
@@ -429,7 +451,19 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 'metrics',
                 'analytics',
             ],
-            'internal:runtime-backend:probe' => ['app-dev', 'app-prod', 'database', 'agent', 'metrics', 'analytics'],
+            'internal:runtime-backend:probe' => [
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+                'websocket',
+                's3',
+                'metrics',
+                'analytics',
+            ],
             'internal:s3-runtime:probe' => ['s3'],
             'internal:secret-file' => [
                 'vpn',
@@ -583,9 +617,9 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'database query local' => ['internal:database-query-local', ['database'], ['vpn']],
         'process docker container' => ['internal:process-docker-container', ['app-dev'], ['vpn']],
         'process docker swarm service' => ['internal:process-docker-swarm-service', ['database'], ['vpn']],
-        'process logs' => ['internal:process-logs', ['app-dev'], ['vpn']],
+        'process logs' => ['internal:process-logs', ['ingress'], []],
         'process systemd service' => ['internal:process-systemd-service', ['app-dev'], []],
-        'runtime backend probe' => ['internal:runtime-backend:probe', ['app-dev'], ['vpn']],
+        'runtime backend probe' => ['internal:runtime-backend:probe', ['ingress'], ['gateway']],
         's3 runtime probe' => ['internal:s3-runtime:probe', ['s3'], ['app-dev']],
         'secret file' => ['internal:secret-file', ['app-dev'], ['gateway']],
         'site certificate install' => ['internal:site-certificate:install', ['app-dev'], ['vpn']],
@@ -602,6 +636,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
     ]);
 
     it('rejects non-scalar arguments', function (Closure $argumentFactory): void {
+        /** @var array<int, string>|resource|stdClass|null $argument */
         $argument = $argumentFactory();
 
         try {
@@ -645,6 +680,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
     ]);
 
     it('rejects non-scalar option values', function (Closure $valueFactory): void {
+        /** @var array<int, string>|resource|stdClass|null $value */
         $value = $valueFactory();
 
         try {
@@ -668,8 +704,19 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'resource' => [fn () => fopen('php://temp', 'rb')],
     ]);
 
+    /**
+     * @param  Closure(LocalExecutorCommandBuilder): string  $build
+     */
     it('rejects null bytes in any input', function (Closure $build): void {
-        expect(fn (): string => $build(localExecutorCommandBuilder()))
+        expect(function () use ($build): string {
+            $result = $build(localExecutorCommandBuilder());
+
+            if (! is_string($result)) {
+                throw new RuntimeException('Null byte dataset callbacks must return command strings.');
+            }
+
+            return $result;
+        })
             ->toThrow(LocalExecutorCommandBuilderException::class);
     })->with([
         'command name' => [
