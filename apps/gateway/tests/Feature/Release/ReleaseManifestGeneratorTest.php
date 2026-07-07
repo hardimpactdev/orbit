@@ -8,13 +8,15 @@ it('generates a release manifest with gateway digest cli hashes and role image m
     $root = sys_get_temp_dir().'/orbit-release-manifest-'.bin2hex(random_bytes(6));
     $linux = "{$root}/orbit-linux-x64";
     $mac = "{$root}/orbit-macos-arm64";
-    $agent = "{$root}/orbit-agent-linux-x64";
+    $agentLinux = "{$root}/orbit-agent-linux-x64";
+    $agentMac = "{$root}/orbit-agent-macos-arm64";
     $output = "{$root}/orbit-release-manifest.json";
 
     mkdir($root, 0700, true);
     file_put_contents($linux, 'linux-binary');
     file_put_contents($mac, 'mac-binary');
-    file_put_contents($agent, 'agent-linux-binary');
+    file_put_contents($agentLinux, 'agent-linux-binary');
+    file_put_contents($agentMac, 'agent-mac-binary');
 
     try {
         $process = new Process([
@@ -27,7 +29,8 @@ it('generates a release manifest with gateway digest cli hashes and role image m
             '--repository=hardimpactdev/orbit',
             "--cli-artifact=linux-amd64=orbit-linux-x64={$linux}",
             "--cli-artifact=darwin-arm64=orbit-macos-arm64={$mac}",
-            "--agent-artifact=linux-amd64=orbit-agent-linux-x64={$agent}",
+            "--agent-artifact=linux-amd64=orbit-agent-linux-x64={$agentLinux}",
+            "--agent-artifact=darwin-arm64=orbit-agent-macos-arm64={$agentMac}",
             '--role-image=orbit-caddy=caddy:2-alpine',
             '--role-image=orbit-websocket=hardimpact/orbit-reverb:1.2.3',
             "--output={$output}",
@@ -59,7 +62,11 @@ it('generates a release manifest with gateway digest cli hashes and role image m
             'agent_artifacts' => [
                 'linux-amd64' => [
                     'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
-                    'sha256' => hash_file('sha256', $agent),
+                    'sha256' => hash_file('sha256', $agentLinux),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-macos-arm64',
+                    'sha256' => hash_file('sha256', $agentMac),
                 ],
             ],
             'role_images' => [
@@ -76,13 +83,15 @@ it('generates a topology candidate manifest with candidate asset urls and build 
     $root = sys_get_temp_dir().'/orbit-candidate-manifest-'.bin2hex(random_bytes(6));
     $linux = "{$root}/orbit-linux-x64";
     $mac = "{$root}/orbit-macos-arm64";
-    $agent = "{$root}/orbit-agent-linux-x64";
+    $agentLinux = "{$root}/orbit-agent-linux-x64";
+    $agentMac = "{$root}/orbit-agent-macos-arm64";
     $output = "{$root}/orbit-release-manifest.json";
 
     mkdir($root, 0700, true);
     file_put_contents($linux, 'candidate-linux-binary');
     file_put_contents($mac, 'candidate-mac-binary');
-    file_put_contents($agent, 'candidate-agent-linux-binary');
+    file_put_contents($agentLinux, 'candidate-agent-linux-binary');
+    file_put_contents($agentMac, 'candidate-agent-mac-binary');
 
     try {
         $process = new Process([
@@ -95,7 +104,8 @@ it('generates a topology candidate manifest with candidate asset urls and build 
             '--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('c', times: 64),
             "--cli-artifact=linux-amd64=orbit-linux-x64={$linux}",
             "--cli-artifact=darwin-arm64=orbit-macos-arm64={$mac}",
-            "--agent-artifact=linux-amd64=orbit-agent-linux-x64={$agent}",
+            "--agent-artifact=linux-amd64=orbit-agent-linux-x64={$agentLinux}",
+            "--agent-artifact=darwin-arm64=orbit-agent-macos-arm64={$agentMac}",
             '--role-image=orbit-caddy=caddy:2-alpine',
             '--role-image=orbit-websocket=hardimpact/orbit-reverb:1.2.3',
             "--output={$output}",
@@ -124,7 +134,11 @@ it('generates a topology candidate manifest with candidate asset urls and build 
             'agent_artifacts' => [
                 'linux-amd64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-agent-linux-x64',
-                    'sha256' => hash_file('sha256', $agent),
+                    'sha256' => hash_file('sha256', $agentLinux),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-agent-macos-arm64',
+                    'sha256' => hash_file('sha256', $agentMac),
                 ],
             ],
         ]);

@@ -81,6 +81,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'orbit-linux-x64',
             'orbit-macos-arm64',
             'orbit-agent-linux-x64',
+            'orbit-agent-macos-arm64',
             'orbit-release-manifest.candidate.json',
         ] as $stateFile) {
             expect("{$stateDir}/{$stateFile}")->toBeFile();
@@ -102,6 +103,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'sha256_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
             'sha256_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
             'sha256_agent_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-agent-linux-x64"),
+            'sha256_agent_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-agent-macos-arm64"),
         ]);
 
         expect($process->getOutput())
@@ -117,6 +119,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ->toContain('orbit-build-cli-binary mac arm 0.1.200')
             ->toContain('orbit-build-cli-binary linux x64 0.1.200')
             ->toContain('orbit-build-agent-binary linux x64')
+            ->toContain('orbit-build-agent-binary mac arm')
             ->not->toContain('release create')
             ->not->toContain('push origin')
             ->not->toContain('imagetools create');
@@ -157,7 +160,8 @@ it('prints eval-able exports for candidate state and fails cleanly with no state
             ->toContain("export candidate_dir={$stateDir}")
             ->toContain('export sha256_linux_amd64=')
             ->toContain('export sha256_darwin_arm64=')
-            ->toContain('export sha256_agent_linux_amd64=');
+            ->toContain('export sha256_agent_linux_amd64=')
+            ->toContain('export sha256_agent_darwin_arm64=');
 
         $eval = new Process(
             [
@@ -200,6 +204,7 @@ it('verifies intact artifacts and fails naming the tampered sha256 key', functio
             ->toContain('PASS sha256_linux_amd64')
             ->toContain('PASS sha256_darwin_arm64')
             ->toContain('PASS sha256_agent_linux_amd64')
+            ->toContain('PASS sha256_agent_darwin_arm64')
             ->toContain('PASS gateway_digest');
 
         file_put_contents("{$stateDir}/orbit-linux-x64", "tampered\n", FILE_APPEND);
@@ -212,7 +217,8 @@ it('verifies intact artifacts and fails naming the tampered sha256 key', functio
             ->and($fail->getOutput())
             ->toContain('FAIL sha256_linux_amd64')
             ->toContain('PASS sha256_darwin_arm64')
-            ->toContain('PASS sha256_agent_linux_amd64');
+            ->toContain('PASS sha256_agent_linux_amd64')
+            ->toContain('PASS sha256_agent_darwin_arm64');
     } finally {
         release_candidate_remove_temp_dir(path: $temp);
     }
@@ -239,6 +245,7 @@ it('reports an imagetools inspect failure as a gateway_digest mismatch without a
             ->toContain('PASS sha256_linux_amd64')
             ->toContain('PASS sha256_darwin_arm64')
             ->toContain('PASS sha256_agent_linux_amd64')
+            ->toContain('PASS sha256_agent_darwin_arm64')
             ->toContain('FAIL gateway_digest: imagetools inspect failed for ghcr.io/hardimpactdev/orbit-gateway:9.9.9')
             ->and($process->getErrorOutput())
             ->toContain('verify failed with 1 mismatch(es)');
@@ -448,6 +455,10 @@ function release_candidate_prepare_root(string $temp): string
                 mkdir -p "${root}/apps/agent/builds/dist/linux"
                 printf 'stub-agent-linux-x64-binary\n' > "${root}/apps/agent/builds/dist/linux/linux-x64"
                 ;;
+            'mac arm')
+                mkdir -p "${root}/apps/agent/builds/dist/mac"
+                printf 'stub-agent-macos-arm64-binary\n' > "${root}/apps/agent/builds/dist/mac/mac-arm"
+                ;;
             *) exit 1 ;;
         esac
         BASH);
@@ -532,6 +543,7 @@ function release_candidate_write_state(
     file_put_contents("{$stateDir}/orbit-linux-x64", "linux-artifact-{$buildId}\n");
     file_put_contents("{$stateDir}/orbit-macos-arm64", "mac-artifact-{$buildId}\n");
     file_put_contents("{$stateDir}/orbit-agent-linux-x64", "agent-linux-artifact-{$buildId}\n");
+    file_put_contents("{$stateDir}/orbit-agent-macos-arm64", "agent-mac-artifact-{$buildId}\n");
     file_put_contents("{$stateDir}/orbit-release-manifest.candidate.json", "{\"stub\":true}\n");
     file_put_contents("{$stateDir}/gateway-image-push.log", "candidate: digest: sha256:stub size: 1\n");
 
@@ -549,6 +561,7 @@ function release_candidate_write_state(
         'sha256_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
         'sha256_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
         'sha256_agent_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-agent-linux-x64"),
+        'sha256_agent_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-agent-macos-arm64"),
     ], $overrides);
 
     $lines = '';

@@ -231,6 +231,66 @@ it('installs and records agent artifacts for agent-capable workload nodes', func
         ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-linux-x64');
 });
 
+it('installs macos agent artifacts into the user local agent binary path', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
+    app()->instance(RunsInternalCommands::class, $shell);
+
+    $run = workloadUpdaterRun();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'installed_cli' => InstalledCliArtifact::record(
+                version: '1.0.0',
+                platform: 'darwin-arm64',
+                sha256: str_repeat('a', times: 64),
+                source: 'github-release',
+                buildId: null,
+                artifactUrl: 'https://github.com/hardimpactdev/orbit/releases/download/v1.0.0/orbit-macos-arm64',
+                installedPath: '/Users/nckrtl/orbit/bin/orbit-binary',
+                operationRunId: (string) Str::uuid(),
+            ),
+        ]);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            cliArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-macos-arm64',
+                    'sha256' => str_repeat('8', times: 64),
+                ],
+            ],
+            agentArtifacts: [
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64',
+                    'sha256' => str_repeat('7', times: 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and(workload_updater_install_payload($shell, node: 'mini')['agent_artifact'])
+        ->toBe([
+            'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/darwin-arm64?token=fake",
+            'sha256' => str_repeat('7', times: 64),
+            'bin_path' => '/Users/nckrtl/.local/bin/orbit-agent',
+        ])
+        ->and($node->fresh()->installed_agent)
+        ->toBeInstanceOf(InstalledAgentArtifact::class)
+        ->and($node->fresh()->installed_agent?->installedPath)
+        ->toBe('/Users/nckrtl/.local/bin/orbit-agent')
+        ->and($node->fresh()->installed_agent?->artifactUrl)
+        ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64');
+});
+
 it('skips agent artifacts for nodes that are not agent capable', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);

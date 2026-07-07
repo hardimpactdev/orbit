@@ -9,10 +9,12 @@ usage() {
     cat <<'EOF'
 Usage:
   bin/orbit-build-agent-binary linux x64
+  bin/orbit-build-agent-binary mac arm
 
 Builds the headless Orbit Agent service binary used by gateway-pushed node
 commands. The Linux x64 artifact is built inside a Linux Rust container so the
-release candidate flow does not depend on host cross-linker packages.
+release candidate flow does not depend on host cross-linker packages. The mac
+arm artifact is built natively on a Darwin arm64 host.
 EOF
 }
 
@@ -37,34 +39,66 @@ fi
 case "$platform:$architecture" in
     linux:x64)
         ;;
+    mac:arm)
+        ;;
     *)
         fail "unsupported target: ${platform} ${architecture}"
         ;;
 esac
 
-command -v docker >/dev/null 2>&1 || fail 'docker is required to build the Linux agent binary.'
 [ -f "$agent_dir/Cargo.toml" ] || fail 'apps/agent/Cargo.toml is required.'
 
-image="${ORBIT_AGENT_BUILD_IMAGE:-rust:1-bookworm}"
-target_dir="/workspace/apps/agent/target/orbit-agent-linux-x64"
-output_dir="$agent_dir/builds/dist/linux"
+case "$platform:$architecture" in
+    linux:x64)
+        command -v docker >/dev/null 2>&1 || fail 'docker is required to build the Linux agent binary.'
 
-mkdir -p "$output_dir"
+        image="${ORBIT_AGENT_BUILD_IMAGE:-rust:1-bookworm}"
+        target_dir="/workspace/apps/agent/target/orbit-agent-linux-x64"
+        output_dir="$agent_dir/builds/dist/linux"
 
-docker run --rm \
-    --platform linux/amd64 \
-    --user "$(id -u):$(id -g)" \
-    -e CARGO_HOME=/tmp/cargo-home \
-    -e CARGO_TARGET_DIR="$target_dir" \
-    -e HOME=/tmp \
-    -v "$repo_root:/workspace" \
-    -w /workspace/apps/agent \
-    "$image" \
-    cargo build --release
+        mkdir -p "$output_dir"
 
-artifact="$agent_dir/target/orbit-agent-linux-x64/release/orbit-agent"
+        docker run --rm \
+            --platform linux/amd64 \
+            --user "$(id -u):$(id -g)" \
+            -e CARGO_HOME=/tmp/cargo-home \
+            -e CARGO_TARGET_DIR="$target_dir" \
+            -e HOME=/tmp \
+            -v "$repo_root:/workspace" \
+            -w /workspace/apps/agent \
+            "$image" \
+            cargo build --release
 
-[ -f "$artifact" ] || fail "expected agent binary was not built at $artifact"
+        artifact="$agent_dir/target/orbit-agent-linux-x64/release/orbit-agent"
 
-cp "$artifact" "$output_dir/linux-x64"
-chmod 0755 "$output_dir/linux-x64"
+        [ -f "$artifact" ] || fail "expected agent binary was not built at $artifact"
+
+        cp "$artifact" "$output_dir/linux-x64"
+        chmod 0755 "$output_dir/linux-x64"
+        ;;
+    mac:arm)
+        [ "$(uname -s)" = "Darwin" ] || fail 'mac arm agent binary must be built on Darwin.'
+
+        host_arch="$(uname -m)"
+        [ "$host_arch" = "arm64" ] || [ "$host_arch" = "aarch64" ] || fail "mac arm agent binary requires an arm64 host, got ${host_arch}."
+
+        command -v cargo >/dev/null 2>&1 || fail 'cargo is required to build the mac agent binary.'
+
+        output_dir="$agent_dir/builds/dist/mac"
+        target_dir="$agent_dir/target/orbit-agent-macos-arm64"
+
+        mkdir -p "$output_dir"
+
+        (
+            cd "$agent_dir"
+            CARGO_TARGET_DIR="$target_dir" cargo build --release
+        )
+
+        artifact="$target_dir/release/orbit-agent"
+
+        [ -f "$artifact" ] || fail "expected agent binary was not built at $artifact"
+
+        cp "$artifact" "$output_dir/mac-arm"
+        chmod 0755 "$output_dir/mac-arm"
+        ;;
+esac

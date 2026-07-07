@@ -232,6 +232,15 @@ it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes',
             'platform' => 'linux',
             'wireguard_address' => '10.44.0.12',
         ]);
+    Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'mini',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'wireguard_address' => '10.44.0.8',
+        ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
         fleetVerifierSnapshot(
@@ -239,6 +248,10 @@ it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes',
                 'linux-amd64' => [
                     'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-linux-x64',
                     'sha256' => str_repeat('9', times: 64),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64',
+                    'sha256' => str_repeat('7', times: 64),
                 ],
             ],
         ),
@@ -252,13 +265,18 @@ it('verifies Orbit Agent artifacts on agent-capable gateway and workload nodes',
     ));
 
     expect($agentRequests)
-        ->toHaveCount(2)
+        ->toHaveCount(3)
         ->and(array_column($agentRequests, 'node'))
-        ->toBe(['10.44.0.1', '10.44.0.12'])
+        ->toBe(['10.44.0.1', '10.44.0.12', '10.44.0.8'])
         ->and($agentRequests[0]['input'])
         ->toBe(json_encode([
             'bin_path' => '/usr/local/bin/orbit-agent',
             'sha256' => str_repeat('9', times: 64),
+        ], JSON_THROW_ON_ERROR))
+        ->and($agentRequests[2]['input'])
+        ->toBe(json_encode([
+            'bin_path' => '/Users/nckrtl/.local/bin/orbit-agent',
+            'sha256' => str_repeat('7', times: 64),
         ], JSON_THROW_ON_ERROR));
 });
 

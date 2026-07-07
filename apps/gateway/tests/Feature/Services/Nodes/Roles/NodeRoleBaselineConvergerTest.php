@@ -84,6 +84,44 @@ describe('node role caddy baseline convergence', function (): void {
         ],
     ]);
 
+    it('omits the linux php socket mount from macos orbit-caddy intent', function (): void {
+        $node = todo314CaddyBaselineNode([
+            'platform' => 'macos_26-5-1',
+            'host' => '10.6.0.3',
+            'wireguard_address' => '10.6.0.3',
+            'user' => 'nicky',
+        ]);
+        $assignment = NodeRoleAssignment::factory()->for($node)->create([
+            'role' => NodeRoleName::AppDevelopment->value,
+            'status' => NodeRoleStatus::Pending->value,
+            'settings' => ['tld' => 'nmbp'],
+        ]);
+
+        app(NodeRoleBaselineConverger::class)->converge($node, $assignment);
+
+        $container =
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'caddy')
+                ->sole()
+                ->config['container'] ?? null;
+
+        expect($container)->toBeArray();
+
+        $mountSources = collect($container['mounts'] ?? [])->pluck('source');
+        $mountTargets = collect($container['mounts'] ?? [])->pluck('target');
+
+        expect($mountSources->all())
+            ->toContain('/Users')
+            ->toContain('/Users/nicky/.local/share/orbit/caddy/data')
+            ->toContain('/Users/nicky/.local/share/orbit/caddy/config')
+            ->not->toContain('/run/php');
+
+        expect($mountTargets->all())
+            ->toContain('/Users')
+            ->not->toContain('/run/php');
+    });
+
     it('keeps at most one standalone orbit-caddy intent when several caddy roles converge on one node', function (): void {
         $node = todo314CaddyBaselineNode();
         $converger = app(NodeRoleBaselineConverger::class);
@@ -157,12 +195,16 @@ describe('node role caddy baseline convergence', function (): void {
     });
 });
 
-function todo314CaddyBaselineNode(): Node
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function todo314CaddyBaselineNode(array $attributes = []): Node
 {
     return Node::factory()->create([
         'platform' => 'ubuntu',
         'host' => '10.6.0.50',
         'wireguard_address' => '10.6.0.50',
         'status' => NodeStatus::Active,
+        ...$attributes,
     ]);
 }

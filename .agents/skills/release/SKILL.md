@@ -50,8 +50,8 @@ manifests.
   publish the split package repos and matching tags. It must not run CLI binary
   builds, gateway image builds, or `gh release upload --clobber`.
 - `orbit update:all` is the acceptance path. It updates the operator CLI,
-  gateway service, scheduler service, and selected workload node CLIs from the
-  candidate manifest before GitHub publication.
+  gateway service, scheduler service, selected workload node CLIs, and Orbit
+  Agent binaries from the candidate manifest before GitHub publication.
 - Live topology doctor status is the release safety baseline. Capture it before
   publishing a new release so post-`update:all` doctor output can be compared
   against known pre-existing drift. Always use
@@ -155,12 +155,13 @@ manifests.
    must consume the OCI registry reference recorded in the manifest.
 
    Durable candidate state lands in `.orbit/release-candidates/<build_id>/`:
-   `candidate.env` (version, build id, commit, candidate image, gateway
-   digest, channel manifest URL, and the sha256 of each CLI binary), the
-   image push log, both CLI binaries, and the candidate manifest. No secrets
-   are written to state or logs. `.orbit/release-candidates/latest` holds the
-   newest build id; `env` and `verify` read it when `--build-id` is absent,
-   and an explicit `--build-id=<id>` always wins over the pointer.
+  `candidate.env` (version, build id, commit, candidate image, gateway
+  digest, channel manifest URL, and the sha256 of each CLI and Orbit Agent
+  binary), the image push log, CLI binaries, Orbit Agent binaries, and the
+  candidate manifest. No secrets are written to state or logs.
+  `.orbit/release-candidates/latest` holds the newest build id; `env` and
+  `verify` read it when `--build-id` is absent, and an explicit
+  `--build-id=<id>` always wins over the pointer.
 
    Load the candidate state into the shell and point the target gateway at
    the stable channel URL:

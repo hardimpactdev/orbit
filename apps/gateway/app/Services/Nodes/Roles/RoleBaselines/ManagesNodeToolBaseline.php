@@ -136,10 +136,13 @@ trait ManagesNodeToolBaseline
         }
 
         $dataRoot = NodeHostPaths::homeDirectoryFor($node->platform, $node->user).'/.local/share/orbit/caddy';
-        $mounts = array_map(
-            fn (array $mount): array => $this->macosCaddyMount($mount, $dataRoot),
-            $container->mounts(),
-        );
+        $mounts = array_values(array_filter(
+            array_map(
+                fn (array $mount): ?array => $this->macosCaddyMount($mount, $dataRoot),
+                $container->mounts(),
+            ),
+            fn (?array $mount): bool => $mount !== null,
+        ));
 
         return OrbitCaddyContainer::fromConfig([
             ...$container->spec(),
@@ -149,9 +152,9 @@ trait ManagesNodeToolBaseline
 
     /**
      * @param  array{source: string, target: string, read_only: bool}  $mount
-     * @return array{source: string, target: string, read_only: bool}
+     * @return array{source: string, target: string, read_only: bool}|null
      */
-    private function macosCaddyMount(array $mount, string $dataRoot): array
+    private function macosCaddyMount(array $mount, string $dataRoot): ?array
     {
         return match ($mount['source']) {
             '/var/lib/orbit/caddy/data' => [
@@ -167,6 +170,7 @@ trait ManagesNodeToolBaseline
                 'source' => '/Users',
                 'target' => '/Users',
             ],
+            '/run/php' => null,
             default => $mount,
         };
     }
