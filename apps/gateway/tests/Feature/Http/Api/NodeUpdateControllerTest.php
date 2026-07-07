@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Models\NodeTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -283,6 +284,59 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('success.data.changed', ['user']);
 
         expect(DB::table('nodes')->where('name', 'app-1')->value('user'))->toBe('nckrtl');
+    });
+
+    it('refreshes role-owned caddy config when the ssh user is provided unchanged', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        $targetId = createApiUpdateNode([
+            'platform' => 'macos_26-5-1',
+            'user' => 'nckrtl',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $targetId,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => [
+                'container' => [
+                    'mounts' => [[
+                        'source' => '/Users/nick/.local/share/orbit/caddy/data',
+                        'target' => '/data/caddy',
+                        'read_only' => false,
+                    ]],
+                ],
+            ],
+        ]);
+
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'user' => 'nckrtl',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', []);
+
+        $mounts = NodeTool::query()
+            ->where('node_id', $targetId)
+            ->where('name', 'caddy')
+            ->sole()
+            ->config['container']['mounts'];
+
+        expect($mounts)
+            ->toContain([
+                'source' => '/Users/nckrtl/.local/share/orbit/caddy/data',
+                'target' => '/data/caddy',
+                'read_only' => false,
+            ])
+            ->not->toContain([
+                'source' => '/Users/nick/.local/share/orbit/caddy/data',
+                'target' => '/data/caddy',
+                'read_only' => false,
+            ]);
     });
 
     it('updates the ssh user for a roleless operator node', function (): void {

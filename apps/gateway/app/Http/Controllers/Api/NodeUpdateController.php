@@ -13,6 +13,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Requests\Api\UpdateNodeApiRequest;
 use App\Models\Node;
 use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Nodes\Roles\NodeRoleToolConfigRefresher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
@@ -32,6 +33,7 @@ final class NodeUpdateController implements Loggable
         UpdateNodeApiRequest $request,
         string $name,
         ReenactNodeArtifacts $reenactNodeArtifacts,
+        NodeRoleToolConfigRefresher $nodeRoleToolConfigRefresher,
     ): JsonResponse {
         $this->activityTargetName = $name;
 
@@ -105,6 +107,9 @@ final class NodeUpdateController implements Loggable
         if ($changes !== [] && $this->touchesDnsFields(array_keys($changes))) {
             app(DnsmasqReconciler::class)->reconcile();
         }
+
+        $node = $node->refresh();
+        $nodeRoleToolConfigRefresher->refreshForProvidedNodeFields($node, $providedFields);
 
         $warnings = $this->reenactNodeArtifacts(
             reenactNodeArtifacts: $reenactNodeArtifacts,
