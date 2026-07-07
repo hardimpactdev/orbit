@@ -32,15 +32,17 @@ orbit app:list --json
 
 ## What Happens
 
-Run `app:list` to read the app registry from the gateway and optionally filter
-it by owning node.
+Run `app:list` to read the app registry from the gateway for the effective
+node. Pass `--node` to inspect a specific owning node instead.
 
-`app:list` reads the app registry from the gateway and applies the requested
-filters:
+`app:list` reads the app registry from the gateway and applies the effective
+node filter:
 
 1. Connects to the gateway API.
-2. Reads app registry configuration scoped to what the caller is authorized to see.
-3. Filters by node when `--node` is supplied.
+2. Resolves the node filter from `--node`, then the configured default node,
+   then the gateway-reported caller node.
+3. Reads app registry configuration scoped to that node and to what the caller
+   is authorized to see.
 4. Returns a list of apps with their names, nodes, primary URLs, and any
    registered workspaces.
 
