@@ -57,18 +57,10 @@ Responsibilities:
 - Read the handoff, docs, and existing code enough to define clear worker tasks.
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
-  active slice only, rewriting it when the next slice starts. Before rewriting
-  `.orbit/loop.md`, archive the completed active `.orbit/` state with
-  `bin/orbit-session-archive`; the tool generates the archive name and
-  refreshes an existing archive instead of duplicating it. Archive directories
-  use `YYYY-MM-DD-HHMMSS-<feature-slug>` in the checkout's local time. Do not
-  use compact timestamps, `T` separators, `Z`, or UTC offsets in archive
-  directory names. `HARNESS.md` Session Archives is the authority for archive
-  policy. If the
-  source roadmap lives in another Solo project or machine, create a reachable
-  execution-project scratchpad that links back to the source and mirrors the
-  source roadmap's feature request, slice order, current-slice acceptance
-  criteria, deferred slices, and open decisions before spawning workers.
+  active slice only, rewriting it when the next slice starts. Archive policy,
+  naming, and cross-project roadmap mirroring are owned by `HARNESS.md` ->
+  `Session Archives` and `Feature Slices`; `bin/orbit-session-archive`
+  generates and enforces the archive directory name.
 - Run a dependency scan before spawning workers. If slices or verification lanes
   have disjoint ownership and neither needs the other's result, dispatch them in
   parallel through Solo by default. Use one worker serially only when ownership,
@@ -78,17 +70,10 @@ Responsibilities:
 - Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Codex
   documenter/librarian worker for substantial docs-first or
   documentation-heavy slices when its ownership is separable.
-- Pin each worktree-scoped worker's working directory at launch: Solo
-  `spawn_agent` has no cwd parameter, so pass the assigned worktree through
-  `extra_args` using the agent CLI's working-directory flag per the canonical
-  spawn recipe in the `HARNESS.md` Solo Role Matrix; for agent CLIs without
-  such a flag, spawn a Solo terminal that first `cd`s into the worktree and
-  launch the agent inside it.
-- Launch-time pinning does not replace verification. Make each worktree-scoped
-  Solo worker prove its starting directory and branch before broad reads or
-  edits: `pwd` must be the assigned worktree and `git branch --show-current`
-  must match the assigned branch. If the worker still opens at the project
-  root, relaunch through a Solo terminal that first `cd`s into the worktree.
+- Pin each worktree-scoped worker's working directory using the canonical
+  `HARNESS.md` -> `Solo Role Matrix` spawn recipe, then require the worker to
+  prove `pwd` and branch before broad reads or edits. If launch pinning fails,
+  relaunch through a Solo terminal that first `cd`s into the worktree.
 - In parallel-worker mode, do not let workers run broad dirty-file formatters
   or fixers. Workers run owned-file-only formatting/checks; the feature owner
   runs broad dirty-file tooling after worker diffs are reconciled.
@@ -119,8 +104,8 @@ Responsibilities:
   findings before any durable guardrail is changed.
 - Follow `HARNESS.md` for final-distillation, merge-boundary, post-feature
   signal-audit, session-archive, and cleanup policy. Use `LOOP.md.example` for
-  the local packet shape and `bin/orbit-feature-finalization-check` for
-  executable gate usage.
+  the local packet shape and `bin/orbit-feature-finalization-check` for the
+  executable gate instead of duplicating finalization mechanics here.
 - Own final commit, merge-back, preserved-worktree post-analysis handoff,
   feature completion cleanup, and the implementation report.
 
@@ -221,6 +206,10 @@ Rules:
 
 Report the first checkpoint with the recorded process id, worktree, branch,
 Done Contract location, candidate worker plan, and any blocker.
+After that checkpoint, continue through normal implementation, review,
+verification, finalization, merge-back, and cleanup phases without waiting for
+routine acknowledgment; stop only for the blocker and Stop-if cases above or
+for an explicit user pause.
 ```
 
 ## Solo Implementation Delegation
@@ -464,243 +453,17 @@ failing step instead of dispatching implementation onto a broken checkout.
 
 ## E2E Readiness And Resource Pool
 
-This section is for reading shared E2E provider state and existing artifacts
-only. Agents must not run `composer test:e2e*` commands. Normal feature
-completion uses retained topology proof instead of prepared E2E.
-
-The E2E provider pools are shared across every Orbit worktree on this machine.
-Worktrees symlink `.env.e2e` back to the main checkout, so provider selection,
-runner capacity, lease directories, and host pools are shared state. Read the
-active providers from `.env.e2e`, not from hard-coded hostnames: Docker feature
-tests use `ORBIT_E2E_DOCKER_TEST_RUNNERS`, and Incus preparation/topology work
-uses the configured Incus host variables such as `ORBIT_E2E_INCUS_HOSTS` and
-`ORBIT_E2E_INCUS_HOST_SLOTS`.
-
-Active `orbit-e2e` containers, networks, volumes, VMs, or lease files on those
-configured providers are normal while other features run in other worktrees.
-Resource existence or container count alone is not a stale-resource signal.
-
-When inspecting a user-run E2E lane in a worktree:
-
-1. `composer e2e:preflight` — verifies the configured Incus host is
-   reachable. This is a manual diagnostic command; do not run it as an agent
-   unless the task is retained topology setup rather than E2E testing.
-
-2. Treat the provider pool as a blocking lease pool. If the user reports a long
-   wait at startup, it usually means every configured slot is currently leased
-   by another worktree. Do not reap merely because resources exist on a
-   provider.
-
-3. Use host diagnostics only after a wait exceeds
-   `ORBIT_E2E_SLOT_WAIT_SECONDS`, or when recovering from an interrupted run.
-   Derive Docker hosts from `.env.e2e`:
-
-   ```bash
-   set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a
-
-   printf '%s\n' "${ORBIT_E2E_DOCKER_TEST_RUNNERS:-}" \
-     | tr ',' '\n' \
-     | while IFS=: read -r host slots container_cap; do
-         [ -n "$host" ] || continue
-
-         if [ "$host" = "local" ]; then
-           docker ps \
-             --filter "name=orbit-e2e" \
-             --format '{{.Names}}\t{{.Status}}'
-         else
-           DOCKER_HOST="ssh://$host" docker ps \
-             --filter "name=orbit-e2e" \
-             --format '{{.Names}}\t{{.Status}}'
-         fi
-       done
-   ```
-
-   Interpret output as context only. The resources may belong to live runs from
-   other worktrees.
-
-4. If the shared pool is busy, report that the user-run command can wait or
-   reduce only that command's temporary demand. For Docker, the user can pass a
-   smaller `ORBIT_E2E_DOCKER_TEST_RUNNERS` value or
-   `ORBIT_E2E_PARALLEL_PROCESSES=<n>` in the command environment. Do not commit
-   or permanently edit `.env.e2e` just to make one worktree smaller; that file
-   controls every worktree.
-
-5. Reaping is destructive recovery, not pre-run hygiene. Use the dry run only
-   as inventory, and remember that its output can include legitimate resources
-   from other worktrees:
-
-   ```bash
-   composer e2e:reap-docker
-   composer e2e:reap-incus
-   ```
-
-   Run with `--force` only after confirming the resources belong to an
-   interrupted run you own, or after confirming no live E2E process can be using
-   the configured providers:
-
-   ```bash
-   composer e2e:reap-docker -- --force
-   ```
-
-   Do not use `--older-than=0m` on shared providers unless intentionally
-   deleting retained or abandoned resources you own.
-
-The slot pool is a blocking lease pool: workers that cannot lease a slot
-wait, they do not fail loudly. A long hang at the start of `composer
-test:e2e:docker` or `composer test:e2e:incus` usually means the configured
-pool is fully booked by another worktree, not a real failure.
+This skill only decides when E2E evidence is in or out of scope. Agents must not run `composer test:e2e*` commands. For shared provider-pool etiquette, manual
+user-run E2E artifact handling, reaping boundaries, and configured host
+discovery, use `HARNESS.md` -> `E2E Readiness And Resource Pool`.
 
 ## Retained Incus Inspection Gate
 
-Retained Incus is the mandatory hands-on verification step whenever the change
-touches real VM/node behavior: OS package installs, role baselines, doctor
-restore, tool repair, SSH/sudo, WireGuard, systemd, host mutation, gateway API
-shims, source-mounted checkout behavior, or anything that previously failed
-only inside an Incus topology.
-
-Any feature that creates or changes a CLI command must also pass a retained
-ingress VM Solo-terminal gate before live/release-candidate deployment. This
-includes new commands, flags, options, arguments, human output, JSON schemas,
-validation, prompts, command side effects, and command-family behavior.
-CLI retained topology proof must run in a Solo terminal, not only through a
-detached host command or captured artifact. Keep that Solo terminal open
-through feature completion and leave it available afterward. The preserved
-terminal lets the user later validate the addressed CLI commands and their output.
-The retained topology may be reaped after feature completion, but the Solo
-terminal stays preserved as the validation anchor.
-
-For CLI changes, use this ordering:
-
-1. Create or update focused Pest tests for the command contract.
-2. Implement the smallest slice that makes the focused command behavior work.
-3. Spawn or request a Solo terminal.
-4. Acquire a retained Incus topology with the relevant source-mounted VM.
-5. Verify which Orbit launcher will be exercised. For source-mounted retained
-   topology proof, run the command through the source checkout
-   (`./apps/cli/orbit` from `/home/orbit/orbit-run`) or prove that
-   `/usr/local/bin/orbit` resolves to that source checkout. For
-   release-candidate or live-node proof, use the installed binary path being
-   validated.
-6. Open an interactive shell inside the relevant retained VM, usually the
-   ingress or operator VM, before running the changed command. The Solo
-   terminal should land at `/home/orbit/orbit-run` inside the VM so the user can
-   watch progress, spinners, blinking indicators, prompts, and streaming output
-   while the command runs.
-7. Run or request CLI reviewer PTY frame analysis from the same runtime context
-   before asking the user to inspect human UX/output. For retained Incus proof,
-   prefer running the capture script inside the Solo terminal shell attached to
-   the target VM. The reviewer inspects `summary.txt`, `chunks.jsonl`, and
-   `transcript.txt` for cadence, liveness, skipped frames, wrapping, ANSI
-   framing, and final shape.
-8. Prove the observed human output, JSON output, prompts, failure paths, and
-   side effects that changed.
-9. Give the user a chance to inspect and confirm the VM-observed CLI behavior
-    only after the reviewer has summarized the PTY confidence basis or exact
-    remaining mismatch.
-10. Then run broader quality or release-candidate flow when applicable.
-
-Do not spend the live topology or release-candidate path on a CLI change before
-this retained VM proof and user verification point. Do not treat retained Incus
-as optional "extra confidence" for those changes. The retained check is the
-operator-facing proof gate for feature completion.
-
-Acquire the topology from the implementation worktree and source-mount only the
-roles that need the current checkout:
-
-```bash
-composer e2e:incus -- --start --topology=<kind> --checkout-roles=<roles> --json
-```
-
-For CLI command changes, use the topology that creates a dedicated ingress VM.
-Source-mount the ingress role, plus only the other roles whose current checkout
-is needed for the command under test:
-
-```bash
-composer e2e:incus -- --start \
-  --topology=operator_gateway_app-dev_app-prod_ingress \
-  --checkout-roles=ingress \
-  --json
-```
-
-Identify the target instance from the retained topology output or manifest, then
-open that retained VM in a Solo terminal and stop at a VM shell prompt before
-starting the command. Run the exact changed command path from
-`/home/orbit/orbit-run`, covering human and `--json` output when either contract
-is affected, plus the relevant failure or prompt path. Record the launcher proof
-(`command -v orbit`, `readlink -f`, or the explicit `./apps/cli/orbit` source
-launcher command) next to the observed output.
-
-A host-wrapped one-shot command such as
-`ssh <host> 'incus exec <instance> -- ... <orbit command>'` is useful for
-machine transcripts, JSON capture, or fallback diagnosis, but it does not
-satisfy the retained Solo-terminal inspection gate for human rendering. The
-gate is only satisfied when the Solo terminal is attached inside the VM before
-the human command starts. If the current Solo environment cannot open that
-interactive VM shell, use the configured Incus host with `incus exec` as a
-fallback and report that the user-inspection gate was downgraded.
-
-Inspect through the configured Incus host from `.env.e2e`; do not assume a
-host name unless the environment says so. Typical Beast-backed inspection looks
-like:
-
-```bash
-ssh beast 'incus list --format csv -c ns | grep <retained-id> || true'
-ssh -tt beast 'incus exec <instance> -- sudo -iu orbit bash -lc "cd /home/orbit/orbit-run && exec bash -i"'
-# then run inside the VM shell:
-./apps/cli/orbit <command>
-ssh beast 'incus exec <instance> -- bash -lc "<host command such as gh --version>"'
-```
-
-For source-mounted Incus topologies, `/home/orbit/orbit` is the synced source
-mount and `/home/orbit/orbit-run` is the VM-local runtime mirror. Run Orbit
-commands from `/home/orbit/orbit-run` unless explicitly testing the source
-mount itself. After local worktree edits, refresh a retained topology with:
-
-```bash
-composer e2e:incus -- --sync --id=<id>
-```
-
-That sync is one-way from the implementation worktree to the runner-host source
-mount and then to each recorded VM runtime mirror. It transfers filesystem
-deltas for included files to the runner host, not only Git-dirty files, and then
-refreshes the VM-local runtime mirrors. Keep the implementation worktree as the
-source of truth. VM-side edits in `/home/orbit/orbit-run` are scratch work and
-are overwritten by the next sync; VM-side edits in `/home/orbit/orbit` mutate
-the runner-host copy, not the local worktree.
-
-`--sync` refreshes files on disk but does not reload the long-running gateway
-API container. After a sync, the gateway lease container keeps serving the
-pre-sync code and returns HTTP 500 on every gateway call (including paths the
-change never touched, e.g. single-node `doctor`), which reads as a product
-regression but is not one. Restart the gateway lease containers on the gateway
-VM before re-verifying:
-
-```bash
-ssh <incus-host> 'incus exec <gateway-instance> -- bash -lc \
-  "docker restart orbit-gateway-e2e-topology-lease-http orbit-gateway-e2e-topology-lease-tls"'
-```
-
-Then re-run the changed command. A 500 on an unrelated gateway path right after
-`--sync` is a stale-container signal, not a code defect — restart first, then
-classify.
-
-Record the retained topology id, topology kind, checkout roles, inspected
-instances, Solo terminal or fallback session, commands run, and observed result
-in the Solo report. If you mutate state for a focused check, isolate unrelated
-prepared-state drift first and say what was isolated.
-
-After feature completion, release and verify retained topology cleanup:
-
-```bash
-composer e2e:incus -- --stop --id=<id> --json
-ssh <incus-host> 'incus list --format csv -c ns | grep <id> || true'
-```
-
-If `--stop` misses owned instances because the retained manifest is incomplete,
-delete only the owned leftovers by exact instance name, verify the grep is
-empty, and report the cleanup anomaly. Do not close or archive the Solo terminal
-as part of topology cleanup; preserve it for later user validation of the
-command address/output transcript.
+This skill only names retained topology as a required verification lane when
+the diff calls for it. `HARNESS.md` -> `Retained Incus Inspection Gate` owns
+the detailed trigger list, CLI Solo-terminal gate, source-mount launcher proof,
+sync/restart behavior, and retained-topology cleanup rules. Workflow steps
+below preserve when to invoke that gate and what evidence to record.
 
 ## Workflow
 
@@ -944,76 +707,21 @@ command address/output transcript.
     without rerunning the gates. Retained topology proof is recorded in
     `.orbit/loop.md` or `.orbit/evidence/`; the finalization hook validates the
     row status but does not run topology commands.
-25. Before committing or reporting completion, run a Post-Feature Session
-    Review. Treat `.orbit/loop.md` as the canonical local final packet and
-    point it at the feature thread or handoff, Solo worker sessions, reviewer
-    output, retained terminal or PTY evidence when applicable, verification
-    output, human corrections, and factual orchestrator steering notes. Record
-    candidate signals as they appear so final review classifies an existing
-    packet instead of reconstructing the session. Include the orchestrator
-    thread id or transcript path when available. For non-trivial loops,
-    spawn a fresh post-feature analyzer with
-    `.agents/review-personas/post-feature-analyzer.md`; for tiny local changes,
-    fill the `.orbit/loop.md` final-distillation section with the no-analysis
-    rationale. The analyzer runs before merge: record its verdict in the
-    packet's `- Fresh analyzer:` row (`deferred - <reason>` when analyzer
-    infrastructure fails), which the finalization gate checks at the merge
-    boundary. If the analyzer produces substantive classifications or evidence
-    but omits the prompt's required final verdict line, send one narrow
-    verdict-line checkpoint prompt that asks for only that final line from
-    already gathered evidence. If it still does not emit the line, close or
-    replace the analyzer, prefer an alternate runtime for the replacement when
-    practical, and record the candidate signal before continuing only from
-    defensible direct evidence. Use the analyzer report to classify each
-    guardrail decision as
-    correct-noop, missed, redundant, wrong-target, or deferred; then classify
-    each candidate as local cleanup, already covered by existing
-    `harness-signals/` records, rejected, deferred, or a new durable signal.
-    The feature owner adjudicates the recommendation using session context.
-    Before creating a new guardrail, check whether a later slice already
-    absorbed the lesson in code, tests, docs, skills, signal records, or clearer
-    failure messages; if so, classify it as `already-covered` and name that
-    coverage. Eliminate
-    one-off handoffs, stale historical artifacts, reviewer findings fixed
-    before merge, and ordinary feature work before considering promotion.
-    Required verification that cannot be completed is a `blocked` feature-loop
-    outcome first, not a candidate signal; promote it only when the blocker
-    exposes a recurring process gap. Fill `.orbit/loop.md` `Required
-    verification` with explicit `passed`, `blocked`, or `not applicable` rows
-    for retained topology proof and `composer quality-check`. A passed retained
-    topology row must name the topology id/kind, inspected roles or nodes, exact
-    command, and captured terminal/session or artifact evidence. A passed
-    host-Mac row for native Orbit Agent changes must name
-    `host topology kind=host-macos`, `host=`, `os=`, `command=`, and
-    `evidence=`. Do not mark the
-    loop `complete` or `complete + loop improvement`
-    while any diff-required verification is blocked, pending, skipped, missing,
-    deferred, unresolved, or not run. Update, create, curate, retire, or intentionally
-    leave `harness-signals/` records and the smallest guardrail target only for
-    concrete durable signals that pass the promotion gate in
-    `HARNESS_SIGNALS.md`. Report the loop outcome as `complete`, `blocked`, or
-    `complete + loop improvement`. If no new durable signal remains, say that
-    in `.orbit/loop.md` and the report. Re-run the narrow check that proves any
-    changed guardrail target is reachable. After final distillation is complete,
-    archive the completed active `.orbit/` state with `bin/orbit-session-archive`
-    before cleanup and before any later `.orbit/loop.md` rewrite. The tool
-    copies staged lane-close captures from `.orbit/agent-sessions/` when they
-    exist and uses archive-time extraction only as a no-staging fallback. It
-    generates the archive name, links the archive under the packet's
-    `## Evidence Links`, and refreshes an existing archive instead of
-    duplicating it; `HARNESS.md` Session Archives is the authority.
+25. Before committing or reporting completion, run the Post-Feature Session
+    Review in `HARNESS.md`: fill `.orbit/loop.md` as the canonical final packet,
+    run or explicitly defer the fresh analyzer, classify guardrail candidates,
+    record required verification rows, and archive the completed active
+    `.orbit/` state with `bin/orbit-session-archive` before cleanup or before a
+    later `.orbit/loop.md` rewrite. `HARNESS.md` owns analyzer adjudication,
+    signal promotion, final packet labels, session archive policy, and the
+    exact required verification evidence.
 26. Commit the verified worktree changes on the worktree branch.
 27. Merge the branch back into `main` from the primary `~/orbit` checkout by
-    following `HARNESS.md` merge and cleanup boundaries. Run the full gate at
-    the boundary — `bin/orbit-feature-finalization-check git merge <branch>` —
-    and resolve any BLOCKED verdict before merging. Leave `~/orbit` on
-    updated `main`. Preserve unrelated dirty files in `~/orbit`; if they
-    overlap with the merge, stop for direction instead of discarding them.
-    Do not call the feature done until the verified branch has been merged back
-    into `main`; before merge, report it as implemented and verified on the
-    feature branch, not complete.
-    Keep the feature worktree and branch intact after merge until the
-    post-feature signal audit completes (`HARNESS.md` Feature Cleanup).
+    following `HARNESS.md` -> `Merge Boundary Gate` and `Feature Cleanup`. Run
+    `bin/orbit-feature-finalization-check git merge <branch>` at the boundary,
+    resolve any BLOCKED verdict, leave `~/orbit` on updated `main`, and
+    preserve unrelated dirty files. Do not call the feature done until the
+    verified branch is merged back to `main`.
 28. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
@@ -1021,14 +729,10 @@ command address/output transcript.
     and after results, and either fix regressions immediately or record scoped
     follow-up tasks for intentional migration work.
 29. When the user confirms live topology behavior or explicitly says the
-    feature is complete, run feature completion cleanup: archive the feature
-    scratchpad, close or resolve related Solo todos, and stand down related
-    Solo agents or retained terminals. If the completed active `.orbit/` session
-    has not already been archived, archive it with `bin/orbit-session-archive`
-    before cleanup; the finalization gate blocks `git worktree remove` and
-    `git branch -d` for the feature branch until a matching session archive
-    exists in the primary checkout.
-    Keep this scoped to the feature and report anything intentionally preserved.
+    feature is complete, run feature completion cleanup per `HARNESS.md` ->
+    `Feature Cleanup`: archive feature Solo state, close related todos, stand
+    down related agents or terminals, and keep any intentionally preserved state
+    named in the report.
 
 ## Test-Driven Development
 
@@ -1043,52 +747,12 @@ Normal feature work follows a staged verification model:
   logic, error paths. These run under the app-local Pest runners:
   `bin/orbit-gateway-pest --compact`, `bin/orbit-cli-pest`, or
   `bin/orbit-docs-pest`.
-- **Source/dev topology checks** for behavior that needs a live topology during
-  iteration. Use source-mounted Docker feature tests or retained Incus dev
-  topologies for fast diagnosis, then codify the finding in Pest.
-  - Incus: `composer e2e:incus -- --start --topology=<kind>` acquires a
-    retained disposable topology. `composer e2e:incus -- --live
-    --topology=<kind>` additionally mints a local operator identity and can
-    bring up a local WireGuard tunnel.
-  - Retained/live Incus topologies mount the initiating worktree through a
-    synced source checkout at `/home/orbit/orbit`, then execute from a VM-local
-    runtime mirror at `/home/orbit/orbit-run`. Remote Incus hosts rsync the
-    current worktree to `/tmp/orbit-e2e-sources/<worktree>-<hash>` before
-    acquisition, then mount that synced checkout. After local edits, use
-    `composer e2e:incus -- --sync --id=<id>` to refresh the source mount and
-    runtime mirrors. Keep the local worktree as source of truth; VM-side mirror
-    edits are disposable unless copied back explicitly. Node-local mutable
-    Orbit state remains under `/home/orbit/.config/orbit`.
-  - Use retained/live Incus topologies to develop and test against real VM
-    behavior. For VM/node/tool/package/doctor/role-baseline changes, this
-    retained check is a required feature-completion gate, not an optional
-    diagnostic.
-  - CLI command changes always use the retained ingress VM Solo-terminal gate
-    after focused Pest coverage and before live/release-candidate deployment.
-    Prove the command behavior manually from `/home/orbit/orbit-run` inside the
-    retained ingress VM. Use
-    `./apps/cli/orbit` for source-mounted proof unless you first verify that
-    `/usr/local/bin/orbit` resolves to the source checkout; use the installed
-    binary only for release-candidate or live-node proof. Keep that Solo
-    terminal open through feature completion, leave it available afterward, and
-    give the user a chance to inspect it.
-  - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
-    or `composer e2e:incus -- --stop --all` when finished.
-- **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
-  (`composer test:e2e:docker` / `composer test:e2e:incus`) is manual-only. The
-  user may run these commands from a shell; agents must not run or delegate
-  them. These lanes consume prepared topologies containing the current source
-  and write timing artifacts when the user runs them.
-- **Artifact-backed feature E2E** is also manual-only. When the user runs it,
-  it consumes the built CLI binary and gateway image.
-- **Provider provision gates** are manual-only substrate verification commands.
-  Docker provision refreshes Docker runtime/support images, prepared role
-  images, Docker host artifact distribution, or Docker topology-preparation
-  behavior. Incus provision proves the fresh VM path: installer, `node:new`,
-  base image, WireGuard, systemd, package installation, and host mutation.
-  Agents do not run provider provision commands or the aggregate
-  `composer test:e2e:provision`. There is no standing live-node lane; see
-  `apps/docs/content/testing/README.md` for the full lane map.
+- **Retained topology proof** when the branch diff needs real VM, node, CLI, or
+  native host evidence. `HARNESS.md` owns the retained Incus and host-Mac proof
+  mechanics; `apps/docs/content/testing/README.md` owns the full lane map.
+- **Manual-only E2E and provision lanes**. The user may run those Composer
+  commands from a shell; agents do not run, delegate, background, schedule, or
+  hook `composer test:e2e*` or provider provision commands.
 
 Workflow per change:
 
