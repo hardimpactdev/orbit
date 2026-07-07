@@ -1,0 +1,6 @@
+{
+    "context_tokens_used": 208676,
+    "context_window_tokens": 512000,
+    "tool_call_count": 191,
+    "session_duration_seconds": 889
+}

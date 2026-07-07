@@ -1,0 +1,159 @@
+{
+  "params": {
+    "grok_build.Bash": {
+      "timeout_secs": null,
+      "max_timeout_secs": 36000.0,
+      "output_byte_limit": null,
+      "cmd_prefix": null,
+      "enabled_background": true,
+      "auto_background_on_timeout": true,
+      "strip_competitor_branding": true,
+      "allow_background_operator": true,
+      "surface_bg_completion_reminders": true
+    },
+    "grok_build.ListDir": {
+      "max_output_chars": null
+    },
+    "grok_build.SearchReplace": {
+      "skip_read_before_edit": false,
+      "empty_old_string_does_not_override": false,
+      "unicode_normalized_fallback": false,
+      "include_user_edit_hint": false
+    },
+    "grok_build.Grep": {
+      "max_output_bytes": null,
+      "max_chars_per_line": null
+    },
+    "grok_build.WebFetch": {
+      "cache_ttl_secs": null,
+      "max_cache_entries": null,
+      "timeout_secs": null,
+      "max_content_length": null,
+      "max_markdown_length": null,
+      "context_window_tokens": 512000,
+      "allowed_domains": null,
+      "proxy_endpoint": null
+    },
+    "grok_build.UseTool": {
+      "native_tool_correction": true
+    },
+    "grok_build.AskUserQuestion": {
+      "timeout_enabled": true,
+      "timeout_secs": 360
+    },
+    "grok_build.ReadFile": {
+      "cursor_rules_on_read": false
+    }
+  },
+  "state": {
+    "grok_build.ReportedTaskCompletions": {
+      "reported": [
+        "call-05056906-2b52-44d0-8f17-6223590dc6dd-154",
+        "call-828377a6-d1f6-4be0-b004-fb7a248c3e20-149",
+        "call-25dc0389-c3f7-4890-bece-c62c1881aee4-110"
+      ]
+    },
+    "grok_build.Todo": {
+      "todos": {
+        "checkout-proof": {
+          "content": "Print CHECKOUT_PROOF (done via terminal)",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "whoami": {
+          "content": "Call solo__whoami (done)",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "read-required-docs": {
+          "content": "Read AGENTS.md, AGENT_FAST_PATH, HARNESS.md, LOOP.md.example, .orbit/loop.md (read-only), HARNESS_SIGNALS, harness-signals/README, skills, testing/README",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "read-bin-and-tests": {
+          "content": "Read current bin/*archive, hooks, finalization, and E2ESupport tests + fixtures",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "create-harness-signal": {
+          "content": "Create one new harness-signals/ record for lane-close agent-session capture requirement",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "tdd-capture-command": {
+          "content": "Write failing Pest test for new bin/orbit-agent-session-capture (unique marker match etc) - RED first (done, RED captured before bin impl)",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "run-red-capture": {
+          "content": "Run focused tests, capture RED output to evidence (initial capture REDs done)",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "implement-capture": {
+          "content": "Implement bin/orbit-agent-session-capture with exact marker join, solo.db resolution, staging to .orbit/agent-sessions/",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "tdd-archive-precedence": {
+          "content": "Add/update tests for SessionArchive preferring staged, no-dupe fallback",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "tdd-gate-waiver": {
+          "content": "Update tests and LOOP.md.example + parser for manifest-health gate + waiver label",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "fix-honest-telemetry": {
+          "content": "Ensure no false counters like toolFailureCount in new manifests",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "support-terminal-kind": {
+          "content": "Ensure kind=terminal agent lanes are not silently dropped or routed to waiver explicitly",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "update-docs-skills": {
+          "content": "Update HARNESS.md, LOOP.md.example, implementing-features/SKILL.md as needed",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "run-focused-green": {
+          "content": "Run bin/orbit-gateway-pest --compact --filter=AgentSessionArchive etc and get GREEN",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "final-report": {
+          "content": "Produce FINAL_WORKER_REPORT with all required sections",
+          "priority": "medium",
+          "status": "pending"
+        },
+        "add-more-red-tests-per-correction": {
+          "content": "Add/stengthen RED tests for staged precedence (exact tree snapshot), remaining marker fixtures (parent, wrong-cwd/stale/resumed), gate health/waiver/laneless - while archiver reverted",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "run-focused-reds": {
+          "content": "Run --filter=AgentSessionArchive, SessionArchive, FeatureFinalizationGate ; capture full REDs in worker-801-reds-2026-07-07.txt",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "revert-unverified-edit": {
+          "content": "Reverted bin/orbit-session-archive edit before the strengthened staged RED run (TDD order restored)",
+          "priority": "medium",
+          "status": "completed"
+        },
+        "pause-prod": {
+          "content": "Paused all production changes (bin/, gate logic, LOOP.md.example, harness-signals, skills) pending orchestrator direction after seeing REDs. Capture tool left as-is after its prior RED.",
+          "priority": "medium",
+          "status": "in_progress"
+        }
+      }
+    },
+    "grok_build.Scheduler": {
+      "tasks": []
+    }
+  }
+}

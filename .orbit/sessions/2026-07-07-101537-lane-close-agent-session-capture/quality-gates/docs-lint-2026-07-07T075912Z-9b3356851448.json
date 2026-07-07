@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-07T07:59:05Z",
+    "ended_at": "2026-07-07T07:59:12Z",
+    "duration_seconds": 7,
+    "exit_code": 0,
+    "git": {
+        "branch": "lane-close-agent-session-capture",
+        "commit": "0995bea0b9591bc34fd08360ae6501446f1893a8"
+    },
+    "subgates": []
+}

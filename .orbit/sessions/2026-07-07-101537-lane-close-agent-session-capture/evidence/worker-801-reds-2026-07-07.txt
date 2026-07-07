@@ -1,0 +1,187 @@
+=== RED RUN: AgentSessionArchive (new exact marker fixtures) ===
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[90;1m.[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\AgentSessionArchiveTest[22m [90m>[39m it exact marker join ignores parent-orchestrator transcript containing child marker (does not select parent for child)                         
+[39;1m  capture failed for solo_process_id=777777 provider=codex: ambiguous_duplicate_markers
+candidates checked:
+[
+    "\/var\/folders\/1j\/07wx_xvs2j11pqghj72mqlt80000gn\/T\/orbit-agent-session-archive-capture-parent-45ccf00b502a\/home\/.codex\/sessions\/2026\/07\/07\/rollout-child-777777.jsonl",
+    "\/var\/folders\/1j\/07wx_xvs2j11pqghj72mqlt80000gn\/T\/orbit-agent-session-archive-capture-parent-45ccf00b502a\/home\/.codex\/sessions\/2026\/07\/07\/rollout-parent-orchestrator.jsonl"
+]
+ambiguous: exact marker "Solo process ID: 777777" matched multiple sessions; inspect checked list above.
+
+Failed asserting that 1 is identical to 0.[39;22m
+
+  at [32mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39m:[32m1239[39m
+    1235▕ 
+    1236▕         $process->run();
+    1237▕ 
+    1238▕         // Expect success with child's session (not the parent log), status ok, not ambiguous
+  ➜ 1239▕         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+    1240▕             ->and($process->getOutput())
+    1241▕             ->not->toContain('ambiguous');
+    1242▕ 
+    1243▕         $manifestPath = "{$orbitDir}/agent-sessions/codex/child-exact-{$soloProcessId}/manifest.json";
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39;22m:[39;1m1239[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m,[39m[39m [39m[32;1m12 passed[39;22m[90m (271 assertions)[39m
+  [90mDuration:[39m [39m2.29s[39m
+
+
+=== RED RUN: SessionArchive (staged precedence exact match) ===
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\AgentSessionArchiveTest[22m [90m>[39m it exact marker join ignores parent-orchestrator transcript containing child marker (does not select parent for child)                         
+[39;1m  capture failed for solo_process_id=777777 provider=codex: ambiguous_duplicate_markers
+candidates checked:
+[
+    "\/var\/folders\/1j\/07wx_xvs2j11pqghj72mqlt80000gn\/T\/orbit-agent-session-archive-capture-parent-71f6b43af02e\/home\/.codex\/sessions\/2026\/07\/07\/rollout-child-777777.jsonl",
+    "\/var\/folders\/1j\/07wx_xvs2j11pqghj72mqlt80000gn\/T\/orbit-agent-session-archive-capture-parent-71f6b43af02e\/home\/.codex\/sessions\/2026\/07\/07\/rollout-parent-orchestrator.jsonl"
+]
+ambiguous: exact marker "Solo process ID: 777777" matched multiple sessions; inspect checked list above.
+
+Failed asserting that 1 is identical to 0.[39;22m
+
+  at [32mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39m:[32m1239[39m
+    1235▕ 
+    1236▕         $process->run();
+    1237▕ 
+    1238▕         // Expect success with child's session (not the parent log), status ok, not ambiguous
+  ➜ 1239▕         expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+    1240▕             ->and($process->getOutput())
+    1241▕             ->not->toContain('ambiguous');
+    1242▕ 
+    1243▕         $manifestPath = "{$orbitDir}/agent-sessions/codex/child-exact-{$soloProcessId}/manifest.json";
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39;22m:[39;1m1239[39;22m
+
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\SessionArchiveTest[22m [90m>[39m it session archive prefers staged agent-sessions from lane-close capture and fallback adds/overwrites nothing (exact tree match)                    
+[39;1m  archive agent-sessions tree must exactly match staged source; fallback must not add/overwrite anything
+Failed asserting that two arrays are identical.
+  [39;22m[32m     'codex/staged-lane-801/messages.jsonl' => 'dcfdc8d515e05f53c962e33fa35238c85e5fbba8',[39m[39;1m
+  [39;22m[32m     'codex/staged-lane-801/raw/rollout.jsonl' => '5f36b2ea290645ee34d943220a14b54ee5ea5be5',[39m[39;1m
+  [39;22m[32m     'codex/staged-lane-801/usage.json' => '8546aa2e8bc9668d6125316a53b8417ef2d28258',[39m[39;1m
+  [39;22m[32m+    'manifest.json' => '9e2abfeee77e7edd8205c1c0fd81c3b1898bb350',[39m[39;1m
+  [39;22m[32m ][39m[39;1m
+  [39;22m
+
+  at [32mtests/Feature/E2ESupport/SessionArchiveTest.php[39m:[32m544[39m
+    540▕         // Snapshot AFTER
+    541▕         $afterSnapshot = snapshot_agent_sessions_tree($archiveAgentDir);
+    542▕ 
+    543▕         // The archive agent-sessions must be byte-identical to what was staged (no fallback added files, no overwrites, no top-level manifest.json from live extraction, no extra dirs)
+  ➜ 544▕         expect($afterSnapshot)->toBe($beforeSnapshot, 'archive agent-sessions tree must exactly match staged source; fallback must not add/overwrite anything');
+    545▕ 
+    546▕         // Explicitly assert no fallback-created top-level manifest or unknown providers appeared
+    547▕         expect("{$archiveAgentDir}/manifest.json")->not->toBeFile();
+    548▕         expect("{$archiveAgentDir}/unknown")->not->toBeDirectory();
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionArchiveTest.php[39;22m:[39;1m544[39;22m
+
+
+  [90mTests:[39m    [31;1m2 failed[39;22m[90m,[39m[39m [39m[32;1m21 passed[39;22m[90m (336 assertions)[39m
+  [90mDuration:[39m [39m2.68s[39m
+
+
+=== RED RUN: FeatureFinalizationGate (manifest-health, waiver, laneless) ===
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\FeatureFinalizationGateTest[22m [90m>[39m it finalization gate blocks lanes-having packet with zero healthy captures and no waiver                                                   
+[39;1m  Expected: [39;22m[31mWARNING: Fresh analyzer deferred: deferred - test\n[39m[39;1m
+  [39;22m[31mBLOCKED: does not record an accepted update, rejected/already-covered signal, deferred follow-up, or no-new-signal rationale\n[39m[39;1m
+  [39;22m[39;1m
+
+  To contain: [39;22m[32mhealthy[39m
+
+  at [32mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39m:[32m1456[39m
+    1452▕         expect($process->getExitCode())
+    1453▕             ->toBe(2)
+    1454▕             ->and($process->getOutput())
+    1455▕             ->toContain('BLOCKED')
+  ➜ 1456▕             ->toContain('healthy');
+    1457▕     } finally {
+    1458▕         remove_finalization_lint_dir($packetDir);
+    1459▕     }
+    1460▕ });
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39;22m:[39;1m1456[39;22m
+
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\FeatureFinalizationGateTest[22m [90m>[39m it finalization gate passes with waiver label naming missing providers for lanes-having packet                                             
+[39;1m  Failed asserting that 2 is identical to 0.[39;22m
+
+  at [32mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39m:[32m1497[39m
+    1493▕             args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+    1494▕         );
+    1495▕ 
+    1496▕         expect($process->getExitCode())
+  ➜ 1497▕             ->toBe(0)
+    1498▕             ->and($process->getOutput())
+    1499▕             ->toContain('PASS');
+    1500▕     } finally {
+    1501▕         remove_finalization_lint_dir($packetDir);
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39;22m:[39;1m1497[39;22m
+
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\FeatureFinalizationGateTest[22m [90m>[39m it finalization gate unchanged for laneless loops even with zero captures                                                                  
+[39;1m  Failed asserting that 2 is identical to 0.[39;22m
+
+  at [32mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39m:[32m1532[39m
+    1528▕             args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+    1529▕         );
+    1530▕ 
+    1531▕         expect($process->getExitCode())
+  ➜ 1532▕             ->toBe(0)
+    1533▕             ->and($process->getOutput())
+    1534▕             ->toContain('PASS');
+    1535▕     } finally {
+    1536▕         remove_finalization_lint_dir($packetDir);
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39;22m:[39;1m1532[39;22m
+
+
+  [90mTests:[39m    [31;1m3 failed[39;22m[90m,[39m[39m [39m[32;1m38 passed[39;22m[90m (89 assertions)[39m
+  [90mDuration:[39m [39m10.33s[39m
+
+
+=== FOCUSED VERIFICATION COMMANDS (RED state) ===
+bin/orbit-gateway-pest --compact --filter=AgentSessionArchive
+    1241▕             ->not->toContain('ambiguous');
+    1242▕ 
+    1243▕         $manifestPath = "{$orbitDir}/agent-sessions/codex/child-exact-{$soloProcessId}/manifest.json";
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39;22m:[39;1m1239[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m,[39m[39m [39m[32;1m12 passed[39;22m[90m (271 assertions)[39m
+  [90mDuration:[39m [39m1.66s[39m
+
+bin/orbit-gateway-pest --compact --filter=SessionArchive
+    546▕         // Explicitly assert no fallback-created top-level manifest or unknown providers appeared
+    547▕         expect("{$archiveAgentDir}/manifest.json")->not->toBeFile();
+    548▕         expect("{$archiveAgentDir}/unknown")->not->toBeDirectory();
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/SessionArchiveTest.php[39;22m:[39;1m544[39;22m
+
+
+  [90mTests:[39m    [31;1m2 failed[39;22m[90m,[39m[39m [39m[32;1m21 passed[39;22m[90m (336 assertions)[39m
+  [90mDuration:[39m [39m2.75s[39m
+
+bin/orbit-gateway-pest --compact --filter=FeatureFinalizationGate
+    1534▕             ->toContain('PASS');
+    1535▕     } finally {
+    1536▕         remove_finalization_lint_dir($packetDir);
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/FeatureFinalizationGateTest.php[39;22m:[39;1m1532[39;22m
+
+
+  [90mTests:[39m    [31;1m3 failed[39;22m[90m,[39m[39m [39m[32;1m38 passed[39;22m[90m (89 assertions)[39m
+  [90mDuration:[39m [39m11.00s[39m
+

@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f3b82-836f-7421-803c-3fec10fd0997",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/lane-close-agent-session-capture"
+  },
+  "session_summary": "Lane-Close Agent Session Capture Exact Marker Join",
+  "created_at": "2026-07-07T07:37:17.009135Z",
+  "updated_at": "2026-07-07T07:52:06.757584Z",
+  "num_messages": 861,
+  "num_chat_messages": 555,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 9,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/lane-close-agent-session-capture/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "0995bea0b9591bc34fd08360ae6501446f1893a8",
+  "head_branch": "lane-close-agent-session-capture",
+  "request_id": "2a25191e-9c7f-4fcf-8572-dfa1ca405574",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-07T07:52:06.728276Z",
+  "generated_title": "Lane-Close Agent Session Capture Exact Marker Join",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

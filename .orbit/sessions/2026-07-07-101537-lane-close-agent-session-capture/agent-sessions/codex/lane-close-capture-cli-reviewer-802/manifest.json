@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "lane-close-capture-cli-reviewer-802",
+    "solo_process_id": 802,
+    "kind": "agent",
+    "started_at": "2026-07-07 07:58:38",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/07/rollout-2026-07-07T09-58-39-019f3b96-13c2-7ad2-a409-15c251958cde.jsonl",
+    "source": "codex_exact_marker"
+}

@@ -1,0 +1,25 @@
+
+  [31;1m⨯[39;22m
+  [31m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\AgentSessionArchiveTest[22m [90m>[39m it lane-close capture stages exactly one session via exact "Solo process ID: <id>" marker join                                                     
+[39;1m  capture exit: solo db not found: /Users/nckrtl/orbit/.worktrees/lane-close-agent-session-capture/apps/gateway/tests/../storage/framework/testing/home/.config/soloterm/solo.db
+
+Failed asserting that 2 is identical to 0.[39;22m
+
+  at [32mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39m:[32m1112[39m
+    1108▕ 
+    1109▕         $process->run();
+    1110▕ 
+    1111▕         // This will be RED until the capture bin exists and implements exact marker + staging
+  ➜ 1112▕         expect($process->getExitCode())->toBe(0, 'capture exit: '.$process->getErrorOutput().$process->getOutput());
+    1113▕ 
+    1114▕         $manifestPath = "{$stagingDir}/codex/capture-exact-424242/manifest.json";
+    1115▕         expect($manifestPath)->toBeFile('staged manifest missing after exact capture');
+    1116▕
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/AgentSessionArchiveTest.php[39;22m:[39;1m1112[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m (1 assertions)[39m
+  [90mDuration:[39m [39m0.92s[39m
+

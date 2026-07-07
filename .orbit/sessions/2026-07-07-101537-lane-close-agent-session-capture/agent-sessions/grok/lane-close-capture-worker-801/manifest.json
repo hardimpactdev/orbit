@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "ok",
+    "slug": "lane-close-capture-worker-801",
+    "solo_process_id": 801,
+    "kind": "agent",
+    "started_at": "2026-07-07 07:36:42",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit%2F.worktrees%2Flane-close-agent-session-capture/019f3b82-836f-7421-803c-3fec10fd0997",
+    "source": "grok_exact_marker"
+}
