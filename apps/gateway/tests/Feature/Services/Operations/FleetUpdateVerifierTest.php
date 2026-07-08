@@ -428,6 +428,8 @@ it('emits terminal success only after runner verification passes', function (): 
             ['gateway.service',       'done'],
             ['scheduler.start',       'running'],
             ['scheduler.start',       'done'],
+            ['gateway.stack',         'running'],
+            ['gateway.stack',         'done'],
             ['gateway.agent-config',  'running'],
             ['gateway.agent-config',  'done'],
             ['gateway.host-cli',      'running'],
@@ -533,10 +535,32 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
         "docker service update --detach=true --image '{$gatewayImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" =>
             Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+        fleet_verifier_gateway_stack_deploy_command() => Process::result(),
+        "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
+        "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "{$gatewayImage}\n",
         ),
     ]);
+}
+
+function fleet_verifier_gateway_stack_deploy_command(): string
+{
+    $configRoot = config(key: 'orbit.paths.config_root');
+
+    if (! is_string($configRoot) || trim($configRoot) === '') {
+        throw new RuntimeException('Test config root is not configured.');
+    }
+
+    return (
+        'docker stack deploy -c '
+        .escapeshellarg(rtrim($configRoot, characters: '/').'/swarm/orbit-gateway-stack.yml')
+        ." 'orbit'"
+    );
 }
 
 function fakeFleetVerifierGatewayMigrations(): void

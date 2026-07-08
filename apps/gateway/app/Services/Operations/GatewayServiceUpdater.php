@@ -34,7 +34,7 @@ class GatewayServiceUpdater
 
     private const string SchedulerService = 'orbit_orbit-scheduler';
 
-    private const string OperationsReverbService = 'orbit_orbit-operations-reverb';
+    private const string OPERATIONS_REVERB_SERVICE = 'orbit_orbit-operations-reverb';
 
     private const int GatewayHealthCheckAttempts = 90;
 
@@ -46,8 +46,6 @@ class GatewayServiceUpdater
         private readonly ?FleetUpdateTargetSelector $targets = null,
         private readonly ?GatewayHostAgentConfigWriter $gatewayHostAgentConfigs = null,
         private readonly ?GatewayHostAgentServicePayloadBuilder $gatewayHostAgentServices = null,
-        private readonly ?GatewaySwarmInstaller $swarmInstaller = null,
-        private readonly ?GatewaySwarmStackRenderer $stackRenderer = null,
     ) {}
 
     public function update(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -308,7 +306,7 @@ class GatewayServiceUpdater
 
     private function configRoot(): string
     {
-        $configRoot = config('orbit.paths.config_root', '/home/orbit/.config/orbit');
+        $configRoot = config('orbit.paths.config_root', default: '/home/orbit/.config/orbit');
 
         if (! is_string($configRoot) || trim($configRoot) === '') {
             return '/home/orbit/.config/orbit';
@@ -475,7 +473,7 @@ class GatewayServiceUpdater
         $this->swarm()->deployStack($stackPath);
         $this->waitForGatewayHealth($targetImage);
         $this->waitForServiceReplica(self::SchedulerService);
-        $this->waitForServiceReplica(self::OperationsReverbService);
+        $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE);
 
         return null;
     }
@@ -707,12 +705,12 @@ class GatewayServiceUpdater
 
     private function swarmInstaller(): GatewaySwarmInstaller
     {
-        return $this->swarmInstaller ?? app(GatewaySwarmInstaller::class);
+        return app(GatewaySwarmInstaller::class);
     }
 
     private function stackRenderer(): GatewaySwarmStackRenderer
     {
-        return $this->stackRenderer ?? app(GatewaySwarmStackRenderer::class);
+        return app(GatewaySwarmStackRenderer::class);
     }
 
     private function artifactRelay(): GatewayCliArtifactRelay

@@ -72,7 +72,9 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         $command = (string) $process->command;
         $operations[] = $command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
@@ -229,7 +231,9 @@ it('retries gateway host CLI install when the previous launcher exits during sel
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
@@ -289,7 +293,9 @@ it('restarts the gateway host agent service after host cli install reports no un
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
@@ -385,7 +391,9 @@ it('records gateway host CLI install when the gateway agent transport disconnect
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
@@ -433,7 +441,9 @@ it('fails gateway host CLI install when the transport failure is not an agent re
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
@@ -509,7 +519,9 @@ it('waits for a detached gateway service update to complete before starting the 
     Process::fake(function ($process) use (&$gatewayStates, &$gatewayStateChecks, $plan, $previousImage) {
         $command = (string) $process->command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
@@ -565,7 +577,9 @@ it('treats a same-image gateway service update with no Docker update status as h
         $command = (string) $process->command;
         $operations[] = $command;
 
-        if ($result = gateway_service_updater_common_process_result($command, $plan, $previousImage)) {
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
             return $result;
         }
 
