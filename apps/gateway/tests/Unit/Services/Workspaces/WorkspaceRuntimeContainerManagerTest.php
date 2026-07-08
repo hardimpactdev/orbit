@@ -10,11 +10,18 @@ use App\Enums\Workspaces\WorkspaceRuntimeContainerApplyOutcome;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
@@ -22,7 +29,10 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerApplyException;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspaceRuntimeImageUnavailableException;
+use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -82,6 +92,28 @@ function workspace_runtime_manager_for_test(RemoteShell $shell): WorkspaceRuntim
     );
 }
 
+function workspace_runtime_manager_local_executor_for_test(): RemoteLocalExecutor
+{
+    return new RemoteLocalExecutor(
+        transport: new WorkspaceRuntimeRecordingShell()->failOnRun(),
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: workspace_runtime_manager_operation_secret_for_test(),
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        applicationKey: workspace_runtime_manager_operation_secret_for_test(),
+    );
+}
+
+function workspace_runtime_manager_operation_secret_for_test(): string
+{
+    return 'workspace-runtime-manager-secret';
+}
+
 function inspectPayloadForWorkspace(
     WorkspaceRuntimeContainer $container,
     bool $running = true,
@@ -99,7 +131,7 @@ function inspectPayloadForWorkspace(
     ], JSON_THROW_ON_ERROR);
 }
 
-final class WorkspaceRuntimeRecordingShell implements RemoteShell
+final class WorkspaceRuntimeRecordingShell implements RemoteExecutor
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -107,18 +139,38 @@ final class WorkspaceRuntimeRecordingShell implements RemoteShell
     /** @var list<RemoteShellResult> */
     public array $responses = [];
 
+    private bool $failOnRun = false;
+
     public function __construct(RemoteShellResult ...$responses)
     {
         $this->responses = $responses;
     }
 
+    public function failOnRun(): self
+    {
+        $this->failOnRun = true;
+
+        return $this;
+    }
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        if ($this->failOnRun) {
+            throw new RuntimeException(
+                'Workspace runtime manager fallback test should not use RemoteLocalExecutor transport.',
+            );
+        }
+
         $this->calls[] = ['node' => $node, 'script' => $script, 'options' => $options];
 
         return (
             array_shift($this->responses) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)
         );
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('Workspace runtime manager tests do not start long-running transports.');
     }
 }
 
@@ -136,6 +188,43 @@ it('requires explicit transitional SSH fallback before workspace runtime contain
         );
 
     expect($shell->calls)->toBe([]);
+});
+
+it('lets explicit transitional SSH fallback override local executor for agent capable workspace runtime nodes', function (): void {
+    Http::preventStrayRequests();
+
+    [$workspace, $node] = workspaceAndNodeForManagerTest();
+    $node->forceFill([
+        'orbit_agent_capable' => true,
+        'wireguard_address' => '10.44.0.90',
+    ])->save();
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: inspectPayloadForWorkspace($container), stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+    );
+
+    $outcome = new WorkspaceRuntimeContainerManager(
+        remoteShell: $shell,
+        commands: new DockerCommandBuilder,
+        ca: fake_orbit_ca_service_for_workspace_manager_test(),
+        localExecutor: workspace_runtime_manager_local_executor_for_test(),
+    )->apply($node, $container);
+
+    expect($outcome)
+        ->toBe(WorkspaceRuntimeContainerApplyOutcome::Unchanged)
+        ->and($shell->calls)
+        ->toHaveCount(3)
+        ->and($shell->calls[0]['script'])
+        ->toContain('docker network inspect')
+        ->and($shell->calls[1]['script'])
+        ->toContain('docker container inspect')
+        ->and($shell->calls[2]['script'])
+        ->toContain('docker image inspect');
+
+    Http::assertNothingSent();
 });
 
 it('creates the orbit network, writes php.ini, and runs the workspace runtime container when none exists', function (): void {

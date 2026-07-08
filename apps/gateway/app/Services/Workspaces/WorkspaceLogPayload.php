@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
+use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
@@ -11,20 +12,27 @@ use Illuminate\Support\Carbon;
 
 class WorkspaceLogPayload
 {
+    public function __construct(
+        private readonly WorkspacePlacement $placement = new WorkspacePlacement,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
     public function forRun(WorkspaceRun $run): array
     {
-        $run->loadMissing(['workspace.app.node', 'runSteps.step']);
+        $run->loadMissing(['workspace.app.node', 'workspace.app.instances', 'workspace.appInstance', 'runSteps.step']);
         $workspace = $run->workspace;
         $app = $workspace?->app;
+        $node = $workspace instanceof Workspace
+            ? $this->placement->nodeForWorkspace($workspace)
+            : null;
 
         return [
             'id' => $run->id,
             'workspace' => $workspace?->name,
             'app' => $app?->name,
-            'node' => $app?->node?->name,
+            'node' => $node?->name,
             'type' => $run->phase->value,
             'status' => $run->status,
             'started_at' => $run->started_at?->toIso8601String(),

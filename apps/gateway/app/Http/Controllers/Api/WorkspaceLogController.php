@@ -9,10 +9,12 @@ use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
+use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspaceLogPayload;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +24,7 @@ final readonly class WorkspaceLogController implements Loggable
 {
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
+        private WorkspacePlacement $placement,
     ) {}
 
     public function __invoke(string $run, Request $request, WorkspaceLogPayload $payload): JsonResponse
@@ -38,7 +41,7 @@ final readonly class WorkspaceLogController implements Loggable
         }
 
         $workspaceRun = WorkspaceRun::query()
-            ->with(['workspace.app.node', 'runSteps.step'])
+            ->with(['workspace.app.node', 'workspace.app.instances', 'workspace.appInstance', 'runSteps.step'])
             ->whereKey((int) $run)
             ->first();
 
@@ -46,7 +49,10 @@ final readonly class WorkspaceLogController implements Loggable
             return $this->runNotFound((int) $run);
         }
 
-        $node = $workspaceRun->workspace?->app?->node;
+        $workspace = $workspaceRun->workspace;
+        $node = $workspace instanceof Workspace
+            ? $this->placement->nodeForWorkspace($workspace)
+            : null;
 
         if (! $node instanceof Node) {
             return $this->authorizationFailed('Workspace run owning node could not be resolved.', [

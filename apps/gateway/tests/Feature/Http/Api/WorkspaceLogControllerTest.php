@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
@@ -46,6 +49,53 @@ function createVisibleWorkspaceLogRun(Node $appNode): WorkspaceRun
 {
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
     $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
+    $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'command' => 'Install dependencies']);
+    $run = WorkspaceRun::factory()->create([
+        'workspace_id' => $workspace->id,
+        'status' => 'failed',
+        'started_at' => '2026-05-02 10:00:00',
+        'completed_at' => '2026-05-02 10:00:12',
+    ]);
+    WorkspaceRunStep::factory()->create([
+        'workspace_run_id' => $run->id,
+        'workspace_step_id' => $step->id,
+        'command' => 'composer install',
+        'exit_code' => 1,
+        'output' => 'failure output',
+        'started_at' => '2026-05-02 10:00:03',
+        'completed_at' => '2026-05-02 10:00:11',
+    ]);
+
+    return $run;
+}
+
+function create_app_instance_workspace_log_run(Node $canonicalNode, Node $localNode): WorkspaceRun
+{
+    $app = App::factory()->create([
+        'name' => 'happie',
+        'node_id' => $canonicalNode->id,
+        'domain' => 'happie.test',
+        'path' => '/home/nckrtl/apps/happie',
+    ]);
+    $instance = AppInstance::factory()
+        ->for($app)
+        ->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                node: 'NMBP',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+    $workspace = Workspace::factory()->create([
+        'name' => 'recipes',
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
+    ]);
     $step = WorkspaceStep::factory()->create(['app_id' => $app->id, 'command' => 'Install dependencies']);
     $run = WorkspaceRun::factory()->create([
         'workspace_id' => $workspace->id,
@@ -146,4 +196,27 @@ describe('WorkspaceLogController', function (): void {
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'workspace:log');
     });
+});
+
+it('authorizes and reports app instance workspace run logs against the selected instance node', function (): void {
+    $caller = createWorkspaceLogCallerNode();
+    $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+    $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+    grantWorkspaceLogAccess($caller, $localNode);
+    $run = create_app_instance_workspace_log_run($canonicalNode, $localNode);
+
+    $response = $this->call(
+        'GET',
+        "/api/workspaces/runs/{$run->id}/log",
+        [],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_LOG_CALLER_WG_IP],
+    );
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.run.workspace', 'recipes')
+        ->assertJsonPath('success.data.run.app', 'happie')
+        ->assertJsonPath('success.data.run.node', 'NMBP');
 });
