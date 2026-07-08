@@ -4585,12 +4585,6 @@ message = '''Returned type `('TRelatedModel.illuminate\database\eloquent\relatio
 count = 1
 
 [[issues]]
-file = "app/Services/DatabaseConnections/DatabaseQueryClassifier.php"
-code = "reference-to-undefined-variable"
-message = "Reference created from a previously undefined variable `$matches`."
-count = 1
-
-[[issues]]
 file = "app/Services/DatabaseConnections/DatabaseQueryRunner.php"
 code = "invalid-method-access"
 message = "Attempting to access a method on a non-object type (`false`)."

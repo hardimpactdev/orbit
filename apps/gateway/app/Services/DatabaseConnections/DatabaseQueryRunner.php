@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use JsonException;
+use Orbit\Core\Database\DatabaseQueryClassifier;
 use PDO;
 use RuntimeException;
 use Throwable;

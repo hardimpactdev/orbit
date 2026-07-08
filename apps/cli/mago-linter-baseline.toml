@@ -127,12 +127,6 @@ message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Commands/App/AppListCommand.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
-count = 1
-
-[[issues]]
 file = "app/Commands/App/AppMountCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
@@ -520,6 +514,12 @@ count = 1
 file = "app/Commands/Dns/DnsResolveTldCommand.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Commands/Dns/DnsResolveTldCommand.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
 count = 2
 
 [[issues]]
@@ -1103,12 +1103,6 @@ file = "app/Commands/Node/NodeDefaultCommand.php"
 code = "no-else-clause"
 message = "Avoid `else` clauses."
 count = 1
-
-[[issues]]
-file = "app/Commands/Node/NodeDefaultCommand.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
-count = 3
 
 [[issues]]
 file = "app/Commands/Node/NodeDefaultCommand.php"
@@ -2077,66 +2071,6 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "kan-defect"
-message = "Class has a high kan defect score."
-count = 1
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "literal-named-argument"
-message = 'Literal argument `" \t\r\n("` should be passed as a named argument for clarity.'
-count = 1
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "literal-named-argument"
-message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
-count = 2
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "literal-named-argument"
-message = "Literal argument `'*/'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "literal-named-argument"
-message = "Literal argument `0` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "literal-named-argument"
-message = "Literal argument `2` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "no-insecure-comparison"
-message = "Insecure comparison of sensitive data."
-count = 1
-
-[[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 1
-
-[[issues]]
 file = "app/Services/Database/LocalDatabaseQueryAction.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -2407,12 +2341,6 @@ message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Services/Executor/OperationTokenGuard.php"
-code = "sensitive-parameter"
-message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
-count = 2
-
-[[issues]]
 file = "app/Services/Gateway/FetchGatewayRootCa.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -2602,7 +2530,7 @@ count = 1
 file = "app/Services/GatewayStreamClient.php"
 code = "excessive-parameter-list"
 message = "Parameter list is too long."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/GatewayStreamClient.php"
@@ -2650,6 +2578,12 @@ count = 1
 file = "app/Services/GatewayStreamClient.php"
 code = "prefer-static-closure"
 message = "This closure does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Services/GatewayStreamClient.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -2740,18 +2674,6 @@ count = 6
 file = "app/Services/Node/NodeDefaultActions.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Node/NodeDefaultActions.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
-count = 1
-
-[[issues]]
-file = "app/Services/Node/NodeDefaultActions.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
 count = 1
 
 [[issues]]
@@ -3927,7 +3849,7 @@ count = 10
 [[issues]]
 file = "tests/Feature/Commands/App/AppListCommandTest.php"
 code = "halstead"
-message = "Closure has a high halstead volume"
+message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
@@ -3940,7 +3862,7 @@ count = 1
 file = "tests/Feature/Commands/App/AppListCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'app:list'` should be passed as a named argument for clarity."
-count = 6
+count = 10
 
 [[issues]]
 file = "tests/Feature/Commands/App/AppListCommandTest.php"
@@ -4672,7 +4594,7 @@ count = 1
 file = "tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'dns:resolve-tld'` should be passed as a named argument for clarity."
-count = 17
+count = 18
 
 [[issues]]
 file = "tests/Feature/Commands/Dns/DnsResolveTldCommandTest.php"
@@ -5296,6 +5218,12 @@ count = 2
 file = "tests/Feature/Commands/Metrics/MetricsCommandsTest.php"
 code = "sensitive-parameter"
 message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Node/NodeDefaultCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
 count = 1
 
 [[issues]]
@@ -7777,34 +7705,16 @@ message = "Unsafe use of error control operator `@`."
 count = 2
 
 [[issues]]
-file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `0o755` should be passed as a named argument for clarity."
+file = "tests/Feature/InternalAppRuntimeCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
 count = 1
-
-[[issues]]
-file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
-code = "literal-named-argument"
-message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
-code = "no-error-control-operator"
-message = "Unsafe use of error control operator `@`."
-count = 2
 
 [[issues]]
 file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
 code = "no-literal-password"
 message = "Literal passwords or sensitive data should not be stored in code."
 count = 1
-
-[[issues]]
-file = "tests/Feature/InternalAppRuntimeConfigsProbeCommandTest.php"
-code = "no-shorthand-ternary"
-message = "Use of the shorthand ternary operator."
-count = 3
 
 [[issues]]
 file = "tests/Feature/InternalAppRuntimeContainersProbeCommandTest.php"
@@ -7900,6 +7810,12 @@ count = 1
 file = "tests/Feature/InternalAppWorkerReadinessProbeCommandTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalCaddyConfigCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
 count = 1
 
 [[issues]]
@@ -8077,6 +7993,42 @@ message = "This closure can be simplified to a more concise arrow function."
 count = 1
 
 [[issues]]
+file = "tests/Feature/InternalFleetUpdateInstallCliCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalFleetUpdateInstallCliCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "tests/Feature/InternalFleetUpdateInstallCliCommandTest.php"
+code = "literal-named-argument"
+message = """Literal argument `'{"artifact_url":"file:///tmp/orbit"}'` should be passed as a named argument for clarity."""
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalFleetUpdateInstallCliCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `64` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalFleetUpdateInstallCliCommandTest.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalFleetUpdateVerifyCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume and effort"
+count = 1
+
+[[issues]]
 file = "tests/Feature/InternalManagedFileCommandTest.php"
 code = "braced-string-interpolation"
 message = "Unbraced variable in string interpolation."
@@ -8176,6 +8128,12 @@ count = 1
 file = "tests/Feature/InternalSecretFileCommandTest.php"
 code = "no-shorthand-ternary"
 message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "tests/Feature/InternalSiteCertificateInstallCommandTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
 count = 1
 
 [[issues]]

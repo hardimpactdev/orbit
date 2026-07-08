@@ -169,10 +169,10 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 2
 
 [[issues]]
-file = "app/Commands/App/AppListCommand.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
+file = "app/Commands/App/AppListQueryResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
 
 [[issues]]
 file = "app/Commands/App/AppPruneCommand.php"
@@ -735,6 +735,18 @@ count = 2
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "less-specific-argument"
+message = 'Argument type mismatch for argument #2 of `App\Commands\Concerns\StreamsGatewayProgress::renderProgressFrame`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 2
+
+[[issues]]
+file = "app/Commands/Concerns/StreamsGatewayProgress.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #2 of `App\Commands\Concerns\StreamsGatewayProgress::renderStreamJsonProgressFrame`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/StreamsGatewayProgress.php"
+code = "less-specific-argument"
 message = 'Argument type mismatch for argument #2 of `Orbit\Core\Progress\StreamedStepTree::tree`: expected `list<array<string, mixed>>`, but provided type `list<array<array-key, mixed>>` is less specific.'
 count = 1
 
@@ -765,6 +777,12 @@ count = 1
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\Services\GatewayStreamClient::withNodeTransportPreference`: expected `null|string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/StreamsGatewayProgress.php"
+code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `Orbit\Core\Progress\StreamedStepTree::__construct`: expected `Symfony\Component\Console\Output\OutputInterface`, but found `mixed`.'
 count = 1
 
@@ -772,7 +790,13 @@ count = 1
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 11
+count = 13
+
+[[issues]]
+file = "app/Commands/Concerns/StreamsGatewayProgress.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 2
 
 [[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
@@ -844,6 +868,12 @@ count = 4
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "non-existent-method"
 message = 'Method `line` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/StreamsGatewayProgress.php"
+code = "non-existent-method"
+message = 'Method `nodetransportpreference` does not exist on type `App\Commands\Concerns\StreamsGatewayProgress`.'
 count = 1
 
 [[issues]]
@@ -1141,6 +1171,24 @@ message = "Potentially casting `array` to `string`."
 count = 2
 
 [[issues]]
+file = "app/Commands/Dns/DnsResolveTldCommand.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 1
+
+[[issues]]
+file = "app/Commands/Extension/ExtensionEnableCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/Commands/Extension/ExtensionListCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 6
+
+[[issues]]
 file = "app/Commands/Firewall/FirewallGatewayCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
@@ -1265,6 +1313,18 @@ file = "app/Commands/GatewayStatusCommand.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 1
+
+[[issues]]
+file = "app/Commands/Internal/CaddyConfigCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Commands/Internal/CodexAppConfigCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "app/Commands/Internal/DatabaseQueryLocalCommand.php"
@@ -1589,6 +1649,12 @@ file = "app/Commands/Node/NodeUpdateCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 5
+
+[[issues]]
+file = "app/Commands/Node/NodeUpdateCommand.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
@@ -2143,6 +2209,66 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 1
 
 [[issues]]
+file = "app/Commands/Solo/SoloExtensionPlaceholderCommand.php"
+code = "write-only-property"
+message = "Property `$description` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloExtensionPlaceholderCommand.php"
+code = "write-only-property"
+message = "Property `$signature` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloMutatingCommand.php"
+code = "redundant-docblock-type"
+message = "Redundant docblock type for variable `$payload`."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloMutatingCommand.php"
+code = "write-only-property"
+message = "Property `$description` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloMutatingCommand.php"
+code = "write-only-property"
+message = "Property `$signature` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloReadOnlyCommand.php"
+code = "write-only-property"
+message = "Property `$description` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloReadOnlyCommand.php"
+code = "write-only-property"
+message = "Property `$signature` is written to but never read."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloReadOnlyHumanRenderer.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Commands/Solo/SoloReadOnlyHumanRenderer.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
+
+[[issues]]
+file = "app/Commands/Solo/SoloResponseDataNormalizer.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
 file = "app/Commands/Tool/ToolCredentialsCommand.php"
 code = "less-specific-return-statement"
 message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, mixed>` for function `App\Commands\Tool\ToolCredentialsCommand::successData`.'
@@ -2195,6 +2321,12 @@ file = "app/Commands/Tool/ToolListCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 2
+
+[[issues]]
+file = "app/Commands/Tool/ToolListQueryResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
 
 [[issues]]
 file = "app/Commands/Tool/ToolShowCommand.php"
@@ -2431,9 +2563,39 @@ message = "Assigning `mixed` type to a variable may lead to unexpected behavior.
 count = 3
 
 [[issues]]
-file = "app/Services/Database/DatabaseQueryClassifier.php"
-code = "reference-to-undefined-variable"
-message = "Reference created from a previously undefined variable `$matches`."
+file = "app/Services/Apps/LocalAppRuntimeAction.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "app/Services/Apps/LocalAppWorkerReadinessProbe.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
+
+[[issues]]
+file = "app/Services/Caddy/LocalCaddyConfigAction.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 8
+
+[[issues]]
+file = "app/Services/Caddy/LocalCaddyConfigAction.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Caddy/LocalCaddyConfigAction.php"
+code = "unused-method"
+message = "Method `mustrunwithinput()` is never used."
+count = 1
+
+[[issues]]
+file = "app/Services/Certificates/LocalSiteCertificateInstallAction.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
 count = 1
 
 [[issues]]
@@ -2614,7 +2776,31 @@ count = 1
 file = "app/Services/Executor/OperationTokenGuard.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 2
+
+[[issues]]
+file = "app/Services/Executor/OperationTokenGuard.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "app/Services/Executor/OperationTokenGuard.php"
+code = "redundant-condition"
+message = "This condition (type `true`) will always evaluate to true."
+count = 1
+
+[[issues]]
+file = "app/Services/Executor/OperationTokenGuard.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Services/Executor/OperationTokenGuard.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$argv` is already `list<string>`."
+count = 1
 
 [[issues]]
 file = "app/Services/Gateway/FetchGatewayRootCa.php"
@@ -2714,6 +2900,18 @@ count = 1
 
 [[issues]]
 file = "app/Services/GatewayApiClient.php"
+code = "possibly-null-operand"
+message = "Left operand in `>` comparison might be `null` (type `null|positive-int`)."
+count = 1
+
+[[issues]]
+file = "app/Services/GatewayApiClient.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$status`."
+count = 1
+
+[[issues]]
+file = "app/Services/GatewayApiClient.php"
 code = "string-constant-selector"
 message = "This constant selector uses a non-literal string type (`string`); its specific value cannot be statically determined."
 count = 1
@@ -2740,6 +2938,12 @@ count = 1
 file = "app/Services/GatewayOperationEventStreamClient.php"
 code = "possibly-null-argument"
 message = "Argument #1 of method `Exception::__construct` is possibly `null`, but parameter type `string` does not accept it."
+count = 1
+
+[[issues]]
+file = "app/Services/GatewayOperationEventStreamClient.php"
+code = "possibly-null-operand"
+message = "Left operand in `>` comparison might be `null` (type `null|positive-int`)."
 count = 1
 
 [[issues]]
@@ -2806,7 +3010,7 @@ count = 1
 file = "app/Services/OrbitConfigStore.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 9
+count = 10
 
 [[issues]]
 file = "app/Services/OrbitConfigStore.php"
@@ -2848,6 +3052,30 @@ count = 2
 file = "app/Services/OrbitConfigStoreImporter.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Processes/LocalDockerProcessContainerSpec.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Services/Processes/LocalDockerProcessContainerSpec.php"
+code = "redundant-docblock-type"
+message = "Redundant docblock type for variable `$items`."
+count = 2
+
+[[issues]]
+file = "app/Services/Processes/LocalDockerProcessContainerSpec.php"
+code = "redundant-docblock-type"
+message = "Redundant docblock type for variable `$mount`."
+count = 1
+
+[[issues]]
+file = "app/Services/Processes/LocalDockerProcessContainerSpec.php"
+code = "redundant-docblock-type"
+message = "Redundant docblock type for variable `$port`."
 count = 1
 
 [[issues]]

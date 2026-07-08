@@ -6,6 +6,7 @@ namespace App\Services\DatabaseConnections;
 
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use Orbit\Core\Database\DatabaseQueryClassifier;
 
 final readonly class DatabaseAuditPayload
 {

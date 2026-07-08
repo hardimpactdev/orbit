@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Services\DatabaseConnections;
+namespace Orbit\Core\Database;
 
 use InvalidArgumentException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
+ */
 final class DatabaseQueryClassifier
 {
     private const array READ_TOKENS = [
@@ -27,15 +31,15 @@ final class DatabaseQueryClassifier
 
         $token = $this->firstToken($normalized);
 
-        if ($token === 'with') {
+        if (hash_equals('with', $token)) {
             return $this->classifyWithStatement($normalized);
         }
 
-        $mode = in_array($token, self::READ_TOKENS, true) ? 'read' : 'write';
+        $mode = in_array($token, self::READ_TOKENS, strict: true) ? 'read' : 'write';
 
         return new DatabaseQueryClassification(
             mode: $mode,
-            requiresWriteMode: $mode === 'write',
+            requiresWriteMode: hash_equals('write', $mode),
         );
     }
 
@@ -43,27 +47,37 @@ final class DatabaseQueryClassifier
     {
         $offset = strlen('with');
         $offset = $this->skipWhitespaceAndComments($sql, $offset);
+        $recursiveMatches = [];
 
-        if (preg_match('/\Grecursive\b/i', $sql, $matches, 0, $offset) === 1) {
-            $offset += strlen($matches[0]);
+        if (
+            preg_match(
+                pattern: '/\Grecursive\b/i',
+                subject: $sql,
+                matches: $recursiveMatches,
+                flags: 0,
+                offset: $offset,
+            ) === 1
+        ) {
+            $offset += strlen($recursiveMatches[0]);
         }
 
         while (true) {
             $offset = $this->skipWhitespaceAndComments($sql, $offset);
+            $cteMatches = [];
 
             if (
                 preg_match(
-                    '/\G(?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)(?:\s*\([^)]*\))?\s+as\s*\(/i',
-                    $sql,
-                    $matches,
-                    0,
-                    $offset,
+                    pattern: '/\G(?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)(?:\s*\([^)]*\))?\s+as\s*\(/i',
+                    subject: $sql,
+                    matches: $cteMatches,
+                    flags: 0,
+                    offset: $offset,
                 ) !== 1
             ) {
                 return $this->writeClassification();
             }
 
-            $openParen = $offset + strlen($matches[0]) - 1;
+            $openParen = $offset + strlen($cteMatches[0]) - 1;
             $closeParen = $this->matchingParen($sql, $openParen);
 
             if ($closeParen === null) {
@@ -105,14 +119,18 @@ final class DatabaseQueryClassifier
 
     private function firstToken(string $sql): string
     {
-        return strtolower(strtok($sql, " \t\r\n(") ?: $sql);
+        $tokenDelimiters = " \t\r\n(";
+        $token = strtok($sql, $tokenDelimiters);
+
+        return strtolower($token === false ? $sql : $token);
     }
 
     private function stripLeadingComments(string $sql): string
     {
-        $remaining = substr($sql, $this->skipWhitespaceAndComments($sql, 0));
-
-        return $remaining;
+        return substr(
+            string: $sql,
+            offset: $this->skipWhitespaceAndComments($sql, 0),
+        );
     }
 
     private function skipWhitespaceAndComments(string $sql, int $offset): int
@@ -124,8 +142,8 @@ final class DatabaseQueryClassifier
                 $offset++;
             }
 
-            if (substr($sql, $offset, 2) === '--') {
-                $lineEnd = strpos($sql, "\n", $offset + 2);
+            if (substr(string: $sql, offset: $offset, length: 2) === '--') {
+                $lineEnd = strpos(haystack: $sql, needle: "\n", offset: $offset + 2);
 
                 if ($lineEnd === false) {
                     return $length;
@@ -136,8 +154,8 @@ final class DatabaseQueryClassifier
                 continue;
             }
 
-            if (substr($sql, $offset, 2) === '/*') {
-                $commentEnd = strpos($sql, '*/', $offset + 2);
+            if (substr(string: $sql, offset: $offset, length: 2) === '/*') {
+                $commentEnd = strpos(haystack: $sql, needle: '*/', offset: $offset + 2);
 
                 if ($commentEnd === false) {
                     return $length;
@@ -185,14 +203,14 @@ final class DatabaseQueryClassifier
             }
 
             if ($char === '-' && $next === '-') {
-                $lineEnd = strpos($sql, "\n", $index + 2);
+                $lineEnd = strpos(haystack: $sql, needle: "\n", offset: $index + 2);
                 $index = $lineEnd === false ? $length : $lineEnd;
 
                 continue;
             }
 
             if ($char === '/' && $next === '*') {
-                $commentEnd = strpos($sql, '*/', $index + 2);
+                $commentEnd = strpos(haystack: $sql, needle: '*/', offset: $index + 2);
 
                 if ($commentEnd === false) {
                     return null;
@@ -218,12 +236,4 @@ final class DatabaseQueryClassifier
 
         return null;
     }
-}
-
-final readonly class DatabaseQueryClassification
-{
-    public function __construct(
-        public string $mode,
-        public bool $requiresWriteMode,
-    ) {}
 }

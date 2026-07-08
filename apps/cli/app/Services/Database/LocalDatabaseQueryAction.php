@@ -6,6 +6,7 @@ namespace App\Services\Database;
 
 use InvalidArgumentException;
 use JsonException;
+use Orbit\Core\Database\DatabaseQueryClassifier;
 use PDO;
 use PDOStatement;
 use RuntimeException;

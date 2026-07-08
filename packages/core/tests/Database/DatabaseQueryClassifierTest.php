@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Services\DatabaseConnections\DatabaseQueryClassifier;
+use Orbit\Core\Database\DatabaseQueryClassifier;
 
 describe('DatabaseQueryClassifier', function (): void {
     it('classifies readonly statements as read operations', function (string $sql): void {
-        $classification = app(DatabaseQueryClassifier::class)->classify($sql);
+        $classification = new DatabaseQueryClassifier()->classify($sql);
 
-        expect($classification->mode)->toBe('read')->and($classification->requiresWriteMode)->toBeFalse();
+        expect($classification->mode)
+            ->toBe('read')
+            ->and($classification->requiresWriteMode)
+            ->toBeFalse();
     })->with([
         'select' => ['select * from users'],
         'with' => ['with recent as (select * from users) select * from recent'],
@@ -22,9 +25,12 @@ describe('DatabaseQueryClassifier', function (): void {
     ]);
 
     it('classifies write statements as requiring write mode', function (string $sql): void {
-        $classification = app(DatabaseQueryClassifier::class)->classify($sql);
+        $classification = new DatabaseQueryClassifier()->classify($sql);
 
-        expect($classification->mode)->toBe('write')->and($classification->requiresWriteMode)->toBeTrue();
+        expect($classification->mode)
+            ->toBe('write')
+            ->and($classification->requiresWriteMode)
+            ->toBeTrue();
     })->with([
         'insert' => ['insert into users (name) values ("Nadia")'],
         'update' => ['update users set name = "Nadia"'],
@@ -38,7 +44,7 @@ describe('DatabaseQueryClassifier', function (): void {
     ]);
 
     it('ignores leading comments and whitespace when classifying', function (): void {
-        $classification = app(DatabaseQueryClassifier::class)->classify('
+        $classification = new DatabaseQueryClassifier()->classify('
             -- inspect user rows first
             /* dashboard query */
             select id, name from users
@@ -48,10 +54,10 @@ describe('DatabaseQueryClassifier', function (): void {
     });
 
     it('rejects blank sql', function (): void {
-        app(DatabaseQueryClassifier::class)->classify('   ');
+        new DatabaseQueryClassifier()->classify('   ');
     })->throws(InvalidArgumentException::class, 'SQL is required.');
 
     it('rejects comment-only sql', function (): void {
-        app(DatabaseQueryClassifier::class)->classify("-- just notes\n/* and more notes */");
+        new DatabaseQueryClassifier()->classify("-- just notes\n/* and more notes */");
     })->throws(InvalidArgumentException::class, 'SQL is required.');
 });
