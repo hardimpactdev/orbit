@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShellStream;
 use App\Models\App;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -90,6 +91,7 @@ describe('ProcessLogController follow stream', function (): void {
 
     it('starts operation websocket process log streams with target-side publisher metadata', function (): void {
         config()->set('orbit.operation_token_secret', 'process-log-stream-secret');
+        LocalGatewaySettings::current()->fill(['gateway_url' => 'https://gateway.test'])->save();
         Http::preventStrayRequests();
         Http::fake([
             'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream' => Http::response(
@@ -134,12 +136,19 @@ describe('ProcessLogController follow stream', function (): void {
 
         app()->terminate();
 
-        Http::assertSent(
-            fn (Illuminate\Http\Client\Request $request): bool => process_log_stream_agent_push_operation_request_matches(
-                $request,
-                (string) $operationRunId,
-            ),
-        );
+        $agentPushRequest = process_log_stream_first_agent_push_request();
+        $operationStream = process_log_stream_operation_payload($agentPushRequest);
+
+        expect($agentPushRequest)
+            ->not->toBeNull()->and($operationStream)->toMatchArray([
+                'operation_uuid' => $operationRunId,
+                'channel' => "private-operations.{$operationRunId}",
+                'gateway_url' => 'https://gateway.test',
+                'ca_pem_path' => '/home/orbit/.config/orbit/ca/root.crt',
+                'publish_endpoint' => "/api/operations/{$operationRunId}/stream/publish",
+                'stop_decision_endpoint' => "/api/operations/{$operationRunId}/stream/stop-decision",
+            ])->and($operationStream['publisher_token'] ?? null)->toBeString()
+            ->not->toBeEmpty();
     });
 });
 
@@ -183,6 +192,9 @@ function process_log_stream_api_call(string $transportPreference, string $uri = 
         [],
         [
             'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+            'HTTPS' => 'on',
+            'HTTP_HOST' => 'gateway.test',
+            'SERVER_PORT' => '443',
             'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => $transportPreference,
         ],
     );
@@ -191,15 +203,15 @@ function process_log_stream_api_call(string $transportPreference, string $uri = 
 function process_log_stream_start_api_call(string $transportPreference): TestResponse
 {
     return call(
-        'POST',
-        '/api/processes/vite/log-stream',
-        [
+        method: 'POST',
+        uri: '/api/processes/vite/log-stream',
+        parameters: [
             'app' => 'docs',
             'lines' => 5,
         ],
-        [],
-        [],
-        [
+        cookies: [],
+        files: [],
+        server: [
             'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
             'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => $transportPreference,
         ],
@@ -223,41 +235,52 @@ function process_log_stream_agent_push_request_matches(Illuminate\Http\Client\Re
     ]);
 }
 
+function process_log_stream_first_agent_push_request(): ?Illuminate\Http\Client\Request
+{
+    foreach (Http::recorded() as $record) {
+        $request = $record[0] ?? null;
+
+        if (! $request instanceof Illuminate\Http\Client\Request) {
+            continue;
+        }
+
+        if ($request->url() === 'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream') {
+            return $request;
+        }
+    }
+
+    return null;
+}
+
 /**
- * @mago-expect lint:cyclomatic-complexity
+ * @return array<string, mixed>
  */
-function process_log_stream_agent_push_operation_request_matches(
-    Illuminate\Http\Client\Request $request,
-    string $operationRunId,
-): bool {
-    if (! process_log_stream_agent_push_request_matches($request)) {
-        return false;
+function process_log_stream_operation_payload(?Illuminate\Http\Client\Request $request): array
+{
+    if (! $request instanceof Illuminate\Http\Client\Request) {
+        return [];
     }
 
     $input = $request->data()['input'] ?? null;
 
     if (! is_string($input)) {
-        return false;
+        return [];
     }
 
     $payload = json_decode($input, associative: true);
 
     if (! is_array($payload)) {
-        return false;
+        return [];
     }
 
     $operationStream = $payload['operation_stream'] ?? null;
 
-    return (
-        is_array($operationStream)
-        && ($operationStream['operation_uuid'] ?? null) === $operationRunId
-        && ($operationStream['channel'] ?? null) === "private-operations.{$operationRunId}"
-        && ($operationStream['publish_endpoint'] ?? null) === "/api/operations/{$operationRunId}/stream/publish"
-        && ($operationStream['stop_decision_endpoint'] ?? null)
-        === "/api/operations/{$operationRunId}/stream/stop-decision"
-        && is_string($operationStream['publisher_token'] ?? null)
-        && $operationStream['publisher_token'] !== ''
-    );
+    if (! is_array($operationStream)) {
+        return [];
+    }
+
+    /** @var array<string, mixed> $operationStream */
+    return $operationStream;
 }
 
 /**

@@ -9,6 +9,7 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Processes\ProcessOwnerContextResolver;
@@ -21,6 +22,7 @@ use Throwable;
 
 /**
  * @mago-expect lint:too-many-methods
+ * @mago-expect lint:cyclomatic-complexity
  */
 #[RequiresPermission('process:logs', servingNode: ServingNode::AppOwning)]
 final class ProcessLogStreamStartController implements Loggable
@@ -72,7 +74,12 @@ final class ProcessLogStreamStartController implements Loggable
         }
 
         try {
-            $target = $showProcessLogs->operationStreamTarget($context, $name, $this->lines($request));
+            $target = $showProcessLogs->operationStreamTarget(
+                context: $context,
+                name: $name,
+                lines: $this->lines($request),
+                gatewayUrl: $this->gatewayUrl($request),
+            );
         } catch (GatewayApiException $exception) {
             return $this->error(
                 $exception->errorCode() ?? 'validation_failed',
@@ -144,6 +151,34 @@ final class ProcessLogStreamStartController implements Loggable
         }
 
         return trim($value);
+    }
+
+    private function gatewayUrl(Request $request): string
+    {
+        $settingsUrl = $this->normalizedUrl(LocalGatewaySettings::current()->gateway_url);
+
+        if ($settingsUrl !== null) {
+            return $settingsUrl;
+        }
+
+        $requestUrl = $this->normalizedUrl($request->getSchemeAndHttpHost());
+
+        if ($requestUrl !== null) {
+            return $requestUrl;
+        }
+
+        return $this->normalizedUrl(config('app.url')) ?? '';
+    }
+
+    private function normalizedUrl(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : rtrim($value, characters: '/');
     }
 
     private function integerInput(mixed $value): int

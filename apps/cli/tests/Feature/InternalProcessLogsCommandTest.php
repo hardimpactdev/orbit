@@ -108,7 +108,15 @@ describe('internal process logs command', function (): void {
     it('publishes followed docker logs to the operation stream when metadata is provided', function (): void {
         $bin = install_process_logs_fake_bin();
 
+        app()->instance(
+            App\Services\GatewayOperationStreamPublisher::class,
+            new App\Services\GatewayOperationStreamPublisher(baseUrl: null, timeout: 30),
+        );
+
         Http::fake([
+            'https://gateway.test/api/internal-executor/token/verify' => Http::response(fakeSuccessEnvelope([
+                'allowed' => true,
+            ])),
             'https://gateway.test/api/operations/run-1/stream/publish' => Http::response(fakeSuccessEnvelope([
                 'broadcast' => ['delivered' => true],
             ])),
@@ -130,6 +138,8 @@ describe('internal process logs command', function (): void {
                 'operation_stream' => [
                     'operation_uuid' => 'run-1',
                     'channel' => 'private-operations.run-1',
+                    'gateway_url' => 'https://gateway.test',
+                    'ca_pem_path' => null,
                     'publish_endpoint' => '/api/operations/run-1/stream/publish',
                     'stop_decision_endpoint' => '/api/operations/run-1/stream/stop-decision',
                     'publisher_token' => process_logs_publisher_token(),

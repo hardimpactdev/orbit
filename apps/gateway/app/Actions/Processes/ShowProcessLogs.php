@@ -7,6 +7,7 @@ namespace App\Actions\Processes;
 use App\Contracts\RemoteShellStream;
 use App\Models\Node;
 use App\Models\Process;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationStreamTokens;
 use App\Services\Processes\ProcessOwnerContext;
@@ -37,6 +38,7 @@ final readonly class ShowProcessLogs
         private ProcessServiceMetadataPayload $serviceMetadata,
         private OperationRunRecorder $operationRuns,
         private OperationStreamTokens $streamTokens,
+        private NodeHostPaths $nodeHostPaths,
     ) {}
 
     /**
@@ -100,8 +102,12 @@ final readonly class ShowProcessLogs
     /**
      * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null, operation_stream: array<string, mixed>}
      */
-    public function operationStreamTarget(ProcessOwnerContext $context, string $name, int $lines): array
-    {
+    public function operationStreamTarget(
+        ProcessOwnerContext $context,
+        string $name,
+        int $lines,
+        ?string $gatewayUrl = null,
+    ): array {
         $target = $this->streamTarget($context, $name, $lines);
 
         $run = $this->operationRuns->queued(
@@ -117,6 +123,8 @@ final readonly class ShowProcessLogs
         $target['operation_stream'] = [
             'operation_uuid' => $run->id,
             'channel' => $channel,
+            'gateway_url' => $gatewayUrl,
+            'ca_pem_path' => $this->nodeHostPaths->runtimeTrustPoolPath($target['node']),
             'publish_endpoint' => "/api/operations/{$run->id}/stream/publish",
             'stop_decision_endpoint' => "/api/operations/{$run->id}/stream/stop-decision",
             'publisher_token' => $publisher['token'],

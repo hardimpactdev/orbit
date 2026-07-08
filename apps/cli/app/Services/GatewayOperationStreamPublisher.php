@@ -26,7 +26,7 @@ final readonly class GatewayOperationStreamPublisher
         string $output,
     ): void {
         try {
-            $response = $this->pendingRequest()->post($stream->publishEndpoint, [
+            $response = $this->pendingRequest($stream)->post($stream->publishEndpoint, [
                 'publisher_token' => $stream->publisherToken,
                 'frame' => [
                     'operation_uuid' => $stream->operationUuid,
@@ -52,7 +52,7 @@ final readonly class GatewayOperationStreamPublisher
     public function shouldStop(LocalProcessLogsOperationStream $stream): bool
     {
         try {
-            $response = $this->pendingRequest()->get($stream->stopDecisionEndpoint);
+            $response = $this->pendingRequest($stream)->get($stream->stopDecisionEndpoint);
         } catch (ConnectionException $exception) {
             throw GatewayApiException::networkError($exception);
         }
@@ -64,22 +64,28 @@ final readonly class GatewayOperationStreamPublisher
         return $response->json('success.data.should_stop_tail') === true;
     }
 
-    private function pendingRequest(): PendingRequest
+    private function pendingRequest(LocalProcessLogsOperationStream $stream): PendingRequest
     {
-        $request = Http::baseUrl($this->normalizedBaseUrl())
+        $request = Http::baseUrl($this->normalizedBaseUrl($stream->gatewayUrl))
             ->acceptJson()
             ->timeout($this->timeout);
 
-        if (is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath)) {
-            $request = $request->withOptions(['verify' => $this->caPemPath]);
+        $caPemPath = $stream->caPemPath ?? $this->caPemPath;
+
+        if (is_string($caPemPath) && $caPemPath !== '' && is_file($caPemPath)) {
+            $request = $request->withOptions(['verify' => $caPemPath]);
         }
 
         return $request;
     }
 
-    private function normalizedBaseUrl(): string
+    private function normalizedBaseUrl(?string $streamBaseUrl = null): string
     {
-        $baseUrl = is_string($this->baseUrl) ? trim($this->baseUrl) : '';
+        $baseUrl = is_string($streamBaseUrl) ? trim($streamBaseUrl) : '';
+
+        if ($baseUrl === '') {
+            $baseUrl = is_string($this->baseUrl) ? trim($this->baseUrl) : '';
+        }
 
         if ($baseUrl === '') {
             throw new GatewayApiException('Gateway URL is not configured.');
