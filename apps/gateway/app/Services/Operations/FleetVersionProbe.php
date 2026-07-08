@@ -23,6 +23,7 @@ final readonly class FleetVersionProbe
     public function __construct(
         private FleetUpdateTargetSelector $targets,
         private FleetAgentArtifactProbe $agentArtifacts,
+        private InstalledArtifactRunStatus $installedArtifactRuns,
     ) {}
 
     public function probe(OperationRun $operationRun, OperationUpdatePlan $plan): FleetVersionReport
@@ -96,6 +97,10 @@ final readonly class FleetVersionProbe
             return true;
         }
 
+        if (! $this->installedArtifactRuns->isTrusted($installed->operationRunId)) {
+            return true;
+        }
+
         $targetImage = GatewayImageReference::fromString($plan->gateway_image);
 
         if (! $installed->matches(
@@ -125,6 +130,10 @@ final readonly class FleetVersionProbe
             return true;
         }
 
+        if (! $this->installedArtifactRuns->isTrusted($installed->operationRunId)) {
+            return true;
+        }
+
         $artifact = $this->cliArtifact($plan, CliArtifactPlatform::forNode($node));
 
         return ! $installed->matches(
@@ -139,6 +148,10 @@ final readonly class FleetVersionProbe
         $installed = $gatewayNode->installed_cli;
 
         if ($installed === null) {
+            return true;
+        }
+
+        if (! $this->installedArtifactRuns->isTrusted($installed->operationRunId)) {
             return true;
         }
 

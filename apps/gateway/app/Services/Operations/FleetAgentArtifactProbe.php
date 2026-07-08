@@ -10,6 +10,10 @@ use RuntimeException;
 
 final readonly class FleetAgentArtifactProbe
 {
+    public function __construct(
+        private InstalledArtifactRunStatus $installedArtifactRuns,
+    ) {}
+
     public function nodeNeedsUpdate(Node $node, OperationUpdatePlan $plan): bool
     {
         if (! $node->orbit_agent_capable) {
@@ -25,6 +29,10 @@ final readonly class FleetAgentArtifactProbe
         $installed = $node->installed_agent;
 
         if ($installed === null) {
+            return true;
+        }
+
+        if (! $this->installedArtifactRuns->isTrusted($installed->operationRunId)) {
             return true;
         }
 
