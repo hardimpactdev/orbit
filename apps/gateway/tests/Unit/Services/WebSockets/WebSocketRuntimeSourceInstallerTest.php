@@ -167,7 +167,7 @@ function websocket_runtime_source_installer_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: websocket_runtime_source_installer_operation_secret(),
+        applicationKey: websocket_runtime_source_installer_operation_secret(),
     );
 }
 

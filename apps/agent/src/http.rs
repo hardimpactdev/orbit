@@ -97,6 +97,10 @@ trait TokenVerifier: Send + Sync {
         &self,
         operation_token: &str,
         command: &str,
+        argv: &[String],
+        cwd: Option<&str>,
+        environment: Option<&HashMap<String, String>>,
+        input: Option<&str>,
     ) -> Result<crate::OperationTokenVerification, String>;
 }
 
@@ -105,9 +109,21 @@ impl TokenVerifier for HttpAgentGateway {
         &self,
         operation_token: &str,
         command: &str,
+        argv: &[String],
+        cwd: Option<&str>,
+        environment: Option<&HashMap<String, String>>,
+        input: Option<&str>,
     ) -> Result<crate::OperationTokenVerification, String> {
-        HttpAgentGateway::verify_operation_token(self, operation_token, command)
-            .map_err(|error| format!("{error:?}"))
+        HttpAgentGateway::verify_operation_token(
+            self,
+            operation_token,
+            command,
+            argv,
+            cwd,
+            environment,
+            input,
+        )
+        .map_err(|error| format!("{error:?}"))
     }
 }
 
@@ -143,6 +159,10 @@ impl GatewayCommandAuthorizer {
         &self,
         operation_token: &str,
         command: &str,
+        argv: &[String],
+        cwd: Option<&str>,
+        environment: Option<&HashMap<String, String>>,
+        input: Option<&str>,
     ) -> Result<crate::OperationTokenVerification, String> {
         let mut verifier = self
             .verifier
@@ -156,7 +176,7 @@ impl GatewayCommandAuthorizer {
         verifier
             .as_ref()
             .expect("gateway client initialized")
-            .verify_operation_token(operation_token, command)
+            .verify_operation_token(operation_token, command, argv, cwd, environment, input)
     }
 }
 
@@ -170,7 +190,14 @@ impl CommandAuthorizer for GatewayCommandAuthorizer {
             .argv
             .first()
             .ok_or_else(|| "agent-push argv must include an Orbit command".to_string())?;
-        let verification = self.verify_operation_token(&request.operation_token, command)?;
+        let verification = self.verify_operation_token(
+            &request.operation_token,
+            command,
+            &request.argv,
+            request.cwd.as_deref(),
+            request.environment.as_ref(),
+            request.input.as_deref(),
+        )?;
 
         if verification.allowed {
             return Ok(());
@@ -312,6 +339,8 @@ fn execute_binary_stream(
     if let Some(environment) = &request.environment {
         command.envs(environment);
     }
+
+    apply_agent_push_authorization_environment(&mut command, &request);
 
     if request.input.is_some() {
         command.stdin(Stdio::piped());
@@ -562,6 +591,20 @@ impl Drop for CommandOutputStream {
     }
 }
 
+fn apply_agent_push_authorization_environment(command: &mut Command, request: &CommandPushRequest) {
+    if let Some(command_name) = request.argv.first() {
+        command.env(
+            "ORBIT_AGENT_PUSH_AUTHORIZED_OPERATION_ID",
+            &request.operation_id,
+        );
+        command.env("ORBIT_AGENT_PUSH_AUTHORIZED_COMMAND", command_name);
+        command.env(
+            "ORBIT_AGENT_PUSH_AUTHORIZED_OPERATION_TOKEN",
+            &request.operation_token,
+        );
+    }
+}
+
 fn execute_binary_once(
     request: &CommandPushRequest,
     argv: &[String],
@@ -582,6 +625,8 @@ fn execute_binary_once(
     if let Some(environment) = &request.environment {
         command.envs(environment);
     }
+
+    apply_agent_push_authorization_environment(&mut command, request);
 
     if request.input.is_some() {
         command.stdin(Stdio::piped());
@@ -1045,13 +1090,59 @@ mod tests {
         count: Arc<AtomicUsize>,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct CapturedVerificationRequest {
+        operation_token: String,
+        command: String,
+        argv: Vec<String>,
+        cwd: Option<String>,
+        environment: Option<HashMap<String, String>>,
+        input: Option<String>,
+    }
+
+    struct CapturingTokenVerifier {
+        captured: Arc<Mutex<Option<CapturedVerificationRequest>>>,
+    }
+
     impl TokenVerifier for CountingTokenVerifier {
         fn verify_operation_token(
             &self,
             _operation_token: &str,
             _command: &str,
+            _argv: &[String],
+            _cwd: Option<&str>,
+            _environment: Option<&HashMap<String, String>>,
+            _input: Option<&str>,
         ) -> Result<crate::OperationTokenVerification, String> {
             self.count.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::OperationTokenVerification {
+                allowed: true,
+                reason: None,
+                operation_id: None,
+            })
+        }
+    }
+
+    impl TokenVerifier for CapturingTokenVerifier {
+        fn verify_operation_token(
+            &self,
+            operation_token: &str,
+            command: &str,
+            argv: &[String],
+            cwd: Option<&str>,
+            environment: Option<&HashMap<String, String>>,
+            input: Option<&str>,
+        ) -> Result<crate::OperationTokenVerification, String> {
+            *self.captured.lock().expect("captured verifier lock") =
+                Some(CapturedVerificationRequest {
+                    operation_token: operation_token.to_string(),
+                    command: command.to_string(),
+                    argv: argv.to_vec(),
+                    cwd: cwd.map(str::to_string),
+                    environment: environment.cloned(),
+                    input: input.map(str::to_string),
+                });
+
             Ok(crate::OperationTokenVerification {
                 allowed: true,
                 reason: None,
@@ -1818,6 +1909,56 @@ mod tests {
             2,
             "token verification must be invoked twice"
         );
+    }
+
+    #[test]
+    fn gateway_command_authorizer_forwards_execution_context_to_gateway_verifier() {
+        let captured = Arc::new(Mutex::new(None));
+        let verifier: Arc<dyn TokenVerifier> = Arc::new(CapturingTokenVerifier {
+            captured: captured.clone(),
+        });
+        let factory = Arc::new(move || Ok(verifier.clone()))
+            as Arc<dyn Fn() -> Result<Arc<dyn TokenVerifier>, String> + Send + Sync>;
+        let authorizer = GatewayCommandAuthorizer::with_factory(factory);
+        let request = CommandPushRequest {
+            operation_id: "op_context_test".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec![
+                "internal:executor:verify".to_string(),
+                "--operation-token=op_token".to_string(),
+                "--json".to_string(),
+            ],
+            input: Some("stdin-payload".to_string()),
+            cwd: Some("/srv/orbit".to_string()),
+            environment: Some(HashMap::from([
+                ("ALPHA".to_string(), "1".to_string()),
+                ("BETA".to_string(), "2".to_string()),
+            ])),
+            operation_token: "op_token".to_string(),
+            timeout_seconds: 30,
+            stream: false,
+        };
+
+        authorizer.authorize(&request).expect("authorized");
+
+        let captured = captured
+            .lock()
+            .expect("captured verifier lock")
+            .clone()
+            .expect("verification request captured");
+
+        assert_eq!(captured.operation_token, "op_token");
+        assert_eq!(captured.command, "internal:executor:verify");
+        assert_eq!(captured.argv, request.argv);
+        assert_eq!(captured.cwd.as_deref(), Some("/srv/orbit"));
+        assert_eq!(
+            captured
+                .environment
+                .as_ref()
+                .and_then(|environment| environment.get("ALPHA")),
+            Some(&"1".to_string())
+        );
+        assert_eq!(captured.input.as_deref(), Some("stdin-payload"));
     }
 
     #[tokio::test]

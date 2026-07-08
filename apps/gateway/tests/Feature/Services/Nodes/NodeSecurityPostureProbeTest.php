@@ -253,7 +253,7 @@ function node_security_posture_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: node_security_posture_gateway_secret(),
+        applicationKey: node_security_posture_gateway_secret(),
     );
 }
 

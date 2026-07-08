@@ -193,7 +193,7 @@ function firewall_rule_remote(): RemoteFirewallRule
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: firewall_rule_operation_secret(),
+        applicationKey: firewall_rule_operation_secret(),
     ));
 }
 

@@ -95,16 +95,22 @@ use App\Tools\SeaweedfsTool;
 use App\Tools\VitePlusTool;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
+use InvalidArgumentException;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Orbit\Sdk\Laravel\GatewayConnector;
 use RuntimeException;
 use Spatie\LaravelData\Support\DataConfig;
 
+/**
+ * @mago-expect lint:too-many-methods
+ */
 class AppServiceProvider extends ServiceProvider
 {
     /**
      * Register any application services.
+     *
+     * @mago-expect lint:halstead
      */
     #[\Override]
     public function register(): void
@@ -125,10 +131,12 @@ class AppServiceProvider extends ServiceProvider
             signer: $app->make(OperationTokenSigner::class),
             secret: $this->operationTokenSigningKey(),
             ttlSeconds: $this->operationTokenTtlSeconds(),
+            keyId: $this->operationTokenSigningKeyId(),
         ));
         $this->app->bind(OperationTokenIntrospector::class, fn ($app): OperationTokenIntrospector => new OperationTokenIntrospector(
             verifier: $app->make(OperationTokenVerifier::class),
-            secret: $this->operationTokenSigningKey(),
+            secretsByKeyId: $this->operationTokenSecretsByKeyId(),
+            notBeforeSkewSeconds: $this->operationTokenNotBeforeSkewSeconds(),
         ));
         $this->app->singleton(GatewayConnector::class, static function (Application $app): GatewayConnector {
             $settings = LocalGatewaySettings::current();
@@ -161,7 +169,7 @@ class AppServiceProvider extends ServiceProvider
             operationTokens: $app->make(OperationTokenFactory::class),
             activityLogger: $app->make(ActivityLogger::class),
             operationRuns: $app->make(OperationRunRecorder::class),
-            operationTokenSecret: $this->operationTokenSigningKey(),
+            applicationKey: $this->applicationKey(),
         ));
         $this->app->bind(AppRuntimeContainerManager::class, function (Application $app): AppRuntimeContainerManager {
             $remoteShell = $app->make(RemoteShell::class);
@@ -328,10 +336,16 @@ class AppServiceProvider extends ServiceProvider
 
     private function operationTokenSigningKey(): string
     {
-        $secret = config('app.key');
+        $secret = $this->nonEmptyConfigString('orbit.operation_token_secret');
 
-        if (! is_string($secret) || trim($secret) === '') {
-            throw new RuntimeException('Application key is not configured for operation token signing.');
+        if ($secret !== null) {
+            return $secret;
+        }
+
+        $secret = $this->nonEmptyConfigString('app.key');
+
+        if ($secret === null) {
+            throw new RuntimeException('Operation token signing secret is not configured.');
         }
 
         return $secret;
@@ -339,9 +353,85 @@ class AppServiceProvider extends ServiceProvider
 
     private function hasOperationTokenSigningKey(): bool
     {
-        $secret = config('app.key');
+        if ($this->nonEmptyConfigString('orbit.operation_token_secret') !== null) {
+            return true;
+        }
 
-        return is_string($secret) && trim($secret) !== '';
+        return $this->nonEmptyConfigString('app.key') !== null;
+    }
+
+    private function operationTokenSigningKeyId(): string
+    {
+        $dedicatedSecret = $this->nonEmptyConfigString('orbit.operation_token_secret');
+
+        if ($dedicatedSecret !== null) {
+            $keyId = $this->nonEmptyConfigString('orbit.operation_token_key_id', trimResult: true);
+
+            if ($keyId !== null) {
+                return $keyId;
+            }
+
+            return 'current';
+        }
+
+        return 'app-key';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function operationTokenSecretsByKeyId(): array
+    {
+        $currentKeyId = $this->operationTokenSigningKeyId();
+        $secrets = [
+            $currentKeyId => $this->operationTokenSigningKey(),
+        ];
+
+        $previousKeyId = $this->nonEmptyConfigString('orbit.operation_token_previous_key_id', trimResult: true);
+        $previousSecret = $this->nonEmptyConfigString('orbit.operation_token_previous_secret');
+
+        if ($previousKeyId !== null && $previousSecret !== null) {
+            $secrets[$previousKeyId] = $previousSecret;
+        }
+
+        $dedicatedSecret = $this->nonEmptyConfigString('orbit.operation_token_secret');
+        $appKey = $this->nonEmptyConfigString('app.key');
+
+        if (
+            $dedicatedSecret !== null
+            && $appKey !== null
+            && $currentKeyId !== 'app-key'
+        ) {
+            $secrets['app-key'] = $appKey;
+        }
+
+        return $secrets;
+    }
+
+    private function operationTokenNotBeforeSkewSeconds(): int
+    {
+        $skewSeconds = config('orbit.operation_token_not_before_skew_seconds');
+
+        if (is_int($skewSeconds)) {
+            return max(0, $skewSeconds);
+        }
+
+        if (is_string($skewSeconds) && ctype_digit($skewSeconds)) {
+            return (int) $skewSeconds;
+        }
+
+        return 5;
+    }
+
+    private function applicationKey(): string
+    {
+        $secret = $this->nonEmptyConfigString('app.key');
+
+        if ($secret === null) {
+            throw new RuntimeException('Application key is not configured.');
+        }
+
+        return $secret;
     }
 
     private function operationTokenTtlSeconds(): int
@@ -366,6 +456,21 @@ class AppServiceProvider extends ServiceProvider
         }
 
         return $ttlSeconds;
+    }
+
+    private function nonEmptyConfigString(string $key, bool $trimResult = false): ?string
+    {
+        try {
+            $value = config()->string($key);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        if (trim($value) === '') {
+            return null;
+        }
+
+        return $trimResult ? trim($value) : $value;
     }
 
     private function wgEasyStatePath(): string

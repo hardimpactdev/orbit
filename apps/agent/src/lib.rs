@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -194,14 +195,37 @@ impl GatewayClient {
         &self,
         operation_token: &str,
         command: &str,
+        argv: &[String],
+        cwd: Option<&str>,
+        environment: Option<&HashMap<String, String>>,
+        input: Option<&str>,
     ) -> RequestSpec {
+        let mut body = serde_json::Map::from_iter([
+            (
+                "operation_token".to_string(),
+                Value::String(operation_token.to_string()),
+            ),
+            ("command".to_string(), Value::String(command.to_string())),
+            ("argv".to_string(), json!(argv)),
+            ("consume".to_string(), Value::Bool(true)),
+        ]);
+
+        if let Some(cwd) = cwd {
+            body.insert("cwd".to_string(), Value::String(cwd.to_string()));
+        }
+
+        if let Some(environment) = environment {
+            body.insert("environment".to_string(), json!(environment));
+        }
+
+        if let Some(input) = input {
+            body.insert("input".to_string(), Value::String(input.to_string()));
+        }
+
         self.request(
             "POST",
             "/api/internal-executor/token/verify",
-            Some(json!({
-                "operation_token": operation_token,
-                "command": command,
-            })),
+            Some(Value::Object(body)),
         )
     }
 
@@ -420,11 +444,19 @@ impl HttpAgentGateway {
         &self,
         operation_token: &str,
         command: &str,
+        argv: &[String],
+        cwd: Option<&str>,
+        environment: Option<&HashMap<String, String>>,
+        input: Option<&str>,
     ) -> Result<OperationTokenVerification, GatewayError> {
-        let body = self.send(
-            self.client
-                .build_verify_operation_token_request(operation_token, command),
-        )?;
+        let body = self.send(self.client.build_verify_operation_token_request(
+            operation_token,
+            command,
+            argv,
+            cwd,
+            environment,
+            input,
+        ))?;
 
         self.client.parse_verify_operation_token_response(&body)
     }
@@ -559,10 +591,23 @@ bearer_token = "legacy-token-that-should-be-ignored"
     #[test]
     fn builds_operation_token_verification_request() {
         let client = GatewayClient::new(config_fixture());
+        let argv = vec![
+            "internal:fleet-update:install-cli".to_string(),
+            "--operation-token=signed-operation-token".to_string(),
+            "--json".to_string(),
+        ];
+        let environment = std::collections::HashMap::from([
+            ("ALPHA".to_string(), "1".to_string()),
+            ("BETA".to_string(), "2".to_string()),
+        ]);
 
         let request = client.build_verify_operation_token_request(
             "signed-operation-token",
             "internal:fleet-update:install-cli",
+            &argv,
+            Some("/srv/orbit"),
+            Some(&environment),
+            Some("stdin-payload"),
         );
         let body: Value = serde_json::from_str(request.body.as_deref().expect("body should exist"))
             .expect("request body should be json");
@@ -571,6 +616,12 @@ bearer_token = "legacy-token-that-should-be-ignored"
         assert_eq!(request.path, "/api/internal-executor/token/verify");
         assert_eq!(body["operation_token"], "signed-operation-token");
         assert_eq!(body["command"], "internal:fleet-update:install-cli");
+        assert_eq!(body["argv"][0], "internal:fleet-update:install-cli");
+        assert_eq!(body["argv"][1], "--operation-token=signed-operation-token");
+        assert_eq!(body["cwd"], "/srv/orbit");
+        assert_eq!(body["environment"]["ALPHA"], "1");
+        assert_eq!(body["environment"]["BETA"], "2");
+        assert_eq!(body["input"], "stdin-payload");
     }
 
     #[test]

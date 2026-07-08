@@ -58,7 +58,7 @@ abstract class TestCase extends BaseTestCase
                 operationTokens: $app->make(OperationTokenFactory::class),
                 activityLogger: $app->make(ActivityLogger::class),
                 operationRuns: $app->make(OperationRunRecorder::class),
-                operationTokenSecret: $secret,
+                applicationKey: $secret,
                 defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
             );
         });

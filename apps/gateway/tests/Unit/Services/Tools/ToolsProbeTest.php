@@ -90,7 +90,7 @@ function toolsProbeLocalExecutor(NodeTransportPreference $defaultTransportPrefer
         operationTokens: app(OperationTokenFactory::class),
         activityLogger: app(ActivityLogger::class),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: $secret,
+        applicationKey: $secret,
         defaultTransportPreference: $defaultTransportPreference,
     );
 }

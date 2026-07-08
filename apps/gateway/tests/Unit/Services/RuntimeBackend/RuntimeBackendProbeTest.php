@@ -126,7 +126,7 @@ function runtime_backend_probe_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: runtime_backend_probe_gateway_secret(),
+        applicationKey: runtime_backend_probe_gateway_secret(),
     );
 }
 

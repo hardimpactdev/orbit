@@ -297,7 +297,7 @@ function process_docker_resource(ProcessDockerContainer $container): ProcessDock
             ),
             activityLogger: new ActivityLogger(new ActivityLogCorrelation),
             operationRuns: app(OperationRunRecorder::class),
-            operationTokenSecret: process_docker_resource_operation_secret(),
+            applicationKey: process_docker_resource_operation_secret(),
         ),
     );
 }

@@ -252,7 +252,7 @@ function process_docker_runtime_manager_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: process_docker_runtime_manager_operation_secret(),
+        applicationKey: process_docker_runtime_manager_operation_secret(),
     );
 }
 

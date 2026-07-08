@@ -13,11 +13,25 @@ final class OperationTokenSigner
         string $command,
         int $issuedAt,
         int $expiresAt,
+        string $keyId = 'current',
+        ?string $commandContextHash = null,
     ): OperationToken {
+        $commandContextHash ??= OperationTokenCommandContext::fromTrustedDispatch(
+            argv: [
+                $command,
+                '--operation-token='.OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
+            ],
+            cwd: null,
+            environment: [],
+            input: null,
+        )->hash();
+
         $payload = $this->canonicalPayload(
             id: $id,
             node: $node,
             command: $command,
+            keyId: $keyId,
+            commandContextHash: $commandContextHash,
             issuedAt: $issuedAt,
             expiresAt: $expiresAt,
         );
@@ -37,16 +51,23 @@ final class OperationTokenSigner
             id: $id,
             node: $node,
             command: $command,
+            keyId: $keyId,
+            commandContextHash: $commandContextHash,
             issuedAt: $issuedAt,
             expiresAt: $expiresAt,
             signature: $signature,
         );
     }
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     private function canonicalPayload(
         string $id,
         string $node,
         string $command,
+        string $keyId,
+        string $commandContextHash,
         int $issuedAt,
         int $expiresAt,
     ): string {
@@ -56,6 +77,8 @@ final class OperationTokenSigner
             $this->lengthPrefixed($id)
             .$this->lengthPrefixed($node)
             .$this->lengthPrefixed($command)
+            .$this->lengthPrefixed($keyId)
+            .$this->lengthPrefixed($commandContextHash)
             .$this->lengthPrefixed((string) $issuedAt)
             .$this->lengthPrefixed((string) $expiresAt)
         );

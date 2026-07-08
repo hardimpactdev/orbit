@@ -22,6 +22,7 @@ use App\Services\Operations\OperationTokenFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
+use Orbit\Core\Security\OperationTokenCommandContext;
 use RuntimeException;
 use Throwable;
 
@@ -49,11 +50,11 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         private OperationTokenFactory $operationTokens,
         private ActivityLogger $activityLogger,
         private OperationRunRecorder $operationRuns,
-        private string $operationTokenSecret,
+        private string $applicationKey,
         private NodeTransportPreference $defaultTransportPreference = NodeTransportPreference::Auto,
     ) {
-        if (trim($this->operationTokenSecret) === '') {
-            throw new RuntimeException('Operation token signing secret is required.');
+        if (trim($this->applicationKey) === '') {
+            throw new RuntimeException('Application key is required.');
         }
     }
 
@@ -115,6 +116,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             arguments: $arguments,
             commandOptions: $commandOptions,
             operationId: $operationId,
+            transportOptions: $transportOptions,
         );
 
         $run = $this->operationRuns->queued(
@@ -281,6 +283,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             arguments: $arguments,
             commandOptions: $commandOptions,
             operationId: $operationId,
+            transportOptions: $transportOptions,
         );
 
         $run = $this->operationRuns->queued(
@@ -448,7 +451,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     /**
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
      * @return array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
     private function dispatchCommand(
         Node $node,
@@ -456,6 +462,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $arguments,
         array $commandOptions,
         string $operationId,
+        array $transportOptions,
     ): array {
         $this->commands->build(
             targetNode: $node,
@@ -464,12 +471,25 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             options: $commandOptions,
             operationToken: 'validation-placeholder',
         );
+        $trustedArgv = $this->commands->buildArgv(
+            targetNode: $node,
+            commandName: $commandName,
+            arguments: $arguments,
+            options: $commandOptions,
+            operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
+        );
 
         $operationToken = $this->operationTokens
             ->mint(
                 operationId: $operationId,
                 targetNode: $node->name,
                 command: $commandName,
+                commandContext: OperationTokenCommandContext::fromTrustedDispatch(
+                    argv: $trustedArgv,
+                    cwd: $this->cwd($transportOptions),
+                    environment: $this->localExecutorEnvironment($transportOptions),
+                    input: $this->input($transportOptions),
+                ),
             )
             ->toString();
 
@@ -1123,7 +1143,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         $environment = $this->transportEnvironment($transportOptions);
         $environment['HOME'] = self::LOCAL_EXECUTOR_HOME;
         $environment['ORBIT_CONFIG_PATH'] = self::LOCAL_EXECUTOR_HOME.'/.config/orbit/config.json';
-        $environment['APP_KEY'] = $this->operationTokenSecret;
+        $environment['APP_KEY'] = $this->applicationKey;
 
         return $environment;
     }

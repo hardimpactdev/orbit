@@ -412,7 +412,7 @@ function schedule_probe_local_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: schedule_probe_operation_secret(),
+        applicationKey: schedule_probe_operation_secret(),
     );
 }
 

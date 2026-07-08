@@ -10,6 +10,9 @@ use App\Models\Node;
 use Illuminate\Http\Request;
 use Orbit\Core\Security\OperationToken;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class InternalExecutorLoopbackIdentityResolver
 {
     public function __construct(
@@ -24,8 +27,12 @@ final readonly class InternalExecutorLoopbackIdentityResolver
 
         $compactToken = $this->stringInput($request, 'operation_token');
         $expectedCommand = $this->stringInput($request, 'command');
+        $argv = $this->stringListInput($request, 'argv');
+        $environment = $this->stringMapInput($request, 'environment');
+        $cwd = $this->stringInput($request, 'cwd');
+        $input = $this->stringInput($request, 'input');
 
-        if ($compactToken === null || $expectedCommand === null) {
+        if ($compactToken === null || $expectedCommand === null || $argv === null || $environment === null) {
             return null;
         }
 
@@ -48,6 +55,10 @@ final readonly class InternalExecutorLoopbackIdentityResolver
             compactToken: $compactToken,
             expectedNode: $node->name,
             expectedCommand: $expectedCommand,
+            argv: $argv,
+            cwd: $cwd,
+            environment: $environment,
+            input: $input,
         );
 
         return $introspection['allowed'] ? $node : null;
@@ -60,8 +71,60 @@ final readonly class InternalExecutorLoopbackIdentityResolver
 
     private function stringInput(Request $request, string $key): ?string
     {
-        $value = $request->input($key);
+        if (! is_string($request->input($key))) {
+            return null;
+        }
 
-        return is_string($value) ? $value : null;
+        return $request->string($key)->toString();
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    private function stringListInput(Request $request, string $key): ?array
+    {
+        if (! is_array($request->input($key))) {
+            return null;
+        }
+
+        $value = $request->array($key);
+
+        if (! array_is_list($value)) {
+            return null;
+        }
+
+        foreach ($value as $item) {
+            if (! is_string($item)) {
+                return null;
+            }
+        }
+
+        /** @var list<string> $value */
+        return $value;
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function stringMapInput(Request $request, string $key): ?array
+    {
+        if (! $request->has($key)) {
+            return [];
+        }
+
+        if (! is_array($request->input($key))) {
+            return null;
+        }
+
+        $value = $request->array($key);
+
+        foreach ($value as $itemKey => $itemValue) {
+            if (! is_string($itemKey) || ! is_string($itemValue)) {
+                return null;
+            }
+        }
+
+        /** @var array<string, string> $value */
+        return $value;
     }
 }

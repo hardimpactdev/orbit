@@ -6,12 +6,10 @@ namespace App\Services\Executor;
 
 use App\Exceptions\OperationTokenGuardException;
 use App\Services\GatewayApiClient;
-use App\Services\OrbitConfigStore;
 use Closure;
 use InvalidArgumentException;
 use Orbit\Core\Security\OperationToken;
-use Orbit\Core\Security\OperationTokenSigner;
-use Orbit\Core\Security\OperationTokenVerifier;
+use SensitiveParameter;
 use Throwable;
 
 final readonly class OperationTokenGuard
@@ -19,27 +17,27 @@ final readonly class OperationTokenGuard
     public function __construct(
         /** @var Closure(): GatewayApiClient */
         private Closure $resolveGateway,
-        /** @var (Closure(): ?string)|null */
-        private ?Closure $resolveLocalNode = null,
-        private ?OperationTokenVerifier $localVerifier = null,
     ) {}
 
-    public function verify(string $compactToken, string $expectedCommand): void
-    {
+    public function verify(
+        #[SensitiveParameter]
+        string $compactToken,
+        string $expectedCommand,
+    ): void {
         if ($expectedCommand === '') {
             throw new OperationTokenGuardException;
         }
 
-        try {
-            $response = ($this->resolveGateway)()->post('/api/internal-executor/token/verify', [
-                'operation_token' => $compactToken,
-                'command' => $expectedCommand,
-            ]);
-        } catch (Throwable) {
-            if ($this->verifyLocally($compactToken, $expectedCommand)) {
-                return;
-            }
+        if ($this->agentPushAlreadyAuthorized($compactToken, $expectedCommand)) {
+            return;
+        }
 
+        try {
+            $response = ($this->resolveGateway)()->post(
+                '/api/internal-executor/token/verify',
+                $this->verificationPayload($compactToken, $expectedCommand),
+            );
+        } catch (Throwable) {
             throw new OperationTokenGuardException;
         }
 
@@ -68,17 +66,98 @@ final readonly class OperationTokenGuard
         return ($data['allowed'] ?? null) === true;
     }
 
-    private function verifyLocally(string $compactToken, string $expectedCommand): bool
-    {
-        $secret = $this->localSecret();
+    /**
+     * @return array{
+     *     operation_token: string,
+     *     command: string,
+     *     argv: list<string>,
+     *     cwd?: string,
+     *     environment: array<string, string>,
+     *     consume: true,
+     * }
+     */
+    private function verificationPayload(
+        #[SensitiveParameter]
+        string $compactToken,
+        string $expectedCommand,
+    ): array {
+        $payload = [
+            'operation_token' => $compactToken,
+            'command' => $expectedCommand,
+            'argv' => $this->currentArgv($expectedCommand, $compactToken),
+            'environment' => $this->verificationEnvironment(),
+            'consume' => true,
+        ];
+        $cwd = getcwd();
 
-        if ($secret === null) {
-            return false;
+        if (is_string($cwd) && $cwd !== '') {
+            $payload['cwd'] = $cwd;
         }
 
-        $expectedNode = $this->localNode();
+        return $payload;
+    }
 
-        if ($expectedNode === null) {
+    /**
+     * @return list<string>
+     */
+    private function currentArgv(
+        string $expectedCommand,
+        #[SensitiveParameter]
+        string $compactToken,
+    ): array {
+        $argv = $_SERVER['argv'] ?? [];
+
+        if (is_array($argv)) {
+            foreach ($argv as $index => $argument) {
+                if ($argument === $expectedCommand) {
+                    /** @var list<string> $commandArgv */
+                    return array_values(array_slice($argv, $index));
+                }
+            }
+        }
+
+        return [
+            $expectedCommand,
+            "--operation-token={$compactToken}",
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function verificationEnvironment(): array
+    {
+        $environment = [];
+
+        foreach (['APP_KEY', 'HOME', 'ORBIT_CONFIG_PATH'] as $key) {
+            $value = getenv($key);
+
+            if (! is_string($value) || $value === '') {
+                continue;
+            }
+
+            $environment[$key] = $value;
+        }
+
+        return $environment;
+    }
+
+    private function agentPushAlreadyAuthorized(
+        #[SensitiveParameter]
+        string $compactToken,
+        string $expectedCommand,
+    ): bool {
+        $authorizedOperationId = getenv('ORBIT_AGENT_PUSH_AUTHORIZED_OPERATION_ID');
+        $authorizedCommand = getenv('ORBIT_AGENT_PUSH_AUTHORIZED_COMMAND');
+        $authorizedToken = getenv('ORBIT_AGENT_PUSH_AUTHORIZED_OPERATION_TOKEN');
+
+        if (
+            ! is_string($authorizedOperationId)
+            || ! is_string($authorizedCommand)
+            || ! is_string($authorizedToken)
+            || ! hash_equals($compactToken, $authorizedToken)
+            || ! hash_equals($expectedCommand, $authorizedCommand)
+        ) {
             return false;
         }
 
@@ -88,57 +167,6 @@ final readonly class OperationTokenGuard
             return false;
         }
 
-        return $this->localVerifier()->verify(
-            secret: $secret,
-            token: $token,
-            expectedNode: $expectedNode,
-            expectedCommand: $expectedCommand,
-        );
-    }
-
-    private function localSecret(): ?string
-    {
-        $configured = config('app.key');
-
-        if (is_string($configured) && trim($configured) !== '') {
-            return $configured;
-        }
-
-        foreach ([getenv('APP_KEY'), $_SERVER['APP_KEY'] ?? null, $_ENV['APP_KEY'] ?? null] as $value) {
-            if (is_string($value) && trim($value) !== '') {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    private function localNode(): ?string
-    {
-        if ($this->resolveLocalNode !== null) {
-            return $this->normalizeLocalNode(($this->resolveLocalNode)());
-        }
-
-        try {
-            return $this->normalizeLocalNode(app(OrbitConfigStore::class)->defaultNode());
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    private function normalizeLocalNode(?string $node): ?string
-    {
-        if ($node === null) {
-            return null;
-        }
-
-        $node = trim($node);
-
-        return $node === '' ? null : $node;
-    }
-
-    private function localVerifier(): OperationTokenVerifier
-    {
-        return $this->localVerifier ?? new OperationTokenVerifier(new OperationTokenSigner);
+        return hash_equals($token->id, $authorizedOperationId) && hash_equals($token->command, $expectedCommand);
     }
 }

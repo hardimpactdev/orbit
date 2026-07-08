@@ -22,6 +22,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Tests\TestCase;
@@ -504,10 +505,26 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->and($token->expiresAt)
             ->toBe(1_798_105_320)
             ->and(new OperationTokenVerifier(new OperationTokenSigner)->verify(
-                secret: 'gateway-secret',
+                secretsByKeyId: [$token->keyId => 'gateway-secret'],
                 token: $token,
                 expectedNode: $node->name,
                 expectedCommand: 'internal:workspace-adapter:lookup',
+                expectedCommandContextHash: OperationTokenCommandContext::fromTrustedDispatch(
+                    argv: new LocalExecutorCommandBuilder()->buildArgv(
+                        targetNode: $node,
+                        commandName: 'internal:workspace-adapter:lookup',
+                        arguments: ['lookup', 'polyscope'],
+                        options: [
+                            'state-path' => "/home/orbit/.polyscope/state's.db",
+                            'enabled' => true,
+                            'attempts' => 3,
+                        ],
+                        operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
+                    ),
+                    cwd: null,
+                    environment: remoteLocalExecutorEnvironment(),
+                    input: null,
+                )->hash(),
                 now: 1_798_105_200,
             ))
             ->toBeTrue();
@@ -682,7 +699,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             ),
             activityLogger: remoteLocalExecutorActivityLogger(),
             operationRuns: app(OperationRunRecorder::class),
-            operationTokenSecret: 'gateway-secret',
+            applicationKey: 'gateway-secret',
         );
 
         expect(fn (): RemoteShellResult => $executor->runInternal(
@@ -1410,7 +1427,7 @@ function remoteLocalExecutor(
         operationTokens: $operationTokens ?? remoteLocalExecutorTokenFactory(),
         activityLogger: remoteLocalExecutorActivityLogger(),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: 'gateway-secret',
+        applicationKey: 'gateway-secret',
         defaultTransportPreference: $defaultTransportPreference,
     );
 }

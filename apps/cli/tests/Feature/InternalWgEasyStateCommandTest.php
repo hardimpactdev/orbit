@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenSigner;
 use Symfony\Component\Process\Process;
 
@@ -1307,6 +1308,17 @@ function countWgEasyStateRows(string $path, string $table): int
 function runWgEasyStateCommandProcess(array $parameters, array $environment = []): Process
 {
     $arguments = [PHP_BINARY, 'orbit', 'internal:wg-easy:state'];
+    $operationToken = $parameters['--operation-token'] ?? null;
+    $authorizationEnvironment = [];
+
+    if (is_string($operationToken) && $operationToken !== '') {
+        $token = OperationToken::parse($operationToken);
+        $authorizationEnvironment = [
+            'ORBIT_AGENT_PUSH_AUTHORIZED_OPERATION_ID' => $token->id,
+            'ORBIT_AGENT_PUSH_AUTHORIZED_COMMAND' => $token->command,
+            'ORBIT_AGENT_PUSH_AUTHORIZED_OPERATION_TOKEN' => $operationToken,
+        ];
+    }
 
     foreach ($parameters as $key => $value) {
         if ($value === true) {
@@ -1335,11 +1347,15 @@ function runWgEasyStateCommandProcess(array $parameters, array $environment = []
         $process = new Process(
             $arguments,
             base_path(),
-            array_merge([
-                'APP_KEY' => 'gateway-secret',
-                'ORBIT_CONFIG_PATH' => $configPath,
-                'ORBIT_GATEWAY_URL' => '',
-            ], $environment),
+            array_merge(
+                [
+                    'APP_KEY' => 'gateway-secret',
+                    'ORBIT_CONFIG_PATH' => $configPath,
+                    'ORBIT_GATEWAY_URL' => '',
+                ],
+                $authorizationEnvironment,
+                $environment,
+            ),
         );
         $process->run();
 

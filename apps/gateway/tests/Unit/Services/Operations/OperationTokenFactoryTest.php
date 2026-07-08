@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Operations\OperationTokenFactory;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Tests\TestCase;
@@ -28,6 +29,8 @@ describe(OperationTokenFactory::class, function (): void {
             ->toBe('app-dev')
             ->and($token->command)
             ->toBe('internal:executor:verify')
+            ->and($token->keyId)
+            ->toBe('current')
             ->and($token->issuedAt)
             ->toBe($issuedAt)
             ->and($token->expiresAt)
@@ -36,14 +39,14 @@ describe(OperationTokenFactory::class, function (): void {
             ->not
             ->toBe('')
             ->and(explode('.', $token->toString()))
-            ->toHaveCount(6)
+            ->toHaveCount(8)
             ->and(OperationToken::parse($token->toString()))
             ->toEqual($token)
-            ->and(operationTokenFactoryTestVerifier()->verify(
-                secret: 'gateway-secret',
+            ->and(operation_token_factory_test_verify(
                 token: $token,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
+                secret: 'gateway-secret',
                 now: $issuedAt,
             ))
             ->toBeTrue();
@@ -56,11 +59,11 @@ describe(OperationTokenFactory::class, function (): void {
             command: 'internal:executor:verify',
         );
 
-        expect(operationTokenFactoryTestVerifier()->verify(
-            secret: 'gateway-secret',
+        expect(operation_token_factory_test_verify(
             token: $token,
             expectedNode: 'app-dev',
             expectedCommand: 'internal:workspace-adapter',
+            secret: 'gateway-secret',
             now: 1_798_105_200,
         ))->toBeFalse();
     });
@@ -72,11 +75,11 @@ describe(OperationTokenFactory::class, function (): void {
             command: 'internal:executor:verify',
         );
 
-        expect(operationTokenFactoryTestVerifier()->verify(
-            secret: 'gateway-secret',
+        expect(operation_token_factory_test_verify(
             token: $token,
             expectedNode: 'app-prod',
             expectedCommand: 'internal:executor:verify',
+            secret: 'gateway-secret',
             now: 1_798_105_200,
         ))->toBeFalse();
     });
@@ -88,11 +91,11 @@ describe(OperationTokenFactory::class, function (): void {
             command: 'internal:executor:verify',
         );
 
-        expect(operationTokenFactoryTestVerifier()->verify(
-            secret: 'gateway-secret',
+        expect(operation_token_factory_test_verify(
             token: $token,
             expectedNode: 'app-dev',
             expectedCommand: 'internal:executor:verify',
+            secret: 'gateway-secret',
             now: 1_798_105_202,
         ))->toBeFalse();
     });
@@ -111,11 +114,11 @@ describe(OperationTokenFactory::class, function (): void {
 
         expect($tampered->id)
             ->toBe('operation-verify-tampered')
-            ->and(operationTokenFactoryTestVerifier()->verify(
-                secret: 'gateway-secret',
+            ->and(operation_token_factory_test_verify(
                 token: $tampered,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
+                secret: 'gateway-secret',
                 now: 1_798_105_200,
             ))
             ->toBeFalse();
@@ -141,6 +144,10 @@ describe(OperationTokenFactory::class, function (): void {
 
     it('resolves from the app key config through the container', function (): void {
         config()->set('app.key', 'gateway-app-key');
+        config()->set('orbit.operation_token_secret', null);
+        config()->set('orbit.operation_token_key_id', null);
+        config()->set('orbit.operation_token_previous_secret', null);
+        config()->set('orbit.operation_token_previous_key_id', null);
         config()->set('orbit.operation_token_ttl_seconds', '30');
 
         app()->forgetInstance(OperationTokenFactory::class);
@@ -154,11 +161,11 @@ describe(OperationTokenFactory::class, function (): void {
 
         expect($token->expiresAt - $token->issuedAt)
             ->toBe(30)
-            ->and(operationTokenFactoryTestVerifier()->verify(
-                secret: 'gateway-app-key',
+            ->and(operation_token_factory_test_verify(
                 token: $token,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
+                secret: 'gateway-app-key',
                 now: $token->issuedAt,
             ))
             ->toBeTrue();
@@ -181,6 +188,38 @@ function operationTokenFactoryTestFactory(
 function operationTokenFactoryTestVerifier(): OperationTokenVerifier
 {
     return new OperationTokenVerifier(new OperationTokenSigner);
+}
+
+function operation_token_factory_test_verify(
+    #[SensitiveParameter]
+    OperationToken $token,
+    string $expectedNode,
+    string $expectedCommand,
+    #[SensitiveParameter]
+    string $secret,
+    int $now,
+): bool {
+    return operationTokenFactoryTestVerifier()->verify(
+        secretsByKeyId: [$token->keyId => $secret],
+        token: $token,
+        expectedNode: $expectedNode,
+        expectedCommand: $expectedCommand,
+        expectedCommandContextHash: operation_token_factory_test_context_hash($expectedCommand),
+        now: $now,
+    );
+}
+
+function operation_token_factory_test_context_hash(string $command): string
+{
+    return OperationTokenCommandContext::fromTrustedDispatch(
+        argv: [
+            $command,
+            '--operation-token='.OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
+        ],
+        cwd: null,
+        environment: [],
+        input: null,
+    )->hash();
 }
 
 function operationTokenFactoryTestBase64UrlEncode(string $value): string

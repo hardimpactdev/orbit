@@ -373,7 +373,7 @@ function app_runtime_manager_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: app_runtime_manager_operation_secret(),
+        applicationKey: app_runtime_manager_operation_secret(),
     );
 }
 

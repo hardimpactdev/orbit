@@ -126,7 +126,7 @@ function remote_secret_file_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: remote_secret_file_operation_secret(),
+        applicationKey: remote_secret_file_operation_secret(),
     );
 }
 

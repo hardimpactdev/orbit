@@ -143,6 +143,9 @@ describe('InternalExecutorCommand base', function (): void {
                 && $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
                 && $request['operation_token'] === $token
                 && $request['command'] === 'test:internal-executor-command'
+                && is_array($request['argv'])
+                && in_array('--operation-token='.$token, $request['argv'], strict: true)
+                && $request['consume'] === true
             );
         });
     });
@@ -206,7 +209,7 @@ describe('InternalExecutorCommand base', function (): void {
             ->not->toContain('No route to host');
     });
 
-    it('accepts a locally valid operation token when the gateway verifier transport fails', function (): void {
+    it('fails closed when the gateway verifier transport fails because tokens are gateway verified', function (): void {
         $previousAppKey = getenv('APP_KEY');
         $configPath = base_path('tests/.tmp-internal-executor-local-config.json');
 
@@ -231,12 +234,9 @@ describe('InternalExecutorCommand base', function (): void {
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
             expect($exitCode)
-                ->toBe(0)
+                ->toBe(1)
                 ->and($decoded)
-                ->toBe(JsonEnvelope::success([
-                    'verified' => true,
-                    'command' => 'test:internal-executor-command',
-                ]));
+                ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
         } finally {
             @unlink($configPath);
 

@@ -99,7 +99,7 @@ function workspace_reachability_local_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: workspace_reachability_operation_secret(),
+        applicationKey: workspace_reachability_operation_secret(),
     );
 }
 

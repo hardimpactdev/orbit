@@ -21,6 +21,11 @@ return [
     'forward_install_image_archives' => env('ORBIT_FORWARD_INSTALL_IMAGE_ARCHIVES', false),
     'forward_install_binary' => env('ORBIT_FORWARD_INSTALL_BINARY'),
     'local_executor_binary' => env('ORBIT_LOCAL_EXECUTOR_BINARY', '/usr/local/bin/orbit'),
+    'operation_token_secret' => env('ORBIT_OPERATION_TOKEN_SECRET'),
+    'operation_token_key_id' => env('ORBIT_OPERATION_TOKEN_KEY_ID'),
+    'operation_token_previous_secret' => env('ORBIT_OPERATION_TOKEN_PREVIOUS_SECRET'),
+    'operation_token_previous_key_id' => env('ORBIT_OPERATION_TOKEN_PREVIOUS_KEY_ID'),
+    'operation_token_not_before_skew_seconds' => env('ORBIT_OPERATION_TOKEN_NOT_BEFORE_SKEW_SECONDS', default: 5),
     'operation_token_ttl_seconds' => env('ORBIT_OPERATION_TOKEN_TTL_SECONDS', 120),
 
     'gateway' => [

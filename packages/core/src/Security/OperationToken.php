@@ -6,14 +6,19 @@ namespace Orbit\Core\Security;
 
 use InvalidArgumentException;
 
+/**
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class OperationToken
 {
-    private const int SEGMENT_COUNT = 6;
+    private const int SEGMENT_COUNT = 8;
 
     public function __construct(
         public string $id,
         public string $node,
         public string $command,
+        public string $keyId,
+        public string $commandContextHash,
         public int $issuedAt,
         public int $expiresAt,
         public string $signature,
@@ -25,6 +30,8 @@ final readonly class OperationToken
             self::base64UrlEncode($this->id),
             self::base64UrlEncode($this->node),
             self::base64UrlEncode($this->command),
+            self::base64UrlEncode($this->keyId),
+            self::base64UrlEncode($this->commandContextHash),
             self::base64UrlEncode((string) $this->issuedAt),
             self::base64UrlEncode((string) $this->expiresAt),
             $this->signature,
@@ -46,14 +53,18 @@ final readonly class OperationToken
         $id = self::decodeStringSegment($segments[0], 'id');
         $node = self::decodeStringSegment($segments[1], 'node');
         $command = self::decodeStringSegment($segments[2], 'command');
-        $issuedAt = self::decodeTimestampSegment($segments[3], 'issued_at');
-        $expiresAt = self::decodeTimestampSegment($segments[4], 'expires_at');
-        $signature = self::decodeSignatureSegment($segments[5]);
+        $keyId = self::decodeStringSegment($segments[3], 'key_id');
+        $commandContextHash = self::decodeCommandContextHashSegment($segments[4]);
+        $issuedAt = self::decodeTimestampSegment($segments[5], 'issued_at');
+        $expiresAt = self::decodeTimestampSegment($segments[6], 'expires_at');
+        $signature = self::decodeSignatureSegment($segments[7]);
 
         return new self(
             id: $id,
             node: $node,
             command: $command,
+            keyId: $keyId,
+            commandContextHash: $commandContextHash,
             issuedAt: $issuedAt,
             expiresAt: $expiresAt,
             signature: $signature,
@@ -66,6 +77,17 @@ final readonly class OperationToken
 
         if ($decoded === '') {
             throw new InvalidArgumentException("Operation token {$field} is empty.");
+        }
+
+        return $decoded;
+    }
+
+    private static function decodeCommandContextHashSegment(string $segment): string
+    {
+        $decoded = self::decodeStringSegment($segment, 'command_context_hash');
+
+        if (preg_match('/\A[a-f0-9]{64}\z/', $decoded) !== 1) {
+            throw new InvalidArgumentException('Operation token command_context_hash is malformed.');
         }
 
         return $decoded;

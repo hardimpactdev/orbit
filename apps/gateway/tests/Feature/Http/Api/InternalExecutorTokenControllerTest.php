@@ -7,6 +7,11 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Orbit\Core\Enums\OperationStatus;
+use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenCommandContext;
 use Tests\TestCase;
 
 uses(RefreshDatabase::class);
@@ -17,6 +22,10 @@ describe('InternalExecutorTokenController', function (): void {
     beforeEach(function (): void {
         config()->set('orbit.trust_wireguard_proxy_header', true);
         config()->set('app.key', 'gateway-app-key');
+        config()->set('orbit.operation_token_secret', 'operation-token-secret');
+        config()->set('orbit.operation_token_key_id', 'current');
+        config()->set('orbit.operation_token_previous_secret', null);
+        config()->set('orbit.operation_token_previous_key_id', null);
         config()->set('orbit.operation_token_ttl_seconds', 120);
 
         app()->forgetInstance(OperationTokenFactory::class);
@@ -40,6 +49,62 @@ describe('InternalExecutorTokenController', function (): void {
             ->assertJsonPath('success.data.allowed', true)
             ->assertJsonPath('success.data.reason', null)
             ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
+    it('rejects a valid token when the agent-presented argv differs from the signed context', function (): void {
+        internalExecutorCallerNode();
+        internal_executor_operation_run('operation-argv-tamper');
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-argv-tamper',
+            targetNode: 'app-dev',
+            command: 'internal:executor:verify',
+            commandContext: internal_executor_trusted_command_context(),
+        );
+
+        internalExecutorVerifyTokenRequest(internal_executor_token_payload(
+            operationToken: $operationToken->toString(),
+            argv: [
+                'internal:executor:verify',
+                '--mode=tampered',
+                '--operation-token='.$operationToken->toString(),
+                '--json',
+            ],
+        ))
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', false)
+            ->assertJsonPath('success.data.reason', 'arguments_mismatch')
+            ->assertJsonPath('success.data.operation_id', 'operation-argv-tamper');
+    });
+
+    it('consumes a valid operation token at verify time and rejects a duplicate verify distinctly', function (): void {
+        internalExecutorCallerNode();
+        $operationId = (string) Str::uuid();
+        internal_executor_operation_run($operationId);
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: $operationId,
+            targetNode: 'app-dev',
+            command: 'internal:executor:verify',
+            commandContext: internal_executor_trusted_command_context(),
+        );
+        $payload = internal_executor_token_payload($operationToken->toString());
+
+        internalExecutorVerifyTokenRequest($payload)
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', $operationId);
+
+        internalExecutorVerifyTokenRequest($payload)
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', false)
+            ->assertJsonPath('success.data.reason', 'operation.already_dispatched')
+            ->assertJsonPath('success.data.operation_id', $operationId);
+
+        $run = DB::table('operation_runs')->where('operation_id', $operationId)->first();
+
+        expect($run->operation_token_consumed_at)->not->toBeNull();
     });
 
     it('returns invalid_token for malformed tokens', function (): void {
@@ -143,7 +208,7 @@ describe('InternalExecutorTokenController', function (): void {
         internal_executor_verify_token_loopback_request([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:runtime-backend:probe',
-        ], '127.0.1.1')
+        ], remoteAddress: '127.0.1.1')
             ->assertOk()
             ->assertJsonPath('success.data.allowed', true)
             ->assertJsonPath('success.data.reason', null)
@@ -232,13 +297,71 @@ function internal_executor_gateway_node(): Node
     return $node;
 }
 
+function internal_executor_operation_run(string $operationId): void
+{
+    if (DB::table('operation_runs')->where('operation_id', $operationId)->exists()) {
+        return;
+    }
+
+    DB::table('operation_runs')->insert([
+        'id' => (string) Str::uuid(),
+        'operation_id' => $operationId,
+        'internal_command' => 'internal:executor:verify',
+        'lane' => 'local',
+        'status' => OperationStatus::Running->value,
+        'started_at' => now(),
+        'operation_token_consumed_at' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+function internal_executor_trusted_command_context(): OperationTokenCommandContext
+{
+    return OperationTokenCommandContext::fromTrustedDispatch(
+        argv: [
+            'internal:executor:verify',
+            '--mode=normal',
+            '--operation-token='.OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
+            '--json',
+        ],
+        cwd: '/srv/orbit',
+        environment: ['ALPHA' => '1', 'BETA' => '2'],
+        input: 'stdin-payload',
+    );
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function internal_executor_token_payload(
+    #[SensitiveParameter]
+    string $operationToken,
+    ?array $argv = null,
+): array {
+    return [
+        'operation_token' => $operationToken,
+        'command' => 'internal:executor:verify',
+        'argv' => $argv ?? [
+            'internal:executor:verify',
+            '--mode=normal',
+            '--operation-token='.$operationToken,
+            '--json',
+        ],
+        'cwd' => '/srv/orbit',
+        'environment' => ['BETA' => '2', 'ALPHA' => '1'],
+        'input' => 'stdin-payload',
+    ];
+}
+
 /**
  * @param  array<string, mixed>  $payload
  */
-function internalExecutorVerifyTokenRequest(array $payload)
+function internalExecutorVerifyTokenRequest(#[SensitiveParameter] array $payload)
 {
     /** @var TestCase $test */
     $test = test();
+    $payload = internal_executor_normalize_token_payload($payload);
 
     return $test
         ->withHeader('X-Orbit-WireGuard-Ip', INTERNAL_EXECUTOR_TOKEN_CALLER_WG_IP)
@@ -248,12 +371,47 @@ function internalExecutorVerifyTokenRequest(array $payload)
 /**
  * @param  array<string, mixed>  $payload
  */
-function internal_executor_verify_token_loopback_request(array $payload, string $remoteAddress = '127.0.0.1')
-{
+function internal_executor_verify_token_loopback_request(
+    #[SensitiveParameter]
+    array $payload,
+    string $remoteAddress = '127.0.0.1',
+) {
     /** @var TestCase $test */
     $test = test();
+    $payload = internal_executor_normalize_token_payload($payload);
 
     return $test
         ->withServerVariables(['REMOTE_ADDR' => $remoteAddress])
         ->postJson('/api/internal-executor/token/verify', $payload);
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @return array<string, mixed>
+ */
+function internal_executor_normalize_token_payload(#[SensitiveParameter] array $payload): array
+{
+    if (
+        ! array_key_exists('argv', $payload)
+        && array_key_exists('operation_token', $payload)
+        && array_key_exists('command', $payload)
+        && is_string($payload['operation_token'])
+        && is_string($payload['command'])
+    ) {
+        $payload['argv'] = [
+            $payload['command'],
+            '--operation-token='.$payload['operation_token'],
+        ];
+    }
+
+    if (array_key_exists('operation_token', $payload) && is_string($payload['operation_token'])) {
+        try {
+            $token = OperationToken::parse($payload['operation_token']);
+            internal_executor_operation_run($token->id);
+        } catch (InvalidArgumentException) {
+            return $payload;
+        }
+    }
+
+    return $payload;
 }

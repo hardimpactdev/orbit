@@ -101,7 +101,7 @@ function worktreeWorkspaceDriverExecutor(WorktreeWorkspaceDriverTestTransport $t
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: 'gateway-secret',
+        applicationKey: 'gateway-secret',
         defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }

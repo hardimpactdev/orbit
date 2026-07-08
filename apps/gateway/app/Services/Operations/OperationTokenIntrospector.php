@@ -6,6 +6,7 @@ namespace App\Services\Operations;
 
 use Closure;
 use Orbit\Core\Security\OperationToken;
+use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenVerifier;
 
 final readonly class OperationTokenIntrospector
@@ -17,17 +18,29 @@ final readonly class OperationTokenIntrospector
      */
     public function __construct(
         private OperationTokenVerifier $verifier,
-        private string $secret,
+        private array $secretsByKeyId,
+        private int $notBeforeSkewSeconds = 5,
         ?Closure $clock = null,
     ) {
         $this->clock = $clock ?? time(...);
     }
 
     /**
+     * @param  list<string>  $argv
+     * @param  array<string, string>  $environment
      * @return array{allowed: bool, reason: ?string, operation_id: ?string}
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
-    public function introspect(string $compactToken, string $expectedNode, string $expectedCommand): array
-    {
+    public function introspect(
+        string $compactToken,
+        string $expectedNode,
+        string $expectedCommand,
+        array $argv,
+        ?string $cwd,
+        array $environment,
+        ?string $input,
+    ): array {
         try {
             $token = OperationToken::parse($compactToken);
         } catch (\InvalidArgumentException) {
@@ -42,12 +55,30 @@ final readonly class OperationTokenIntrospector
             return $this->denied('command_mismatch', $token->id);
         }
 
+        try {
+            $commandContext = OperationTokenCommandContext::fromAgentVerification(
+                argv: $argv,
+                cwd: $cwd,
+                environment: $environment,
+                input: $input,
+                operationToken: $compactToken,
+            );
+        } catch (\InvalidArgumentException) {
+            return $this->denied('arguments_mismatch', $token->id);
+        }
+
+        if (! hash_equals($token->commandContextHash, $commandContext->hash())) {
+            return $this->denied('arguments_mismatch', $token->id);
+        }
+
         if (! $this->verifier->verify(
-            secret: $this->secret,
+            secretsByKeyId: $this->secretsByKeyId,
             token: $token,
             expectedNode: $expectedNode,
             expectedCommand: $expectedCommand,
-            now: ($this->clock)(),
+            expectedCommandContextHash: $commandContext->hash(),
+            now: $this->now(),
+            notBeforeSkewSeconds: $this->notBeforeSkewSeconds,
         )) {
             return $this->denied('invalid_token', $token->id);
         }
@@ -69,5 +100,16 @@ final readonly class OperationTokenIntrospector
             'reason' => $reason,
             'operation_id' => $operationId,
         ];
+    }
+
+    private function now(): int
+    {
+        $now = ($this->clock)();
+
+        if (! is_int($now)) {
+            return time();
+        }
+
+        return $now;
     }
 }

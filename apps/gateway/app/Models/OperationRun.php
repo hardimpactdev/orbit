@@ -26,6 +26,7 @@ use Orbit\Core\Enums\OperationStatus;
  * @property string|null $queue
  * @property Carbon|null $started_at
  * @property Carbon|null $finished_at
+ * @property Carbon|null $operation_token_consumed_at
  * @property int|null $exit_code
  * @property array<string, mixed>|null $result
  * @property array<string, mixed>|null $error
@@ -55,6 +56,7 @@ class OperationRun extends Model
         'queue',
         'started_at',
         'finished_at',
+        'operation_token_consumed_at',
         'exit_code',
         'result',
         'error',
@@ -69,6 +71,7 @@ class OperationRun extends Model
             'status' => OperationStatus::class,
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
+            'operation_token_consumed_at' => 'datetime',
             'exit_code' => 'integer',
             'result' => 'array',
             'error' => 'array',

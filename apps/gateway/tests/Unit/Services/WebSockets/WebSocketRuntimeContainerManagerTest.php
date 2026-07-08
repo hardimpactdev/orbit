@@ -115,7 +115,7 @@ function websocket_runtime_manager_executor(): RemoteLocalExecutor
         ),
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
-        operationTokenSecret: websocket_runtime_manager_operation_secret(),
+        applicationKey: websocket_runtime_manager_operation_secret(),
     );
 }
 
