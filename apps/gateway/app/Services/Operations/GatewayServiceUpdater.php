@@ -8,12 +8,15 @@ use App\Data\Nodes\InstalledAgentArtifact;
 use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Nodes\InstalledGatewayImage;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Gateway\GatewayExposureMode;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayHostAgentConfigWriter;
 use App\Services\Gateway\GatewayImageReference;
+use App\Services\Gateway\GatewaySwarmInstaller;
 use App\Services\Gateway\GatewaySwarmManager;
+use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -31,6 +34,8 @@ class GatewayServiceUpdater
 
     private const string SchedulerService = 'orbit_orbit-scheduler';
 
+    private const string OperationsReverbService = 'orbit_orbit-operations-reverb';
+
     private const int GatewayHealthCheckAttempts = 90;
 
     private const int GatewayHealthCheckSleepSeconds = 2;
@@ -41,6 +46,8 @@ class GatewayServiceUpdater
         private readonly ?FleetUpdateTargetSelector $targets = null,
         private readonly ?GatewayHostAgentConfigWriter $gatewayHostAgentConfigs = null,
         private readonly ?GatewayHostAgentServicePayloadBuilder $gatewayHostAgentServices = null,
+        private readonly ?GatewaySwarmInstaller $swarmInstaller = null,
+        private readonly ?GatewaySwarmStackRenderer $stackRenderer = null,
     ) {}
 
     public function update(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -79,6 +86,13 @@ class GatewayServiceUpdater
                 'Starting orbit-scheduler service',
                 'orbit-scheduler service running',
                 fn (): null => $this->updateAndStartScheduler($targetImage),
+            );
+            $this->runStep(
+                $operationRun,
+                'gateway.stack',
+                'Converging gateway Swarm stack',
+                'Gateway Swarm stack converged',
+                fn (): null => $this->convergeGatewayStack($targetImage, $plan),
             );
             $this->runStep(
                 $operationRun,
@@ -285,6 +299,40 @@ class GatewayServiceUpdater
         return $installRoot !== '' ? $installRoot : '/home/orbit/orbit';
     }
 
+    private function gatewayInstallRootForStack(): string
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        return $gatewayNode instanceof Node ? $this->gatewayInstallRoot($gatewayNode) : '/home/orbit/orbit';
+    }
+
+    private function configRoot(): string
+    {
+        $configRoot = config('orbit.paths.config_root', '/home/orbit/.config/orbit');
+
+        if (! is_string($configRoot) || trim($configRoot) === '') {
+            return '/home/orbit/.config/orbit';
+        }
+
+        return rtrim($configRoot, characters: '/');
+    }
+
+    private function gatewayExposureMode(): GatewayExposureMode
+    {
+        $value = config('orbit.gateway.exposure_mode', GatewayExposureMode::RouterColocated->value);
+
+        return GatewayExposureMode::from(is_string($value) ? $value : GatewayExposureMode::RouterColocated->value);
+    }
+
+    private function operationsReverbImage(OperationUpdatePlan $plan): string
+    {
+        $image = $plan->role_images['orbit-websocket'] ?? null;
+
+        return is_string($image) && trim($image) !== ''
+            ? trim($image)
+            : GatewaySwarmStackRenderer::DEFAULT_OPERATIONS_REVERB_IMAGE;
+    }
+
     private function gatewayHostCliPayloadPath(OperationRun $operationRun): string
     {
         return '/tmp/orbit-gateway-host-cli-install-'.$operationRun->id.'.json';
@@ -410,6 +458,28 @@ class GatewayServiceUpdater
         return null;
     }
 
+    private function convergeGatewayStack(GatewayImageReference $targetImage, OperationUpdatePlan $plan): null
+    {
+        $this->swarmInstaller()->bootstrapRuntimeConfig();
+
+        $stackPath = $this->swarm()->writeStackFile(
+            $this->stackRenderer()->render(
+                image: $targetImage,
+                exposureMode: $this->gatewayExposureMode(),
+                configRoot: $this->configRoot(),
+                installRoot: $this->gatewayInstallRootForStack(),
+                operationsReverbImage: $this->operationsReverbImage($plan),
+            ),
+        );
+
+        $this->swarm()->deployStack($stackPath);
+        $this->waitForGatewayHealth($targetImage);
+        $this->waitForServiceReplica(self::SchedulerService);
+        $this->waitForServiceReplica(self::OperationsReverbService);
+
+        return null;
+    }
+
     private function waitForGatewayHealth(GatewayImageReference $targetImage): void
     {
         for ($attempt = 1; $attempt <= self::GatewayHealthCheckAttempts; $attempt++) {
@@ -433,6 +503,21 @@ class GatewayServiceUpdater
         }
 
         throw new RuntimeException('Gateway service health check failed.');
+    }
+
+    private function waitForServiceReplica(string $service): void
+    {
+        for ($attempt = 1; $attempt <= self::GatewayHealthCheckAttempts; $attempt++) {
+            if ($this->swarm()->serviceReplicas($service) === '1/1') {
+                return;
+            }
+
+            if ($attempt < self::GatewayHealthCheckAttempts) {
+                Sleep::for(self::GatewayHealthCheckSleepSeconds)->seconds();
+            }
+        }
+
+        throw new RuntimeException("Gateway Swarm service [{$service}] did not converge.");
     }
 
     private function gatewayServiceIsConverged(GatewayImageReference $targetImage): bool
@@ -618,6 +703,16 @@ class GatewayServiceUpdater
     private function gatewayHostAgentServices(): GatewayHostAgentServicePayloadBuilder
     {
         return $this->gatewayHostAgentServices ?? app(GatewayHostAgentServicePayloadBuilder::class);
+    }
+
+    private function swarmInstaller(): GatewaySwarmInstaller
+    {
+        return $this->swarmInstaller ?? app(GatewaySwarmInstaller::class);
+    }
+
+    private function stackRenderer(): GatewaySwarmStackRenderer
+    {
+        return $this->stackRenderer ?? app(GatewaySwarmStackRenderer::class);
     }
 
     private function artifactRelay(): GatewayCliArtifactRelay

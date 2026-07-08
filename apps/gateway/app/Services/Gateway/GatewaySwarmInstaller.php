@@ -76,6 +76,11 @@ class GatewaySwarmInstaller
         }
     }
 
+    public function bootstrapRuntimeConfig(?string $configRoot = null): void
+    {
+        $this->bootstrapConfigRoot($this->configRoot($configRoot));
+    }
+
     /**
      * @param  array{cert: string, key: string}  $gatewayLeaf
      */
