@@ -210,17 +210,18 @@ final readonly class LocalFleetUpdateInstallCliAction
             restart_unmanaged_agent_process() {
                 agent_bin_path="$1"
                 pgrep_bin="$(command -v pgrep || true)"
-                pkill_bin="$(command -v pkill || true)"
 
-                if [ -z "$pgrep_bin" ] || [ -z "$pkill_bin" ]; then
+                if [ -z "$pgrep_bin" ]; then
                     return 1
                 fi
 
-                if ! "$pgrep_bin" -f "$agent_bin_path" >/dev/null 2>&1; then
+                agent_pids="$(agent_process_pids "$agent_bin_path" "$pgrep_bin")"
+
+                if [ -z "$agent_pids" ]; then
                     return 1
                 fi
 
-                first_pid="$("$pgrep_bin" -f "$agent_bin_path" | head -n 1)"
+                first_pid="$(printf '%s\n' "$agent_pids" | head -n 1)"
                 agent_config="${ORBIT_AGENT_CONFIG:-}"
                 agent_http_bind="${ORBIT_AGENT_HTTP_BIND:-}"
 
@@ -244,10 +245,35 @@ final readonly class LocalFleetUpdateInstallCliAction
                 fi
 
                 echo restart_agent_unmanaged
-                run_privileged "$pkill_bin" -TERM -f "$agent_bin_path" >/dev/null 2>&1 || true
+                printf '%s\n' "$agent_pids" | while IFS= read -r agent_pid; do
+                    [ -n "$agent_pid" ] || continue
+                    run_privileged kill -TERM "$agent_pid" >/dev/null 2>&1 || true
+                done
                 sleep 1
-                run_privileged "$pkill_bin" -KILL -f "$agent_bin_path" >/dev/null 2>&1 || true
+                printf '%s\n' "$agent_pids" | while IFS= read -r agent_pid; do
+                    [ -n "$agent_pid" ] || continue
+                    run_privileged kill -KILL "$agent_pid" >/dev/null 2>&1 || true
+                done
                 start_unmanaged_agent "$agent_bin_path" "$agent_config" "$agent_http_bind"
+            }
+
+            agent_process_pids() {
+                agent_bin_path="$1"
+                pgrep_bin="$2"
+
+                "$pgrep_bin" -f "$agent_bin_path" 2>/dev/null | while IFS= read -r candidate_pid; do
+                    [ -n "$candidate_pid" ] || continue
+
+                    if [ "$candidate_pid" = "$$" ]; then
+                        continue
+                    fi
+
+                    command_line="$(ps -p "$candidate_pid" -o command= 2>/dev/null || true)"
+
+                    case "$command_line" in
+                        "$agent_bin_path"|"$agent_bin_path "*) echo "$candidate_pid" ;;
+                    esac
+                done
             }
 
             start_unmanaged_agent() {

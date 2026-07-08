@@ -361,8 +361,7 @@ describe('internal fleet update install cli command', function (): void {
         expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();
         expect($calls)
             ->toContain('pgrep -f '.$workspace.'/bin/orbit-agent')
-            ->toContain('pkill -TERM -f '.$workspace.'/bin/orbit-agent')
-            ->toContain('pkill -KILL -f '.$workspace.'/bin/orbit-agent');
+            ->toContain('ps -p 4242 -o command=');
     });
 
     it('keeps cli installs successful when role image pre-pulls are unavailable', function (): void {
@@ -827,12 +826,16 @@ function make_fleet_update_install_cli_fake_unmanaged_agent_bin(string $workspac
         SH);
     chmod(filename: "{$bin}/pgrep", permissions: 0o755);
 
-    file_put_contents("{$bin}/pkill", <<<SH
+    file_put_contents("{$bin}/ps", <<<SH
         #!/usr/bin/env sh
-        echo "pkill \$*" >> {$log}
-        exit 0
+        echo "ps \$*" >> {$log}
+        if [ "\$*" = "-p 4242 -o command=" ]; then
+            echo "{$workspace}/bin/orbit-agent --serve"
+            exit 0
+        fi
+        exit 1
         SH);
-    chmod(filename: "{$bin}/pkill", permissions: 0o755);
+    chmod(filename: "{$bin}/ps", permissions: 0o755);
 
     file_put_contents("{$bin}/nohup", <<<SH
         #!/usr/bin/env sh
