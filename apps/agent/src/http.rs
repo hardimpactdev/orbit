@@ -34,6 +34,8 @@ const FRAME_TYPE_STDOUT: u8 = 1;
 const FRAME_TYPE_STDERR: u8 = 2;
 const FRAME_TYPE_AGENT_ERROR: u8 = 3;
 const FRAME_TYPE_EXIT: u8 = 4;
+const CHILD_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(5);
+const CHILD_KILL_GRACE: Duration = Duration::from_secs(2);
 
 pub async fn run_agent_service() {
     let app = app();
@@ -326,7 +328,13 @@ fn execute_binary(request: &CommandPushRequest) -> CommandExecution {
 fn execute_binary_stream(
     request: CommandPushRequest,
 ) -> Result<CommandOutputStream, (StatusCode, String)> {
-    let mut command = Command::new(command_binary(&request));
+    let binary = command_binary(&request).map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to resolve allowlisted binary: {error}"),
+        )
+    })?;
+    let mut command = Command::new(binary);
     command
         .args(&request.argv)
         .stdout(Stdio::piped())
@@ -354,8 +362,6 @@ fn execute_binary_stream(
             format!("failed to execute allowlisted binary: {error}"),
         )
     })?;
-    let child_id = child.id();
-
     if let Some(input) = &request.input {
         if let Some(mut stdin) = child.stdin.take() {
             if let Err(error) = stdin.write_all(input.as_bytes()) {
@@ -372,22 +378,21 @@ fn execute_binary_stream(
 
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     let completed = Arc::new(AtomicBool::new(false));
+    let cancelled = Arc::new(AtomicBool::new(false));
 
-    let stdout_drain = child
-        .stdout
-        .take()
-        .map(|stdout| spawn_stream_drain(stdout, sender.clone(), child_id, FRAME_TYPE_STDOUT));
-    let stderr_drain = child
-        .stderr
-        .take()
-        .map(|stderr| spawn_stream_drain(stderr, sender.clone(), child_id, FRAME_TYPE_STDERR));
+    let stdout_drain = child.stdout.take().map(|stdout| {
+        spawn_stream_drain(stdout, sender.clone(), cancelled.clone(), FRAME_TYPE_STDOUT)
+    });
+    let stderr_drain = child.stderr.take().map(|stderr| {
+        spawn_stream_drain(stderr, sender.clone(), cancelled.clone(), FRAME_TYPE_STDERR)
+    });
 
     spawn_stream_waiter(
         child,
-        child_id,
         request.timeout_seconds,
         sender,
         completed.clone(),
+        cancelled.clone(),
         StreamDrainHandles {
             stdout: stdout_drain,
             stderr: stderr_drain,
@@ -397,8 +402,8 @@ fn execute_binary_stream(
 
     Ok(CommandOutputStream {
         receiver,
-        child_id,
         completed,
+        cancelled,
     })
 }
 
@@ -437,7 +442,7 @@ fn encode_exit_frame(exit_code: Option<i32>, signal: Option<i32>, duration_ms: u
 fn spawn_stream_drain<R>(
     mut reader: R,
     sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
-    child_id: u32,
+    cancelled: Arc<AtomicBool>,
     frame_type: u8,
 ) -> JoinHandle<()>
 where
@@ -453,7 +458,7 @@ where
                     let frame = encode_process_stream_frame(frame_type, &buffer[..read]);
 
                     if sender.send(Ok(frame)).is_err() {
-                        terminate_process(child_id);
+                        cancelled.store(true, Ordering::SeqCst);
 
                         break;
                     }
@@ -473,60 +478,37 @@ where
 }
 
 fn spawn_stream_waiter(
-    child: Child,
-    child_id: u32,
+    mut child: Child,
     timeout_seconds: u64,
     sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
     completed: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
     drains: StreamDrainHandles,
     started_at: Instant,
 ) {
     thread::spawn(move || {
         let timeout_seconds = timeout_seconds.min(300);
-        let (wait_sender, wait_receiver) = std::sync::mpsc::channel();
-
-        thread::spawn(move || {
-            let mut child = child;
-            let _ = wait_sender.send(child.wait());
-        });
-
-        let wait_result = if timeout_seconds == 0 {
-            wait_receiver
-                .recv()
-                .map_err(|_| std::sync::mpsc::RecvTimeoutError::Disconnected)
-        } else {
-            wait_receiver.recv_timeout(Duration::from_secs(timeout_seconds))
-        };
+        let deadline =
+            (timeout_seconds > 0).then(|| Instant::now() + Duration::from_secs(timeout_seconds));
+        let wait_result = wait_for_child(&mut child, deadline, Some(&cancelled));
 
         let duration_ms = elapsed_millis(started_at);
         let mut exit_code = None;
         let mut signal = None;
         let mut agent_error_sent = false;
+        let mut child_exited = false;
 
         match wait_result {
-            Ok(Ok(status)) => {
-                exit_code = status.code();
-
-                #[cfg(unix)]
-                {
-                    use std::os::unix::process::ExitStatusExt;
-                    signal = status.signal();
-                }
+            Ok(ChildWaitOutcome::Exited(status)) => {
+                child_exited = true;
+                let status_parts = exit_status_parts(status);
+                exit_code = status_parts.0;
+                signal = status_parts.1;
             }
-            Ok(Err(error)) => {
-                let _ = sender.send(Ok(encode_agent_error_frame(
-                    "process_wait_failed",
-                    format!("failed to wait for allowlisted binary: {error}"),
-                    false,
-                )));
-                agent_error_sent = true;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                terminate_process(child_id);
-                if wait_receiver.recv_timeout(Duration::from_secs(2)).is_err() {
-                    force_terminate_process(child_id);
-                    let _ = wait_receiver.recv_timeout(Duration::from_secs(2));
-                }
+            Ok(ChildWaitOutcome::TimedOut) => {
+                child_exited = terminate_child(&mut child, CHILD_KILL_GRACE)
+                    .map(|status| status.is_some())
+                    .unwrap_or(false);
                 let _ = sender.send(Ok(encode_agent_error_frame(
                     "process_timeout",
                     format!("binary execution timed out after {timeout_seconds} seconds"),
@@ -534,22 +516,30 @@ fn spawn_stream_waiter(
                 )));
                 agent_error_sent = true;
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Ok(ChildWaitOutcome::Cancelled) => {
+                child_exited = terminate_child(&mut child, CHILD_KILL_GRACE)
+                    .map(|status| status.is_some())
+                    .unwrap_or(false);
+                agent_error_sent = true;
+            }
+            Err(error) => {
                 let _ = sender.send(Ok(encode_agent_error_frame(
                     "process_wait_failed",
-                    "failed to wait for allowlisted binary: wait worker disconnected",
+                    format!("failed to wait for allowlisted binary: {error}"),
                     false,
                 )));
                 agent_error_sent = true;
             }
         }
 
-        if let Some(handle) = drains.stdout {
-            let _ = handle.join();
-        }
+        if child_exited {
+            if let Some(handle) = drains.stdout {
+                let _ = handle.join();
+            }
 
-        if let Some(handle) = drains.stderr {
-            let _ = handle.join();
+            if let Some(handle) = drains.stderr {
+                let _ = handle.join();
+            }
         }
 
         let _ = sender.send(Ok(encode_exit_frame(
@@ -569,8 +559,8 @@ struct StreamDrainHandles {
 
 struct CommandOutputStream {
     receiver: tokio::sync::mpsc::UnboundedReceiver<Result<Bytes, Infallible>>,
-    child_id: u32,
     completed: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
 }
 
 impl Stream for CommandOutputStream {
@@ -586,7 +576,7 @@ impl Stream for CommandOutputStream {
 impl Drop for CommandOutputStream {
     fn drop(&mut self) {
         if !self.completed.load(Ordering::SeqCst) {
-            terminate_process(self.child_id);
+            self.cancelled.store(true, Ordering::SeqCst);
         }
     }
 }
@@ -612,7 +602,16 @@ fn execute_binary_once(
     deadline: Instant,
 ) -> CommandExecution {
     let spawn_start = Instant::now();
-    let mut command = Command::new(command_binary(request));
+    let binary = match command_binary(request) {
+        Ok(binary) => binary,
+        Err(error) => {
+            return failed_execution(
+                spawn_start,
+                format!("failed to resolve allowlisted binary: {error}"),
+            );
+        }
+    };
+    let mut command = Command::new(binary);
     command
         .args(argv)
         .stdout(Stdio::piped())
@@ -683,15 +682,8 @@ fn execute_binary_once(
     }
 
     let wait_start = Instant::now();
-    let child_id = child.id();
-    let (wait_sender, wait_receiver) = std::sync::mpsc::channel();
-
-    thread::spawn(move || {
-        let _ = wait_sender.send(child.wait());
-    });
-
-    match wait_receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(Ok(status)) => {
+    match wait_for_child(&mut child, Some(deadline), None) {
+        Ok(ChildWaitOutcome::Exited(status)) => {
             let process_wait_ms = elapsed_millis(wait_start);
             let output = collect_drained_output(stdout, stderr);
 
@@ -706,7 +698,51 @@ fn execute_binary_once(
                 },
             )
         }
-        Ok(Err(error)) => {
+        Ok(ChildWaitOutcome::TimedOut) => {
+            let terminated = terminate_child(&mut child, CHILD_KILL_GRACE)
+                .ok()
+                .flatten()
+                .is_some();
+            let process_wait_ms = elapsed_millis(wait_start);
+            let output = if terminated {
+                collect_drained_output(stdout, stderr)
+            } else {
+                DrainedCommandOutput::empty()
+            };
+            let serialization_start = Instant::now();
+            let frames = output.with_error_frame(format!(
+                "binary execution timed out after {timeout_seconds} seconds"
+            ));
+
+            CommandExecution {
+                status: "failed".to_string(),
+                exit_code: None,
+                frames,
+                timings: CommandExecutionTimings {
+                    process_spawn_ms,
+                    process_wait_ms,
+                    result_serialization_ms: elapsed_millis(serialization_start),
+                },
+            }
+        }
+        Ok(ChildWaitOutcome::Cancelled) => {
+            let process_wait_ms = elapsed_millis(wait_start);
+            let output = collect_drained_output(stdout, stderr);
+            let serialization_start = Instant::now();
+            let frames = output.with_error_frame("binary execution was cancelled".to_string());
+
+            CommandExecution {
+                status: "failed".to_string(),
+                exit_code: None,
+                frames,
+                timings: CommandExecutionTimings {
+                    process_spawn_ms,
+                    process_wait_ms,
+                    result_serialization_ms: elapsed_millis(serialization_start),
+                },
+            }
+        }
+        Err(error) => {
             let process_wait_ms = elapsed_millis(wait_start);
             let output = collect_drained_output(stdout, stderr);
             let serialization_start = Instant::now();
@@ -724,64 +760,91 @@ fn execute_binary_once(
                 },
             }
         }
-        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            terminate_process(child_id);
-            if wait_receiver.recv_timeout(Duration::from_secs(2)).is_err() {
-                force_terminate_process(child_id);
-                let _ = wait_receiver.recv_timeout(Duration::from_secs(2));
-            }
-            let process_wait_ms = elapsed_millis(wait_start);
-            let output = collect_drained_output(stdout, stderr);
-            let serialization_start = Instant::now();
-            let frames = output.with_error_frame(format!(
-                "binary execution timed out after {timeout_seconds} seconds"
-            ));
-
-            CommandExecution {
-                status: "failed".to_string(),
-                exit_code: None,
-                frames,
-                timings: CommandExecutionTimings {
-                    process_spawn_ms,
-                    process_wait_ms,
-                    result_serialization_ms: elapsed_millis(serialization_start),
-                },
-            }
-        }
-        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            let process_wait_ms = elapsed_millis(wait_start);
-            let output = collect_drained_output(stdout, stderr);
-            let serialization_start = Instant::now();
-            let frames = output.with_error_frame(
-                "failed to wait for allowlisted binary: wait worker disconnected".to_string(),
-            );
-
-            CommandExecution {
-                status: "failed".to_string(),
-                exit_code: None,
-                frames,
-                timings: CommandExecutionTimings {
-                    process_spawn_ms,
-                    process_wait_ms,
-                    result_serialization_ms: elapsed_millis(serialization_start),
-                },
-            }
-        }
     }
 }
 
-fn terminate_process(pid: u32) {
-    let _ = Command::new("kill")
-        .arg("-TERM")
-        .arg(pid.to_string())
-        .status();
+enum ChildWaitOutcome {
+    Exited(ExitStatus),
+    TimedOut,
+    Cancelled,
 }
 
-fn force_terminate_process(pid: u32) {
-    let _ = Command::new("kill")
-        .arg("-KILL")
-        .arg(pid.to_string())
-        .status();
+fn wait_for_child(
+    child: &mut Child,
+    deadline: Option<Instant>,
+    cancelled: Option<&AtomicBool>,
+) -> Result<ChildWaitOutcome, String> {
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            return Ok(ChildWaitOutcome::Exited(status));
+        }
+
+        if cancelled.is_some_and(|cancelled| cancelled.load(Ordering::SeqCst)) {
+            return Ok(ChildWaitOutcome::Cancelled);
+        }
+
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return Ok(ChildWaitOutcome::TimedOut);
+        }
+
+        thread::sleep(child_wait_poll_duration(deadline));
+    }
+}
+
+fn child_wait_poll_duration(deadline: Option<Instant>) -> Duration {
+    deadline.map_or(CHILD_WAIT_POLL_INTERVAL, |deadline| {
+        deadline
+            .saturating_duration_since(Instant::now())
+            .min(CHILD_WAIT_POLL_INTERVAL)
+    })
+}
+
+fn terminate_child(child: &mut Child, grace: Duration) -> Result<Option<ExitStatus>, String> {
+    if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+        return Ok(Some(status));
+    }
+
+    child.kill().map_err(|error| error.to_string())?;
+    let deadline = Instant::now() + grace;
+
+    match wait_for_child(child, Some(deadline), None)? {
+        ChildWaitOutcome::Exited(status) => Ok(Some(status)),
+        ChildWaitOutcome::TimedOut => Ok(None),
+        ChildWaitOutcome::Cancelled => Ok(None),
+    }
+}
+
+fn exit_status_parts(status: ExitStatus) -> (Option<i32>, Option<i32>) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        (status.code(), status.signal())
+    }
+
+    #[cfg(not(unix))]
+    {
+        (status.code(), None)
+    }
+}
+
+fn failed_execution(spawn_start: Instant, message: String) -> CommandExecution {
+    let serialization_start = Instant::now();
+    let frames = vec![CommandPushFrame {
+        frame_type: "stderr".to_string(),
+        message,
+    }];
+
+    CommandExecution {
+        status: "failed".to_string(),
+        exit_code: None,
+        frames,
+        timings: CommandExecutionTimings {
+            process_spawn_ms: elapsed_millis(spawn_start),
+            process_wait_ms: 0,
+            result_serialization_ms: elapsed_millis(serialization_start),
+        },
+    }
 }
 
 fn spawn_output_drain<R>(mut reader: R) -> thread::JoinHandle<Result<Vec<u8>, String>>
@@ -828,6 +891,13 @@ struct DrainedCommandOutput {
 }
 
 impl DrainedCommandOutput {
+    fn empty() -> Self {
+        Self {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        }
+    }
+
     fn with_error_frame(self, message: String) -> Vec<CommandPushFrame> {
         let mut frames = output_bytes_to_frames(self.stdout, self.stderr);
 
@@ -840,24 +910,27 @@ impl DrainedCommandOutput {
     }
 }
 
-fn command_binary(request: &CommandPushRequest) -> String {
+fn command_binary(request: &CommandPushRequest) -> Result<String, String> {
     // Binary gate is now enforced once in CommandAuthorizer::authorize.
     // Only "orbit" binaries reach execution paths.
-    if let Some(path) = request_env_path(request, "ORBIT_BIN_PATH") {
-        return path;
+    if let Some(path) = request_env_path(request, "ORBIT_BIN_PATH")? {
+        return Ok(path);
     }
 
-    resolve_orbit_binary().unwrap_or_else(|| request.binary.clone())
+    resolve_orbit_binary()
 }
 
-fn resolve_orbit_binary() -> Option<String> {
-    if let Some(path) = existing_env_path("ORBIT_AGENT_ORBIT_BINARY") {
-        return Some(path);
+fn resolve_orbit_binary() -> Result<String, String> {
+    if let Some(path) = existing_env_path("ORBIT_AGENT_ORBIT_BINARY")? {
+        return Ok(path);
     }
 
     orbit_binary_candidates()
         .into_iter()
         .find(|path| Path::new(path).exists())
+        .ok_or_else(|| {
+            "no absolute Orbit binary found; set ORBIT_AGENT_ORBIT_BINARY or ORBIT_BIN_PATH to an absolute existing orbit binary".to_string()
+        })
 }
 
 fn orbit_binary_candidates() -> Vec<String> {
@@ -883,29 +956,47 @@ fn orbit_binary_candidates_for(home: Option<String>, macos: bool) -> Vec<String>
         candidates.push("/opt/homebrew/bin/orbit".to_string());
     }
 
-    candidates.push("../cli/orbit".to_string());
-
     candidates
 }
 
-fn existing_env_path(key: &str) -> Option<String> {
-    let path = std::env::var(key).ok()?.trim().to_string();
+fn existing_env_path(key: &str) -> Result<Option<String>, String> {
+    let Some(path) = std::env::var(key).ok() else {
+        return Ok(None);
+    };
 
-    if path.is_empty() || !Path::new(&path).exists() {
-        return None;
-    }
-
-    Some(path)
+    existing_absolute_path(key, &path).map(Some)
 }
 
-fn request_env_path(request: &CommandPushRequest, key: &str) -> Option<String> {
-    let path = request.environment.as_ref()?.get(key)?.trim().to_string();
+fn request_env_path(request: &CommandPushRequest, key: &str) -> Result<Option<String>, String> {
+    let Some(path) = request
+        .environment
+        .as_ref()
+        .and_then(|environment| environment.get(key))
+    else {
+        return Ok(None);
+    };
 
-    if path.is_empty() || !Path::new(&path).exists() {
-        return None;
+    existing_absolute_path(key, path).map(Some)
+}
+
+fn existing_absolute_path(key: &str, path: &str) -> Result<String, String> {
+    let path = path.trim();
+
+    if path.is_empty() {
+        return Err(format!("{key} must not be empty"));
     }
 
-    Some(path)
+    let candidate = Path::new(path);
+
+    if !candidate.is_absolute() {
+        return Err(format!("{key} must be an absolute path, got {path}"));
+    }
+
+    if !candidate.exists() {
+        return Err(format!("{key} path does not exist: {path}"));
+    }
+
+    Ok(path.to_string())
 }
 
 fn should_retry_stale_fleet_update_without_legacy_flags(
@@ -1500,7 +1591,27 @@ mod tests {
             stream: true,
         };
 
-        assert_eq!(command_binary(&request), binary);
+        assert_eq!(command_binary(&request).expect("command binary"), binary);
+    }
+
+    #[test]
+    fn command_binary_rejects_relative_request_orbit_bin_path() {
+        let request = CommandPushRequest {
+            operation_id: "op_agent_test_123".to_string(),
+            binary: "orbit".to_string(),
+            argv: vec![],
+            input: None,
+            cwd: None,
+            environment: Some(HashMap::from([(
+                "ORBIT_BIN_PATH".to_string(),
+                "../cli/orbit".to_string(),
+            )])),
+            operation_token: "op_test_123".to_string(),
+            timeout_seconds: 30,
+            stream: true,
+        };
+
+        assert!(command_binary(&request).is_err());
     }
 
     #[test]
@@ -1515,6 +1626,10 @@ mod tests {
             candidates.get(1),
             Some(&"/home/orbit/.local/bin/orbit".to_string())
         );
+        assert!(candidates.iter().all(|path| Path::new(path).is_absolute()));
+        assert!(!candidates
+            .iter()
+            .any(|path| path == "../cli/orbit" || path == "orbit"));
     }
 
     #[test]
@@ -1528,6 +1643,21 @@ mod tests {
         assert_eq!(
             candidates.get(1),
             Some(&"/opt/homebrew/bin/orbit".to_string())
+        );
+        assert!(candidates.iter().all(|path| Path::new(path).is_absolute()));
+        assert!(!candidates
+            .iter()
+            .any(|path| path == "../cli/orbit" || path == "orbit"));
+    }
+
+    #[test]
+    fn process_timeout_path_does_not_shell_out_to_kill() {
+        let source = include_str!("http.rs");
+        let forbidden = ["Command::new(", "\"kill\"", ")"].join("");
+
+        assert!(
+            !source.contains(&forbidden),
+            "agent process timeout path must kill through the owned Child handle"
         );
     }
 
@@ -1543,7 +1673,10 @@ mod tests {
                         serde_json::json!({
                             "operation_id": "op_agent_test_123",
                             "binary": "orbit",
-                            "argv": ["version", "--json"],
+                            "argv": [],
+                            "environment": {
+                                "ORBIT_BIN_PATH": "/usr/bin/true"
+                            },
                             "operation_token": "op_test_123",
                             "timeout_seconds": 30,
                             "stream": true,
@@ -1739,7 +1872,10 @@ mod tests {
                         serde_json::json!({
                             "operation_id": "op_agent_stream_test_123",
                             "binary": "orbit",
-                            "argv": ["version"],
+                            "argv": ["orbit version"],
+                            "environment": {
+                                "ORBIT_BIN_PATH": "/bin/echo"
+                            },
                             "operation_token": "op_test_123",
                             "timeout_seconds": 30,
                             "stream": true,
