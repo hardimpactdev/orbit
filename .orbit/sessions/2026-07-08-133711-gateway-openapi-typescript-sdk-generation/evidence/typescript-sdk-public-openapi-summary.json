@@ -1,0 +1,329 @@
+{
+  "generated_at": "2026-07-08T10:33:59.719Z",
+  "source_schema": ".orbit/evidence/gateway-openapi.json",
+  "source_surface": "apps/gateway/openapi-sdk-surface.json",
+  "output_schema": "packages/sdk-typescript/openapi/public-gateway-openapi.json",
+  "input_paths": 126,
+  "output_paths": 91,
+  "input_operations": 159,
+  "output_operations": 118,
+  "included_public_schema_only_operations": [
+    {
+      "operation": "GET /apps/{app}/instances",
+      "operation_id": "appInstance.index",
+      "group": "app_instances"
+    },
+    {
+      "operation": "POST /apps/{app}/instances",
+      "operation_id": "appInstance.store",
+      "group": "app_instances"
+    },
+    {
+      "operation": "GET /apps/{app}/instances/{instance}",
+      "operation_id": "appInstance.show",
+      "group": "app_instances"
+    },
+    {
+      "operation": "DELETE /apps/{app}/instances/{instance}",
+      "operation_id": "appInstance.destroy",
+      "group": "app_instances"
+    },
+    {
+      "operation": "GET /apps/{app}/mounts",
+      "operation_id": "appRuntimeMount.index",
+      "group": "app_mounts"
+    },
+    {
+      "operation": "POST /apps/{app}/mounts",
+      "operation_id": "appRuntimeMount.store",
+      "group": "app_mounts"
+    },
+    {
+      "operation": "DELETE /apps/{app}/mounts",
+      "operation_id": "appRuntimeMount.destroy",
+      "group": "app_mounts"
+    },
+    {
+      "operation": "POST /apps/{app}/setup",
+      "operation_id": "appSetup",
+      "group": "app_setup"
+    },
+    {
+      "operation": "GET /apps/{app}/setup-steps",
+      "operation_id": "appSetupStep.index",
+      "group": "app_setup"
+    },
+    {
+      "operation": "POST /apps/{app}/setup-steps",
+      "operation_id": "appSetupStep.store",
+      "group": "app_setup"
+    },
+    {
+      "operation": "DELETE /apps/{app}/setup-steps/{step}",
+      "operation_id": "appSetupStep.destroy",
+      "group": "app_setup"
+    },
+    {
+      "operation": "POST /apps/{app}/websocket/enable",
+      "operation_id": "appWebSocket.enable",
+      "group": "app_websocket"
+    },
+    {
+      "operation": "POST /apps/{app}/websocket/disable",
+      "operation_id": "appWebSocket.disable",
+      "group": "app_websocket"
+    },
+    {
+      "operation": "GET /apps/{app}/websocket/credentials",
+      "operation_id": "appWebSocket.credentials",
+      "group": "app_websocket"
+    },
+    {
+      "operation": "GET /status",
+      "operation_id": "status",
+      "group": "gateway_status"
+    },
+    {
+      "operation": "GET /nodes/self/manage-key",
+      "operation_id": "nodeManage.key",
+      "group": "node_self_management"
+    },
+    {
+      "operation": "POST /nodes/self/manage",
+      "operation_id": "nodeManage.manage",
+      "group": "node_self_management"
+    },
+    {
+      "operation": "GET /operations/{operationRun}/events",
+      "operation_id": "operations.events",
+      "group": "operation_events"
+    },
+    {
+      "operation": "POST /tools/{tool}/start",
+      "operation_id": "toolStart",
+      "group": "tool_lifecycle"
+    },
+    {
+      "operation": "POST /tools/{tool}/stop",
+      "operation_id": "toolStop",
+      "group": "tool_lifecycle"
+    },
+    {
+      "operation": "POST /tools/{tool}/restart",
+      "operation_id": "toolRestart",
+      "group": "tool_lifecycle"
+    },
+    {
+      "operation": "GET /workspaces/{name}/history",
+      "operation_id": "workspaceHistory",
+      "group": "workspace_history"
+    }
+  ],
+  "removed_internal_or_deferred_operations": [
+    {
+      "operation": "POST /analytics/update",
+      "classification": "internal_only",
+      "operation_id": "analyticsUpdate"
+    },
+    {
+      "operation": "POST /apps/{app}/analytics/enable",
+      "classification": "deferred_optional",
+      "operation_id": "appAnalytics.enable"
+    },
+    {
+      "operation": "POST /apps/{app}/analytics/disable",
+      "classification": "deferred_optional",
+      "operation_id": "appAnalytics.disable"
+    },
+    {
+      "operation": "GET /apps/{app}/analytics",
+      "classification": "deferred_optional",
+      "operation_id": "appAnalytics.show"
+    },
+    {
+      "operation": "GET /codex/projects",
+      "classification": "deferred_optional",
+      "operation_id": "appCodex.list"
+    },
+    {
+      "operation": "POST /codex/apps/{app}",
+      "classification": "deferred_optional",
+      "operation_id": "appCodex.add"
+    },
+    {
+      "operation": "DELETE /codex/apps/{app}",
+      "classification": "deferred_optional",
+      "operation_id": "appCodex.remove"
+    },
+    {
+      "operation": "GET /apps/{app}/instances/{instance}/env",
+      "classification": "deferred_optional",
+      "operation_id": "appInstanceEnv.index"
+    },
+    {
+      "operation": "POST /apps/{app}/instances/{instance}/env",
+      "classification": "deferred_optional",
+      "operation_id": "appInstanceEnv.store"
+    },
+    {
+      "operation": "GET /apps/{app}/instances/{instance}/env/render",
+      "classification": "deferred_optional",
+      "operation_id": "appInstanceEnv.render"
+    },
+    {
+      "operation": "GET /cloudflare/zones",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.zones"
+    },
+    {
+      "operation": "GET /cloudflare/zones/{zone}/dns",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.dnsRecords"
+    },
+    {
+      "operation": "POST /cloudflare/zones/{zone}/dns",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.storeDnsRecord"
+    },
+    {
+      "operation": "DELETE /cloudflare/zones/{zone}/dns/{record}",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.removeDnsRecord"
+    },
+    {
+      "operation": "POST /cloudflare/cache/flush",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.flushCache"
+    },
+    {
+      "operation": "POST /cloudflare/cache-rules/{app}",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.addCacheRule"
+    },
+    {
+      "operation": "DELETE /cloudflare/cache-rules/{app}",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.removeCacheRule"
+    },
+    {
+      "operation": "PUT /cloudflare/zones/{zone}/ssl",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.enableSsl"
+    },
+    {
+      "operation": "PUT /cloudflare/zones/{zone}/ssl/disable",
+      "classification": "deferred_optional",
+      "operation_id": "cloudflare.disableSsl"
+    },
+    {
+      "operation": "GET /database-connections/describe",
+      "classification": "deferred_optional",
+      "operation_id": "databaseConnections.databaseConnectionDescribe"
+    },
+    {
+      "operation": "GET /database-connections/tables",
+      "classification": "deferred_optional",
+      "operation_id": "databaseConnections.databaseConnectionTables"
+    },
+    {
+      "operation": "POST /extensions/{extension}/disable",
+      "classification": "deferred_optional",
+      "operation_id": "extensionDisable"
+    },
+    {
+      "operation": "POST /extensions/{extension}/enable",
+      "classification": "deferred_optional",
+      "operation_id": "extensionEnable"
+    },
+    {
+      "operation": "GET /extensions",
+      "classification": "deferred_optional",
+      "operation_id": "extensionList"
+    },
+    {
+      "operation": "POST /internal-executor/token/verify",
+      "classification": "internal_only",
+      "operation_id": "internalExecutorToken"
+    },
+    {
+      "operation": "PUT /manifest",
+      "classification": "deferred_optional",
+      "operation_id": "manifest.update"
+    },
+    {
+      "operation": "DELETE /manifest",
+      "classification": "deferred_optional",
+      "operation_id": "manifest.destroy"
+    },
+    {
+      "operation": "GET /metrics/credentials",
+      "classification": "deferred_optional",
+      "operation_id": "metricsCredentials"
+    },
+    {
+      "operation": "POST /metrics/credentials/reset",
+      "classification": "deferred_optional",
+      "operation_id": "metricsCredentialsReset"
+    },
+    {
+      "operation": "GET /metrics/status",
+      "classification": "deferred_optional",
+      "operation_id": "metricsStatus"
+    },
+    {
+      "operation": "POST /events/process",
+      "classification": "internal_only",
+      "operation_id": "processEventIngest"
+    },
+    {
+      "operation": "GET /profile/resolve",
+      "classification": "deferred_optional",
+      "operation_id": "profile.resolve"
+    },
+    {
+      "operation": "GET /s3/credentials",
+      "classification": "deferred_optional",
+      "operation_id": "s3Credentials"
+    },
+    {
+      "operation": "POST /s3/public-hosts",
+      "classification": "deferred_optional",
+      "operation_id": "s3Publish"
+    },
+    {
+      "operation": "DELETE /s3/public-hosts/{host}",
+      "classification": "deferred_optional",
+      "operation_id": "s3Unpublish"
+    },
+    {
+      "operation": "GET /solo/tools",
+      "classification": "internal_only",
+      "operation_id": "soloProxy.tools"
+    },
+    {
+      "operation": "GET /solo/projects",
+      "classification": "internal_only",
+      "operation_id": "soloProxy.projects"
+    },
+    {
+      "operation": "GET /solo/{operation}",
+      "classification": "internal_only",
+      "operation_id": "soloProxy.read"
+    },
+    {
+      "operation": "POST /solo/{operation}",
+      "classification": "internal_only",
+      "operation_id": "soloProxy.mutate"
+    },
+    {
+      "operation": "POST /update/all/start",
+      "classification": "deferred_optional",
+      "operation_id": "update.all.start"
+    },
+    {
+      "operation": "GET /update/artifacts/{operationRun}/{artifactKind}/{platform}",
+      "classification": "internal_only",
+      "operation_id": "update.artifacts.download"
+    }
+  ]
+}

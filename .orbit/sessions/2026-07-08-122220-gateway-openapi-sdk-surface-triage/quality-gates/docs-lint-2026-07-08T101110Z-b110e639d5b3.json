@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-08T10:11:02Z",
+    "ended_at": "2026-07-08T10:11:10Z",
+    "duration_seconds": 8,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/gateway-openapi-schema",
+        "commit": "051539b6ee88e38aadc6eb5864493e6e83c1305f"
+    },
+    "subgates": []
+}

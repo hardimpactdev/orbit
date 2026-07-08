@@ -1,0 +1,244 @@
+{
+    "schema_operation_count": 159,
+    "schema_path_count": 126,
+    "sdk_static_request_count": 92,
+    "sdk_static_endpoint_count": 91,
+    "sdk_dynamic_files": [
+        "packages/sdk/src/Requests/Cloudflare/CloudflareRequest.php",
+        "packages/sdk/src/Requests/Database/SchemaDatabaseConnectionRequest.php",
+        "packages/sdk/src/Requests/GenericGatewayStreamRequest.php"
+    ],
+    "sdk_missing_in_schema": [
+        "POST /nodes/{node}/roles",
+        "GET /nodes/{node}/roles",
+        "DELETE /nodes/{node}/roles/{role}"
+    ],
+    "schema_missing_in_sdk": [
+        "POST /analytics/update",
+        "POST /apps/{app}/analytics/enable",
+        "POST /apps/{app}/analytics/disable",
+        "GET /apps/{app}/analytics",
+        "GET /codex/projects",
+        "POST /codex/apps/{app}",
+        "DELETE /codex/apps/{app}",
+        "GET /apps/{app}/instances",
+        "POST /apps/{app}/instances",
+        "GET /apps/{app}/instances/{instance}",
+        "DELETE /apps/{app}/instances/{instance}",
+        "GET /apps/{app}/instances/{instance}/env",
+        "POST /apps/{app}/instances/{instance}/env",
+        "GET /apps/{app}/instances/{instance}/env/render",
+        "GET /apps/{app}/mounts",
+        "POST /apps/{app}/mounts",
+        "DELETE /apps/{app}/mounts",
+        "POST /apps/{app}/setup",
+        "GET /apps/{app}/setup-steps",
+        "POST /apps/{app}/setup-steps",
+        "DELETE /apps/{app}/setup-steps/{step}",
+        "POST /apps/{app}/websocket/enable",
+        "POST /apps/{app}/websocket/disable",
+        "GET /apps/{app}/websocket/credentials",
+        "GET /cloudflare/zones",
+        "GET /cloudflare/zones/{zone}/dns",
+        "POST /cloudflare/zones/{zone}/dns",
+        "DELETE /cloudflare/zones/{zone}/dns/{record}",
+        "POST /cloudflare/cache/flush",
+        "POST /cloudflare/cache-rules/{app}",
+        "DELETE /cloudflare/cache-rules/{app}",
+        "PUT /cloudflare/zones/{zone}/ssl",
+        "PUT /cloudflare/zones/{zone}/ssl/disable",
+        "GET /database-connections/describe",
+        "GET /database-connections/schema",
+        "GET /database-connections/tables",
+        "POST /extensions/{extension}/disable",
+        "POST /extensions/{extension}/enable",
+        "GET /extensions",
+        "GET /status",
+        "POST /internal-executor/token/verify",
+        "PUT /manifest",
+        "DELETE /manifest",
+        "GET /metrics/credentials",
+        "POST /metrics/credentials/reset",
+        "GET /metrics/status",
+        "GET /nodes/self/manage-key",
+        "POST /nodes/self/manage",
+        "POST /nodes/{name}/roles",
+        "GET /nodes/{name}/roles",
+        "DELETE /nodes/{name}/roles/{role}",
+        "GET /operations/{operationRun}/events",
+        "POST /events/process",
+        "GET /profile/resolve",
+        "GET /s3/credentials",
+        "POST /s3/public-hosts",
+        "DELETE /s3/public-hosts/{host}",
+        "GET /solo/tools",
+        "GET /solo/projects",
+        "GET /solo/{operation}",
+        "POST /solo/{operation}",
+        "POST /tools/{tool}/start",
+        "POST /tools/{tool}/stop",
+        "POST /tools/{tool}/restart",
+        "POST /update/all/start",
+        "GET /update/artifacts/{operationRun}/{artifactKind}/{platform}",
+        "POST /vpn/clients/{name}/disable",
+        "GET /workspaces/history/resolve-by-path",
+        "GET /workspaces/{name}/history",
+        "GET /workspaces/{name}",
+        "GET /workspaces/resolve-by-path"
+    ],
+    "query_drift": [
+        {
+            "key": "GET /apps",
+            "file": "packages/sdk/src/Requests/Apps/ListAppsRequest.php",
+            "schema_query": [
+                "environment",
+                "node"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "DELETE /database-connections/{connection}/targets",
+            "file": "packages/sdk/src/Requests/Database/DetachDatabaseConnectionTargetRequest.php",
+            "schema_query": [
+                "env_prefix"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "GET /database-connections",
+            "file": "packages/sdk/src/Requests/Database/ListDatabaseConnectionsRequest.php",
+            "schema_query": [
+                "app",
+                "node",
+                "workspace"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "GET /deploy/history",
+            "file": "packages/sdk/src/Requests/Deploy/ListDeployHistoryRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app",
+                "limit"
+            ]
+        },
+        {
+            "key": "GET /deploy/steps",
+            "file": "packages/sdk/src/Requests/Deploy/ListDeployStepsRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app"
+            ]
+        },
+        {
+            "key": "DELETE /deploy/steps/{step}",
+            "file": "packages/sdk/src/Requests/Deploy/RemoveDeployStepRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app",
+                "destructive_consent"
+            ]
+        },
+        {
+            "key": "DELETE /firewall-rules/{name}",
+            "file": "packages/sdk/src/Requests/Firewall/RemoveFirewallRuleRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "destructive_consent",
+                "node"
+            ]
+        },
+        {
+            "key": "GET /nodes",
+            "file": "packages/sdk/src/Requests/Nodes/ListNodesRequest.php",
+            "schema_query": [
+                "doctor",
+                "environment",
+                "role"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "DELETE /nodes/{name}",
+            "file": "packages/sdk/src/Requests/Nodes/RemoveNodeRequest.php",
+            "schema_query": [
+                "destructive_consent"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "GET /php/runtime",
+            "file": "packages/sdk/src/Requests/Php/ShowPhpRuntimeRequest.php",
+            "schema_query": [
+                "app",
+                "live",
+                "node",
+                "workspace"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "GET /tools",
+            "file": "packages/sdk/src/Requests/Tools/ListToolsRequest.php",
+            "schema_query": [
+                "app",
+                "node",
+                "self"
+            ],
+            "sdk_query": []
+        },
+        {
+            "key": "DELETE /workspaces/{name}",
+            "file": "packages/sdk/src/Requests/Workspaces/RemoveWorkspaceRequest.php",
+            "schema_query": [
+                "keep_files"
+            ],
+            "sdk_query": []
+        }
+    ],
+    "covered_focus": [
+        "POST /apps",
+        "POST /apps/{app}/worker/disable",
+        "POST /apps/{app}/worker/enable",
+        "GET /apps",
+        "POST /apps/prune",
+        "POST /apps/register",
+        "DELETE /apps/{app}",
+        "POST /apps/{app}/agent-ide",
+        "GET /apps/{app}",
+        "GET /apps/{app}/worker",
+        "POST /apps/{app}/root",
+        "POST /nodes/{node}/roles",
+        "POST /nodes",
+        "POST /nodes/grant",
+        "GET /nodes/{node}/roles",
+        "GET /nodes",
+        "POST /nodes/permissions",
+        "DELETE /nodes/{name}",
+        "DELETE /nodes/{node}/roles/{role}",
+        "POST /nodes/revoke",
+        "POST /nodes/{name}/agent-ide",
+        "GET /nodes/{name}",
+        "PUT /nodes/{name}",
+        "POST /update/all",
+        "POST /processes",
+        "GET /processes",
+        "DELETE /processes/{name}",
+        "POST /processes/restart",
+        "GET /processes/{name}/log",
+        "POST /processes/start",
+        "POST /processes/stop",
+        "PATCH /processes/{name}",
+        "POST /tools/{tool}/update",
+        "POST /tools/update",
+        "POST /workspaces/steps/{phase}",
+        "POST /workspaces",
+        "GET /workspaces/steps/{phase}",
+        "GET /workspaces",
+        "DELETE /workspaces/{name}",
+        "DELETE /workspaces/steps/{phase}/{step}",
+        "POST /workspaces/setup",
+        "GET /workspaces/runs/{run}/log"
+    ]
+}

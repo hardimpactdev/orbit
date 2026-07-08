@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-08T09:13:49+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-08-111349-gateway-openapi-contract-hardening",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-08-111349-gateway-openapi-contract-hardening/agent-sessions",
+    "copied_entries": [
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

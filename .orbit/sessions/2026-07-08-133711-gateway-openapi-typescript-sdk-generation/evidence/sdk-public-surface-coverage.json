@@ -1,0 +1,171 @@
+{
+    "generated_at": "2026-07-08T10:10:05+00:00",
+    "schema_path_count": 126,
+    "schema_operation_count": 159,
+    "sdk_dedicated_request_operation_count": 97,
+    "schema_only_operation_count": 63,
+    "classified_schema_only_operation_count": 63,
+    "unclassified_schema_only_operations": [],
+    "classification_counts": {
+        "deferred_optional": 33,
+        "internal_only": 8,
+        "public_sdk": 22
+    },
+    "public_sdk_follow_ups": [
+        {
+            "operation": "GET /apps/{app}/instances",
+            "operation_id": "appInstance.index",
+            "group": "app_instances",
+            "follow_up": "Add a dedicated PHP SDK request class for listing app instances."
+        },
+        {
+            "operation": "POST /apps/{app}/instances",
+            "operation_id": "appInstance.store",
+            "group": "app_instances",
+            "follow_up": "Add a dedicated PHP SDK request class for creating app instances."
+        },
+        {
+            "operation": "GET /apps/{app}/instances/{instance}",
+            "operation_id": "appInstance.show",
+            "group": "app_instances",
+            "follow_up": "Add a dedicated PHP SDK request class for showing an app instance."
+        },
+        {
+            "operation": "DELETE /apps/{app}/instances/{instance}",
+            "operation_id": "appInstance.destroy",
+            "group": "app_instances",
+            "follow_up": "Add a dedicated PHP SDK request class for deleting an app instance."
+        },
+        {
+            "operation": "GET /apps/{app}/mounts",
+            "operation_id": "appRuntimeMount.index",
+            "group": "app_mounts",
+            "follow_up": "Add a dedicated PHP SDK request class for listing app runtime mounts."
+        },
+        {
+            "operation": "POST /apps/{app}/mounts",
+            "operation_id": "appRuntimeMount.store",
+            "group": "app_mounts",
+            "follow_up": "Add a dedicated PHP SDK request class for creating app runtime mounts."
+        },
+        {
+            "operation": "DELETE /apps/{app}/mounts",
+            "operation_id": "appRuntimeMount.destroy",
+            "group": "app_mounts",
+            "follow_up": "Add a dedicated PHP SDK request class for deleting app runtime mounts."
+        },
+        {
+            "operation": "POST /apps/{app}/setup",
+            "operation_id": "appSetup",
+            "group": "app_setup",
+            "follow_up": "Add a dedicated PHP SDK request class for running app setup."
+        },
+        {
+            "operation": "GET /apps/{app}/setup-steps",
+            "operation_id": "appSetupStep.index",
+            "group": "app_setup",
+            "follow_up": "Add a dedicated PHP SDK request class for listing app setup steps."
+        },
+        {
+            "operation": "POST /apps/{app}/setup-steps",
+            "operation_id": "appSetupStep.store",
+            "group": "app_setup",
+            "follow_up": "Add a dedicated PHP SDK request class for creating app setup steps."
+        },
+        {
+            "operation": "DELETE /apps/{app}/setup-steps/{step}",
+            "operation_id": "appSetupStep.destroy",
+            "group": "app_setup",
+            "follow_up": "Add a dedicated PHP SDK request class for deleting app setup steps."
+        },
+        {
+            "operation": "POST /apps/{app}/websocket/enable",
+            "operation_id": "appWebSocket.enable",
+            "group": "app_websocket",
+            "follow_up": "Add a dedicated PHP SDK request class for enabling app WebSocket binding."
+        },
+        {
+            "operation": "POST /apps/{app}/websocket/disable",
+            "operation_id": "appWebSocket.disable",
+            "group": "app_websocket",
+            "follow_up": "Add a dedicated PHP SDK request class for disabling app WebSocket binding."
+        },
+        {
+            "operation": "GET /apps/{app}/websocket/credentials",
+            "operation_id": "appWebSocket.credentials",
+            "group": "app_websocket",
+            "follow_up": "Add a dedicated PHP SDK request class for reading app WebSocket credentials."
+        },
+        {
+            "operation": "GET /status",
+            "operation_id": "status",
+            "group": "gateway_status",
+            "follow_up": "Add a dedicated PHP SDK request class for gateway status."
+        },
+        {
+            "operation": "GET /nodes/self/manage-key",
+            "operation_id": "nodeManage.key",
+            "group": "node_self_management",
+            "follow_up": "Add a dedicated PHP SDK request class for reading the self-management key."
+        },
+        {
+            "operation": "POST /nodes/self/manage",
+            "operation_id": "nodeManage.manage",
+            "group": "node_self_management",
+            "follow_up": "Add a dedicated PHP SDK request class for self-managing the current node."
+        },
+        {
+            "operation": "GET /operations/{operationRun}/events",
+            "operation_id": "operations.events",
+            "group": "operation_events",
+            "follow_up": "Add a dedicated PHP SDK stream request/client for operation events."
+        },
+        {
+            "operation": "POST /tools/{tool}/start",
+            "operation_id": "toolStart",
+            "group": "tool_lifecycle",
+            "follow_up": "Add a dedicated PHP SDK request class for starting lifecycle-capable tools."
+        },
+        {
+            "operation": "POST /tools/{tool}/stop",
+            "operation_id": "toolStop",
+            "group": "tool_lifecycle",
+            "follow_up": "Add a dedicated PHP SDK request class for stopping lifecycle-capable tools."
+        },
+        {
+            "operation": "POST /tools/{tool}/restart",
+            "operation_id": "toolRestart",
+            "group": "tool_lifecycle",
+            "follow_up": "Add a dedicated PHP SDK request class for restarting lifecycle-capable tools."
+        },
+        {
+            "operation": "GET /workspaces/{name}/history",
+            "operation_id": "workspaceHistory",
+            "group": "workspace_history",
+            "follow_up": "Add or adjust a dedicated PHP SDK request path for named workspace history."
+        }
+    ],
+    "internal_only_operations": [
+        "POST /analytics/update",
+        "POST /internal-executor/token/verify",
+        "POST /events/process",
+        "GET /solo/tools",
+        "GET /solo/projects",
+        "GET /solo/{operation}",
+        "POST /solo/{operation}",
+        "GET /update/artifacts/{operationRun}/{artifactKind}/{platform}"
+    ],
+    "deferred_optional_groups": [
+        "app_analytics",
+        "codex_extension",
+        "app_instance_env",
+        "cloudflare_extension",
+        "database_inspection",
+        "extension_admin",
+        "release_admin",
+        "metrics",
+        "profile",
+        "s3",
+        "update_all_streaming"
+    ]
+}

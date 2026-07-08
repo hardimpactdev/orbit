@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 60,
+    "record_count": 65,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -1587,6 +1587,170 @@
                 "reasoning_tokens": 2435
             },
             "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-08-104240-gateway-openapi-schema-spike",
+            "slug": "gateway-openapi-schema-spike",
+            "timestamp": "2026-07-08-104240",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "no",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "unknown": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-08-111349-gateway-openapi-contract-hardening",
+            "slug": "gateway-openapi-contract-hardening",
+            "timestamp": "2026-07-08-111349",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`bin/orbit-gateway-pest --compact tests/Feature/OpenApiSchemaContractTest.php`": "passed",
+                "`composer openapi:export` from `apps/gateway`": "passed",
+                "`jq` schema summary": "passed",
+                "`composer validate --strict --no-check-publish` from `apps/gateway`": "passed",
+                "`bin/orbit-gateway-vendor-bin mago format --check app/Support/OpenApi/GatewayOpenApi.php app/Providers/AppServiceProvider.php config/scramble.php tests/Feature/OpenApiSchemaContractTest.php`": "passed",
+                "`bin/orbit-gateway-vendor-bin mago analyze app/Support/OpenApi/GatewayOpenApi.php app/Providers/AppServiceProvider.php config/scramble.php tests/Feature/OpenApiSchemaContractTest.php --reporting-format=medium`": "passed",
+                "`composer quality-check`": "unknown"
+            },
+            "fresh_analyzer_verdict": "not used.",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-08-115956-gateway-openapi-sdk-drift-alignment",
+            "slug": "gateway-openapi-sdk-drift-alignment",
+            "timestamp": "2026-07-08-115956",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "Red test evidence": "unknown",
+                "Focused SDK tests": "unknown",
+                "Full SDK tests": "unknown",
+                "Gateway schema contract": "unknown",
+                "OpenAPI export": "unknown",
+                "Comparison evidence": "unknown",
+                "SDK Composer validation": "unknown",
+                "SDK format": "unknown",
+                "SDK analyze": "unknown",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "not used.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "defer": 1,
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-08-122220-gateway-openapi-sdk-surface-triage",
+            "slug": "gateway-openapi-sdk-surface-triage",
+            "timestamp": "2026-07-08-122220",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`bin/orbit-feature-finalization-check --lint .orbit/loop.md` at start": "passed",
+                "`bin/orbit-gateway-pest --compact tests/Feature/OpenApiSdkSurfaceContractTest.php`": "passed",
+                "`bin/orbit-gateway-pest --compact tests/Feature/OpenApiSdkSurfaceContractTest.php tests/Feature/OpenApiSchemaContractTest.php`": "passed",
+                "`bin/orbit-gateway-vendor-bin mago format tests/Feature/OpenApiSdkSurfaceContractTest.php`": "passed",
+                "`bin/orbit-gateway-vendor-bin mago format --check tests/Feature/OpenApiSdkSurfaceContractTest.php`": "passed",
+                "`php -r 'json_decode(file_get_contents(\"apps/gateway/openapi-sdk-surface.json\"), true, flags: JSON_THROW_ON_ERROR); echo \"openapi-sdk-surface.json valid\\n\";'`": "passed",
+                "`php -r 'json_decode(file_get_contents(\".orbit/evidence/sdk-public-surface-coverage.json\"), true, flags: JSON_THROW_ON_ERROR); echo \"sdk-public-surface-coverage.json valid\\n\";'`": "passed",
+                "`composer openapi:export` from `apps/gateway`": "passed",
+                "`composer docs-lint`": "passed",
+                "`git diff --check`": "passed",
+                "`composer quality-check`": "passed",
+                "`composer quality-gate:final-check`": "passed",
+                "`composer test:e2e*`": "unknown"
+            },
+            "fresh_analyzer_verdict": "not used.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "defer": 1,
+                    "unknown": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-08-133711-gateway-openapi-typescript-sdk-generation",
+            "slug": "gateway-openapi-typescript-sdk-generation",
+            "timestamp": "2026-07-08-133711",
+            "loop_outcome": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`npm install` from `packages/sdk-typescript`": "passed",
+                "`npm run generate` from `packages/sdk-typescript`": "passed",
+                "`npm run typecheck` from `packages/sdk-typescript`": "passed",
+                "`npm run build` from `packages/sdk-typescript`": "passed",
+                "`npm test` from `packages/sdk-typescript`": "passed",
+                "`bin/orbit-gateway-pest tests/Feature/OpenApiSchemaContractTest.php tests/Feature/OpenApiSdkSurfaceContractTest.php --compact`": "passed",
+                "`composer docs-lint`": "passed",
+                "`bin/orbit-gateway-vendor-bin mago format --check app/Support/OpenApi/GatewayOpenApi.php tests/Feature/OpenApiSchemaContractTest.php`": "passed",
+                "`composer quality-check`": "not applicable"
+            },
+            "fresh_analyzer_verdict": "not used.",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "defer": 1,
+                    "unknown": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "empty"
         }
     ]
 }

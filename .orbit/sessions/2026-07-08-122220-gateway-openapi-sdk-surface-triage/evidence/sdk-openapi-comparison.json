@@ -1,0 +1,277 @@
+{
+    "generated_at": "2026-07-08T09:23:41+00:00",
+    "schema_path_count": 126,
+    "schema_operation_count": 159,
+    "sdk_static_request_count": 98,
+    "query_vs_body_convention": {
+        "filters": "GET/dashboard filters are query parameters.",
+        "destructive_consent": "Destructive consent and destructive options are request body fields when the gateway reads request input or uses FormRequest validation; deploy step deletion keeps the existing gateway-compatible query form because the controller accepts query/input for app and destructive_consent.",
+        "schema_inference": "Scramble can infer false query parameters from raw Request access; normalized rows below classify those cases against gateway source."
+    },
+    "normalized_core_dashboard_rows": [
+        {
+            "key": "GET /apps",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Apps/ListAppsRequest.php",
+            "schema_query": [
+                "environment",
+                "node"
+            ],
+            "sdk_query": [
+                "environment",
+                "node"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "environment",
+                "node"
+            ],
+            "normalized_body": [],
+            "classification": "fixed",
+            "status": "aligned"
+        },
+        {
+            "key": "DELETE /database-connections/{connection}/targets",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Database/DetachDatabaseConnectionTargetRequest.php",
+            "schema_query": [
+                "env_prefix"
+            ],
+            "sdk_query": [],
+            "sdk_body": [
+                "env_prefix",
+                "target",
+                "target_type"
+            ],
+            "normalized_query": [],
+            "normalized_body": [
+                "env_prefix",
+                "target",
+                "target_type"
+            ],
+            "classification": "body_convention",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /database-connections",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Database/ListDatabaseConnectionsRequest.php",
+            "schema_query": [
+                "app",
+                "node",
+                "workspace"
+            ],
+            "sdk_query": [
+                "app",
+                "node",
+                "workspace"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app",
+                "node",
+                "workspace"
+            ],
+            "normalized_body": [],
+            "classification": "fixed",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /deploy/history",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Deploy/ListDeployHistoryRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app",
+                "limit"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app",
+                "limit"
+            ],
+            "normalized_body": [],
+            "classification": "schema_false_negative_gateway_accepts_query",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /deploy/steps",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Deploy/ListDeployStepsRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app"
+            ],
+            "normalized_body": [],
+            "classification": "schema_false_negative_gateway_accepts_query",
+            "status": "aligned"
+        },
+        {
+            "key": "DELETE /deploy/steps/{step}",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Deploy/RemoveDeployStepRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app",
+                "destructive_consent"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app",
+                "destructive_consent"
+            ],
+            "normalized_body": [],
+            "classification": "schema_false_negative_gateway_accepts_query",
+            "status": "aligned"
+        },
+        {
+            "key": "DELETE /firewall-rules/{name}",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Firewall/RemoveFirewallRuleRequest.php",
+            "schema_query": [],
+            "sdk_query": [],
+            "sdk_body": [
+                "destructive_consent",
+                "node"
+            ],
+            "normalized_query": [],
+            "normalized_body": [
+                "destructive_consent",
+                "node"
+            ],
+            "classification": "fixed_body_convention",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /nodes",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Nodes/ListNodesRequest.php",
+            "schema_query": [
+                "doctor",
+                "environment",
+                "role"
+            ],
+            "sdk_query": [
+                "doctor",
+                "role"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "doctor",
+                "role"
+            ],
+            "normalized_body": [],
+            "classification": "schema_false_positive_environment_rejected_by_gateway",
+            "status": "aligned"
+        },
+        {
+            "key": "DELETE /nodes/{name}",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Nodes/RemoveNodeRequest.php",
+            "schema_query": [
+                "destructive_consent"
+            ],
+            "sdk_query": [],
+            "sdk_body": [
+                "destructive_consent",
+                "destructive_consent_source"
+            ],
+            "normalized_query": [],
+            "normalized_body": [
+                "destructive_consent",
+                "destructive_consent_source"
+            ],
+            "classification": "body_convention",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /php/runtime",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Php/ShowPhpRuntimeRequest.php",
+            "schema_query": [
+                "app",
+                "live",
+                "node",
+                "workspace"
+            ],
+            "sdk_query": [
+                "app",
+                "live",
+                "node",
+                "workspace"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app",
+                "live",
+                "node",
+                "workspace"
+            ],
+            "normalized_body": [],
+            "classification": "fixed",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /tools",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Tools/ListToolsRequest.php",
+            "schema_query": [
+                "app",
+                "node",
+                "self"
+            ],
+            "sdk_query": [
+                "app",
+                "node",
+                "self"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app",
+                "node",
+                "self"
+            ],
+            "normalized_body": [],
+            "classification": "fixed",
+            "status": "aligned"
+        },
+        {
+            "key": "DELETE /workspaces/{name}",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Workspaces/RemoveWorkspaceRequest.php",
+            "schema_query": [
+                "keep_files"
+            ],
+            "sdk_query": [
+                "app"
+            ],
+            "sdk_body": [
+                "destructive_consent",
+                "destructive_consent_source",
+                "keep_files"
+            ],
+            "normalized_query": [
+                "app"
+            ],
+            "normalized_body": [
+                "destructive_consent",
+                "destructive_consent_source",
+                "keep_files"
+            ],
+            "classification": "body_convention",
+            "status": "aligned"
+        },
+        {
+            "key": "GET /processes",
+            "file": "/Users/nckrtl/orbit/.worktrees/codex-gateway-openapi-schema/packages/sdk/src/Requests/Processes/ListProcessesRequest.php",
+            "schema_query": [],
+            "sdk_query": [
+                "app",
+                "node",
+                "workspace"
+            ],
+            "sdk_body": [],
+            "normalized_query": [
+                "app",
+                "node",
+                "workspace"
+            ],
+            "normalized_body": [],
+            "classification": "fixed_raw_request_gap",
+            "status": "aligned"
+        }
+    ],
+    "remaining_actionable_drift": []
+}
