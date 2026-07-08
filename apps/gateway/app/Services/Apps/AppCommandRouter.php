@@ -44,7 +44,15 @@ final readonly class AppCommandRouter
             return $command;
         }
 
-        return $this->wrapForHostPhp($app, $command, $path, $environment);
+        $runtimeUser = $this->appRuntimeUser->forApp($app);
+
+        return $this->wrapWithPathAssignment(
+            command: $command,
+            path: $path,
+            environment: $environment,
+            pathAssignment: 'PATH=/opt/orbit/php/'.escapeshellarg($app->php_version).'/bin:$PATH ',
+            runtimeUser: $runtimeUser,
+        );
     }
 
     /**
@@ -59,7 +67,45 @@ final readonly class AppCommandRouter
             return $command;
         }
 
-        return $this->wrapForHostLifecycle($app, $command, $path, $environment);
+        $runtimeUser = $this->appRuntimeUser->forApp($app);
+
+        return $this->wrapWithPathAssignment(
+            command: $command,
+            path: $path,
+            environment: $environment,
+            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser),
+            runtimeUser: $runtimeUser,
+        );
+    }
+
+    /**
+     * Route workspace lifecycle commands through the selected workspace node's
+     * host toolchain while retaining the app's PHP/runtime settings.
+     *
+     * @param array<string, string> $environment
+     */
+    public function routeLifecycleForNodePath(
+        App $app,
+        Node $node,
+        string $command,
+        string $path,
+        array $environment = [],
+    ): string {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
+            return $command;
+        }
+
+        $runtimeUser = is_string($node->user) && trim($node->user) !== ''
+            ? trim($node->user)
+            : 'orbit';
+
+        return $this->wrapWithPathAssignment(
+            command: $command,
+            path: $path,
+            environment: $environment,
+            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser, $node),
+            runtimeUser: $runtimeUser,
+        );
     }
 
     public function usesPhpTools(string $command): bool
@@ -92,38 +138,6 @@ final readonly class AppCommandRouter
     /**
      * @param  array<string, string>  $environment
      */
-    private function wrapForHostPhp(App $app, string $command, string $path, array $environment): string
-    {
-        $runtimeUser = $this->appRuntimeUser->forApp($app);
-
-        return $this->wrapWithPathAssignment(
-            command: $command,
-            path: $path,
-            environment: $environment,
-            pathAssignment: 'PATH=/opt/orbit/php/'.escapeshellarg($app->php_version).'/bin:$PATH ',
-            runtimeUser: $runtimeUser,
-        );
-    }
-
-    /**
-     * @param  array<string, string>  $environment
-     */
-    private function wrapForHostLifecycle(App $app, string $command, string $path, array $environment): string
-    {
-        $runtimeUser = $this->appRuntimeUser->forApp($app);
-
-        return $this->wrapWithPathAssignment(
-            command: $command,
-            path: $path,
-            environment: $environment,
-            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser),
-            runtimeUser: $runtimeUser,
-        );
-    }
-
-    /**
-     * @param  array<string, string>  $environment
-     */
     private function wrapWithPathAssignment(
         string $command,
         string $path,
@@ -143,9 +157,12 @@ final readonly class AppCommandRouter
         return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
     }
 
-    private function managedToolPathAssignment(App $app, string $runtimeUser): string
+    private function managedToolPathAssignment(App $app, string $runtimeUser, ?Node $node = null): string
     {
-        $home = $this->homeDirectory($app, $runtimeUser);
+        $home = $node instanceof Node
+            ? NodeHostPaths::homeDirectoryFor($node->platform, $runtimeUser)
+            : $this->homeDirectory($app, $runtimeUser);
+
         $pathPrefix = implode(':', [
             "/opt/orbit/php/{$app->php_version}/bin",
             "{$home}/.local/bin",
