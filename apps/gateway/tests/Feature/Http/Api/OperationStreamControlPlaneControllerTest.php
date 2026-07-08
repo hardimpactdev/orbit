@@ -80,7 +80,7 @@ it('returns an operation stream descriptor without app websocket credentials', f
         ->assertJsonPath('success.data.reverb.scheme', 'https')
         ->assertJsonPath('success.data.auth.endpoint', "/api/operations/{$this->run->id}/stream/auth")
         ->assertJsonPath('success.data.auth.method', 'POST')
-        ->assertJsonPath('success.data.backfill.events_endpoint', "/api/operations/{$this->run->id}/events")
+        ->assertJsonPath('success.data.backfill.events_endpoint', "/api/operations/{$this->run->id}/events?once=1")
         ->assertJsonPath('success.data.backfill.cursor', $second->sequence)
         ->assertJsonPath('success.data.backfill.from_sequence', $first->sequence)
         ->assertJsonPath('success.data.backfill.available', 2)

@@ -11,6 +11,7 @@ use App\Services\Operations\OperationEventStreamer;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Http\Request;
+use Orbit\Core\Progress\ProgressEventType;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 #[RequiresPermission('*', servingNode: ServingNode::Gateway)]
@@ -40,7 +41,22 @@ final readonly class OperationEventStreamController
                     continue;
                 }
 
-                $events->event($event->event_type, $event->payload, $event->sequence);
+                $eventType = ProgressEventType::tryFrom($event->event_type);
+
+                if ($eventType instanceof ProgressEventType) {
+                    $events->event($event->event_type, $event->payload, $event->sequence);
+
+                    continue;
+                }
+
+                $events->event(
+                    ProgressEventType::Step->value,
+                    [
+                        ...$event->payload,
+                        'event' => $event->event_type,
+                    ],
+                    $event->sequence,
+                );
             }
         });
     }

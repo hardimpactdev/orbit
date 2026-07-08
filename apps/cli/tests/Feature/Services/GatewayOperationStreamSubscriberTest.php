@@ -68,7 +68,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
                         'token' => operation_stream_subscriber_token(),
                     ],
                     'backfill' => [
-                        'events_endpoint' => '/api/operations/run-1/events',
+                        'events_endpoint' => '/api/operations/run-1/events?once=1',
                         'cursor' => 11,
                     ],
                 ],
@@ -132,14 +132,14 @@ it('subscribes to a private operation stream and backfills after the last durabl
             ],
         ])
         ->and($events->replays)
-        ->toBe([['/api/operations/run-1/events', 10]])
+        ->toBe([['/api/operations/run-1/events?once=1', 10]])
         ->and($history)
         ->toBe([
             'connect',
             'receive:pusher:connection_established',
             'send:pusher:subscribe',
             'receive:pusher_internal:subscription_succeeded',
-            'replay:/api/operations/run-1/events:10',
+            'replay:/api/operations/run-1/events?once=1:10',
             'receive:operation.stream.frame',
             'receive:null',
             'close',
@@ -295,7 +295,7 @@ it('replays frames published after descriptor fetch but before subscription conf
     });
 
     expect($events->replays)
-        ->toBe([['/api/operations/run-1/events', null]])
+        ->toBe([['/api/operations/run-1/events?once=1', null]])
         ->and($frames)
         ->toBe([
             [
@@ -402,8 +402,8 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
 
     expect($events->replays)
         ->toBe([
-            ['/api/operations/run-1/events', 100],
-            ['/api/operations/run-1/events', 101],
+            ['/api/operations/run-1/events?once=1', 100],
+            ['/api/operations/run-1/events?once=1', 101],
         ])
         ->and($frames)
         ->toBe([
@@ -461,11 +461,11 @@ it('durably replays frames when the websocket fails before the descriptor cursor
     });
 
     expect($events->replays)
-        ->toBe([['/api/operations/run-1/events', null]])
+        ->toBe([['/api/operations/run-1/events?once=1', null]])
         ->and($history)
         ->toBe([
             'connect',
-            'replay:/api/operations/run-1/events:null',
+            'replay:/api/operations/run-1/events?once=1:null',
             'close',
         ])
         ->and($frames)
@@ -514,7 +514,7 @@ function operation_stream_descriptor(
                     'token' => $authToken,
                 ],
                 'backfill' => [
-                    'events_endpoint' => '/api/operations/run-1/events',
+                    'events_endpoint' => '/api/operations/run-1/events?once=1',
                     'cursor' => $cursor,
                 ],
             ],

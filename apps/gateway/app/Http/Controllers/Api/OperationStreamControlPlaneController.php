@@ -410,7 +410,7 @@ final readonly class OperationStreamControlPlaneController
         $query = OperationEvent::query()->where('operation_run_id', $operationRun->id);
 
         return [
-            'events_endpoint' => "/api/operations/{$operationRun->id}/events",
+            'events_endpoint' => "/api/operations/{$operationRun->id}/events?once=1",
             'cursor' => $this->nullableInteger((clone $query)->max('sequence')),
             'from_sequence' => $this->nullableInteger((clone $query)->min('sequence')),
             'available' => (clone $query)->count(),
