@@ -11,7 +11,7 @@
 - The authenticated peer has `app:read` on the app's owning node for `list`.
 - The authenticated peer has `app:mount` on the app's owning node for `add`
   and `remove`.
-- The target app exists in gateway configuration.
+- The target app or app instance exists in gateway configuration.
 
 ## Signature
 
@@ -27,8 +27,8 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | Never. | None. | Must be one of `list`, `add`, `remove`. |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record by name or hostname. Name match wins. |
-| `source` | `[source]` | `action=add`. | `action=list`. | None. | Must be an absolute safe source under the owning node user's home. |
+| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record or dotted app instance selector such as `hauser.nmbp`. Bare app names resolve compatibility app-level mounts. |
+| `source` | `[source]` | `action=add`. | `action=list`. | None. | Must be an absolute safe source under the resolved target node's home. |
 | `target` | `[target]` | `action=add` and `action=remove`. | `action=list`. | None. | Must be an absolute container path and must not collide with reserved runtime targets. |
 | `read_only` | `--read-only` / `--read-write` | Optional for `action=add`. | `action=list`, `action=remove`. | `true`. | `--read-only` and `--read-write` are mutually exclusive. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
@@ -39,23 +39,27 @@ argument `source`.
 
 ## State Model
 
-Gateway-owned app configuration stores configurable runtime mounts in
-`app_runtime_mounts`.
+Gateway-owned configuration stores configurable runtime mounts in two tables:
 
-Each row belongs to one app and contains:
+- `app_instance_runtime_mounts` for instance-scoped mount intent.
+- `app_runtime_mounts` for compatibility app-level mount intent.
+
+Each row belongs to one app instance or one app and contains:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `source` | string | Absolute host path on the owning node. |
-| `target` | string | Absolute container path. Unique per app. |
+| `source` | string | Absolute host path on the resolved target node. |
+| `target` | string | Absolute container path. Unique per app instance or app. |
 | `read_only` | boolean | Whether Docker renders the bind mount read-only. |
 
-The unique key is `(app_id, target)`. Adding a mount for an existing target
+The unique key is `(app_instance_id, target)` for instance mounts and
+`(app_id, target)` for compatibility app-level mounts. Adding a mount for an existing target
 updates that target's source and read/write mode.
 
 ## API Surface
 
-The gateway HTTP API mirrors the command:
+The gateway HTTP API mirrors the command. The `{app}` path segment accepts bare
+app selectors and dotted instance selectors such as `hauser.nmbp`:
 
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
@@ -75,27 +79,41 @@ validation failures, and `403` for permission denials.
 
 ## Behavior Contract
 
+### Selector Resolution
+
+1. **Dotted instance selectors.** Selectors containing one dot, such as
+   `hauser.nmbp`, resolve the named app instance. Writes and reads target
+   `app_instance_runtime_mounts`.
+2. **Bare app selectors.** Selectors without an instance suffix resolve compatibility
+   app-level mounts in `app_runtime_mounts` for compatibility only.
+3. **Name precedence.** App and instance resolution follow the shared app
+   selector rules used elsewhere in the app command surface.
+
 ### Runtime Mount Rules
 
-1. **App-level intent.** Configurable runtime mounts are stored on the app, not
-   on individual workspaces.
-2. **Workspace inheritance.** Every workspace runtime container for the app
-   inherits the app's configured mounts.
-3. **PHP/app-dev only.** The current slice accepts configurable runtime mounts
+1. **Instance-scoped intent.** New configurable runtime mounts belong to app
+   instances, not logical apps.
+2. **Compatibility fallback.** App and workspace runtime renderers prefer
+   selected-instance mounts when present. App-level mounts are used only
+   when the selected instance has no instance mounts configured.
+3. **Workspace inheritance.** Workspace runtime containers inherit mounts from
+   the workspace's selected app instance.
+4. **PHP/app-dev only.** The current slice accepts configurable runtime mounts
    only for PHP apps whose owning node has the active `app-dev` role.
-4. **Read-only default.** New mounts default to `read_only=true`; callers must
+5. **Read-only default.** New mounts default to `read_only=true`; callers must
    pass `--read-write` or `read_only=false` to make them writable.
-5. **Reserved target protection.** Custom mounts cannot target `/app`,
+6. **Reserved target protection.** Custom mounts cannot target `/app`,
    `/packages`, `/data`, `/config`, the managed PHP ini target, the app
    source mirror target, or the internal ephemeral FrankenPHP XDG root
    `/tmp/orbit-frankenphp`.
-6. **Home-source boundary.** Custom sources must live below the owning node
-   user's home and must not point at the home root or credential-bearing home
-   paths.
-7. **Renderer integration.** The app and workspace runtime renderers append
+7. **Home-source boundary.** Custom sources must live below the resolved target
+   node's home directory and must not point at the home root or credential-bearing
+   home paths. macOS instances validate against `/Users/<node-user>/`; Linux
+   instances validate against `/home/<node-user>/`.
+8. **Renderer integration.** The app and workspace runtime renderers append
    configured mounts after Orbit's built-in runtime mounts. The mount list is
    part of the runtime `spec_hash`.
-8. **Directory preparation.** Before `docker run`, the runtime manager creates
+9. **Directory preparation.** Before `docker run`, the runtime manager creates
    safe configured source directories with owner and group set to the source
    home user. Unsafe configured sources fail before Docker is invoked.
 
@@ -111,7 +129,7 @@ failures below.
 | Validation failed (app) | `app` is missing in non-interactive mode. | Failure |
 | Validation failed (source) | `add` is missing `source`, or `source` is not an allowed absolute host path. | Failure |
 | Validation failed (target) | `add` or `remove` is missing `target`, or `target` is not an allowed absolute target path. | Failure |
-| App not found | No app record matches `app`. | Failure |
+| App not found | No app record or app instance matches the selector. | Failure |
 | Unsupported app runtime | The app has `runtime != php`; `error.meta.reason=app_runtime_not_php`. | Failure |
 | Unsupported owning role | The app is not owned by an active `app-dev` node; `error.meta.reason=app_mounts_app_dev_only`. | Failure |
 
@@ -127,12 +145,13 @@ Runtime mount configuration changes are ordinary app runtime configuration.
 repairing runtime container drift when the rendered app runtime container
 differs from the gateway-owned mount intent. Workspace runtime drift remains
 owned by [`doctor --family=workspace`](../../../6_workspace/workspace-doctor.md),
-but the source of mount intent is still the parent app.
+but the source of mount intent is the workspace's selected app instance, with
+app-level mounts as fallback only.
 
 ## Side Effects
 
-`add` and `remove` write gateway-owned app configuration. They do not restart
-or recreate runtime containers directly.
+`add` and `remove` write gateway-owned app or app-instance configuration. They
+do not restart or recreate runtime containers directly.
 
 The next runtime convergence for the app or a workspace uses the stored mount
 configuration. The runtime manager creates safe source directories for bind
@@ -142,9 +161,9 @@ mounts immediately before Docker creates the container.
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI validation for required inputs and forwarding of `list`, `add`, and `remove` to typed gateway endpoints. |
-| `apps/gateway/tests/Feature/Http/Api/AppRuntimeMountControllerTest.php` | API persistence, updates, removal, permission split, PHP/app-dev gates, source policy, and reserved target validation. |
-| `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App runtime configured mounts and runtime `spec_hash` changes. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | Workspace inheritance of parent app runtime mounts and runtime `spec_hash` changes. |
+| `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI validation for required inputs and forwarding of `list`, `add`, and `remove` to typed gateway endpoints, including dotted instance selectors. |
+| `apps/gateway/tests/Feature/Http/Api/AppRuntimeMountControllerTest.php` | API persistence, updates, removal, permission split, PHP/app-dev gates, dotted selector resolution, instance target metadata, source policy, and reserved target validation. |
+| `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerRendererTest.php` | App runtime configured mounts, instance preference, compatibility fallback, and runtime `spec_hash` changes. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerRendererTest.php` | Workspace use of selected app instance runtime mounts, compatibility fallback, and runtime `spec_hash` changes. |
 | `apps/gateway/tests/Unit/Services/Apps/AppRuntimeContainerManagerTest.php` | App runtime source-directory preparation before Docker run. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceRuntimeContainerManagerTest.php` | Workspace runtime source-directory preparation for inherited app mounts before Docker run. |

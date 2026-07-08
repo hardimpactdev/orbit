@@ -8,6 +8,7 @@ use App\Data\Apps\AppInstanceDriverConfigData;
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
 use App\Enums\Apps\AppInstanceDriver;
 use Database\Factories\AppInstanceFactory;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -23,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $latest_deployment_status
  * @property int|null $latest_deployment_run_id
  * @property-read App $app
+ * @property-read Collection<int, AppInstanceRuntimeMount> $runtimeMounts
  */
 class AppInstance extends Model
 {
@@ -77,6 +79,17 @@ class AppInstance extends Model
     public function databaseConnectionTargets(): HasMany
     {
         return $this->hasMany(AppInstanceDatabaseConnectionTarget::class);
+    }
+
+    /**
+     * @return HasMany<AppInstanceRuntimeMount, $this>
+     */
+    public function runtimeMounts(): HasMany
+    {
+        $relation = $this->hasMany(AppInstanceRuntimeMount::class);
+        $relation->getQuery()->orderBy('target');
+
+        return $relation;
     }
 
     public function runtimeRequirements(): AppInstanceRuntimeRequirementsData

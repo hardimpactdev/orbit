@@ -36,6 +36,15 @@ final readonly class AppSelectorResolver
             return new AppSelection(app: $app, selector: $value);
         }
 
+        $app = App::query()
+            ->with(['node', 'instances'])
+            ->where('domain', $value)
+            ->first();
+
+        if ($app instanceof App) {
+            return new AppSelection(app: $app, selector: $value);
+        }
+
         if (str_contains($value, '.')) {
             [$appName, $instanceSelector] = explode('.', $value, 2);
             $app = App::query()
@@ -51,15 +60,6 @@ final readonly class AppSelectorResolver
                     instanceSelector: $instanceSelector,
                 );
             }
-        }
-
-        $app = App::query()
-            ->with(['node', 'instances'])
-            ->where('domain', $value)
-            ->first();
-
-        if ($app instanceof App) {
-            return new AppSelection(app: $app, selector: $value);
         }
 
         $app = App::query()

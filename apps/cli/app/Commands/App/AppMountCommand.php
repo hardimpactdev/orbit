@@ -11,7 +11,7 @@ final class AppMountCommand extends AppGatewayCommand
     #[\Override]
     protected $signature = 'app:mount
         {action? : Action to perform (list|add|remove)}
-        {app? : App name or hostname}
+        {app? : App name, hostname, or dotted app instance selector}
         {source? : Host source path for add}
         {target? : Container target path}
         {--read-only : Mount read-only (default)}
@@ -19,7 +19,7 @@ final class AppMountCommand extends AppGatewayCommand
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'List or change additional Docker runtime mounts for an app.';
+    protected $description = 'List or change additional Docker runtime mounts for an app instance.';
 
     public function handle(): int
     {

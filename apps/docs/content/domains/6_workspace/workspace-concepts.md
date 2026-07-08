@@ -37,8 +37,10 @@ The terms below define the core identity vocabulary for the workspace family.
   path on the owning node. That keeps source-local absolute paths, such as
   SQLite database files, available inside the runtime container.
 
-  Workspaces also inherit configurable app runtime mounts managed through
-  `app:mount`; the workspace family does not own separate runtime mount intent.
+  Workspaces inherit configurable runtime mounts from their selected app
+  instance through `app:mount`; the workspace family does not own separate
+  runtime mount intent. App-level mounts apply only when the selected
+  instance has no instance mounts configured.
   Workspace FrankenPHP XDG state is ephemeral inside the container under
   `/tmp/orbit-frankenphp`, matching app runtimes, and is not stored in the
   workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`.

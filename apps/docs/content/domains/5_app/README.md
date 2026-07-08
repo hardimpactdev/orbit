@@ -70,8 +70,9 @@ These rules govern all app family commands.
 - Worker mode is an opt-in app runtime setting. It is disabled by default and
   `app:worker enable` must validate app readiness before changing gateway
   configuration.
-- App runtime mounts are extra bind mounts stored on the app for PHP runtimes
-  on `app-dev` nodes. Workspaces inherit the parent app's configured mounts.
+- App runtime mounts are extra bind mounts stored on app instances for PHP
+  runtimes on `app-dev` nodes. Workspaces inherit the selected app instance's
+  configured mounts; app-level mounts remain compatibility fallback only.
 - App instances record required PHP extensions. For Orbit-driven PHP instances,
   `doctor --family=app` reports missing or unverifiable extensions against the
   concrete FrankenPHP runtime container.
@@ -241,7 +242,7 @@ App-instance renderers return this shape under `success.data.instance`, or under
 | `runtime.php_version` | string | PHP version recorded for the app runtime. |
 | `runtime.frankenphp_image` | string \| null | Resolved FrankenPHP image for PHP apps. |
 | `runtime.mode` | string | `classic` or `worker` for PHP apps. |
-| `runtime.configured_mounts` | array | App-level runtime mounts rendered into Orbit PHP runtimes. |
+| `runtime.configured_mounts` | array | Instance-scoped runtime mounts rendered into Orbit PHP runtimes for the selected instance. |
 | `runtime.required_php_extensions` | array | Required PHP extensions tracked for the instance. |
 | `latest_deployment_status` | string \| null | Reserved for instance-scoped deployment history. |
 | `latest_deployment_run_id` | integer \| null | Reserved for instance-scoped deployment history. |
