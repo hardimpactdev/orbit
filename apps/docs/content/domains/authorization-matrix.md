@@ -19,7 +19,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `app:list` | `app:read` | app owning node per returned row | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested filter resolves to no visible node |
 | `app:new` | `app:new` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:prune` | `app:prune` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
-| `app:register` | `app:register` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
+| `app:register` | `app:register` | target app node | `app-dev` self-grants include same-node registration; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:remove` | `app:remove` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:root` | `app:root` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:setup` | `app:write` | app owning node | `app:write` and `app:*` imply `app:setup` | `authorization_failed` | Standard missing-permission meta plus `app` |
@@ -96,14 +96,14 @@ authority](../architecture.md#gateway-implicit-authority).
 | `node role:update` | n/a | n/a | No command surface; use `node:update` for node metadata | n/a | n/a |
 | `php:list` | `php:read` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `php:use` | `php:write` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
-| `process:add` | `process:add` | process owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved process scope |
+| `process:add` | `process:add` | process owning node | `app-dev` self-grants include same-node app-owned process definition creation; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus resolved process scope |
 | `process:list` | `process:read` | process owning node | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |
 | `process:logs` | `process:read` | process owning node | None | `authorization_failed` | Standard missing-permission meta plus process |
-| `process:remove` | `process:remove` | process owning node | None | `authorization_failed` | Standard missing-permission meta plus process |
+| `process:remove` | `process:remove` | process owning node | `app-dev` self-grants include same-node app-owned process definition removal; `app-prod` self-grants do not | `authorization_failed` | Standard missing-permission meta plus process |
 | `process:restart` | `process:restart` | process owning node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process |
 | `process:start` | `process:start` | process owning node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process |
 | `process:stop` | `process:stop` | process owning node | Transitive calls inside `workspace:setup` do not re-authorize | `authorization_failed` | Standard missing-permission meta plus process |
-| `process:update` | `process:update` | process owning node | Public mutation surface for command, policy, runtime, and supported identity renames | `authorization_failed` | Standard missing-permission meta plus resolved process scope |
+| `process:update` | `process:update` | process owning node | Public mutation surface for command, policy, runtime, and supported identity renames; `app-dev` self-grants include same-node app-owned process definition updates | `authorization_failed` | Standard missing-permission meta plus resolved process scope |
 | `profile` | n/a - authenticated but ungated | resolved subject owning node | Requires authenticated WireGuard identity, no permission check | n/a | n/a |
 | `proxy:add` | `proxy:add` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `proxy:list` | `proxy:read` | target node or each visible route owner | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested target resolves to no visible node |

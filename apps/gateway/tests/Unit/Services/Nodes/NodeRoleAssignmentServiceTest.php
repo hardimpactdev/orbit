@@ -215,7 +215,18 @@ describe('node role assignment service', function (): void {
             ->where('serving_node_id', $node->id)
             ->first();
 
-        expect($selfGrant?->permissions)->toBe(['workspace:setup'])->and($selfGrant?->custom_permissions)->toBe([]);
+        expect($selfGrant?->permissions)
+            ->toBe([
+                'app:read',
+                'app:register',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
+                'workspace:setup',
+            ])
+            ->and($selfGrant?->custom_permissions)
+            ->toBe([]);
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 

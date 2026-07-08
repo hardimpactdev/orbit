@@ -11,6 +11,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -38,12 +39,15 @@ function createProcessStoreCallerNode(array $overrides = [], ?string $role = nul
     };
 }
 
-function grantProcessStoreAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantProcessStoreAccess(Node $caller, Node $appNode, array $permissions = ['process:add']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
-        'permissions' => json_encode(['process:add'], JSON_THROW_ON_ERROR),
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
@@ -223,6 +227,68 @@ describe('ProcessStoreController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:add');
+    });
+
+    it('lets app-dev self grants create app-owned process intent on their own node only', function (): void {
+        $caller = createProcessStoreCallerNode(role: 'app-dev');
+        $otherNode = createTestAppHostNode(['name' => 'app-2']);
+        App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        grantProcessStoreAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
+        );
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'no_start' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.name', 'vite')
+            ->assertJsonPath('success.data.process.app', 'docs');
+
+        $denied = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'hidden',
+                'name' => 'queue',
+                'command' => 'php artisan queue:work',
+                'no_start' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
+
+        $denied
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'process:add')
+            ->assertJsonPath('error.meta.serving_node', 'app-2');
+
+        expect(Process::query()->where('name', 'vite')->exists())
+            ->toBeTrue()
+            ->and(Process::query()->where('name', 'queue')->exists())
+            ->toBeFalse()
+            ->and($remoteShell->scripts)
+            ->toHaveCount(1)
+            ->and($remoteShell->scripts[0])
+            ->toContain("internal:process-systemd-service 'apply'");
     });
 
     it('returns validation errors before writing intent', function (array $payload, string $field): void {

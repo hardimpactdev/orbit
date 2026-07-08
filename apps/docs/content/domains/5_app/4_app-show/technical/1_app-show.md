@@ -10,6 +10,9 @@
 - The CLI caller can reach the Orbit gateway.
 - The target app is visible to the authenticated WireGuard peer through
   gateway-owned access policy.
+- The self grants for app roles include `app:read` for apps owned by that same
+  `app-dev` or `app-prod` node only. Inspecting an app on another node still
+  requires an explicit grant on the target app's owning node.
 
 **Post-input path eligibility:**
 - The resolved app must match an existing app record visible to the caller.

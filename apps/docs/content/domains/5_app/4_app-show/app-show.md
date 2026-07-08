@@ -78,7 +78,8 @@ exact payload shape.
 
 - The CLI caller can reach the Orbit gateway.
 - The target app is visible to the current node identity through gateway-owned
-  access policy.
+  access policy. An `app-dev` or `app-prod` node's self grant includes
+  `app:read` for apps owned by that same node only.
 
 ## Related Commands
 

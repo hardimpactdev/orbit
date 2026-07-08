@@ -7,6 +7,7 @@ use App\Models\AppDependencyAuditSummary;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -122,6 +123,32 @@ describe('AppListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.apps')
             ->assertJsonPath('success.data.apps.0.name', 'visible');
+    });
+
+    it('lets an app role node list only its own app registry rows through its self grant', function (): void {
+        $caller = createAppListAppNode([
+            'name' => 'dev-1',
+            'host' => APP_LIST_CALLER_WG_IP,
+            'wireguard_address' => APP_LIST_CALLER_WG_IP,
+        ]);
+        $otherNode = createAppListAppNode(['name' => 'dev-2']);
+
+        grantAppListAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
+        );
+
+        App::factory()->create(['name' => 'owned', 'node_id' => $caller->id]);
+        App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+
+        $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.apps')
+            ->assertJsonPath('success.data.apps.0.name', 'owned')
+            ->assertJsonMissingPath('success.data.apps.1');
     });
 
     it('lets active gateway role assignments read all app registry records', function (): void {

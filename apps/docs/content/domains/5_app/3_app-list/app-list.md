@@ -42,7 +42,9 @@ node filter:
 2. Resolves the node filter from `--node`, then the configured default node,
    then the gateway-reported caller node.
 3. Reads app registry configuration scoped to that node and to what the caller
-   is authorized to see.
+   is authorized to see. The self grants for app roles include `app:read`, so a
+   local CLI on an `app-dev` or `app-prod` node can list only apps owned by
+   that same node unless another grant broadens visibility.
 4. Returns a list of apps with their names, nodes, primary URLs, and any
    registered workspaces.
 
@@ -69,7 +71,9 @@ exact payload shape.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The caller identity is authorized to read the app registry.
+- The caller identity is authorized to read the app registry. An `app-dev` or
+  `app-prod` node's self grant covers its own app registry rows only; cross-node
+  reads require an explicit grant from the other app-owning node.
 
 ## Related Commands
 

@@ -48,7 +48,18 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         $permissions = app(RoleSelfGrantMaterializer::class)->effectiveSelfPermissions($node);
 
-        expect($permissions)->toBe(['workspace:setup'])->and(roleSelfGrant($node))->toBeNull();
+        expect($permissions)
+            ->toBe([
+                'app:read',
+                'app:register',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
+                'workspace:setup',
+            ])
+            ->and(roleSelfGrant($node))
+            ->toBeNull();
     });
 
     it('materializes the union of active role self presets', function (): void {
@@ -65,8 +76,14 @@ describe('RoleSelfGrantMaterializer', function (): void {
             ->toBeNull()
             ->and($grant->permissions)
             ->toBe([
+                'app:read',
+                'app:register',
                 'doctor:verify',
                 'node:read',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
                 'tool:read',
                 'tool:update:agent-tools',
                 'workspace:setup',
@@ -85,7 +102,7 @@ describe('RoleSelfGrantMaterializer', function (): void {
         $development->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppDevelopment);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['workspace:setup']);
+        expect(roleSelfGrant($node)?->permissions)->toBe(['app:read', 'workspace:setup']);
 
         $production->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppProduction);
@@ -107,7 +124,16 @@ describe('RoleSelfGrantMaterializer', function (): void {
         app(RoleSelfGrantMaterializer::class)->materializeOnRoleApplied($node, NodeRoleName::AppDevelopment);
 
         expect(roleSelfGrant($node)?->permissions)
-            ->toBe(['tool:read', 'workspace:setup'])
+            ->toBe([
+                'app:read',
+                'app:register',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
+                'tool:read',
+                'workspace:setup',
+            ])
             ->and(roleSelfGrant($node)?->custom_permissions)
             ->toBe(['tool:read']);
 
@@ -160,7 +186,15 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         $materializer->materializeOnRoleApplied($node, NodeRoleName::AppDevelopment);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['workspace:setup']);
+        expect(roleSelfGrant($node)?->permissions)->toBe([
+            'app:read',
+            'app:register',
+            'process:add',
+            'process:read',
+            'process:remove',
+            'process:update',
+            'workspace:setup',
+        ]);
     });
 
     it('does not create self grants for active roles with empty self presets', function (): void {

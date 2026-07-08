@@ -68,6 +68,11 @@ Run `app:register` when you need to install, re-apply, or retry Orbit management
 gateway and that its runtime artifacts are properly applied on the target app
 node.
 
+An `app-dev` node's self-grant includes `app:register` for that same node, so
+local app-dev CLIs can register or re-apply apps hosted by themselves. `app-prod`
+self-grants do not include `app:register`; production registration requires an
+explicit operator/deploy grant to the target app node.
+
 1. **Resolution**: Identifies the app and target node from the provided name,
    options, or the CLI's stored `node:default` node.
 2. **Registration/Adoption**: Writes the app's configuration to the gateway

@@ -6,6 +6,7 @@ use App\Models\App;
 use App\Models\AppDependencyAuditSummary;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -204,6 +205,38 @@ describe('AppShowController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:read')
             ->assertJsonPath('error.meta.serving_node', $node->name);
+    });
+
+    it('lets an app role node show only its own app registry rows through its self grant', function (): void {
+        $caller = createAppShowCallerNode([
+            'name' => 'dev-1',
+            'host' => APP_SHOW_CALLER_WG_IP,
+            'wireguard_address' => APP_SHOW_CALLER_WG_IP,
+        ], role: 'app-dev');
+        $otherNode = createTestAppHostNode(['name' => 'dev-2']);
+
+        grantAppShowAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
+        );
+
+        App::factory()->create(['name' => 'owned', 'node_id' => $caller->id]);
+        App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+
+        $response = $this->call('GET', '/api/apps/owned', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.app.name', 'owned');
+
+        $hidden = $this->call('GET', '/api/apps/hidden', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+
+        $hidden
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:read')
+            ->assertJsonPath('error.meta.serving_node', $otherNode->name);
     });
 
     it('returns not found for absent apps', function (): void {

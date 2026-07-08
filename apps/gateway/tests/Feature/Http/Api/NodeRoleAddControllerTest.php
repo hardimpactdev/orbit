@@ -209,7 +209,18 @@ describe('NodeRoleAddController', function (): void {
             ->where('serving_node_id', $target->id)
             ->first();
 
-        expect($selfGrant?->permissions)->toBe(['workspace:setup'])->and($selfGrant?->custom_permissions)->toBe([]);
+        expect($selfGrant?->permissions)
+            ->toBe([
+                'app:read',
+                'app:register',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
+                'workspace:setup',
+            ])
+            ->and($selfGrant?->custom_permissions)
+            ->toBe([]);
     });
 
     it('allows macos workload role additions through platform validation', function (

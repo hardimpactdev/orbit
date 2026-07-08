@@ -40,6 +40,10 @@ Visibility is filtered at the gateway as set membership against the app access
 policy that the gateway owns. Callers receive only the apps their
 authenticated identity is authorized to see.
 
+- The self grants for app roles include `app:read`, allowing a local CLI on an
+  `app-dev` or `app-prod` node to read only apps owned by that same node.
+  Visibility across nodes still requires an explicit grant on each other
+  app-owning node.
 - An authorized caller whose visible set is empty receives an empty list
   (`success.data.apps=[]` in JSON, `No apps found.` in human output) with
   exit zero.

@@ -263,6 +263,12 @@ the most visible self-serving command in this family today; it works because
 the `app-dev` and `app-prod` self-grant baselines include the
 workspace permissions it needs.
 
+`app-dev` self-grants also include `app:register` for the node itself, so a
+local CLI on an app-dev node can register or re-apply management for apps hosted
+by that same node. `app-prod` self-grants do not include `app:register`; production
+app registration remains operator/deploy-driven. Cross-node app registration is
+denied unless the caller has an explicit grant to the target app node.
+
 ## Commands
 
 The following commands are available in the `app` family.

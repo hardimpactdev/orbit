@@ -419,7 +419,7 @@ This grant model lets you scope access naturally:
 
 - A developer's client might have a `developer` preset to nodes with the `app-dev` role and no grant at all to nodes with the `app-prod` role.
 - A CI runner's client might have an `operator` preset only to the apps it deploys.
-- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation.
+- A node's self-grant gives its own local CLI the actions it needs on itself — for example, a node with the `agent` role has a self-grant that includes `tool:read` and `tool:update:agent-tools` but excludes `tool:credentials`, `tool:install`, `tool:start`, `tool:stop`, `tool:restart`, firewall writes, and node role mutation. Nodes with `app-dev` or `app-prod` roles can read only their own app registry rows through `app:read`. An `app-dev` node can also register apps on itself and manage app-owned process definitions for apps hosted by itself. `app-prod` self-grants remain read-only plus workspace setup. These self-grants do not grant app writes, credentials, deploy, runtime lifecycle process start/stop/restart, workspace reads, or cross-node app/process visibility.
 
 Permissions are revocable from the gateway. Removing a grant immediately revokes access — no key rotation, no node-side config edit, no SSH key removal needed. `node:grant` creates the initial grant edge and its initial permissions; long-term editing of a grant's permission set is owned by `node:permissions`, which is itself a gateway-admin-only surface.
 
@@ -435,7 +435,7 @@ Node-side state is never written by the public local CLI. The gateway is the
 only authority, even when the gateway dispatches token-gated local executor
 work back to the same node.
 
-This is why commands like `workspace:setup` work when run from inside a workspace path on an `app-dev` or `app-prod` node: the node's self-grant includes the necessary workspace permissions. It is not an exception — it is the self-grant model.
+This is why commands like `workspace:setup`, `app:list`, and `app:show` work when run from inside an `app-dev` or `app-prod` node for that same owning node, and why `app:register`, `process:add`, `process:update`, and `process:remove` work from inside an `app-dev` node for apps on that same node: the node's self-grant includes the necessary scoped permissions. It is not an exception — it is the self-grant model.
 
 The one shape that cannot self-serve is a bare client (no role assignments).
 The gateway authorizes the call but has nowhere to dispatch node-side work,

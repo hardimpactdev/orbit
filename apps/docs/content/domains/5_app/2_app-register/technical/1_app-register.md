@@ -7,6 +7,8 @@
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
 - The current node identity has `app:register` on the resolved target app node.
+- `app-dev` self-grants provide that permission only for the same node;
+  `app-prod` self-grants do not.
 - The gateway can reach the target node over SSH.
 
 [Back to the public command page.](../app-register.md)
@@ -71,8 +73,11 @@ This command follows the shared
    - Target node must have the active app role required by the requested
      registration mode: `app-dev` when `--domain` is absent,
      `app-prod` when `--domain` is supplied.
+   - Authorization remains grant-scoped to the resolved target node. The
+     self-grant for an `app-dev` node authorizes registration only on that same
+     node, and does not authorize registering on another app node.
    - Provided `--path` must exist on the target node.
-  - Provided `name` must not be owned by a different path or node unless both
+   - Provided `name` must not be owned by a different path or node unless both
     `--node` and `--path` are explicit. Explicit app moves require the target
     path to already exist and pass the same path-collision checks as adoption.
    - Provided `--path` on the resolved node must not already be owned by a

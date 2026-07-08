@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -31,17 +32,21 @@ function createProcessUpdateCallerNode(array $overrides = [], ?string $role = nu
 
     return match ($role) {
         'app-dev' => createTestAppHostNode($attributes),
+        'app-prod' => createTestAppHostNode($attributes, 'app-prod'),
         'gateway' => createTestGatewayNode($attributes),
         default => Node::factory()->create($attributes),
     };
 }
 
-function grantProcessUpdateAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantProcessUpdateAccess(Node $caller, Node $appNode, array $permissions = ['process:update']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
-        'permissions' => json_encode(['process:update'], JSON_THROW_ON_ERROR),
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
@@ -131,6 +136,95 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:update');
+    });
+
+    it('lets app-dev self grants update app-owned process intent on their own node only', function (): void {
+        $caller = createProcessUpdateCallerNode(role: 'app-dev');
+        $otherNode = createTestAppHostNode(['name' => 'app-2']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
+        Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue', 'command' => 'php artisan queue:work']);
+        grantProcessUpdateAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
+        );
+        $remoteShell = new ProcessUpdateRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.command', 'npm run dev -- --host=0.0.0.0');
+
+        $denied = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'hidden',
+                'command' => 'php artisan queue:work --queue=critical',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $denied
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'process:update')
+            ->assertJsonPath('error.meta.serving_node', 'app-2');
+
+        expect(Process::query()->where('name', 'vite')->value('command'))
+            ->toBe('npm run dev -- --host=0.0.0.0')
+            ->and(Process::query()->where('name', 'queue')->value('command'))
+            ->toBe('php artisan queue:work');
+    });
+
+    it('keeps app-prod self grants from updating process intent', function (): void {
+        $caller = createProcessUpdateCallerNode(role: 'app-prod');
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
+        grantProcessUpdateAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-prod-self'),
+        );
+        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'process:update')
+            ->assertJsonPath('error.meta.serving_node', $caller->name);
+
+        expect(Process::query()->where('name', 'vite')->value('command'))->toBe('npm run dev');
     });
 
     it('persists and returns the runtime field when supplied', function (): void {

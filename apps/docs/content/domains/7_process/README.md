@@ -205,7 +205,12 @@ branch on the node-role column locally.
   self-serving](../../architecture.md#self-grants-and-self-serving).
 - Configuration mutation commands (`process:add`, `process:update`,
   `process:remove`) require their matching mutation permission and are
-  typically reserved for admin-class presets.
+  typically reserved for admin-class presets. The exception is the `app-dev`
+  self-grant: an app-dev node can create, update, and remove app-owned process
+  definitions for apps hosted by that same node. `app-prod` self-grants do not
+  include process mutation permissions, and app-dev self-grants do not include
+  runtime lifecycle permissions such as `process:start`, `process:stop`, or
+  `process:restart`.
 
 Every process command is a request to the gateway typed API. The CLI never
 writes process configuration, reads Docker, systemd, or launchd logs directly, or

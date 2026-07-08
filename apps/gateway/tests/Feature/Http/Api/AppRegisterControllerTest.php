@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -142,6 +143,118 @@ describe('AppRegisterController', function (): void {
 
         expect($remoteShell->scripts)
             ->toContainAppRegisterSourcePathProbe('/home/orbit/apps/docs');
+    });
+
+    it('lets app-dev self grants register apps on their own node only', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createTestAppHostNode([
+            'name' => 'dev-1',
+            'host' => APP_REGISTER_CALLER_WG_IP,
+            'wireguard_address' => APP_REGISTER_CALLER_WG_IP,
+            'orbit_agent_capable' => true,
+        ]);
+        $otherNode = createTestAppHostNode([
+            'name' => 'dev-2',
+            'wireguard_address' => '10.6.0.46',
+            'orbit_agent_capable' => true,
+        ]);
+        grantAppRegisterAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
+        );
+        fake_app_register_source_path_probe(APP_REGISTER_CALLER_WG_IP);
+
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'dev-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.result.action', 'adopted')
+            ->assertJsonPath('success.data.app.node', 'dev-1');
+
+        $denied = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'hidden',
+                'node' => $otherNode->name,
+                'path' => '/home/orbit/apps/hidden',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $denied
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:register')
+            ->assertJsonPath('error.meta.serving_node', 'dev-2');
+    });
+
+    it('keeps app-prod self grants from registering apps', function (): void {
+        createTestGatewayNode([
+            'name' => 'gateway-1',
+        ]);
+
+        $caller = createTestAppHostNode(
+            attributes: [
+                'name' => 'prod-1',
+                'host' => APP_REGISTER_CALLER_WG_IP,
+                'wireguard_address' => APP_REGISTER_CALLER_WG_IP,
+                'orbit_agent_capable' => true,
+            ],
+            role: 'app-prod',
+        );
+        grantAppRegisterAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-prod-self'),
+        );
+        $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'prod-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            app_register_fallback_server(),
+        );
+
+        $response
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'app:register')
+            ->assertJsonPath('error.meta.serving_node', 'prod-1');
+
+        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('stores the opt-in HTTPS runtime proxy transport when registering an app', function (): void {

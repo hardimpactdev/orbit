@@ -107,13 +107,21 @@ describe('node permission presets', function (): void {
             expect($presets->permissions('vpn-self'))->toBe([])->and($presets->permissions('database-self'))->toBe([]);
         });
 
-        it('defines workspace setup self presets for app roles', function (): void {
+        it('defines app-dev mutation and app-prod read-only self presets for app roles', function (): void {
             $presets = new NodePermissionPresets;
 
             expect($presets->permissions('app-dev-self'))
-                ->toBe(['workspace:setup'])
+                ->toBe([
+                    'app:read',
+                    'app:register',
+                    'process:add',
+                    'process:read',
+                    'process:remove',
+                    'process:update',
+                    'workspace:setup',
+                ])
                 ->and($presets->permissions('app-prod-self'))
-                ->toBe(['workspace:setup']);
+                ->toBe(['app:read', 'workspace:setup']);
         });
     });
 

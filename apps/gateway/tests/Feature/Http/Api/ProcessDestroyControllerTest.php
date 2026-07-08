@@ -8,6 +8,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Nodes\Access\NodePermissionPresets;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -30,12 +31,15 @@ function createProcessDestroyCallerNode(array $overrides = [], ?string $role = n
     };
 }
 
-function grantProcessDestroyAccess(Node $caller, Node $appNode): void
+/**
+ * @param  list<string>  $permissions
+ */
+function grantProcessDestroyAccess(Node $caller, Node $appNode, array $permissions = ['process:remove']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
-        'permissions' => json_encode(['process:remove'], JSON_THROW_ON_ERROR),
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
@@ -217,6 +221,62 @@ describe('ProcessDestroyController', function (): void {
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:remove');
+    });
+
+    it('lets app-dev self grants remove app-owned process intent on their own node only', function (): void {
+        $caller = createProcessDestroyCallerNode(role: 'app-dev');
+        $otherNode = createTestAppHostNode(['name' => 'app-2']);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
+        $hiddenApp = App::factory()->create(['name' => 'hidden', 'node_id' => $otherNode->id]);
+        Process::factory()->forOwner($app)->create(['name' => 'vite']);
+        Process::factory()->forOwner($hiddenApp)->create(['name' => 'queue']);
+        grantProcessDestroyAccess(
+            caller: $caller,
+            appNode: $caller,
+            permissions: app(NodePermissionPresets::class)->permissions('app-dev-self'),
+        );
+        app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]));
+
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.name', 'vite');
+
+        $denied = $this->call(
+            'DELETE',
+            '/api/processes/queue',
+            [
+                'app' => 'hidden',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
+
+        $denied
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.meta.missing_permission', 'process:remove')
+            ->assertJsonPath('error.meta.serving_node', 'app-2');
+
+        expect(Process::query()->where('name', 'vite')->exists())
+            ->toBeFalse()
+            ->and(Process::query()->where('name', 'queue')->exists())
+            ->toBeTrue();
     });
 
     it('returns process not found without cleanup', function (): void {

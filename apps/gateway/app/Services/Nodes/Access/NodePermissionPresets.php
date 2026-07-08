@@ -91,6 +91,12 @@ final class NodePermissionPresets
     private function appDevelopmentSelf(): array
     {
         return [
+            'app:read',
+            'app:register',
+            'process:add',
+            'process:read',
+            'process:remove',
+            'process:update',
             'workspace:setup',
         ];
     }
@@ -101,6 +107,7 @@ final class NodePermissionPresets
     private function appProductionSelf(): array
     {
         return [
+            'app:read',
             'workspace:setup',
         ];
     }

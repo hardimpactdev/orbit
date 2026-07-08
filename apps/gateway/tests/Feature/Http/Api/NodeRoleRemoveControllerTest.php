@@ -255,7 +255,15 @@ describe('NodeRoleRemoveController', function (): void {
         NodeAccess::query()->create([
             'consumer_node_id' => $node->id,
             'serving_node_id' => $node->id,
-            'permissions' => ['workspace:setup'],
+            'permissions' => [
+                'app:read',
+                'app:register',
+                'process:add',
+                'process:read',
+                'process:remove',
+                'process:update',
+                'workspace:setup',
+            ],
             'custom_permissions' => [],
         ]);
 
