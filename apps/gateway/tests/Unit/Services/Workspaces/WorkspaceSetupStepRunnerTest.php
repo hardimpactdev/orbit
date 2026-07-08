@@ -184,6 +184,71 @@ it('routes setup commands through the selected workspace host toolchain', functi
     expect($npmRun['options']['cwd'])->toBe('/app/path');
 });
 
+it('routes workspace lifecycle commands through the selected node home when app canonical node differs', function (): void {
+    allow_workspace_setup_remote_shell_fallback();
+    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
+    assert($run instanceof WorkspaceRun, description: 'Workspace run factory must return a WorkspaceRun model.');
+
+    $canonicalNode = new Node([
+        'name' => 'beast',
+        'host' => 'beast.test',
+        'platform' => 'ubuntu_24-04',
+        'user' => 'nckrtl',
+        'orbit_path' => '/home/nckrtl/orbit',
+        'status' => 'active',
+    ]);
+    $canonicalNode->save();
+
+    $selectedNode = new Node([
+        'name' => 'NMBP',
+        'host' => 'nmbp.test',
+        'platform' => 'macos_26-5-1',
+        'user' => 'nckrtl',
+        'orbit_path' => '/Users/nckrtl/orbit',
+        'status' => 'active',
+    ]);
+    $selectedNode->save();
+
+    $app = new App([
+        'name' => 'demo',
+        'node_id' => $canonicalNode->id,
+        'path' => '/home/nckrtl/apps/demo',
+        'php_version' => '8.5',
+    ]);
+    $app->setRelation('node', $canonicalNode);
+    $shell = new WorkspaceSetupStepRunnerTestShell;
+
+    $runner = new WorkspaceSetupStepRunner($shell);
+
+    $steps = [
+        new WorkspaceStep([
+            'id' => 1,
+            'command' => 'vp install',
+            'timeout_seconds' => 120,
+        ]),
+    ];
+
+    $result = $runner->run(
+        $run,
+        $steps,
+        '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        ['ORBIT_APP' => 'happie'],
+        $selectedNode,
+        $app,
+    );
+
+    expect($result)
+        ->toBeTrue()
+        ->and($shell->runs[0]['script'])
+        ->toContain("'sudo'")
+        ->toContain("'-u'")
+        ->toContain("'nckrtl'")
+        ->toContain('/Users/nckrtl/.vite-plus/bin')
+        ->toContain('/Users/nckrtl/.codex/worktrees/a59f/happie')
+        ->toContain('vp install');
+    expect(str_contains($shell->runs[0]['script'], '/home/nckrtl/.vite-plus/bin'))->toBeFalse();
+});
+
 it('passes lifecycle environment into host-routed php setup commands', function (): void {
     allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
