@@ -7656,7 +7656,9 @@
                 "stream_json": false
             },
             "linked_test_files": [
-                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                "apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
+                "apps/cli/tests/Feature/InternalScheduleRunCommandTest.php",
+                "apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php"
             ],
             "verification_hints": [
                 {
@@ -7665,6 +7667,20 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalScheduleRunCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalScheduleRunCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalScheduleRunCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php"
                 }
             ],
             "p4_mapping": {

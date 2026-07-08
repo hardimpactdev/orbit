@@ -43,6 +43,7 @@ enum InternalCommand: string
     case ProcessSystemdService = 'internal:process-systemd-service';
     case RuntimeBackendProbe = 'internal:runtime-backend:probe';
     case S3RuntimeProbe = 'internal:s3-runtime:probe';
+    case ScheduleRun = 'internal:schedule:run';
     case SecretFile = 'internal:secret-file';
     case SiteCertificateInstall = 'internal:site-certificate:install';
     case SoloUpstreamRequest = 'internal:solo-upstream-request';

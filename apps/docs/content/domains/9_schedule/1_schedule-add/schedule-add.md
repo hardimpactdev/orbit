@@ -4,7 +4,7 @@
 
 Create a recurring Orbit-managed schedule.
 
-Use `schedule:add` when an app or node needs recurring work managed by Orbit. The command records schedule configuration on the gateway. The gateway-only Orbit Scheduler reads the gateway database each tick and dispatches the schedule to its resolved target through the explicitly gated host SSH pool, running locally only when the target is the gateway.
+Use `schedule:add` when an app or node needs recurring work managed by Orbit. The command records schedule configuration on the gateway. The gateway-only Orbit Scheduler reads the gateway database each tick and dispatches the schedule to its resolved target through `internal:schedule:run` over agent-push, running locally only when the target is the gateway.
 
 ## Usage
 
@@ -37,7 +37,7 @@ Orbit-owned maintenance schedules may be created by lifecycle commands, but this
 
 ## What Happens
 
-Use `schedule:add` when you need to define a new recurring task for an app or node. `schedule:add` validates the target, validates the execution source and interval, and writes gateway schedule configuration. The Orbit Scheduler (gateway-only) reads the gateway database every tick and dispatches due schedules to the resolved target through the explicit host SSH pool; target node SSH reachability is verified at dispatch time, not at `schedule:add` time.
+Use `schedule:add` when you need to define a new recurring task for an app or node. `schedule:add` validates the target, validates the execution source and interval, and writes gateway schedule configuration. The Orbit Scheduler (gateway-only) reads the gateway database every tick and dispatches due schedules to the resolved target through agent-push; target node agent-push reachability is verified at dispatch time, not at `schedule:add` time.
 
 It does not create apps, nodes, app process definitions, proxy routes, firewall rules, or schedules that exist only on the scheduler side outside gateway configuration.
 

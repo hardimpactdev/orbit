@@ -103,6 +103,7 @@ use App\Commands\Internal\ProcessLogsCommand as InternalProcessLogsCommand;
 use App\Commands\Internal\ProcessSystemdServiceCommand;
 use App\Commands\Internal\RuntimeBackendProbeCommand;
 use App\Commands\Internal\S3RuntimeProbeCommand;
+use App\Commands\Internal\ScheduleRunCommand as InternalScheduleRunCommand;
 use App\Commands\Internal\SecretFileCommand;
 use App\Commands\Internal\SiteCertificateInstallCommand;
 use App\Commands\Internal\SoloUpstreamRequestCommand;
@@ -419,6 +420,7 @@ return [
         ProcessLaunchdServiceCommand::class,
         RuntimeBackendProbeCommand::class,
         S3RuntimeProbeCommand::class,
+        InternalScheduleRunCommand::class,
         SecretFileCommand::class,
         SiteCertificateInstallCommand::class,
         SoloUpstreamRequestCommand::class,

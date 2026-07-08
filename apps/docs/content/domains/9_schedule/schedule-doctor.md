@@ -13,7 +13,7 @@ The schedule family owns these facts:
 - gateway-owned schedule rows: scope, target, interval, timezone, execution source, enabled state, and scheduler metadata;
 - the `orbit-scheduler` Swarm service using the Orbit gateway image;
 - Orbit Scheduler liveness, heartbeat freshness, and schedule lock health (all gateway-side);
-- SSH reachability from the gateway to each schedule's target node so dispatches can succeed;
+- agent-push/local-executor reachability from the gateway to each schedule's target node so dispatches can succeed;
 - drift between gateway schedule configuration and observed run history.
 
 App source, app runtime containers, process units, proxy routes, tools, firewall rules, and node reachability belong to their own families. The schedule family verifies the gateway-resident scheduler and per-target dispatch reachability, not application health.
@@ -39,7 +39,7 @@ If any of layers 3–7 fail, the corresponding issue code is emitted and downstr
 
 **Per-target dispatch layers** (one set per schedule whose target is not the gateway):
 
-8. **Target SSH reachability:** the gateway can open a `RemoteShell` connection to the target node. Required for the gateway to dispatch the scheduled command.
+8. **Target local-executor reachability:** the gateway can run `internal:executor:verify` on the target node through the local executor. Required for the gateway to dispatch the scheduled command.
 9. **Recent run health:** recent `schedule_runs` rows exist for enabled schedules and the latest status is healthy. Failures and stuck runs beyond the configured threshold surface as drift.
 
 ## Schedule Issue Codes
@@ -57,7 +57,7 @@ The table below lists every issue code the schedule probe may emit and the condi
 | `schedule.scheduler_replicas_mismatch` | The scheduler service is running but is not a singleton `1/1` service. |
 | `schedule.heartbeat_stale` | The most recent scheduler heartbeat is older than the configured threshold. |
 | `schedule.lock_stuck` | A row in `schedule_locks` exceeds the configured stale-lock threshold. |
-| `schedule.target_unreachable` | The gateway cannot open a `RemoteShell` connection to the schedule's target node. Dispatch will fail until reachability is restored. |
+| `schedule.target_unreachable` | The gateway cannot reach the schedule's target node through agent-push/local-executor verification. Dispatch will fail until reachability is restored. |
 | `schedule.run_stuck` | The latest `schedule_runs` row for an enabled schedule has been in `running` state past the configured threshold. |
 
 ## Schedule Fix Map
@@ -78,7 +78,7 @@ The table below lists what `doctor --restore` does for each issue code.
 `schedule.target_invalid`, `schedule.runtime_backend_unavailable`,
 `schedule.heartbeat_stale`, `schedule.target_unreachable`, or
 `schedule.run_stuck`. `schedule.target_unreachable` is a downstream symptom of
-node or network drift; resolve through `doctor --family=node` and SSH-path
+node or network drift; resolve through `doctor --family=node` and agent-push
 diagnostics. `schedule.run_stuck` is observable history that points operators
 to `schedule:logs` for the affected run.
 
@@ -105,5 +105,5 @@ No current E2E test is mapped for schedule-family doctor coverage.
 
 `SchedulesProbeTest` covers registry configuration, target eligibility, gateway
 scheduler process manager availability, scheduler presence, scheduler
-liveness, heartbeat freshness, schedule lock health, per-target SSH
+liveness, heartbeat freshness, schedule lock health, per-target local-executor
 reachability, and stuck-run detection.

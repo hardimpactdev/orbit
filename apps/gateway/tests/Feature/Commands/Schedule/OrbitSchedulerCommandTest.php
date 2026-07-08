@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
@@ -14,26 +12,17 @@ use App\Models\Schedule;
 use App\Models\ScheduleLock;
 use App\Models\SchedulerState;
 use App\Models\ScheduleRun;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Schedules\OrbitScheduler;
 use App\Services\Schedules\ScheduleInterval;
 use App\Services\Schedules\SchedulesFixer;
 use Carbon\CarbonImmutable;
-use Illuminate\Contracts\Process\InvokedProcess;
-use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Process\FakeInvokedProcess;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Http\JsonEnvelope;
 
 uses(RefreshDatabase::class);
-
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-});
-
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
 
 it('runs one scheduler daemon tick on demand', function (): void {
     createOrbitSchedulerGatewayNode();
@@ -91,28 +80,39 @@ it('dispatches due app schedules from the gateway and records run history centra
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
         ]);
-    $remoteShell = new OrbitSchedulerRecordingRemoteShell([
-        new RemoteShellResult(exitCode: 0, stdout: "ran\n", stderr: '', durationMs: 25),
+    $localExecutor = new OrbitSchedulerRecordingInternalExecutor([
+        OrbitSchedulerRecordingInternalExecutor::result(stdout: "ran\n", durationMs: 25),
     ]);
-    app()->instance(RemoteShell::class, $remoteShell);
+    app()->instance(RunsInternalCommands::class, $localExecutor);
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
 
     $run = ScheduleRun::query()->firstOrFail();
     $state = SchedulerState::query()->firstOrFail();
+    $payload = $localExecutor->payloads()[0];
 
     expect($result->dueSchedules)
         ->toBe(1)
         ->and($result->executedSchedules)
         ->toBe(1)
-        ->and($remoteShell->nodes)
+        ->and($localExecutor->nodes)
         ->toBe(['app-1'])
-        ->and($remoteShell->scripts)
-        ->toBe(['php artisan schedule:run'])
-        ->and($remoteShell->options[0]['timeout'])
-        ->toBe(900)
-        ->and($remoteShell->options[0]['cwd'])
+        ->and($localExecutor->commands)
+        ->toBe([InternalCommand::ScheduleRun->value])
+        ->and($localExecutor->transportOptions[0]['timeout'])
+        ->toBe(915)
+        ->and($localExecutor->transportOptions[0]['strict'])
+        ->toBeFalse()
+        ->and($localExecutor->transportOptions[0]['metadata']['ORBIT_OPERATION_ID'] ?? null)
+        ->toBe('schedule.dispatch')
+        ->and($payload['execution_type'] ?? null)
+        ->toBe('command')
+        ->and($payload['execution_value'] ?? null)
+        ->toBe('php artisan schedule:run')
+        ->and($payload['cwd'] ?? null)
         ->toBe('/srv/docs')
+        ->and($payload['timeout'] ?? null)
+        ->toBe(900)
         ->and($run->node_id)
         ->toBe($appNode->id)
         ->and($run->schedule_key)
@@ -129,7 +129,7 @@ it('dispatches due app schedules from the gateway and records run history centra
         ->toBe(0);
 });
 
-it('records remote schedules as failed when transitional fallback is not explicit', function (): void {
+it('dispatches remote schedules through the internal schedule command without transitional fallback opt in', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
@@ -141,10 +141,10 @@ it('records remote schedules as failed when transitional fallback is not explici
             'execution_value' => 'php artisan schedule:run',
             'interval' => 'every minute',
         ]);
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
-    $remoteShell = new OrbitSchedulerRecordingRemoteShell;
-    app()->instance(RemoteShell::class, $remoteShell);
+    $localExecutor = new OrbitSchedulerRecordingInternalExecutor([
+        OrbitSchedulerRecordingInternalExecutor::result(stdout: "ran\n"),
+    ]);
+    app()->instance(RunsInternalCommands::class, $localExecutor);
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
 
@@ -155,18 +155,16 @@ it('records remote schedules as failed when transitional fallback is not explici
         ->toBe(1)
         ->and($result->executedSchedules)
         ->toBe(1)
-        ->and($remoteShell->scripts)
-        ->toBe([])
+        ->and($localExecutor->commands)
+        ->toBe([InternalCommand::ScheduleRun->value])
         ->and($run->node_id)
         ->toBe($appNode->id)
         ->and($run->status)
-        ->toBe('failed')
+        ->toBe('completed')
         ->and($run->exit_code)
-        ->toBe(1)
-        ->and($run->stderr)
-        ->toBe(
-            'schedule dispatch still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-        )
+        ->toBe(0)
+        ->and($run->stdout)
+        ->toBe("ran\n")
         ->and($state->node_id)
         ->toBe($gateway->id)
         ->and(ScheduleLock::query()->count())
@@ -183,8 +181,8 @@ it('runs gateway-target schedules locally without remote shell dispatch', functi
             'execution_value' => 'php apps/gateway/artisan orbit:cleanup',
             'interval' => 'every minute',
         ]);
-    $remoteShell = new OrbitSchedulerRecordingRemoteShell;
-    app()->instance(RemoteShell::class, $remoteShell);
+    $localExecutor = new OrbitSchedulerRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $localExecutor);
     Process::fake([
         'php apps/gateway/artisan orbit:cleanup' => Process::result(output: "local\n"),
     ]);
@@ -198,7 +196,7 @@ it('runs gateway-target schedules locally without remote shell dispatch', functi
         ->toBe(1)
         ->and($result->executedSchedules)
         ->toBe(1)
-        ->and($remoteShell->scripts)
+        ->and($localExecutor->commands)
         ->toBe([])
         ->and($run->node_id)
         ->toBe($gateway->id)
@@ -210,7 +208,7 @@ it('runs gateway-target schedules locally without remote shell dispatch', functi
     Process::assertRan('php apps/gateway/artisan orbit:cleanup');
 });
 
-it('dispatches multiple remote schedules through the remote shell pool', function (): void {
+it('dispatches multiple remote schedules through the internal schedule command', function (): void {
     createOrbitSchedulerGatewayNode();
     $firstNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
     $secondNode = createOrbitSchedulerAppHostNode(['name' => 'app-2']);
@@ -233,8 +231,8 @@ it('dispatches multiple remote schedules through the remote shell pool', functio
             ]);
     }
 
-    $remoteShell = new OrbitSchedulerAsyncRemoteShell;
-    app()->instance(RemoteShell::class, $remoteShell);
+    $localExecutor = new OrbitSchedulerRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $localExecutor);
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
 
@@ -242,16 +240,24 @@ it('dispatches multiple remote schedules through the remote shell pool', functio
         ->toBe(3)
         ->and($result->executedSchedules)
         ->toBe(3)
-        ->and($remoteShell->runCalls)
-        ->toBe(0)
-        ->and($remoteShell->started)
+        ->and($localExecutor->commands)
         ->toBe([
-            ['node' => 'app-1', 'script' => 'echo one', 'cwd' => '/srv/one'],
-            ['node' => 'app-2', 'script' => 'echo two', 'cwd' => '/srv/two'],
-            ['node' => 'app-3', 'script' => 'echo three', 'cwd' => '/srv/three'],
+            InternalCommand::ScheduleRun->value,
+            InternalCommand::ScheduleRun->value,
+            InternalCommand::ScheduleRun->value,
         ])
-        ->and($remoteShell->maxActiveProcesses)
-        ->toBe(3)
+        ->and(array_map(
+            static fn (array $payload): array => [
+                'command' => $payload['execution_value'],
+                'cwd' => $payload['cwd'],
+            ],
+            $localExecutor->payloads(),
+        ))
+        ->toBe([
+            ['command' => 'echo one', 'cwd' => '/srv/one'],
+            ['command' => 'echo two', 'cwd' => '/srv/two'],
+            ['command' => 'echo three', 'cwd' => '/srv/three'],
+        ])
         ->and(ScheduleRun::query()->where('status', 'completed')->count())
         ->toBe(3)
         ->and(ScheduleLock::query()->count())
@@ -269,8 +275,8 @@ it('skips schedules that are not due', function (): void {
             'interval' => 'daily at 09:00',
         ]);
 
-    $remoteShell = new OrbitSchedulerRecordingRemoteShell;
-    app()->instance(RemoteShell::class, $remoteShell);
+    $localExecutor = new OrbitSchedulerRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $localExecutor);
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
 
@@ -278,7 +284,7 @@ it('skips schedules that are not due', function (): void {
         ->toBe(0)
         ->and($result->executedSchedules)
         ->toBe(0)
-        ->and($remoteShell->scripts)
+        ->and($localExecutor->commands)
         ->toBe([])
         ->and(ScheduleRun::query()->count())
         ->toBe(0);
@@ -296,8 +302,8 @@ it('records remote dispatch failures as failed gateway history', function (): vo
             'interval' => 'every minute',
         ]);
     app()->instance(
-        RemoteShell::class,
-        new OrbitSchedulerRecordingRemoteShell(throwable: new RuntimeException('ssh timeout')),
+        RunsInternalCommands::class,
+        new OrbitSchedulerRecordingInternalExecutor(throwable: new RuntimeException('agent timeout')),
     );
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
@@ -314,7 +320,7 @@ it('records remote dispatch failures as failed gateway history', function (): vo
         ->and($run->exit_code)
         ->toBe(1)
         ->and($run->stderr)
-        ->toBe('ssh timeout')
+        ->toBe('agent timeout')
         ->and(ScheduleLock::query()->count())
         ->toBe(0);
 });
@@ -375,7 +381,7 @@ function createOrbitSchedulerAppHostNode(array $attributes = []): Node
     return $node;
 }
 
-final class OrbitSchedulerRecordingRemoteShell implements RemoteShell
+final class OrbitSchedulerRecordingInternalExecutor implements RunsInternalCommands
 {
     /**
      * @var list<string>
@@ -385,12 +391,12 @@ final class OrbitSchedulerRecordingRemoteShell implements RemoteShell
     /**
      * @var list<string>
      */
-    public array $scripts = [];
+    public array $commands = [];
 
     /**
      * @var list<array<string, mixed>>
      */
-    public array $options = [];
+    public array $transportOptions = [];
 
     /**
      * @param  list<RemoteShellResult>  $results
@@ -401,142 +407,69 @@ final class OrbitSchedulerRecordingRemoteShell implements RemoteShell
     ) {}
 
     /**
-     * @param  array<string, mixed>  $options
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
      */
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $this->nodes[] = $node->name;
+        $this->commands[] = $commandName;
+        $this->transportOptions[] = $transportOptions;
+
         if ($this->throwable instanceof RuntimeException) {
             throw $this->throwable;
         }
 
-        $this->nodes[] = $node->name;
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
-}
-
-final class OrbitSchedulerAsyncRemoteShell implements RemoteShell, StartsRemoteShellProcesses
-{
-    public int $runCalls = 0;
-
-    public int $activeProcesses = 0;
-
-    public int $maxActiveProcesses = 0;
-
-    /**
-     * @var list<array{node: string, script: string, cwd: string|null}>
-     */
-    public array $started = [];
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->runCalls++;
-
-        throw new RuntimeException('Synchronous remote shell should not be used for pooled scheduler dispatch.');
+        return array_shift($this->results) ?? self::result();
     }
 
-    public function start(Node $node, string $script, array $options = []): InvokedProcess
-    {
-        $this->started[] = [
-            'node' => $node->name,
-            'script' => $script,
-            'cwd' => is_string($options['cwd'] ?? null) ? $options['cwd'] : null,
-        ];
-        $this->activeProcesses++;
-        $this->maxActiveProcesses = max($this->maxActiveProcesses, $this->activeProcesses);
-
-        return new OrbitSchedulerTrackingInvokedProcess(
-            new FakeInvokedProcess(
-                command: $script,
-                process: Process::describe()
-                    ->output("ran {$node->name}")
-                    ->exitCode(0),
-            ),
-            function (): void {
-                $this->activeProcesses--;
-            },
+    public static function result(
+        int $exitCode = 0,
+        string $stdout = '',
+        string $stderr = '',
+        int $durationMs = 1,
+    ): RemoteShellResult {
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => $exitCode,
+                'stdout' => $stdout,
+                'stderr' => $stderr,
+                'duration_ms' => $durationMs,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $durationMs,
         );
     }
-}
 
-final class OrbitSchedulerTrackingInvokedProcess implements InvokedProcess
-{
-    private bool $finished = false;
-
-    public function __construct(
-        private readonly InvokedProcess $process,
-        private readonly Closure $onFinished,
-    ) {}
-
-    public function id(): ?int
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function payloads(): array
     {
-        return $this->process->id();
-    }
+        return array_map(
+            static function (array $options): array {
+                /** @var mixed $payload */
+                $payload = json_decode(
+                    (string) ($options['input'] ?? ''),
+                    associative: true,
+                    flags: JSON_THROW_ON_ERROR,
+                );
 
-    public function command(): string
-    {
-        return $this->process->command();
-    }
+                if (! is_array($payload)) {
+                    return [];
+                }
 
-    public function signal(int $signal): static
-    {
-        $this->process->signal($signal);
-
-        return $this;
-    }
-
-    public function running(): bool
-    {
-        return $this->process->running();
-    }
-
-    public function output(): string
-    {
-        return $this->process->output();
-    }
-
-    public function errorOutput(): string
-    {
-        return $this->process->errorOutput();
-    }
-
-    public function latestOutput(): string
-    {
-        return $this->process->latestOutput();
-    }
-
-    public function latestErrorOutput(): string
-    {
-        return $this->process->latestErrorOutput();
-    }
-
-    public function wait(?callable $output = null): ProcessResult
-    {
-        $result = $this->process->wait($output);
-
-        $this->markFinished();
-
-        return $result;
-    }
-
-    public function waitUntil(?callable $output = null): ProcessResult
-    {
-        $result = $this->process->waitUntil($output);
-
-        $this->markFinished();
-
-        return $result;
-    }
-
-    private function markFinished(): void
-    {
-        if ($this->finished) {
-            return;
-        }
-
-        ($this->onFinished)();
-        $this->finished = true;
+                /** @var array<string, mixed> $payload */
+                return $payload;
+            },
+            $this->transportOptions,
+        );
     }
 }

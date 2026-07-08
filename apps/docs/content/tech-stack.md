@@ -618,8 +618,9 @@ macOS host command processes are launchd user LaunchAgents.
 The Orbit Scheduler is a long-running PHP loop in the one-replica
 `orbit-scheduler` Swarm service using the Orbit gateway image. There is no
 scheduler daemon on non-gateway nodes; the gateway dispatches schedule
-execution to other nodes through the explicitly gated host SSH pool when a
-schedule's target is not the gateway itself.
+execution to other nodes through the signed `internal:schedule:run`
+local-executor command over agent-push when a schedule's target is not the
+gateway itself.
 
 The daemon runs an internal loop that aligns to wall-clock minute boundaries, performs one evaluation tick, and sleeps until the next boundary:
 
@@ -634,7 +635,7 @@ Each tick:
 
 1. Queries the gateway database for every enabled schedule and selects the ones that are due in the current minute.
 2. Claims a per-schedule lock in the gateway database (`schedule_locks`). Locks are gateway-owned; there is no node-local lock state.
-3. Dispatches the due schedules in parallel. Schedules whose target resolves to the gateway run locally; schedules targeting any other node run on that node through the explicitly gated host SSH pool. The scheduled command physically executes on the target, but the gateway is orchestrating it.
+3. Dispatches the due schedules. Schedules whose target resolves to the gateway run locally; schedules targeting any other node run on that node through `internal:schedule:run` over agent-push. The scheduled command physically executes on the target, but the gateway is orchestrating it.
 4. Records the run result — success, failure, exit code, captured output, dispatch failure — in `schedule_runs` immediately as durable gateway history.
 5. Releases the lock.
 
@@ -646,7 +647,7 @@ not the scheduler's steady-state runtime.
 
 The daemon's per-tick logic is shared with the `orbit schedule:run` command. The daemon is the steady-state path; `schedule:run` is the on-demand path used for testing, troubleshooting, and recovery.
 
-This centralizes observability: every scheduled run's result lands in the gateway database, including dispatch failures (SSH unreachable, target down, command non-zero exit). The trade-off is that the gateway is a single point of failure for scheduling — but in v1 the active gateway-coupled `vpn` role is co-located on the same node, so the network is unusable when that node is down regardless.
+This centralizes observability: every scheduled run's result lands in the gateway database, including dispatch failures (agent-push unavailable, target down, command non-zero exit). The trade-off is that the gateway is a single point of failure for scheduling — but in v1 the active gateway-coupled `vpn` role is co-located on the same node, so the network is unusable when that node is down regardless.
 
 ### Service containers
 
