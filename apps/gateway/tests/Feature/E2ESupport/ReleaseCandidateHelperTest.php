@@ -100,7 +100,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'candidate_channel' => 'live-test',
             'candidate_asset_base_url' => "https://s3.example.test/orbit/candidates/{$buildId}",
             'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
-            'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-websocket:0.1.200-candidate-{$buildId}",
+            'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-{$buildId}",
             'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
             'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
             'sha256_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
@@ -127,10 +127,11 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ->toContain('orbit-build-agent-binary mac arm')
             ->toContain('-f docker/orbit-reverb/Dockerfile')
             ->toContain(
-                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:0.1.200-candidate-'
-                    .$buildId
-                    .'@sha256:'
+                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.'@sha256:'
                     .str_repeat('cd', times: 32),
+            )
+            ->toContain(
+                'gh api --method PATCH /orgs/hardimpactdev/packages/container/orbit-reverb/visibility -f visibility=public',
             )
             ->not->toContain('Storage::disk')
             ->not->toContain('release create')
@@ -407,8 +408,8 @@ function release_candidate_prepare_root(string $temp): string
         fi
         if [ "$1" = 'push' ]; then
             case "$2" in
-                *orbit-websocket*)
-                    printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-websocket]\n'
+                *orbit-reverb*)
+                    printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-reverb]\n'
                     printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_REVERB_DIGEST}"
                     ;;
                 *)
@@ -427,6 +428,7 @@ function release_candidate_prepare_root(string $temp): string
             'auth status') exit 0 ;;
             'auth token') printf 'stub-ghcr-token\n' ;;
             'api user') printf 'stub-user\n' ;;
+            'api --method') exit 0 ;;
             *) exit 1 ;;
         esac
         BASH);
@@ -580,7 +582,7 @@ function release_candidate_write_state(
         'candidate_channel' => 'live-test',
         'candidate_asset_base_url' => "https://s3.example.test/orbit/candidates/{$buildId}",
         'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
-        'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-websocket:9.9.9-candidate-{$buildId}",
+        'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-reverb:9.9.9-candidate-{$buildId}",
         'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
         'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
         'sha256_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-linux-x64"),

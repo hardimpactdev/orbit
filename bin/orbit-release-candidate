@@ -133,7 +133,7 @@ cmd_build() {
     build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
     candidate_tag="${version}-candidate-${build_id}"
     candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
-    candidate_reverb_image="ghcr.io/hardimpactdev/orbit-websocket:${candidate_tag}"
+    candidate_reverb_image="ghcr.io/hardimpactdev/orbit-reverb:${candidate_tag}"
     candidate_prefix="candidates/${build_id}"
     candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 
@@ -226,6 +226,12 @@ cmd_build() {
 
     rm -rf "$ghcr_docker_config"
     ghcr_docker_config=""
+
+    gh api \
+        --method PATCH \
+        /orgs/hardimpactdev/packages/container/orbit-reverb/visibility \
+        -f visibility=public \
+        >/dev/null
 
     local gateway_digest reverb_digest
     gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/gateway-image-push.log" | tail -1)"
