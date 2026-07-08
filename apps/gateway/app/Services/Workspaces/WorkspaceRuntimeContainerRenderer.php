@@ -91,15 +91,15 @@ final readonly class WorkspaceRuntimeContainerRenderer
             ],
         ];
 
-        if (($packagesMount = $this->appDevelopmentPackagesMount->forApp($app)) !== null) {
+        $node = $this->placement->nodeForWorkspace($workspace);
+
+        if ($node instanceof Node && ($packagesMount = $this->appDevelopmentPackagesMount->forNode($node)) !== null) {
             $mounts[] = $packagesMount;
         }
 
         foreach ($this->appRuntimeMounts->mountsForRuntime($app) as $mount) {
             $mounts[] = $mount;
         }
-
-        $node = $this->placement->nodeForWorkspace($workspace);
 
         if ($this->innerTlsPolicy->appliesToWorkspace($workspace) && $node !== null) {
             foreach ($this->innerTlsPolicy->runtimeTlsMounts(

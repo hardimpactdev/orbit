@@ -194,6 +194,26 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             );
     });
 
+    it('uses the user-local Orbit binary for macOS workload nodes', function (): void {
+        $operationToken = local_executor_test_operation_token();
+        $node = localExecutorTargetNode(['app-dev']);
+        $node->platform = 'macos_26-5-1';
+        $node->user = 'nckrtl';
+
+        $command = localExecutorCommandBuilder()->build(
+            targetNode: $node,
+            commandName: 'internal:app-runtime-container',
+            arguments: ['container:apply'],
+            options: [],
+            operationToken: $operationToken,
+        );
+
+        expect($command)->toBe(
+            escapeshellarg('/Users/nckrtl/.local/bin/orbit')
+                ." internal:app-runtime-container 'container:apply' --operation-token='{$operationToken}' --json",
+        );
+    });
+
     it('appends escaped positional arguments after the command name', function (): void {
         $operationToken = local_executor_test_operation_token();
 

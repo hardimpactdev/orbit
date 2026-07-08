@@ -10,7 +10,11 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class RuntimeClientTrustPolicy
 {
     private const array PHP_INI = [
@@ -25,6 +29,7 @@ final readonly class RuntimeClientTrustPolicy
 
     public function __construct(
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -56,10 +61,26 @@ final readonly class RuntimeClientTrustPolicy
      */
     public function mountsForWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing('app');
+        $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
-        return $app instanceof App ? $this->mountsForApp($app) : [];
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        $node = $this->placement->nodeForWorkspace($workspace);
+
+        if (! $node instanceof Node || ! $this->appliesTo($app, $node)) {
+            return [];
+        }
+
+        return [
+            [
+                'source' => $this->nodeHostPaths->runtimeTrustPoolPath($node),
+                'target' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                'read_only' => true,
+            ],
+        ];
     }
 
     /**
@@ -79,10 +100,16 @@ final readonly class RuntimeClientTrustPolicy
      */
     public function phpIniForWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing('app');
+        $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
-        return $app instanceof App ? $this->phpIniForApp($app) : [];
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        $node = $this->placement->nodeForWorkspace($workspace);
+
+        return $node instanceof Node && $this->appliesTo($app, $node) ? self::PHP_INI : [];
     }
 
     /**
@@ -102,10 +129,16 @@ final readonly class RuntimeClientTrustPolicy
      */
     public function environmentForWorkspace(Workspace $workspace): array
     {
-        $workspace->loadMissing('app');
+        $workspace->loadMissing(['app', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
-        return $app instanceof App ? $this->environmentForApp($app) : [];
+        if (! $app instanceof App) {
+            return [];
+        }
+
+        $node = $this->placement->nodeForWorkspace($workspace);
+
+        return $node instanceof Node && $this->appliesTo($app, $node) ? self::ENVIRONMENT : [];
     }
 
     private function appliesToApp(App $app): bool
@@ -120,6 +153,21 @@ final readonly class RuntimeClientTrustPolicy
 
         $app->loadMissing('node.roleAssignments');
 
-        return $app->node?->hasActiveRole(NodeRoleName::AppDevelopment->value) === true;
+        return $app->node instanceof Node && $this->appliesTo($app, $app->node);
+    }
+
+    private function appliesTo(App $app, Node $node): bool
+    {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
+            return false;
+        }
+
+        if ($app->environment === 'production') {
+            return false;
+        }
+
+        $node->loadMissing('roleAssignments');
+
+        return $node->hasActiveRole(NodeRoleName::AppDevelopment->value);
     }
 }
