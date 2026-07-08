@@ -83,6 +83,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'orbit-agent-linux-x64',
             'orbit-agent-macos-arm64',
             'orbit-release-manifest.candidate.json',
+            'reverb-image-push.log',
         ] as $stateFile) {
             expect("{$stateDir}/{$stateFile}")->toBeFile();
         }
@@ -98,7 +99,9 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'candidate_prefix' => "candidates/{$buildId}",
             'candidate_channel' => 'live-test',
             'candidate_asset_base_url' => "https://s3.example.test/orbit/candidates/{$buildId}",
-            'gateway_digest' => 'sha256:'.str_repeat('ab', 32),
+            'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
+            'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-websocket:0.1.200-candidate-{$buildId}",
+            'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
             'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
             'sha256_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
             'sha256_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
@@ -122,6 +125,13 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             ->toContain('orbit-build-cli-binary linux x64 0.1.200')
             ->toContain('orbit-build-agent-binary linux x64')
             ->toContain('orbit-build-agent-binary mac arm')
+            ->toContain('-f docker/orbit-reverb/Dockerfile')
+            ->toContain(
+                '--role-image=orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:0.1.200-candidate-'
+                    .$buildId
+                    .'@sha256:'
+                    .str_repeat('cd', times: 32),
+            )
             ->not->toContain('Storage::disk')
             ->not->toContain('release create')
             ->not->toContain('push origin')
@@ -129,6 +139,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
 
         expect((string) file_get_contents("{$stateDir}/candidate.env"))
             ->not->toContain('stub-ghcr-token')->and((string) file_get_contents("{$stateDir}/gateway-image-push.log"))
+            ->not->toContain('stub-ghcr-token')->and((string) file_get_contents("{$stateDir}/reverb-image-push.log"))
             ->not->toContain('stub-ghcr-token');
     } finally {
         release_candidate_remove_temp_dir(path: $temp);
@@ -395,8 +406,16 @@ function release_candidate_prepare_root(string $temp): string
             exit 0
         fi
         if [ "$1" = 'push' ]; then
-            printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-gateway]\n'
-            printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_GATEWAY_DIGEST}"
+            case "$2" in
+                *orbit-websocket*)
+                    printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-websocket]\n'
+                    printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_REVERB_DIGEST}"
+                    ;;
+                *)
+                    printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-gateway]\n'
+                    printf 'candidate: digest: %s size: 4287\n' "${ORBIT_TEST_GATEWAY_DIGEST}"
+                    ;;
+            esac
             exit 0
         fi
         exit 1
@@ -505,7 +524,8 @@ function release_candidate_process_env(string $root, array $overrides = []): arr
         'STUB_LOG' => "{$root}/stub.log",
         'ORBIT_TEST_HEAD_COMMIT' => str_repeat('a', 40),
         'ORBIT_TEST_ORIGIN_MAIN_COMMIT' => str_repeat('a', 40),
-        'ORBIT_TEST_GATEWAY_DIGEST' => 'sha256:'.str_repeat('ab', 32),
+        'ORBIT_TEST_GATEWAY_DIGEST' => 'sha256:'.str_repeat('ab', times: 32),
+        'ORBIT_TEST_REVERB_DIGEST' => 'sha256:'.str_repeat('cd', times: 32),
         'ORBIT_RELEASE_CANDIDATE_CHANNEL' => false,
     ], $overrides);
 }
@@ -559,7 +579,9 @@ function release_candidate_write_state(
         'candidate_prefix' => "candidates/{$buildId}",
         'candidate_channel' => 'live-test',
         'candidate_asset_base_url' => "https://s3.example.test/orbit/candidates/{$buildId}",
-        'gateway_digest' => 'sha256:'.str_repeat('ab', 32),
+        'gateway_digest' => 'sha256:'.str_repeat('ab', times: 32),
+        'candidate_reverb_image' => "ghcr.io/hardimpactdev/orbit-websocket:9.9.9-candidate-{$buildId}",
+        'reverb_digest' => 'sha256:'.str_repeat('cd', times: 32),
         'candidate_channel_manifest_url' => 'https://s3.example.test/orbit/channels/live-test/orbit-release-manifest.json',
         'sha256_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-linux-x64"),
         'sha256_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),

@@ -129,10 +129,11 @@ cmd_build() {
         exit 1
     fi
 
-    local build_id candidate_tag candidate_image candidate_prefix candidate_channel
+    local build_id candidate_tag candidate_image candidate_reverb_image candidate_prefix candidate_channel
     build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
     candidate_tag="${version}-candidate-${build_id}"
     candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
+    candidate_reverb_image="ghcr.io/hardimpactdev/orbit-websocket:${candidate_tag}"
     candidate_prefix="candidates/${build_id}"
     candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 
@@ -201,6 +202,13 @@ cmd_build() {
         --load \
         .
 
+    docker buildx build \
+        --platform linux/amd64 \
+        -f docker/orbit-reverb/Dockerfile \
+        --tag "$candidate_reverb_image" \
+        --load \
+        .
+
     gh auth status -h github.com
 
     # Helper-free GHCR auth (release skill Failure Handling): write a minimal
@@ -214,15 +222,22 @@ cmd_build() {
     unset ghcr_auth
 
     DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
+    DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
 
     rm -rf "$ghcr_docker_config"
     ghcr_docker_config=""
 
-    local gateway_digest
+    local gateway_digest reverb_digest
     gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/gateway-image-push.log" | tail -1)"
+    reverb_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/reverb-image-push.log" | tail -1)"
 
     if [ -z "$gateway_digest" ]; then
         echo "Failed to capture the pushed gateway image digest." >&2
+        exit 1
+    fi
+
+    if [ -z "$reverb_digest" ]; then
+        echo "Failed to capture the pushed Reverb image digest." >&2
         exit 1
     fi
 
@@ -238,7 +253,7 @@ cmd_build() {
         --agent-artifact="linux-amd64=orbit-agent-linux-x64=${work_dir}/orbit-agent-linux-x64" \
         --agent-artifact="darwin-arm64=orbit-agent-macos-arm64=${work_dir}/orbit-agent-macos-arm64" \
         --role-image="orbit-caddy=caddy:2-alpine" \
-        --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
+        --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
         --output="${work_dir}/orbit-release-manifest.candidate.json"
 
     ORBIT_CANDIDATE_PREFIX="$candidate_prefix" \
@@ -333,6 +348,7 @@ cmd_build() {
     cp "${work_dir}/orbit-agent-macos-arm64" "${state_dir}/orbit-agent-macos-arm64"
     cp "${work_dir}/orbit-release-manifest.candidate.json" "${state_dir}/orbit-release-manifest.candidate.json"
     cp "${work_dir}/gateway-image-push.log" "${state_dir}/gateway-image-push.log"
+    cp "${work_dir}/reverb-image-push.log" "${state_dir}/reverb-image-push.log"
 
     local candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
 
@@ -346,6 +362,8 @@ cmd_build() {
         printf 'candidate_channel=%s\n' "$candidate_channel"
         printf 'candidate_asset_base_url=%s\n' "$candidate_asset_base_url"
         printf 'gateway_digest=%s\n' "$gateway_digest"
+        printf 'candidate_reverb_image=%s\n' "$candidate_reverb_image"
+        printf 'reverb_digest=%s\n' "$reverb_digest"
         printf 'candidate_channel_manifest_url=%s\n' "$candidate_channel_manifest_url"
         printf 'sha256_linux_amd64=%s\n' "$sha256_linux_amd64"
         printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"
