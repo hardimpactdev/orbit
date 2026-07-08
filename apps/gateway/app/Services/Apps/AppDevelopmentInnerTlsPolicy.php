@@ -10,6 +10,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class AppDevelopmentInnerTlsPolicy
@@ -24,6 +25,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function __construct(
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function appliesToApp(App $app): bool
@@ -47,7 +49,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function appliesToWorkspace(Workspace $workspace): bool
     {
-        $workspace->loadMissing('app.node.roleAssignments');
+        $workspace->loadMissing(['app.node.roleAssignments', 'app.instances', 'appInstance']);
 
         $app = $workspace->app;
 
@@ -55,7 +57,21 @@ final readonly class AppDevelopmentInnerTlsPolicy
             return false;
         }
 
-        return $this->appliesToApp($app);
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
+            return false;
+        }
+
+        if ($app->environment === 'production') {
+            return false;
+        }
+
+        if (! $app->runtimeConfig()->usesInnerHttpsProxyTransport()) {
+            return false;
+        }
+
+        $node = $this->placement->nodeForWorkspace($workspace);
+
+        return $node?->hasActiveRole(NodeRoleName::AppDevelopment->value) === true;
     }
 
     public function appRouteDomain(App $app): string
@@ -76,24 +92,14 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function workspaceRouteDomain(Workspace $workspace): string
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
         if (! $app instanceof App) {
             throw new RuntimeException('Workspace has no parent app.');
         }
 
-        if ($app->environment === 'production' && is_string($app->domain) && $app->domain !== '') {
-            return "{$workspace->name}.{$app->domain}";
-        }
-
-        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
-
-        if ($tld === '') {
-            return "{$workspace->name}.{$app->name}";
-        }
-
-        return "{$workspace->name}.{$app->name}.{$tld}";
+        return $this->placement->workspaceDomain($workspace);
     }
 
     public function nodeHome(Node $node): string

@@ -7,6 +7,7 @@ namespace App\Services\RemoteShell;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use Orbit\Core\Enums\InternalCommand;
 use SensitiveParameter;
@@ -340,6 +341,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         ],
         InternalCommand::WorkspaceAdapterLookup->value => [NodeRoleName::AppDevelopment],
         InternalCommand::WorkspaceAdapterUpdate->value => [NodeRoleName::AppDevelopment],
+        InternalCommand::WorkspaceSetupStep->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::WorkspaceSourceCreate->value => [NodeRoleName::AppDevelopment],
     ];
 
@@ -461,11 +463,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
     private function orbitBinarySegment(Node $targetNode): string
     {
         $configuredBinary = config('orbit.local_executor_binary');
-        $binary = is_string($configuredBinary)
-        && trim($configuredBinary) !== ''
-        && $targetNode->hasActiveRole('gateway')
-            ? trim($configuredBinary)
-            : self::ORBIT_BINARY;
+        $binary = $this->orbitBinaryPath($targetNode, $configuredBinary);
 
         $this->ensureNoNullByte($binary, 'orbit binary');
 
@@ -474,6 +472,23 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         }
 
         return escapeshellarg($binary);
+    }
+
+    private function orbitBinaryPath(Node $targetNode, mixed $configuredBinary): string
+    {
+        if (
+            is_string($configuredBinary)
+            && trim($configuredBinary) !== ''
+            && $targetNode->hasActiveRole('gateway')
+        ) {
+            return trim($configuredBinary);
+        }
+
+        if (NodeHostPaths::isMacosPlatform($targetNode->platform)) {
+            return NodeHostPaths::homeDirectoryFor($targetNode->platform, $targetNode->user).'/.local/bin/orbit';
+        }
+
+        return self::ORBIT_BINARY;
     }
 
     private function ensureCommandNameIsValid(string $commandName): void

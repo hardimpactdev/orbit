@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--json|--stream-json]
+orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--node-transport=<transport>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -25,8 +25,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When local workspace context cannot resolve it. | Local workspace context when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
-| `--app` | `text` | No local context or default. | Local app default | Valid parent app slug. |
+| `--app` | `text` | No local context or default. | Local app default | Valid parent app slug or app-instance selector such as `happie.nmbp`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
+| `--node-transport` | `text` | Optional. | `auto` | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
@@ -46,9 +47,10 @@ the parent app path, including external agent worktree directories.
      current directory against registered app and workspace paths for the
      caller's node identity. The lookup returns one of four outcomes:
      - `workspace` — CWD is inside a registered workspace path. The gateway
-       returns the workspace name, parent app slug, and stored workspace
-       path. The command proceeds with these values; `--app` and `--path`
-       must agree if also supplied, otherwise the command fails with
+       returns the workspace name, parent app slug, selected app instance
+       when present, and stored workspace path. The command proceeds with
+       these values; `--app` and `--path` must agree if also supplied,
+       otherwise the command fails with
        `error.code=validation_failed`/`error.meta.field=app|path` before
        side effects.
      - `app_root` — CWD is a registered app's own path, not a workspace
@@ -57,10 +59,11 @@ the parent app path, including external agent worktree directories.
        `error.meta.app=<app>`, and
        `error.meta.next_command=orbit workspace:new`. The app root is not
        a workspace and `workspace:setup` does not promote it to one.
-     - `inside_app` — CWD is under a registered app's path but does not
-       match any registered workspace path under that app. The parent app
-       is resolved from the lookup; the workspace name is resolved through
-       the adapter probe below, or through interactive prompts.
+     - `inside_app` — CWD is under a registered app or app-instance path but
+       does not match any registered workspace path under that target. The
+       parent app and app instance, when safely inferable, are resolved from
+       the lookup; the workspace name is resolved through the adapter probe
+       below, or through interactive prompts.
      - `unregistered` — CWD does not match any known app or workspace path.
        The adapter probe below runs across all of the caller node's
        configured adapters; otherwise fall through to local-context
@@ -149,7 +152,7 @@ authorization decision.
    - Ensures a workspace-owned route record exists in `proxy`.
    - Updates the record if configuration has changed.
 3. **Artifact Apply** (`phase=artifacts`):
-   - Connects to the node via SSH.
+   - Connects to the resolved workspace node via SSH.
    - Applies workspace-specific runtime artifacts (runtime container, environment).
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):

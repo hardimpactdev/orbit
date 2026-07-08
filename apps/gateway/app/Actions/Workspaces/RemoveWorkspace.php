@@ -13,8 +13,10 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
+use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -26,12 +28,14 @@ final readonly class RemoveWorkspace
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
         private ExplicitRemoteShellFallback $transport,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
      * @return array{
      *     name: string,
      *     app: string,
+     *     app_instance: string|null,
      *     action: string,
      *     proxy_routes_removed: int,
      *     processes_removed: int,
@@ -43,11 +47,12 @@ final readonly class RemoveWorkspace
      */
     public function handle(Workspace $workspace, bool $keepFiles = false): array
     {
-        $workspace->loadMissing(['app.node', 'app.processes']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance', 'app.processes']);
 
         $app = $workspace->app;
         $name = $workspace->name;
         $appName = (string) $app?->name;
+        $appInstanceName = $workspace->appInstance?->name;
         $isPhpWorkspace = $app?->runtime === AppRuntimeKind::Php;
         $proxyRouteIds = ProxyRoute::query()
             ->where('workspace_id', $workspace->id)
@@ -59,7 +64,7 @@ final readonly class RemoveWorkspace
             ->where('phase', WorkspaceLifecyclePhase::Teardown)
             ->orderBy('sort_order')
             ->get();
-        $node = $app?->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         DB::transaction(function () use ($workspace, $proxyRouteIds): void {
             if ($proxyRouteIds !== []) {
@@ -139,7 +144,16 @@ final readonly class RemoveWorkspace
 
                 foreach ($teardownSteps as $teardownStep) {
                     $teardownStepsRun++;
-                    $teardownResult = $this->remoteShell->run($node, $teardownStep->command, [
+                    $command = $app instanceof App
+                        ? app(AppCommandRouter::class)->routeLifecycleForPath(
+                            $app,
+                            (string) $teardownStep->command,
+                            $workspace->path,
+                            $this->teardownEnvironment($workspace),
+                        )
+                        : (string) $teardownStep->command;
+
+                    $teardownResult = $this->remoteShell->run($node, $command, [
                         'cwd' => $workspace->path,
                         'timeout' => (int) $teardownStep->timeoutSeconds(),
                         'metadata' => $this->teardownEnvironment($workspace),
@@ -176,6 +190,7 @@ final readonly class RemoveWorkspace
         return [
             'name' => $name,
             'app' => $appName,
+            'app_instance' => $appInstanceName,
             'action' => 'removed',
             'proxy_routes_removed' => count($proxyRouteIds),
             'processes_removed' => $processesRemoved,
@@ -226,7 +241,7 @@ final readonly class RemoveWorkspace
     {
         return [
             'ORBIT_APP' => (string) $workspace->app?->name,
-            'ORBIT_APP_PATH' => (string) $workspace->app?->path,
+            'ORBIT_APP_PATH' => (string) ($this->placement->appPathForWorkspace($workspace) ?? $workspace->app?->path),
             'ORBIT_WORKSPACE_NAME' => $workspace->name,
             'ORBIT_WORKSPACE_PATH' => $workspace->path,
             'ORBIT_URL' => $workspace->url(),

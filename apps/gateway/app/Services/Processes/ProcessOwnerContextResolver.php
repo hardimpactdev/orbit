@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Data\Apps\AppSelection;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ProcessOwnerContextResolver
@@ -17,6 +21,8 @@ final readonly class ProcessOwnerContextResolver
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
+        private AppSelectorResolver $appSelectorResolver,
+        private WorkspacePlacement $placement,
     ) {}
 
     public function resolve(
@@ -126,10 +132,14 @@ final readonly class ProcessOwnerContextResolver
      */
     private function resolveNode(string $nodeName, ?array $visibleNodeIds): ProcessOwnerContext
     {
-        $node = Node::query()
-            ->where('name', $nodeName)
-            ->when($visibleNodeIds !== null, fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds))
-            ->first();
+        $query = Node::query()
+            ->where('name', $nodeName);
+
+        if ($visibleNodeIds !== null) {
+            $query->whereIn('id', $visibleNodeIds);
+        }
+
+        $node = $query->first();
 
         if (! $node instanceof Node) {
             throw new GatewayApiException("Node '{$nodeName}' not found or not visible.", 'validation_failed', [
@@ -151,19 +161,29 @@ final readonly class ProcessOwnerContextResolver
      */
     private function resolveApp(string $appName, ?array $visibleNodeIds): ProcessOwnerContext
     {
-        $app = $this
-            ->visibleApps($visibleNodeIds)
-            ->where('name', $appName)
-            ->first();
+        $selection = $this->appSelectorResolver->resolve($appName);
+        $app = $selection?->app;
 
-        if (! $app instanceof App) {
+        if (! $selection instanceof AppSelection || ! $app instanceof App) {
             throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
                 'field' => 'app',
                 'value' => $appName,
             ]);
         }
 
-        return $this->contextForApp($app);
+        $instance = $selection->instance;
+        $node = $instance !== null
+            ? $this->placement->nodeForInstance($instance)
+            : $app->node;
+
+        if ($visibleNodeIds !== null && (! $node instanceof Node || ! in_array($node->id, $visibleNodeIds, true))) {
+            throw new GatewayApiException("App '{$appName}' not found or not visible.", 'validation_failed', [
+                'field' => 'app',
+                'value' => $appName,
+            ]);
+        }
+
+        return $this->contextForApp($app, $selection);
     }
 
     /**
@@ -174,20 +194,35 @@ final readonly class ProcessOwnerContextResolver
         ?string $appName,
         ?array $visibleNodeIds,
     ): ProcessOwnerContext {
-        $matches = Workspace::query()
-            ->with('app.node')
-            ->where('name', $workspaceName)
-            ->when($appName
-            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
-                'name',
-                $appName,
-            )))
-            ->when($visibleNodeIds
-            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
-                'node_id',
-                $visibleNodeIds,
-            )))
-            ->get();
+        $selection = $appName !== null ? $this->appSelectorResolver->resolve($appName) : null;
+        $query = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->where('name', $workspaceName);
+
+        if ($selection instanceof AppSelection) {
+            $query->where('app_id', $selection->app->id);
+        }
+
+        /** @var Collection<int, Workspace> $workspaces */
+        $workspaces = $query->get();
+
+        /** @var Collection<int, Workspace> $matches */
+        $matches = $workspaces
+            ->filter(function (Workspace $workspace, int $key) use ($selection, $visibleNodeIds): bool {
+                $node = $this->placement->nodeForWorkspace($workspace);
+
+                if (! $node instanceof Node) {
+                    return false;
+                }
+
+                if ($visibleNodeIds !== null && ! in_array($node->id, $visibleNodeIds, true)) {
+                    return false;
+                }
+
+                return ! $selection instanceof AppSelection
+                || $this->appSelectorResolver->matchesWorkspace($workspace, $selection);
+            })
+            ->values();
 
         if ($matches->isEmpty()) {
             throw new GatewayApiException(
@@ -204,11 +239,10 @@ final readonly class ProcessOwnerContextResolver
             throw new GatewayApiException("Workspace name '{$workspaceName}' is ambiguous.", 'validation_failed', [
                 'field' => 'workspace',
                 'value' => $workspaceName,
-                'apps' => $matches
-                    ->map(fn (Workspace $workspace): ?string => $workspace->app?->name)
-                    ->filter()
-                    ->values()
-                    ->all(),
+                'apps' => array_values(array_filter(array_map(
+                    fn (Workspace $workspace): ?string => $workspace->app?->name,
+                    $matches->all(),
+                ))),
             ]);
         }
 
@@ -226,7 +260,7 @@ final readonly class ProcessOwnerContextResolver
             );
         }
 
-        $node = $app->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
             throw new GatewayApiException("Workspace '{$workspaceName}' app has no node.", 'validation_failed', [
@@ -243,11 +277,15 @@ final readonly class ProcessOwnerContextResolver
         );
     }
 
-    private function contextForApp(App $app): ProcessOwnerContext
+    private function contextForApp(App $app, ?AppSelection $selection = null): ProcessOwnerContext
     {
         $app->loadMissing('node');
+        $instance = $selection?->instance;
+        $node = $instance !== null
+            ? $this->placement->nodeForInstance($instance)
+            : $app->node;
 
-        if (! $app->node instanceof Node) {
+        if (! $node instanceof Node) {
             throw new GatewayApiException("App '{$app->name}' has no node.", 'validation_failed', [
                 'field' => 'app',
                 'value' => $app->name,
@@ -255,7 +293,7 @@ final readonly class ProcessOwnerContextResolver
         }
 
         return new ProcessOwnerContext(
-            node: $app->node,
+            node: $node,
             app: $app,
             workspace: null,
             owner: $app,
@@ -268,12 +306,15 @@ final readonly class ProcessOwnerContextResolver
      */
     private function visibleApps(?array $visibleNodeIds): Builder
     {
-        return App::query()
-            ->with(['node', 'processes'])
-            ->when($visibleNodeIds !== null, fn (Builder $query): Builder => $query->whereIn(
-                'node_id',
-                $visibleNodeIds,
-            ));
+        /** @var Builder<App> $query */
+        $query = App::query()
+            ->with(['node', 'processes']);
+
+        if ($visibleNodeIds !== null) {
+            $query->whereIn('node_id', $visibleNodeIds);
+        }
+
+        return $query;
     }
 
     /**

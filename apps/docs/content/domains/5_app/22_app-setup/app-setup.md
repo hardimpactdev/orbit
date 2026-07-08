@@ -23,9 +23,9 @@ Use this command after registering or updating an app that has setup steps.
 
 ## Behavior Summary
 
-PHP, Composer, and Artisan commands use the app node host PHP toolchain selected
-by the app's configured PHP version. Other finite shell commands run unchanged
-from the app source path.
+Setup steps run through the selected app user's host tool path from the app
+source path. PHP, Composer, and Artisan commands include the app node host PHP
+toolchain selected by the app's configured PHP version.
 
 Setup steps receive the app URL and Laravel Vite development-server environment
 fields: `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`,

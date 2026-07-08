@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
 use App\Enums\WorkspaceLifecyclePhase;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\Node;
-use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceStepListPayload;
 use Illuminate\Database\Eloquent\Model;
@@ -27,6 +29,8 @@ final readonly class WorkspaceStepListController implements Loggable
     public function __construct(
         private NodeAccessAuthorizer $authorizer,
         private WorkspaceRoleGuard $workspaceRoleGuard,
+        private AppSelectorResolver $appSelectorResolver,
+        private WorkspacePlacement $workspacePlacement,
     ) {}
 
     public function __invoke(string $phase, Request $request, WorkspaceStepListPayload $payload): JsonResponse
@@ -51,32 +55,37 @@ final readonly class WorkspaceStepListController implements Loggable
             return $this->validationFailed('app', null, 'Could not resolve parent app.');
         }
 
-        $app = $appSlug !== null
-            ? $this->resolveAppBySlug($appSlug)
-            : $this->resolveAppByPath($path);
+        try {
+            $selection = $appSlug !== null
+                ? $this->appSelectorResolver->resolve($appSlug)
+                : $this->appSelectorResolver->resolveByPath($path);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->appSelectionFailed($exception);
+        }
 
-        if (! $app instanceof App) {
+        if (! $selection instanceof AppSelection) {
             return $this->appNotFound($appSlug ?? (string) $path);
         }
 
+        $app = $selection->app;
+        $servingNode = $this->servingNodeForSelection($selection);
+
         try {
-            $this->workspaceRoleGuard->ensureAppSupportsWorkspaces($app);
+            $this->workspaceRoleGuard->ensureNodeSupportsWorkspaces($app, $servingNode);
         } catch (WorkspaceUnsupportedForProduction $exception) {
             return $this->workspaceUnsupportedForProduction($exception);
         }
 
-        $app->loadMissing('node');
-
-        if (! $app->node instanceof Node) {
+        if (! $servingNode instanceof Node) {
             return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
                 'app' => $app->name,
             ]);
         }
 
-        $authorization = $this->authorizer->authorize($caller, $app->node, 'workspace:read');
+        $authorization = $this->authorizer->authorize($caller, $servingNode, 'workspace:read');
 
         if (! $authorization->allowed) {
-            return $this->forbidden($app->node, $authorization, 'workspace:read');
+            return $this->forbidden($servingNode, $authorization, 'workspace:read');
         }
 
         return response()->json([
@@ -88,47 +97,26 @@ final readonly class WorkspaceStepListController implements Loggable
         ]);
     }
 
-    private function resolveAppBySlug(string $slug): ?App
-    {
-        return App::query()
-            ->with('node')
-            ->where('name', $slug)
-            ->first();
-    }
-
-    private function resolveAppByPath(string $path): ?App
-    {
-        $normalizedPath = rtrim($path, '/');
-
-        $app = App::query()
-            ->with('node')
-            ->get()
-            ->first(function (App $app) use ($normalizedPath): bool {
-                $appPath = rtrim($app->path, '/');
-
-                return $normalizedPath === $appPath || str_starts_with($normalizedPath, "{$appPath}/");
-            });
-
-        if ($app instanceof App) {
-            return $app;
-        }
-
-        return Workspace::query()
-            ->with('app.node')
-            ->get()
-            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
-                $workspacePath = rtrim($workspace->path, '/');
-
-                return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
-            })
-            ?->app;
-    }
-
     private function stringQuery(Request $request, string $key): ?string
     {
         $value = $request->query($key);
 
         return is_scalar($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function servingNodeForSelection(AppSelection $selection): ?Node
+    {
+        $selection->app->loadMissing('node');
+
+        if ($selection->instance !== null) {
+            $node = $this->workspacePlacement->nodeForInstance($selection->instance);
+
+            if ($node instanceof Node) {
+                return $node;
+            }
+        }
+
+        return $selection->app->node;
     }
 
     private function validationFailed(string $field, ?string $value, string $message): JsonResponse
@@ -160,6 +148,17 @@ final readonly class WorkspaceStepListController implements Loggable
                 ],
             ],
         ], 404);
+    }
+
+    private function appSelectionFailed(AppSelectionResolutionFailed $exception): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => $exception->errorCode,
+                'message' => $exception->getMessage(),
+                'meta' => $exception->meta,
+            ],
+        ], 400);
     }
 
     private function workspaceUnsupportedForProduction(WorkspaceUnsupportedForProduction $exception): JsonResponse

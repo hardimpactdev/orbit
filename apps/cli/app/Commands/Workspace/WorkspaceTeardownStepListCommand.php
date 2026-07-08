@@ -16,7 +16,7 @@ final class WorkspaceTeardownStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'workspace-teardown-step:list
-        {--app= : Parent app slug}
+        {--app= : Parent app or app.instance selector}
         {--json}';
 
     #[\Override]

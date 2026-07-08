@@ -9,7 +9,7 @@ final class WorkspaceTeardownStepAddCommand extends AbstractWorkspaceStepAddComm
     #[\Override]
     protected $signature = 'workspace-teardown-step:add
         {--command= : Shell command to run during workspace teardown}
-        {--app= : Parent app slug}
+        {--app= : Parent app or app.instance selector}
         {--before= : Insert before this teardown step id}
         {--after= : Insert after this teardown step id}
         {--timeout=600 : Timeout in seconds}

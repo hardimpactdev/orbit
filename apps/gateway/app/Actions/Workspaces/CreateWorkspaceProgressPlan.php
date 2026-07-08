@@ -7,6 +7,7 @@ namespace App\Actions\Workspaces;
 use App\Contracts\ProgressReporter;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use RuntimeException;
@@ -38,6 +39,7 @@ final class CreateWorkspaceProgressPlan
         private readonly string $name,
         private readonly string $base,
         private readonly ?string $phpVersion,
+        private readonly ?AppInstance $instance = null,
     ) {}
 
     public function title(): string
@@ -65,11 +67,13 @@ final class CreateWorkspaceProgressPlan
                             $this->node,
                             $this->name,
                             $this->base,
+                            $this->instance,
                         );
                         $this->workspace = $this->createWorkspace->createIntent(
                             $this->app,
                             $this->phpVersion,
                             $provisionResult,
+                            $this->instance,
                         );
                     } catch (WorkspaceCreateFailed $exception) {
                         $this->failure = [

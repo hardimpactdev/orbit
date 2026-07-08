@@ -23,7 +23,7 @@ use ValueError;
  * Per D10: streaming commands POST with Accept: text/event-stream and read frames
  * line-by-line. Each decoded frame is dispatched to the $onEvent callback.
  */
-final readonly class GatewayStreamClient
+final readonly class GatewayStreamClient implements GatewayProgressStreamClient, NodeTransportAwareGatewayStreamClient
 {
     public function __construct(
         private ?string $baseUrl,

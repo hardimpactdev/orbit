@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +71,81 @@ it('creates a workspace for an authorized gateway caller', function (): void {
         ->first();
 
     expect($workspace)->not->toBeNull();
+});
+
+it('creates a workspace on the selected app instance node', function (): void {
+    $shell = new WorkspaceStoreRuntimeContainerShell;
+    app()->instance(RemoteShell::class, $shell);
+
+    $canonicalNode = createTestAppHostNode([
+        'name' => 'beast',
+        'wireguard_address' => '10.6.0.17',
+        'tld' => 'test',
+    ]);
+    $localNode = createTestAppHostNode([
+        'name' => 'NMBP',
+        'wireguard_address' => '10.6.0.18',
+        'tld' => 'nmbp',
+    ]);
+    $app = App::factory()->for($canonicalNode, 'node')->create([
+        'name' => 'happie',
+        'domain' => 'happie.test',
+        'path' => '/home/nckrtl/apps/happie',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $localNode->id,
+            path: '/Users/nckrtl/apps/happie',
+            domain: 'happie.nmbp',
+        ),
+    ]);
+
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'recipes',
+            'app' => 'happie.nmbp',
+            'base' => 'main',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
+
+    $response->assertCreated();
+    $response->assertJsonPath('success.data.workspace.name', 'recipes');
+    $response->assertJsonPath('success.data.workspace.app', 'happie');
+    $response->assertJsonPath('success.data.workspace.app_instance', 'nmbp');
+    $response->assertJsonPath('success.data.workspace.node', 'NMBP');
+    $response->assertJsonPath('success.data.workspace.path', '/Users/nckrtl/apps/happie/.worktrees/recipes');
+    $response->assertJsonPath('success.data.workspace.url', 'https://recipes.happie.nmbp');
+
+    $workspace = Workspace::query()
+        ->where('app_id', $app->id)
+        ->where('name', 'recipes')
+        ->first();
+
+    $nodeNames = array_values(array_unique(array_map(
+        fn (array $call): string => $call['node']->name,
+        $shell->calls,
+    )));
+    $combinedScripts = implode("\n", array_map(fn (array $call): string => $call['script'], $shell->calls));
+
+    expect($workspace)
+        ->not
+        ->toBeNull()
+        ->and($workspace?->app_instance_id)
+        ->toBe($instance->id)
+        ->and($nodeNames)
+        ->toBe(['NMBP'])
+        ->and($combinedScripts)
+        ->toContain('/Users/nckrtl/apps/happie');
 });
 
 it('rejects callers without workspace creation permission', function (): void {

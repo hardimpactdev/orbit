@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
@@ -134,6 +136,82 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
         'target' => '/packages',
         'read_only' => false,
     ]);
+});
+
+it('uses the selected app instance node for workspace runtime node-local mounts', function (): void {
+    $canonicalNode = createTestAppHostNode([
+        'name' => 'beast',
+        'platform' => 'ubuntu_24-04',
+        'user' => 'nckrtl',
+    ]);
+    $instanceNode = createTestAppHostNode(
+        attributes: [
+            'name' => 'NMBP',
+            'platform' => 'macos_26-5-1',
+            'user' => 'nckrtl',
+        ],
+        settings: ['tld' => 'nmbp'],
+    );
+    $app = makeWorkspaceRendererApp($canonicalNode, [
+        'name' => 'happie',
+        'path' => '/home/nckrtl/apps/happie',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $instanceNode->id,
+            node: 'NMBP',
+            path: '/Users/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: 'happie.nmbp',
+        ),
+    ]);
+    assert($instance instanceof AppInstance);
+
+    $workspace = makeWorkspaceRendererWorkspace($app, [
+        'app_instance_id' => $instance->id,
+        'name' => 'recipes',
+        'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        'php_version' => null,
+    ]);
+
+    $mounts = workspaceRendererForTest()->render($workspace)->mounts();
+
+    expect($mounts)
+        ->toContain([
+            'source' => '/Users/nckrtl/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ])
+        ->toContain([
+            'source' => '/Users/nckrtl/.config/orbit/ca/root.crt',
+            'target' => '/etc/orbit/ca/root.crt',
+            'read_only' => true,
+        ]);
+
+    expect(in_array(
+        [
+            'source' => '/home/nckrtl/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ],
+        $mounts,
+        strict: true,
+    ))
+        ->toBeFalse()
+        ->and(in_array(
+            [
+                'source' => '/home/nckrtl/.config/orbit/ca/root.crt',
+                'target' => '/etc/orbit/ca/root.crt',
+                'read_only' => true,
+            ],
+            $mounts,
+            strict: true,
+        ))
+        ->toBeFalse();
 });
 
 it('inherits configured app runtime mounts from the parent app', function (): void {
@@ -273,7 +351,10 @@ it('changes the spec hash when configured parent app runtime mounts change', fun
 
     $withoutConfiguredMount = $renderer->render($workspace)->specHash();
     $app = $workspace->app;
-    assert($app instanceof App);
+    assert(
+        $app instanceof App,
+        description: 'Workspace must keep its parent app relation for configured mount hash coverage.',
+    );
 
     $app->runtimeMounts()->create([
         'source' => '/home/orbit/packages',

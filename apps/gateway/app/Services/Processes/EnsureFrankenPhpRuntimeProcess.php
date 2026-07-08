@@ -12,6 +12,7 @@ use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use InvalidArgumentException;
@@ -23,6 +24,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
     public function __construct(
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private WorkspaceRuntimeContainerRenderer $workspaceRuntimeContainerRenderer,
+        private WorkspacePlacement $placement,
     ) {}
 
     public function forApp(App $app): Process
@@ -64,11 +66,12 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         }
 
         $container = $this->workspaceRuntimeContainerRenderer->render($workspace);
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         return $workspace->processes()->updateOrCreate(
             ['name' => $this->workspaceProcessName($workspace)],
             [
-                'node_id' => $app->node_id,
+                'node_id' => $node?->id ?? $app->node_id,
                 'command' => self::Command,
                 'restart_policy' => ProcessRestartPolicy::Always,
                 'crash_notification' => ProcessCrashNotification::None,
@@ -78,7 +81,7 @@ final readonly class EnsureFrankenPhpRuntimeProcess
                     'container_name' => $container->name(),
                     'container_spec_hash' => $container->specHash(),
                     'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
-                    'document_root' => $app->document_root,
+                    'document_root' => $this->placement->documentRootForWorkspace($workspace),
                     'php_ini_path' => $this->workspaceRuntimeContainerRenderer->phpIniHostPath($workspace),
                     'php_version' => $workspace->effectivePhpVersion(),
                     'source_path' => $workspace->path,

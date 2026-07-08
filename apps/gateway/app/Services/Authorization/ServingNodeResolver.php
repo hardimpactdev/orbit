@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Authorization;
 
+use App\Data\Apps\AppSelection;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\ServingNode;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Runtime\OrbitHostCwdContext;
 use App\Services\Runtime\OrbitHostCwdResolver;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 
@@ -56,10 +60,10 @@ final class ServingNodeResolver
     private function resolveAppOwning(Request $request): ?Node
     {
         foreach (['app'] as $parameter) {
-            $app = $this->appFromValue($this->requestValue($request, $parameter));
+            $node = $this->appNodeFromValue($this->requestValue($request, $parameter));
 
-            if ($app instanceof OrbitApp) {
-                return $app->node;
+            if ($node instanceof Node) {
+                return $node;
             }
         }
 
@@ -93,14 +97,30 @@ final class ServingNodeResolver
 
     private function resolveWorkspaceOwning(Request $request): ?Node
     {
+        $selection = $this->appSelectionFromValue($this->requestValue($request, 'app'));
+
         foreach (['workspace', 'name'] as $parameter) {
             $workspace = $this->workspaceFromValue(
                 value: $this->requestValue($request, $parameter),
-                app: $this->appFromValue($this->requestValue($request, 'app')),
+                app: $selection?->app ?? $this->appFromValue($this->requestValue($request, 'app')),
             );
 
             if ($workspace instanceof Workspace) {
-                return $workspace->app?->node;
+                if (
+                    $selection instanceof AppSelection
+                    && $selection->instance !== null
+                    && $workspace->app_instance_id === null
+                    && $workspace->app_id === $selection->app->id
+                ) {
+                    return app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
+                }
+
+                if (
+                    ! $selection instanceof AppSelection
+                    || app(AppSelectorResolver::class)->matchesWorkspace($workspace, $selection)
+                ) {
+                    return $this->workspaceNode($workspace);
+                }
             }
         }
 
@@ -108,7 +128,7 @@ final class ServingNodeResolver
             $workspace = $this->workspaceFromPath($this->requestValue($request, $parameter));
 
             if ($workspace instanceof Workspace) {
-                return $workspace->app?->node;
+                return $this->workspaceNode($workspace);
             }
         }
 
@@ -162,6 +182,12 @@ final class ServingNodeResolver
 
     private function appFromValue(mixed $value): ?OrbitApp
     {
+        $selection = $this->appSelectionFromValue($value);
+
+        if ($selection !== null) {
+            return $selection->app;
+        }
+
         if ($value instanceof OrbitApp) {
             $value->loadMissing('node');
 
@@ -201,6 +227,38 @@ final class ServingNodeResolver
             ->with('node')
             ->get()
             ->first(fn (OrbitApp $app): bool => $app->url() === "https://{$value}" || $app->url() === $value);
+    }
+
+    private function appNodeFromValue(mixed $value): ?Node
+    {
+        $selection = $this->appSelectionFromValue($value);
+
+        if ($selection !== null) {
+            if ($selection->instance !== null) {
+                $node = app(WorkspacePlacement::class)->nodeForInstance($selection->instance);
+
+                if ($node instanceof Node) {
+                    return $node;
+                }
+            }
+
+            return $selection->app->node;
+        }
+
+        return $this->appFromValue($value)?->node;
+    }
+
+    private function appSelectionFromValue(mixed $value): ?AppSelection
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return app(AppSelectorResolver::class)->resolve($value);
+        } catch (AppSelectionResolutionFailed) {
+            return null;
+        }
     }
 
     private function processFromValue(mixed $value, ?OrbitApp $app = null): ?OrbitProcess
@@ -258,7 +316,7 @@ final class ServingNodeResolver
         }
 
         $query = Workspace::query()
-            ->with('app.node')
+            ->with(['app.node', 'app.instances', 'appInstance'])
             ->when($app instanceof OrbitApp, fn ($query) => $query->where('app_id', $app?->id))
             ->when(
                 is_int($value) || ctype_digit($value),
@@ -273,6 +331,11 @@ final class ServingNodeResolver
         }
 
         return $matches->first();
+    }
+
+    private function workspaceNode(Workspace $workspace): ?Node
+    {
+        return app(WorkspacePlacement::class)->nodeForWorkspace($workspace);
     }
 
     private function workspaceFromPath(mixed $value): ?Workspace

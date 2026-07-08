@@ -314,6 +314,7 @@ final class SetupWorkspaceProgressPlan
     /**
      * @return array{
      *     app: string,
+     *     app_instance: string|null,
      *     workspace: string,
      *     node: string,
      *     path: string,
@@ -327,8 +328,11 @@ final class SetupWorkspaceProgressPlan
      */
     public function result(): array
     {
+        $this->workspace->loadMissing('appInstance');
+
         return [
             'app' => $this->app->name,
+            'app_instance' => $this->workspace->appInstance?->name,
             'workspace' => $this->workspace->name,
             'node' => $this->node->name,
             'path' => $this->workspace->path,

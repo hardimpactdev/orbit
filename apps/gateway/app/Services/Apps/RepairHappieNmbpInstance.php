@@ -427,7 +427,10 @@ final class RepairHappieNmbpInstance
 
         Workspace::query()
             ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+            ->update([
+                'app_id' => $canonicalAppId,
+                'app_instance_id' => $canonicalInstance->id,
+            ]);
 
         WorkspaceStep::query()
             ->where('app_id', $workaroundAppId)

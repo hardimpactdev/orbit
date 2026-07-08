@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
@@ -42,6 +45,47 @@ function grantWorkspaceStepListAccess(Node $caller, Node $appNode): void
 }
 
 describe('WorkspaceStepListController', function (): void {
+    it('resolves app-instance selectors for app-level step policy on the selected node', function (): void {
+        $caller = createWorkspaceStepListCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepListAccess($caller, $localNode);
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                path: '/Users/nckrtl/apps/happie',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'phase' => WorkspaceLifecyclePhase::Setup,
+            'command' => 'composer install',
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/steps/setup?app=happie.nmbp',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.steps.0.app', 'happie')
+            ->assertJsonPath('success.data.steps.0.command', 'composer install');
+    });
+
     it('returns visible setup steps sorted by order', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $node = createTestAppHostNode();

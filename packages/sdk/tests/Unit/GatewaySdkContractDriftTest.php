@@ -6,6 +6,7 @@ namespace Orbit\Sdk\Laravel\Tests\Unit;
 
 use Orbit\Sdk\Laravel\GatewayRequest;
 use Orbit\Sdk\Laravel\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Laravel\Requests\Dashboard\ShowRuntimeInventoryRequest;
 use Orbit\Sdk\Laravel\Requests\Database\DetachDatabaseConnectionTargetRequest;
 use Orbit\Sdk\Laravel\Requests\Database\ListDatabaseConnectionsRequest;
 use Orbit\Sdk\Laravel\Requests\Deploy\ListDeployHistoryRequest;
@@ -93,6 +94,15 @@ function core_dashboard_request_contracts(): array
             'endpoint' => '/api/database-connections/main/targets',
             'query' => [],
             'body' => ['target_type' => 'app', 'target' => 'docs', 'env_prefix' => 'APP_DB'],
+        ],
+        [
+            'name' => 'GET /dashboard/runtime-inventory',
+            'request' => ShowRuntimeInventoryRequest::class,
+            'arguments' => [],
+            'method' => Method::GET,
+            'endpoint' => '/api/dashboard/runtime-inventory',
+            'query' => [],
+            'body' => [],
         ],
         [
             'name' => 'GET /deploy/history',

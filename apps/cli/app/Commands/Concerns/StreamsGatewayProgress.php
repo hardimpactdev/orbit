@@ -6,7 +6,8 @@ namespace App\Commands\Concerns;
 
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
-use App\Services\GatewayStreamClient;
+use App\Services\GatewayProgressStreamClient;
+use App\Services\NodeTransportAwareGatewayStreamClient;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\StreamedStepTree;
@@ -25,6 +26,8 @@ use Orbit\Core\Progress\StreamedStepTree;
 trait StreamsGatewayProgress
 {
     private ?StreamedStepTree $progressTree = null;
+
+    abstract protected function nodeTransportPreference(): ?string;
 
     /**
      * Stream progress events from the gateway path.
@@ -253,11 +256,11 @@ trait StreamsGatewayProgress
         return $this->renderSuccess($data);
     }
 
-    private function gatewayStreamClient(): mixed
+    private function gatewayStreamClient(): GatewayProgressStreamClient
     {
-        $client = app(GatewayStreamClient::class);
+        $client = app(GatewayProgressStreamClient::class);
 
-        if (! method_exists($client, 'withNodeTransportPreference')) {
+        if (! $client instanceof NodeTransportAwareGatewayStreamClient) {
             return $client;
         }
 

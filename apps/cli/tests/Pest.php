@@ -225,10 +225,13 @@ final class FakeGatewayStreamHttpClient implements ClientInterface
     public function recordPendingRequest(GatewayPendingRequest $request): ResponseInterface
     {
         $headers = [];
-        $accept = $request->header('Accept');
 
-        if (is_string($accept)) {
-            $headers['Accept'] = $accept;
+        foreach (['Accept', 'X-Orbit-Node-Transport-Preference'] as $header) {
+            $value = $request->header($header);
+
+            if (is_string($value)) {
+                $headers[$header] = $value;
+            }
         }
 
         $this->requests[] = [

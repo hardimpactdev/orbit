@@ -14,8 +14,9 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:setup
         {name? : Workspace name}
-        {--app= : Parent app name}
+        {--app= : Parent app name or app.instance selector}
         {--path= : Explicit workspace path to adopt}
+        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 

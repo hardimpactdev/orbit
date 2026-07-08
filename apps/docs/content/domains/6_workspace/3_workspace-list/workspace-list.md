@@ -14,7 +14,7 @@ output stays a fast registry read.
 ## Usage
 
 ```bash
-orbit workspace:list [--app=<slug>] [--node=<slug>] [--json]
+orbit workspace:list [--app=<app>] [--node=<slug>] [--json]
 ```
 
 ## Examples
@@ -22,6 +22,7 @@ orbit workspace:list [--app=<slug>] [--node=<slug>] [--json]
 ```bash
 orbit workspace:list
 orbit workspace:list --app=docs
+orbit workspace:list --app=happie.nmbp
 orbit workspace:list --node=app-1
 orbit workspace:list --app=docs --node=app-1
 orbit workspace:list --json
@@ -29,7 +30,8 @@ orbit workspace:list --json
 
 ## Arguments and options
 
-- `--app`: filter by parent app slug.
+- `--app`: filter by parent app slug or app-instance selector. Use dot
+  notation such as `happie.nmbp` to target one concrete app instance.
 - `--node`: filter by owning node slug.
 - `--json`: Output JSON.
 
@@ -46,9 +48,11 @@ requested filters:
 1. Connects to the gateway API.
 2. Reads workspace registry configuration scoped to what the caller is
    authorized to see.
-3. Filters by app or node when options are supplied (combined with AND).
-4. Returns a list of workspaces with their names, parent apps, host nodes,
-   canonical URLs, and registry lifecycle statuses.
+3. Filters by app, app instance, or node when options are supplied (combined
+   with AND).
+4. Returns a list of workspaces with their names, parent apps, selected app
+   instances when present, effective host nodes, canonical URLs, and registry
+   lifecycle statuses.
 
 `workspace:list` does not:
 - SSH into nodes.

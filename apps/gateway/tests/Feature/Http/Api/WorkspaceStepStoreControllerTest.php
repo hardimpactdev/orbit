@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,6 +44,52 @@ function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode): void
 }
 
 describe('WorkspaceStepStoreController', function (): void {
+    it('creates app-level step policy through an app-instance selector on the selected node', function (): void {
+        $caller = createWorkspaceStepStoreCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepStoreAccess($caller, $localNode);
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                path: '/Users/nckrtl/apps/happie',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'app' => 'happie.nmbp',
+                'command' => 'composer install',
+                'timeout' => 600,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.result.action', 'added')
+            ->assertJsonPath('success.data.step.app', 'happie');
+
+        expect(WorkspaceStep::query()->where('app_id', $app->id)->count())->toBe(1);
+    });
+
     it('creates a workspace step for authorized callers', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode();

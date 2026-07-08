@@ -23,7 +23,7 @@ gateway-owned workspace configuration and its derived node artifacts.
 ## Signature
 
 ```bash
-orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -34,16 +34,18 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | When CWD is not inside a registered workspace path. | Never. | None. | Workspace name or slug. Must resolve to exactly one gateway workspace record (with `--app` for cross-app disambiguation). |
-| `app` | `--app=<app>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug. Used to disambiguate the workspace lookup. |
+| `app` | `--app=<app>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug or app-instance selector. Dot notation such as `happie.nmbp` selects one concrete app instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
+| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
 ## Input Resolution
 
 1. **Target Resolution:**
    - If `name` is provided, resolve it against the gateway workspace registry,
-     using `--app` to disambiguate when necessary.
+     using `--app` to disambiguate when necessary. App-instance selectors must
+     match the resolved workspace's selected app instance.
    - If `name` is omitted, inspect the current working directory (CWD). If CWD
      is inside a registered workspace path, use that workspace's name and app.
      If CWD is not inside any registered workspace, fail before side effects
@@ -74,7 +76,8 @@ residue afterwards is non-fatal drift.
 ### 1. Pre-flight
 
 - Resolve target workspace per [Input Resolution](#input-resolution).
-- Check authorization for the resolved workspace (or its parent app).
+- Check authorization for the resolved workspace on its effective workspace
+  node (or its parent app).
 - If self-targeting (caller is inside the resolved workspace's worktree), warn
   the operator that their shell's working directory will be invalidated unless
   `--keep-files` is also set.
@@ -90,10 +93,11 @@ residue afterwards is non-fatal drift.
 
 ### 3. Execution Sequence
 
-The execution sequence has two phases. Phase A is the atomic
-gateway-configuration removal (the point of no return). Phase B is node-side
-application over SSH and its sub-order is dictated by traffic, dependency,
-and lifecycle safety.
+The execution sequence has two phases. Instance-bound workspaces execute Phase B
+on the selected app instance node; app-only legacy workspaces use the parent
+app's canonical node. Phase A is the atomic gateway-configuration removal (the
+point of no return). Phase B is node-side application over SSH and its sub-order
+is dictated by traffic, dependency, and lifecycle safety.
 
 #### Phase A — Gateway configuration (atomic, point of no return)
 

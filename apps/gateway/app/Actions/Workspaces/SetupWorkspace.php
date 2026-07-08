@@ -19,6 +19,7 @@ use App\Services\Apps\LaravelViteDevServerEnvironment;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceRuntimeContainerApplyException;
@@ -42,16 +43,18 @@ final readonly class SetupWorkspace
         private WorkspaceRoleGuard $roleGuard,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private LaravelViteDevServerEnvironment $vite,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
      * @return array{
      *     app: string,
+     *     app_instance: string|null,
      *     workspace: string,
      *     node: string,
      *     url: string,
      *     action: 'set_up'|'adopted'|'converged',
-     *     warnings: list<array<string, string>>,
+     *     warnings: list<array<string, string>|array{code: string, family: string, message: string, next_command: string}>,
      *     setup_steps: array{status: string, count: int, message: string},
      *     processes: array{status: string, count: int, names: list<string>},
      *     http_probe: array{reachable: bool, status: string},
@@ -62,7 +65,7 @@ final readonly class SetupWorkspace
         $workspace->loadMissing('app');
         $app->loadMissing('node');
         try {
-            $this->roleGuard->ensureAppSupportsWorkspaces($app);
+            $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
         } catch (WorkspaceUnsupportedForProduction $exception) {
             throw new RuntimeException($exception->getMessage(), previous: $exception);
         }
@@ -119,8 +122,11 @@ final readonly class SetupWorkspace
             $action = 'set_up';
         }
 
+        $workspace->loadMissing('appInstance');
+
         return [
             'app' => $app->name,
+            'app_instance' => $workspace->appInstance?->name,
             'workspace' => $workspace->name,
             'node' => $node->name,
             'url' => $workspace->url(),
@@ -253,7 +259,6 @@ final readonly class SetupWorkspace
 
         $env = $this->workspaceEnv($app, $workspace, $node);
         $renderedSteps = $this->renderSteps($steps->all(), $workspace->name);
-        $containerName = $this->workspaceContainerName($workspace);
 
         $success = $this->stepRunner->run(
             $run,
@@ -261,7 +266,7 @@ final readonly class SetupWorkspace
             $workspace->path,
             $env,
             $node,
-            $containerName,
+            $app,
             $onStepProgress,
         );
 
@@ -405,18 +410,6 @@ final readonly class SetupWorkspace
         return hash('sha256', json_encode($data));
     }
 
-    private function workspaceContainerName(Workspace $workspace): ?string
-    {
-        $workspace->loadMissing('app');
-        $app = $workspace->app;
-
-        if ($app === null || $app->runtimeKind() !== AppRuntimeKind::Php) {
-            return null;
-        }
-
-        return $this->runtimeContainerRenderer->containerName($workspace);
-    }
-
     /**
      * @return array<string, string>
      */
@@ -425,7 +418,7 @@ final readonly class SetupWorkspace
         return (
             [
                 'ORBIT_APP' => $app->name,
-                'ORBIT_APP_PATH' => $app->path,
+                'ORBIT_APP_PATH' => $this->placement->appPathForWorkspace($workspace) ?? $app->path,
                 'ORBIT_WORKSPACE_NAME' => $workspace->name,
                 'ORBIT_WORKSPACE_PATH' => $workspace->path,
                 'ORBIT_URL' => $workspace->url(),

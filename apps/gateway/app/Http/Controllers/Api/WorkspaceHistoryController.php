@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Workspaces\WorkspaceHistoryPayload;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,6 +35,8 @@ final readonly class WorkspaceHistoryController implements Loggable
     public function __construct(
         private NodeRoleAssignments $nodeRoleAssignments,
         private NodeAccessAuthorizer $authorizer,
+        private AppSelectorResolver $appSelectorResolver,
+        private WorkspacePlacement $placement,
     ) {}
 
     public function __invoke(string $name, Request $request, WorkspaceHistoryPayload $payload): JsonResponse
@@ -68,7 +75,26 @@ final readonly class WorkspaceHistoryController implements Loggable
         }
 
         $app = $this->stringQuery($request, 'app');
+        $selection = null;
         $visibleNodeIds = $this->visibleAppNodeIds($caller);
+
+        if ($app !== null) {
+            try {
+                $selection = $this->appSelectorResolver->resolveRequired($app);
+            } catch (AppSelectionResolutionFailed) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'workspace.not_found',
+                        'message' => $path !== null
+                            ? "Workspace for path '{$path}' not found or not visible."
+                            : "Workspace not found: {$name}",
+                        'meta' => $path !== null
+                            ? ['path' => $path]
+                            : ['name' => $name],
+                    ],
+                ], 404);
+            }
+        }
 
         if (! $this->callerIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read workspace history.', [
@@ -80,8 +106,8 @@ final readonly class WorkspaceHistoryController implements Loggable
         }
 
         $workspace = $path !== null
-            ? $this->matchingWorkspacePath($caller, $visibleNodeIds, $path)
-            : $this->matchingWorkspaceByName($caller, $visibleNodeIds, (string) $name, $app);
+            ? $this->matchingWorkspacePath($caller, $visibleNodeIds, $path, $selection)
+            : $this->matchingWorkspaceByName($caller, $visibleNodeIds, (string) $name, $selection);
 
         if ($workspace instanceof JsonResponse) {
             return $workspace;
@@ -225,63 +251,93 @@ final readonly class WorkspaceHistoryController implements Loggable
         Node $caller,
         array $visibleNodeIds,
         string $name,
-        ?string $app,
+        ?AppSelection $selection,
     ): Workspace|JsonResponse|null {
-        $matches = Workspace::query()
-            ->with(['app.node'])
+        /** @var Collection<int, Workspace> $workspaces */
+        $workspaces = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('name', $name)
-            ->when(
-                ! $this->callerIsGateway($caller),
-                fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
-                    'node_id',
-                    $visibleNodeIds,
-                )),
-            )
-            ->when($app
-            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
-                'name',
-                $app,
-            )))
+            ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
+                'app_id',
+                $selection?->app->id,
+            ))
             ->get();
 
-        if ($app === null && $matches->count() > 1) {
+        /** @var Collection<int, Workspace> $matches */
+        $matches = $workspaces
+            ->filter(function (Workspace $workspace, int $key) use ($caller, $visibleNodeIds, $selection): bool {
+                $node = $this->placement->nodeForWorkspace($workspace);
+
+                if (! $node instanceof Node) {
+                    return false;
+                }
+
+                if (! $this->callerIsGateway($caller) && ! in_array($node->id, $visibleNodeIds, true)) {
+                    return false;
+                }
+
+                return ! $selection instanceof AppSelection
+                || $this->appSelectorResolver->matchesWorkspace($workspace, $selection);
+            })
+            ->values();
+
+        if (! $selection instanceof AppSelection && $matches->count() > 1) {
             return response()->json([
                 'error' => [
                     'code' => 'workspace.ambiguous_name',
                     'message' => "Ambiguous workspace: {$name}. Specify --app.",
                     'meta' => [
                         'name' => $name,
-                        'apps' => $matches
-                            ->map(fn (Workspace $workspace): ?string => $workspace->app?->name)
-                            ->filter()
-                            ->values()
-                            ->all(),
+                        'apps' => array_values(array_filter(array_map(
+                            fn (Workspace $workspace): ?string => $workspace->app?->name,
+                            $matches->all(),
+                        ))),
                     ],
                 ],
             ], 400);
         }
 
-        return $matches->first();
+        $workspace = $matches->first();
+
+        return $workspace instanceof Workspace ? $workspace : null;
     }
 
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function matchingWorkspacePath(Node $caller, array $visibleNodeIds, string $path): ?Workspace
-    {
+    private function matchingWorkspacePath(
+        Node $caller,
+        array $visibleNodeIds,
+        string $path,
+        ?AppSelection $selection,
+    ): ?Workspace {
         $normalizedPath = rtrim($path, '/');
 
         return Workspace::query()
-            ->with(['app.node'])
-            ->when(
-                ! $this->callerIsGateway($caller),
-                fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
-                    'node_id',
-                    $visibleNodeIds,
-                )),
-            )
+            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
+                'app_id',
+                $selection?->app->id,
+            ))
             ->get()
-            ->first(function (Workspace $workspace) use ($normalizedPath): bool {
+            ->first(function (Workspace $workspace) use ($caller, $visibleNodeIds, $normalizedPath, $selection): bool {
+                $node = $this->placement->nodeForWorkspace($workspace);
+
+                if (! $node instanceof Node) {
+                    return false;
+                }
+
+                if (! $this->callerIsGateway($caller) && ! in_array($node->id, $visibleNodeIds, true)) {
+                    return false;
+                }
+
+                if (
+                    $selection instanceof AppSelection
+                    && ! $this->appSelectorResolver->matchesWorkspace($workspace, $selection)
+                ) {
+                    return false;
+                }
+
                 $workspacePath = rtrim($workspace->path, '/');
 
                 return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
@@ -302,14 +358,14 @@ final readonly class WorkspaceHistoryController implements Loggable
 
     private function canReadHistory(Node $caller, Workspace $workspace): bool
     {
-        $node = $workspace->app?->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         return $node instanceof Node && $this->authorizer->allows($caller, $node, 'workspace:history');
     }
 
     private function workspaceHistoryForbidden(Workspace $workspace): JsonResponse
     {
-        $node = $workspace->app?->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         return $this->authorizationFailed(
             $node instanceof Node

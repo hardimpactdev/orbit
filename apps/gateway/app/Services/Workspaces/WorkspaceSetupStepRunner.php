@@ -5,18 +5,27 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
+use App\Services\Apps\AppCommandRouter;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 
 final readonly class WorkspaceSetupStepRunner
 {
+    private WorkspaceSetupStepLocalExecutor $setupStepLocalExecutor;
+
     public function __construct(
         private RemoteShell $remoteShell,
-    ) {}
+        ?RemoteLocalExecutor $localExecutor = null,
+        private AppCommandRouter $commandRouter = new AppCommandRouter,
+        private ExplicitRemoteShellFallback $transport = new ExplicitRemoteShellFallback,
+    ) {
+        $this->setupStepLocalExecutor = new WorkspaceSetupStepLocalExecutor($localExecutor);
+    }
 
     /**
      * @param  list<WorkspaceStep>  $steps
@@ -29,7 +38,7 @@ final readonly class WorkspaceSetupStepRunner
         string $path,
         array $env,
         Node $node,
-        ?string $containerName = null,
+        ?App $app = null,
         ?callable $onProgress = null,
     ): bool {
         $run->update(['status' => 'running']);
@@ -47,23 +56,22 @@ final readonly class WorkspaceSetupStepRunner
                 $onProgress('running', $step, $index + 1, $stepCount);
             }
 
-            $isContainerized = $containerName !== null && $this->isPhpCommand($step->command);
-            $command = $isContainerized
-                ? $this->containerCommand($step->command, $containerName, $env)
+            $command = $app instanceof App
+                ? $this->commandRouter->routeLifecycleForPath($app, $step->command, $path, $env)
                 : $step->command;
 
-            $transport = app(ExplicitRemoteShellFallback::class);
-            $result = $transport->allowed()
+            $result = $this->transport->allowed()
                 ? $this->remoteShell->run($node, $command, $this->remoteShellOptions(
-                    cwd: $isContainerized ? null : $path,
+                    cwd: $path,
                     timeout: $step->timeoutSeconds(),
                     metadata: $env,
                 ))
-                : new RemoteShellResult(
-                    exitCode: 1,
-                    stdout: '',
-                    stderr: $transport->message('workspace:setup-step'),
-                    durationMs: 0,
+                : $this->setupStepLocalExecutor->run(
+                    node: $node,
+                    command: $command,
+                    cwd: $path,
+                    timeout: $step->timeoutSeconds(),
+                    environment: $env,
                 );
 
             $runStep->update([
@@ -108,32 +116,5 @@ final readonly class WorkspaceSetupStepRunner
         }
 
         return $options;
-    }
-
-    private function isPhpCommand(string $command): bool
-    {
-        $trimmed = ltrim($command);
-
-        return str_starts_with($trimmed, 'php ') || str_starts_with($trimmed, 'composer ');
-    }
-
-    /**
-     * @param  array<string, string>  $env
-     */
-    private function containerCommand(string $command, string $containerName, array $env): string
-    {
-        $parts = ['docker', 'exec', '-w', '/app'];
-
-        foreach ($env as $key => $value) {
-            $parts[] = '-e';
-            $parts[] = "{$key}={$value}";
-        }
-
-        $parts[] = $containerName;
-        $parts[] = 'bash';
-        $parts[] = '-c';
-        $parts[] = $command;
-
-        return implode(' ', array_map(escapeshellarg(...), $parts));
     }
 }

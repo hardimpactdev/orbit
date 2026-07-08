@@ -31,6 +31,7 @@ final readonly class EnsureWorkspaceProxyRoute
         private IngressResolver $ingressResolver,
         private ProxyRouteRenderer $proxyRouteRenderer,
         private OrbitCaService $ca,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?CaddyContainerHostPathResolver $caddyHostPathResolver = null,
     ) {}
@@ -40,7 +41,7 @@ final readonly class EnsureWorkspaceProxyRoute
      */
     public function handle(Workspace $workspace): array
     {
-        $workspace->loadMissing(['app', 'app.node']);
+        $workspace->loadMissing(['app', 'app.node', 'app.instances', 'appInstance']);
 
         $app = $workspace->app;
 
@@ -48,13 +49,13 @@ final readonly class EnsureWorkspaceProxyRoute
             throw new RuntimeException("Workspace '{$workspace->name}' has no parent app.");
         }
 
-        $node = $app->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");
         }
 
-        $domain = $this->domain($workspace, $app, $node);
+        $domain = $this->domain($workspace);
         [$servingNode, $config, $content] = $this->routeArtifact($workspace, $app, $node, $domain);
 
         ProxyRoute::query()->updateOrCreate(
@@ -267,24 +268,14 @@ final readonly class EnsureWorkspaceProxyRoute
         return $this->caddyHostPathResolver ?? app(CaddyContainerHostPathResolver::class);
     }
 
-    private function domain(Workspace $workspace, App $app, Node $node): string
+    private function domain(Workspace $workspace): string
     {
-        if ($app->environment === 'production' && is_string($app->domain) && $app->domain !== '') {
-            return "{$workspace->name}.{$app->domain}";
-        }
-
-        $tld = is_string($node->tld) ? trim($node->tld, '.') : '';
-
-        if ($tld === '') {
-            return "{$workspace->name}.{$app->name}";
-        }
-
-        return "{$workspace->name}.{$app->name}.{$tld}";
+        return $this->placement->workspaceDomain($workspace);
     }
 
     private function documentRoot(Workspace $workspace, App $app): string
     {
-        $root = trim($app->document_root, '/');
+        $root = trim($this->placement->documentRootForWorkspace($workspace), '/');
 
         if ($root === '') {
             return rtrim($workspace->path, '/');

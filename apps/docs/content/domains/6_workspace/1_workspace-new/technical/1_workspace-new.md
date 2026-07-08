@@ -6,8 +6,9 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The current node identity is authorized to manage the parent app.
-- The gateway can reach the parent app's owning node over SSH.
+- The current node identity is authorized to manage the parent app or selected
+  app instance node.
+- The gateway can reach the effective workspace node over SSH.
 
 [Back to the public command page.](../workspace-new.md)
 
@@ -25,7 +26,7 @@ This command follows the shared
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `name` | `text` | Always (can be prompted). | n/a | Workspace identity slug; `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`; maximum 63 characters. Reserved name `main` is rejected. Must not collide with an existing workspace under the same parent app. |
-| `--app` | `text` | No local context or default. | CWD-inferred parent app | Valid parent app slug. |
+| `--app` | `text` | No local context or default. | CWD-inferred parent app or app instance. | Valid parent app slug or app-instance selector. Dot notation such as `happie.nmbp` selects one concrete app instance. |
 | `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
 | `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
@@ -42,7 +43,8 @@ for this default.
 ### Input Resolution
 
 1. **Resolve Parent App (`--app`):**
-   - Explicit `--app=<slug>`.
+   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
+     app-instance selector such as `happie.nmbp`.
    - **CWD inference (gateway-authoritative):** if `--app` is missing, Orbit
      resolves the parent app from gateway-tracked metadata, not from project
      file inspection:
@@ -51,9 +53,10 @@ for this default.
        identifying the owning app slug;
      - **gateway path lookup** keyed on (caller node identity, absolute
        cwd): the gateway returns the app slug whose registered app path or
-       any registered workspace path contains the caller's cwd. Both an
-       app's main path and an existing workspace path under that app
-       resolve to the parent app identity.
+       any registered app instance or workspace path contains the caller's
+       cwd. An app's main path resolves to the parent app identity; an app
+       instance path or instance-bound workspace path resolves to the concrete
+       app instance.
    - Orbit must not read `composer.json`, `package.json`, `.php-version`,
      or any other project file content during `workspace:new` to infer the
      parent app. Project-file inspection is reserved for
@@ -76,7 +79,9 @@ for this default.
      before writing them.
    - Per-app uniqueness: the workspace name must not already exist for the
      resolved parent app. Workspace identity is unique within an app, not
-     globally — unlike the `app` slug, which is globally unique.
+     globally - unlike the `app` slug, which is globally unique. App-instance
+     selectors choose placement and URL context; they do not create a separate
+     namespace for duplicate workspace names under the same parent app.
 4. **Resolve PHP Version (`--php-version`):** If supplied, validate against
    Orbit's supported PHP version set with
    `error.code=validation_failed`/`error.meta.field=php_version` before any
@@ -100,11 +105,11 @@ register an existing path use
 `doctor --family=workspace --adopt` instead. The command performs:
 
 1. **Workspace Source Provisioning:** Resolve the parent app's effective
-   agent IDE adapter from app -> node -> default, then create the source
-   through the selected source driver.
-   - With no effective adapter, create a generic Git worktree on the parent
-     node at `<app path>/.worktrees/<name>` by creating branch `<name>`
-     from the requested `--base` ref.
+   agent IDE adapter from app -> selected node -> default, then create the
+   source through the selected source driver.
+   - With no effective adapter, create a generic Git worktree on the effective
+     workspace node at `<selected app path>/.worktrees/<name>` by creating
+     branch `<name>` from the requested `--base` ref.
    - With effective adapter `opencode`, resolve the parent OpenCode project
      through the OpenCode API, ask OpenCode to create a UI-visible workspace,
      align the returned workspace worktree to branch `<name>` from the
@@ -117,9 +122,10 @@ register an existing path use
    - Any effective adapter without a dedicated workspace source driver fails
      before side effects with `error.code=workspace.agent_ide_driver_missing`.
 2. **Identity Write (Gateway):** Create the `Workspace` row on the gateway with
-   the source-driver-returned `name` and physical `path`, `app_id`, derived
-   hostname, `php_version` (or `null` for inheritance), adapter metadata, and
-   lifecycle fields. For OpenCode, store `agent_ide=opencode` and the
+   the source-driver-returned `name` and physical `path`, `app_id`,
+   `app_instance_id` when one was selected, derived hostname, `php_version` (or
+   `null` for inheritance), adapter metadata, and lifecycle fields. For
+   OpenCode, store `agent_ide=opencode` and the
    best-effort session id in `agent_ide_workspace_id` when OpenCode returns
    one. For PolyScope, store `agent_ide=polyscope` and the PolyScope workspace
    id in `agent_ide_workspace_id`; generic worktrees store both values as

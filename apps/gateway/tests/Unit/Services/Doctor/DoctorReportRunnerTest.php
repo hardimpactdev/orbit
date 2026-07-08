@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
@@ -11,6 +12,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
@@ -1848,7 +1850,12 @@ describe('DoctorReportRunner', function (): void {
             ->and($report['healthy'])
             ->toBeTrue()
             ->and(collect($shell->scripts)
-                ->contains(fn (string $script): bool => doctor_runner_script_applies_app_runtime_container($script)))
+                ->contains(
+                    fn (string $script): bool => doctor_runner_script_creates_runtime_container(
+                        $script,
+                        'orbit-app-docs',
+                    ),
+                ))
             ->toBeTrue()
             ->and(
                 App::query()
@@ -2084,9 +2091,103 @@ describe('DoctorReportRunner', function (): void {
             ->and(
                 collect($shell->scripts)
                     ->contains(
-                        fn (string $script): bool => doctor_runner_script_applies_app_runtime_container($script),
+                        fn (string $script): bool => doctor_runner_script_creates_runtime_container(
+                            $script,
+                            'orbit-ws-docs-feature-a',
+                        ),
                     ),
             )
+            ->toBeTrue();
+    });
+
+    it('restores missing PHP workspace runtime containers on the selected app instance node', function (): void {
+        $canonicalNode = createDoctorRunnerAppHostNode([
+            'name' => 'beast',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $instanceNode = createDoctorRunnerAppHostNode([
+            'name' => 'NMBP',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+        ]);
+        $app = App::factory()->for($canonicalNode, 'node')->create([
+            'name' => 'happie',
+            'path' => '/home/nckrtl/apps/happie',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $instanceNode->id,
+                node: 'NMBP',
+                path: '/Users/nckrtl/apps/happie',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create([
+            'app_instance_id' => $instance->id,
+            'name' => 'recipes',
+            'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
+            'php_version' => '8.5',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "recipes\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 1,
+                stdout: '',
+                stderr: 'Error: No such container: orbit-ws-happie-recipes',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'orbit-ws-happie-recipes', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+        app()->instance(\App\Services\Ca\OrbitCaService::class, doctor_runner_fake_ca());
+
+        doctor_runner_expect_app_runtime_outcomes('created');
+
+        $report = app(DoctorReportRunner::class)->run($instanceNode, mode: 'restore', families: ['workspace']);
+        $action = collect($report['actions'])->first();
+
+        expect($report['healthy'])
+            ->toBeTrue()
+            ->and($action)
+            ->toMatchArray([
+                'family' => 'workspace',
+                'node' => 'NMBP',
+                'key' => 'workspace.runtime_container_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'app' => 'happie',
+                    'workspace' => 'recipes',
+                    'container' => 'orbit-ws-happie-recipes',
+                    'outcome' => 'created',
+                ],
+            ])
+            ->and($workspace->processes()->where('name', 'frankenphp-happie-recipes')->exists())
+            ->toBeTrue();
+
+        expect($shell->nodeNames)->each->toBe('NMBP');
+
+        expect(
+            collect($shell->scripts)
+                ->contains(
+                    fn (string $script): bool => doctor_runner_script_creates_runtime_container(
+                        $script,
+                        'orbit-ws-happie-recipes',
+                    ),
+                ),
+        )
             ->toBeTrue();
     });
 
@@ -4041,9 +4142,9 @@ function doctor_runner_script_creates_trusted_runtime(string $script, string $co
     );
 }
 
-function doctor_runner_script_applies_app_runtime_container(string $script): bool
+function doctor_runner_script_creates_runtime_container(string $script, string $containerName): bool
 {
-    return str_contains($script, 'internal:app-runtime-container') && str_contains($script, 'container:apply');
+    return str_contains($script, 'docker run') && str_contains($script, "'{$containerName}'");
 }
 
 /**

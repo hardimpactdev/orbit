@@ -38,18 +38,28 @@ final readonly class AppDevelopmentPackagesMount
             return null;
         }
 
-        if (! $app->node->hasActiveRole(NodeRoleName::AppDevelopment->value)) {
+        return $this->forNode($app->node);
+    }
+
+    /**
+     * @return array{source: string, target: string, read_only: bool}|null
+     */
+    public function forNode(Node $node): ?array
+    {
+        $node->loadMissing('roleAssignments');
+
+        if (! $node->hasActiveRole(NodeRoleName::AppDevelopment->value)) {
             return null;
         }
 
-        $nodeUser = trim($app->node->user ?: 'orbit');
+        $nodeUser = trim($node->user ?: 'orbit');
 
         if ($nodeUser === '') {
             return null;
         }
 
         return [
-            'source' => $this->hostPaths->packagesDirectory($app->node),
+            'source' => $this->hostPaths->packagesDirectory($node),
             'target' => self::Target,
             'read_only' => false,
         ];

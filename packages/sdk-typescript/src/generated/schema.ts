@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/runtime-inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["dashboardRuntimeInventory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/database-connections/{connection}/users": {
         parameters: {
             query?: never;
@@ -3497,6 +3513,58 @@ export interface operations {
                                 /** @constant */
                                 reason: "ca_not_bootstrapped";
                             };
+                        };
+                    };
+                };
+            };
+        };
+    };
+    dashboardRuntimeInventory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: {
+                            data: {
+                                nodes: {
+                                    [key: string]: string;
+                                };
+                                apps: {
+                                    [key: string]: string;
+                                };
+                                processes: {
+                                    [key: string]: string;
+                                };
+                                tools: {
+                                    [key: string]: string;
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @constant */
+                            code: "authorization_failed";
+                            /** @constant */
+                            message: "Peer identity unknown.";
+                            meta: string[];
                         };
                     };
                 };

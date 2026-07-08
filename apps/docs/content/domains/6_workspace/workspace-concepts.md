@@ -25,9 +25,10 @@ The terms below define the core identity vocabulary for the workspace family.
   live readiness result.
 - **Workspace runtime container:** Docker container derived from workspace
   configuration, parent app configuration, and the selected PHP image. It
-  serves the workspace's web route through FrankenPHP. Ad-hoc workspace
-  PHP/Composer/Artisan run on the node's host PHP toolchain, not inside the
-  container. Workspaces whose parent app is on an `app-dev` node receive the
+  serves the workspace's web route through FrankenPHP. Workspace setup and
+  teardown run through the selected app user's host tool path, not inside the
+  container; PHP/Composer/Artisan commands include the node's versioned host PHP
+  toolchain. Workspaces whose parent app is on an `app-dev` node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
   container.

@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Contracts\WorkspaceSourceDrivers;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Workspaces\WorkspaceNodeReachability;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use RuntimeException;
 
@@ -26,6 +29,7 @@ final readonly class CreateWorkspace
         private WorkspaceSourceDrivers $sourceDrivers,
         private WorkspaceRoleGuard $roleGuard,
         private WorkspaceNodeReachability $nodeReachability,
+        private WorkspacePlacement $placement,
     ) {}
 
     /**
@@ -35,14 +39,19 @@ final readonly class CreateWorkspace
      *     meta: array<string, mixed>,
      * }
      */
-    public function handle(App $app, string $name, string $base = 'main', ?string $phpVersion = null): array
-    {
-        $node = $this->resolveAppNode($app);
+    public function handle(
+        App $app,
+        string $name,
+        string $base = 'main',
+        ?string $phpVersion = null,
+        ?AppInstance $instance = null,
+    ): array {
+        $node = $this->resolveAppNode($app, $instance);
         $this->ensureSupportedPhpVersion($phpVersion);
         $this->ensureNodeReachable($node);
 
-        $provisionResult = $this->provisionWorkspaceSource($app, $node, $name, $base);
-        $workspace = $this->createIntent($app, $phpVersion, $provisionResult);
+        $provisionResult = $this->provisionWorkspaceSource($app, $node, $name, $base, $instance);
+        $workspace = $this->createIntent($app, $phpVersion, $provisionResult, $instance);
 
         $warnings = [];
         $httpProbe = [
@@ -69,11 +78,13 @@ final readonly class CreateWorkspace
         return $this->result($workspace, $app, $node, $base, $httpProbe, $warnings);
     }
 
-    public function resolveAppNode(App $app): Node
+    public function resolveAppNode(App $app, ?AppInstance $instance = null): Node
     {
         $app->loadMissing('node');
 
-        $node = $app->node;
+        $node = $instance instanceof AppInstance
+            ? $this->placement->nodeForInstance($instance)
+            : $app->node;
 
         if (! $node instanceof Node) {
             throw new WorkspaceCreateFailed(
@@ -84,7 +95,7 @@ final readonly class CreateWorkspace
         }
 
         try {
-            $this->roleGuard->ensureAppSupportsWorkspaces($app);
+            $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
         } catch (WorkspaceUnsupportedForProduction $exception) {
             throw new WorkspaceCreateFailed(
                 $exception->errorCode(),
@@ -114,10 +125,16 @@ final readonly class CreateWorkspace
         $this->nodeReachability->ensureReachable($node);
     }
 
-    public function createIntent(App $app, ?string $phpVersion, WorkspaceProvisionResult $provisionResult): Workspace
-    {
+    public function createIntent(
+        App $app,
+        ?string $phpVersion,
+        WorkspaceProvisionResult $provisionResult,
+        ?AppInstance $instance = null,
+    ): Workspace {
+        /** @var Workspace $workspace */
         $workspace = Workspace::create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance?->id,
             'name' => $provisionResult->name,
             'path' => $provisionResult->path,
             'php_version' => $phpVersion,
@@ -127,6 +144,7 @@ final readonly class CreateWorkspace
         ]);
 
         $workspace->setRelation('app', $app);
+        $workspace->setRelation('appInstance', $instance);
 
         return $workspace;
     }
@@ -136,9 +154,28 @@ final readonly class CreateWorkspace
         return $this->sourceDrivers->effectiveAdapter($app);
     }
 
-    public function provisionWorkspaceSource(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult
-    {
-        return $this->sourceDrivers->resolve($app)->create($app, $node, $name, $base);
+    public function provisionWorkspaceSource(
+        App $app,
+        Node $node,
+        string $name,
+        string $base,
+        ?AppInstance $instance = null,
+    ): WorkspaceProvisionResult {
+        $originalPath = $app->path;
+
+        try {
+            $instancePath = $this->appPathForInstance($instance);
+
+            if ($instancePath !== null) {
+                $app->path = $instancePath;
+            }
+
+            $driver = $this->sourceDrivers->resolve($app);
+
+            return $driver->create($app, $node, $name, $base);
+        } finally {
+            $app->path = $originalPath;
+        }
     }
 
     /**
@@ -167,6 +204,7 @@ final readonly class CreateWorkspace
         array $warnings,
     ): array {
         $workspace->refresh();
+        $workspace->loadMissing('appInstance');
         $workspace->setRelation('app', $app);
 
         return [
@@ -189,6 +227,7 @@ final readonly class CreateWorkspace
         return [
             'name' => $workspace->name,
             'app' => $app->name,
+            'app_instance' => $workspace->appInstance?->name,
             'node' => $node->name,
             'path' => $workspace->path,
             'url' => $workspace->url(),
@@ -201,5 +240,16 @@ final readonly class CreateWorkspace
             'adopted' => false,
             'lifecycle_status' => $workspace->lifecycle_status->value,
         ];
+    }
+
+    private function appPathForInstance(?AppInstance $instance): ?string
+    {
+        $config = $instance?->driver_config;
+
+        if (! $config instanceof OrbitAppInstanceDriverConfigData) {
+            return null;
+        }
+
+        return is_string($config->path) && $config->path !== '' ? $config->path : null;
     }
 }

@@ -28,6 +28,10 @@ final class GatewayOpenApi
 
     public static function register(): void
     {
+        if (! class_exists(Scramble::class)) {
+            return;
+        }
+
         Scramble::afterOpenApiGenerated(static function (OpenApi $openApi): void {
             self::describeGateway($openApi);
             self::addSecuritySchemes($openApi);

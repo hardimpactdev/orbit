@@ -8,12 +8,14 @@ use App\Actions\Workspaces\CreateWorkspace;
 use App\Actions\Workspaces\CreateWorkspaceProgress;
 use App\Contracts\Loggable;
 use App\Contracts\ProgressReporter;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Models\App;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +29,7 @@ final class WorkspaceStoreController implements Loggable
 
     public function __construct(
         private readonly CreateWorkspace $createWorkspace,
+        private readonly AppSelectorResolver $appSelectorResolver,
     ) {}
 
     public function __invoke(
@@ -54,10 +57,10 @@ final class WorkspaceStoreController implements Loggable
 
         $validated = $validator->validated();
 
-        $name = $validated['name'];
-        $appName = $validated['app'];
-        $base = $validated['base'] ?? 'main';
-        $phpVersion = $validated['php_version'] ?? null;
+        $name = (string) $validated['name'];
+        $appName = (string) $validated['app'];
+        $base = is_string($validated['base'] ?? null) ? $validated['base'] : 'main';
+        $phpVersion = is_string($validated['php_version'] ?? null) ? $validated['php_version'] : null;
 
         if ($name === 'main') {
             return $this->error(
@@ -68,14 +71,13 @@ final class WorkspaceStoreController implements Loggable
             );
         }
 
-        $app = App::query()
-            ->with('node')
-            ->where('name', $appName)
-            ->first();
+        $selection = $this->resolveAppSelection($appName);
 
-        if (! $app instanceof App) {
-            return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $app = $selection->app;
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
             return $this->error(
@@ -100,14 +102,15 @@ final class WorkspaceStoreController implements Loggable
                 "Workspace '{$name}' already exists for app '{$appName}'.",
                 [
                     'name' => $name,
-                    'app' => $appName,
+                    'app' => $app->name,
+                    'app_instance' => $selection->instance?->name,
                 ],
                 422,
             );
         }
 
         try {
-            $result = $this->createWorkspace->handle($app, $name, $base, $phpVersion);
+            $result = $this->createWorkspace->handle($app, $name, $base, $phpVersion, $selection->instance);
         } catch (WorkspaceCreateFailed $exception) {
             $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
@@ -152,10 +155,10 @@ final class WorkspaceStoreController implements Loggable
 
         $validated = $validator->validated();
 
-        $name = $validated['name'];
-        $appName = $validated['app'];
-        $base = $validated['base'] ?? 'main';
-        $phpVersion = $validated['php_version'] ?? null;
+        $name = (string) $validated['name'];
+        $appName = (string) $validated['app'];
+        $base = is_string($validated['base'] ?? null) ? $validated['base'] : 'main';
+        $phpVersion = is_string($validated['php_version'] ?? null) ? $validated['php_version'] : null;
 
         if ($name === 'main') {
             return $this->error(
@@ -166,14 +169,13 @@ final class WorkspaceStoreController implements Loggable
             );
         }
 
-        $app = App::query()
-            ->with('node')
-            ->where('name', $appName)
-            ->first();
+        $selection = $this->resolveAppSelection($appName);
 
-        if (! $app instanceof App) {
-            return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
+        if ($selection instanceof JsonResponse) {
+            return $selection;
         }
+
+        $app = $selection->app;
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
             return $this->error(
@@ -198,22 +200,31 @@ final class WorkspaceStoreController implements Loggable
                 "Workspace '{$name}' already exists for app '{$appName}'.",
                 [
                     'name' => $name,
-                    'app' => $appName,
+                    'app' => $app->name,
+                    'app_instance' => $selection->instance?->name,
                 ],
                 422,
             );
         }
 
         try {
-            $node = $this->createWorkspace->resolveAppNode($app);
+            $node = $this->createWorkspace->resolveAppNode($app, $selection->instance);
         } catch (WorkspaceCreateFailed $exception) {
             $status = $exception->errorCode === 'workspace.node_unreachable' ? 503 : 422;
 
             return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta, $status);
         }
 
-        return $streams->make(function ($emitter) use ($createProgress, $app, $node, $name, $base, $phpVersion): void {
-            $plan = $createProgress->for($app, $node, $name, $base, $phpVersion);
+        return $streams->make(function ($emitter) use (
+            $createProgress,
+            $app,
+            $selection,
+            $node,
+            $name,
+            $base,
+            $phpVersion,
+        ): void {
+            $plan = $createProgress->for($app, $node, $name, $base, $phpVersion, $selection->instance);
             $exitCode = $plan->runForReporter(app(ProgressReporter::class));
 
             if ($exitCode !== 0) {
@@ -253,6 +264,21 @@ final class WorkspaceStoreController implements Loggable
     private function wantsEventStream(Request $request): bool
     {
         return in_array('text/event-stream', $request->getAcceptableContentTypes(), true);
+    }
+
+    private function resolveAppSelection(string $appName): AppSelection|JsonResponse
+    {
+        try {
+            $selection = $this->appSelectorResolver->resolve($appName);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->error($exception->errorCode, $exception->getMessage(), $exception->meta);
+        }
+
+        if (! $selection instanceof AppSelection) {
+            return $this->error('app.not_found', "App '{$appName}' not found.", ['app' => $appName], 404);
+        }
+
+        return $selection;
     }
 
     private function error(string $code, string $message, array $meta = [], int $status = 422): JsonResponse
