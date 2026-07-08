@@ -31,7 +31,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--app` | `text` | No local context resolves to a parent app. | Cwd-inferred parent app | Existing app slug authorized for this caller. |
+| `--app` | `text` | No local context resolves to a parent app. | Cwd-inferred parent app | Existing parent app slug or app-instance selector authorized for this caller. Dot notation such as `happie.nmbp` selects one concrete app instance for authorization/path resolution while storing the step on the parent app. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app and `phase=teardown`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app and `phase=teardown`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
@@ -41,7 +41,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve Parent App**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--app=<slug>`.
+   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
+     app-instance selector such as `happie.nmbp`.
    - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `app:register` and any workspace-installed marker) that names the owning
      app slug.

@@ -8,11 +8,16 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class LaravelViteDevServerEnvironment
 {
     private const string CONTAINER_CERTIFICATE_DIRECTORY = '/etc/orbit/certs';
+
+    public function __construct(
+        private WorkspacePlacement $placement = new WorkspacePlacement,
+    ) {}
 
     /**
      * @return array{
@@ -68,7 +73,7 @@ final readonly class LaravelViteDevServerEnvironment
     public function containerCertificateMounts(App $app, ?Workspace $workspace = null): array
     {
         $app->loadMissing('node');
-        $node = $app->node;
+        $node = $workspace instanceof Workspace ? $this->placement->nodeForWorkspace($workspace) : $app->node;
 
         if (! $node instanceof Node) {
             throw new RuntimeException("App '{$app->name}' has no owning node.");

@@ -3,9 +3,12 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
@@ -153,6 +156,89 @@ describe('WorkspaceRemoveController', function (): void {
             ->toBeTrue();
     });
 
+    it('removes an app-instance workspace on the selected instance node', function (): void {
+        $caller = createWorkspaceRemoveCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceRemoveAccess($caller, $localNode);
+
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'domain' => 'happie.test',
+        ]);
+        $instance = AppInstance::factory()
+            ->for($app)
+            ->create([
+                'name' => 'nmbp',
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $localNode->id,
+                    node: 'NMBP',
+                    path: '/Users/nckrtl/apps/happie',
+                    document_root: 'public',
+                    domain: 'happie.nmbp',
+                ),
+            ]);
+        $workspace = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'name' => 'recipes',
+            'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        ]);
+        ProxyRoute::factory()->create([
+            'node_id' => $localNode->id,
+            'domain' => 'recipes.happie.nmbp',
+            'app_id' => $app->id,
+            'workspace_id' => $workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+        ]);
+
+        $shell = new WorkspaceRemoveApiSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '{"Id":"abc"}', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: 'orbit-container-config-probe:absent',
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $response = $this->call(
+            'DELETE',
+            '/api/workspaces/recipes?app=happie.nmbp',
+            [
+                'keep_files' => true,
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            workspaceRemoveRemoteShellFallbackHeader(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.name', 'recipes')
+            ->assertJsonPath('success.data.app', 'happie')
+            ->assertJsonPath('success.data.app_instance', 'nmbp')
+            ->assertJsonPath('success.data.proxy_routes_removed', 1)
+            ->assertJsonPath('success.meta.kept_files', true);
+
+        expect(Workspace::query()->whereKey($workspace->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'recipes.happie.nmbp')->exists())
+            ->toBeFalse()
+            ->and($shell->nodeIds)
+            ->not
+            ->toBe([])
+            ->and(array_unique($shell->nodeIds))
+            ->toBe([$localNode->id]);
+    });
+
     it('removes workspace intent but skips legacy cleanup when transitional fallback is not explicit', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
@@ -297,6 +383,11 @@ final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell
     public array $scripts = [];
 
     /**
+     * @var list<int>
+     */
+    public array $nodeIds = [];
+
+    /**
      * @param  list<RemoteShellResult>  $results
      */
     public function __construct(
@@ -305,6 +396,7 @@ final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->nodeIds[] = $node->id;
         $this->scripts[] = $script;
 
         return (

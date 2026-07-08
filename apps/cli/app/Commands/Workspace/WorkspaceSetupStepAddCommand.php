@@ -9,7 +9,7 @@ final class WorkspaceSetupStepAddCommand extends AbstractWorkspaceStepAddCommand
     #[\Override]
     protected $signature = 'workspace-setup-step:add
         {--command= : Shell command to run during workspace setup}
-        {--app= : Parent app slug}
+        {--app= : Parent app or app.instance selector}
         {--before= : Insert before this setup step id}
         {--after= : Insert after this setup step id}
         {--timeout=600 : Timeout in seconds}

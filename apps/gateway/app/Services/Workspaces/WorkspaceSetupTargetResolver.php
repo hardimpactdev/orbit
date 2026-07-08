@@ -6,22 +6,28 @@ namespace App\Services\Workspaces;
 
 use App\Contracts\AgentIdeWorkspacePathResolver;
 use App\Data\AgentIde\WorkspacePathResolution;
+use App\Data\Apps\AppSelection;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceSetupResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Contracts\Container\Container;
-use Illuminate\Database\Eloquent\Builder;
 use Throwable;
 
 final readonly class WorkspaceSetupTargetResolver
 {
     public function __construct(
         private AppAgentIdeDefaults $appAgentIdeDefaults,
+        private AppSelectorResolver $appSelectorResolver,
+        private WorkspacePlacement $placement,
         private WorkspaceRoleGuard $roleGuard,
         private Container $container,
     ) {}
@@ -46,33 +52,35 @@ final readonly class WorkspaceSetupTargetResolver
 
         $cwd = $this->normalizePath($callerCwd ?? (string) getcwd());
         $outcome = $this->pathOwnership($cwd);
+        $workspace = $outcome['workspace'] ?? null;
+        $ownedApp = $outcome['app'] ?? null;
 
-        if ($outcome['type'] === 'workspace') {
-            /** @var Workspace $workspace */
-            $workspace = $outcome['workspace'];
+        if ($outcome['type'] === 'workspace' && $workspace instanceof Workspace) {
             $this->assertExplicitMatches($workspace, $appName, null);
 
             return $this->unwrap($workspace, false);
         }
 
-        if ($outcome['type'] === 'app_root') {
-            /** @var App $app */
-            $app = $outcome['app'];
+        if ($outcome['type'] === 'app_root' && $ownedApp instanceof App) {
+            $app = $ownedApp;
+            $instance = $outcome['instance'] ?? null;
+            $label = $instance instanceof AppInstance ? $this->selectionLabel($app, $instance) : $app->name;
 
             throw new WorkspaceSetupResolutionFailed(
                 'workspace.path_is_app_root',
-                "The current directory is the '{$app->name}' app root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or change into an existing workspace path and rerun 'orbit workspace:setup'.",
+                "The current directory is the '{$label}' app root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or change into an existing workspace path and rerun 'orbit workspace:setup'.",
                 [
-                    'app' => $app->name,
+                    'app' => $label,
                     'path' => $cwd,
                     'next_command' => 'orbit workspace:new',
                 ],
             );
         }
 
-        $apps = $outcome['type'] === 'inside_app'
-            ? [$outcome['app']]
-            : $this->appsForCaller($callerNode);
+        $apps =
+            $outcome['type'] === 'inside_app' && $ownedApp instanceof App
+                ? [$ownedApp]
+                : $this->appsForCaller($callerNode);
 
         $resolved = $this->probeAdapters($cwd, $apps);
 
@@ -99,29 +107,30 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function resolveByPath(string $path, ?string $appName, ?string $name = null): array
     {
-        $app = $this->resolveApp($appName);
-
-        if (! $app instanceof App) {
+        try {
+            $selection = $this->appSelectorResolver->resolveRequired($appName);
+        } catch (AppSelectionResolutionFailed $exception) {
             throw new WorkspaceSetupResolutionFailed(
-                'validation_failed',
-                'App not found. Pass --app=<name> explicitly.',
-                ['field' => 'app'],
+                $exception->errorCode,
+                $exception->getMessage(),
+                $exception->meta,
             );
         }
 
+        $app = $selection->app;
+        $instance = $selection->instance ?? $this->placement->matchingOrbitInstanceForPath($app, $path);
         $workspaceName = $name ?? basename($path);
-        $existing = Workspace::query()
-            ->with('app.node')
-            ->where('app_id', $app->id)
-            ->where('name', $workspaceName)
-            ->first();
+        $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
 
-        if (! $this->pathAllowedForWorkspace($app, $path)) {
+        if (! $this->pathAllowedForWorkspace($app, $path, $instance)) {
             throw new WorkspaceSetupResolutionFailed(
                 'workspace.path_is_app_root',
-                "Path {$path} is the '{$app->name}' app root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or pass a workspace path with --path.",
+                "Path {$path} is the '{$this->selectionLabel(
+     $app,
+     $instance,
+ )}' app root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or pass a workspace path with --path.",
                 [
-                    'app' => $app->name,
+                    'app' => $this->selectionLabel($app, $instance),
                     'path' => $path,
                     'next_command' => 'orbit workspace:new',
                 ],
@@ -129,19 +138,23 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         if ($existing instanceof Workspace) {
-            $existing->update(['path' => $path]);
+            $existing->update([
+                'app_instance_id' => $instance?->id,
+                'path' => $path,
+            ]);
 
-            return $this->unwrap($existing->fresh(['app.node']), false);
+            return $this->unwrap($existing->fresh(['app.node', 'app.instances', 'appInstance']), false);
         }
 
         $workspace = Workspace::create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance?->id,
             'name' => $workspaceName,
             'path' => $path,
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
-        return $this->unwrap($workspace->load('app.node'), true);
+        return $this->unwrap($workspace->load(['app.node', 'app.instances', 'appInstance']), true);
     }
 
     /**
@@ -150,14 +163,31 @@ final readonly class WorkspaceSetupTargetResolver
     private function resolveByName(string $name, ?string $appName): array
     {
         $query = Workspace::query()
-            ->with(['app.node'])
+            ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('name', $name);
 
+        $selection = null;
+
         if ($appName !== null) {
-            $query->whereHas('app', fn (Builder $q): Builder => $q->where('name', $appName));
+            try {
+                $selection = $this->appSelectorResolver->resolveRequired($appName);
+            } catch (AppSelectionResolutionFailed $exception) {
+                throw new WorkspaceSetupResolutionFailed(
+                    $exception->errorCode,
+                    $exception->getMessage(),
+                    $exception->meta,
+                );
+            }
+
+            $query->where('app_id', $selection->app->id);
         }
 
-        $workspace = $query->first();
+        $workspaces = $query->get();
+        $workspace = $selection instanceof AppSelection
+            ? $workspaces->first(
+                fn (Workspace $workspace): bool => $this->appSelectorResolver->matchesWorkspace($workspace, $selection),
+            )
+            : $workspaces->first();
 
         if (! $workspace instanceof Workspace) {
             throw new WorkspaceSetupResolutionFailed('workspace.not_found', "Workspace '{$name}' not found.", [
@@ -165,18 +195,48 @@ final readonly class WorkspaceSetupTargetResolver
             ]);
         }
 
+        if (
+            $selection instanceof AppSelection
+            && $selection->instance instanceof AppInstance
+            && $workspace->app_instance_id === null
+        ) {
+            $workspace->update(['app_instance_id' => $selection->instance->id]);
+            $freshWorkspace = $workspace->fresh(['app.node', 'app.instances', 'appInstance']);
+
+            if (! $freshWorkspace instanceof Workspace) {
+                throw new WorkspaceSetupResolutionFailed(
+                    'workspace.not_found_after_update',
+                    "Workspace '{$name}' was updated but could not be reloaded.",
+                    [
+                        'workspace' => $name,
+                        'app' => $this->selectionLabel($selection->app, $selection->instance),
+                    ],
+                );
+            }
+
+            $workspace = $freshWorkspace;
+        }
+
         return $this->unwrap($workspace, false);
     }
 
     /**
-     * @return array{type: 'workspace', workspace: Workspace}|array{type: 'app_root'|'inside_app', app: App}|array{type: 'unregistered'}
+     * @return array{type: 'workspace', workspace: Workspace}|array{type: 'app_root'|'inside_app', app: App, instance?: AppInstance}|array{type: 'unregistered'}
      */
     private function pathOwnership(string $cwd): array
     {
+        /** @var list<Workspace> $workspaces */
         $workspaces = Workspace::query()
-            ->with('app.node')
+            ->with(['app.node', 'app.instances', 'appInstance'])
             ->get()
-            ->sortByDesc(fn (Workspace $workspace): int => strlen($this->normalizePath($workspace->path)));
+            ->all();
+
+        usort(
+            $workspaces,
+            fn (Workspace $first, Workspace $second): int => (
+                strlen($this->normalizePath($second->path)) <=> strlen($this->normalizePath($first->path))
+            ),
+        );
 
         foreach ($workspaces as $workspace) {
             if (! $this->pathMatches($this->normalizePath($workspace->path), $cwd)) {
@@ -188,8 +248,20 @@ final readonly class WorkspaceSetupTargetResolver
             }
         }
 
+        $instanceMatch = $this->appInstanceForPath($cwd);
+
+        if ($instanceMatch !== null) {
+            ['app' => $app, 'instance' => $instance, 'path' => $path] = $instanceMatch;
+
+            return (
+                $path === $cwd
+                    ? ['type' => 'app_root', 'app' => $app, 'instance' => $instance]
+                    : ['type' => 'inside_app', 'app' => $app, 'instance' => $instance]
+            );
+        }
+
         $app = App::query()
-            ->with('node')
+            ->with(['node', 'instances'])
             ->get()
             ->sortByDesc(fn (App $app): int => strlen($this->normalizePath($app->path)))
             ->first(fn (App $app): bool => $this->pathMatches($this->normalizePath($app->path), $cwd));
@@ -320,8 +392,9 @@ final readonly class WorkspaceSetupTargetResolver
             ]);
         }
 
+        $instance = $this->placement->matchingOrbitInstanceForPath($app, $resolution->path);
         $workspace = Workspace::query()
-            ->with('app.node')
+            ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('app_id', $app->id)
             ->where('name', $resolution->workspaceName)
             ->first();
@@ -330,16 +403,30 @@ final readonly class WorkspaceSetupTargetResolver
 
         if ($workspace instanceof Workspace) {
             $workspace->update([
+                'app_instance_id' => $instance?->id,
                 'path' => $resolution->path,
                 'agent_ide' => $adapter,
                 'agent_ide_workspace_id' => $resolution->adapterWorkspaceId,
             ]);
 
-            return $this->unwrap($workspace->fresh(['app.node']), false);
+            $workspace = $workspace->fresh(['app.node', 'app.instances', 'appInstance']);
+
+            if (! $workspace instanceof Workspace) {
+                throw new WorkspaceSetupResolutionFailed(
+                    'workspace.not_found',
+                    'Workspace disappeared during setup resolution.',
+                    [
+                        'field' => 'workspace',
+                    ],
+                );
+            }
+
+            return $this->unwrap($workspace, false);
         }
 
         $workspace = Workspace::create([
             'app_id' => $app->id,
+            'app_instance_id' => $instance?->id,
             'name' => $resolution->workspaceName,
             'path' => $resolution->path,
             'agent_ide' => $adapter,
@@ -347,7 +434,7 @@ final readonly class WorkspaceSetupTargetResolver
             'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
         ]);
 
-        return $this->unwrap($workspace->load('app.node'), $isAdoption);
+        return $this->unwrap($workspace->load(['app.node', 'app.instances', 'appInstance']), $isAdoption);
     }
 
     /**
@@ -366,7 +453,24 @@ final readonly class WorkspaceSetupTargetResolver
 
     private function assertExplicitMatches(Workspace $workspace, ?string $appName, ?string $path): void
     {
-        if ($appName !== null && $workspace->app?->name !== $appName) {
+        $selection = null;
+
+        if ($appName !== null) {
+            try {
+                $selection = $this->appSelectorResolver->resolveRequired($appName);
+            } catch (AppSelectionResolutionFailed $exception) {
+                throw new WorkspaceSetupResolutionFailed(
+                    $exception->errorCode,
+                    $exception->getMessage(),
+                    $exception->meta,
+                );
+            }
+        }
+
+        if (
+            $selection instanceof AppSelection
+            && ! $this->appSelectorResolver->matchesWorkspace($workspace, $selection)
+        ) {
             throw new WorkspaceSetupResolutionFailed(
                 'validation_failed',
                 'The --app value does not match the workspace resolved from the current directory.',
@@ -396,7 +500,21 @@ final readonly class WorkspaceSetupTargetResolver
             );
         }
 
-        if ($appName !== null && $appName !== $resolution->appSlug) {
+        if ($appName !== null) {
+            try {
+                $selection = $this->appSelectorResolver->resolveRequired($appName);
+            } catch (AppSelectionResolutionFailed $exception) {
+                throw new WorkspaceSetupResolutionFailed(
+                    $exception->errorCode,
+                    $exception->getMessage(),
+                    $exception->meta,
+                );
+            }
+
+            if ($selection->app->name === $resolution->appSlug) {
+                return;
+            }
+
             throw new WorkspaceSetupResolutionFailed(
                 'validation_failed',
                 'The --app value does not match the Agent IDE adapter resolution.',
@@ -410,6 +528,7 @@ final readonly class WorkspaceSetupTargetResolver
      */
     private function unwrap(Workspace $workspace, bool $isAdoption): array
     {
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
         $app = $workspace->app;
 
         if (! $app instanceof App) {
@@ -420,7 +539,7 @@ final readonly class WorkspaceSetupTargetResolver
             );
         }
 
-        $node = $app->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
             throw new WorkspaceSetupResolutionFailed(
@@ -431,7 +550,7 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         try {
-            $this->roleGuard->ensureAppSupportsWorkspaces($app);
+            $this->roleGuard->ensureNodeSupportsWorkspaces($app, $node);
         } catch (WorkspaceUnsupportedForProduction $exception) {
             throw new WorkspaceSetupResolutionFailed(
                 $exception->errorCode(),
@@ -449,14 +568,109 @@ final readonly class WorkspaceSetupTargetResolver
             return null;
         }
 
-        return App::query()->with('node')->where('name', $appName)->first();
+        $selection = $this->appSelectorResolver->resolve($appName);
+
+        return $selection?->app;
     }
 
-    private function pathAllowedForWorkspace(App $app, string $path): bool
+    private function pathAllowedForWorkspace(App $app, string $path, ?AppInstance $instance): bool
     {
-        $appPath = rtrim($this->normalizePath($app->path), '/');
+        $appPath = $instance instanceof AppInstance
+            ? $this->instancePath($instance) ?? $app->path
+            : $app->path;
+
+        $appPath = rtrim($this->normalizePath($appPath), '/');
 
         return $this->normalizePath($path) !== $appPath;
+    }
+
+    private function firstWorkspaceMatch(App $app, string $workspaceName, ?AppInstance $instance): ?Workspace
+    {
+        $workspaces = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->where('app_id', $app->id)
+            ->where('name', $workspaceName)
+            ->get();
+
+        if ($instance instanceof AppInstance) {
+            return (
+                $workspaces->first(
+                    fn (Workspace $workspace): bool => $workspace->app_instance_id === $instance->id,
+                ) ?? $workspaces->first(fn (Workspace $workspace): bool => $workspace->app_instance_id === null)
+            );
+        }
+
+        return $workspaces->first();
+    }
+
+    /**
+     * @return array{app: App, instance: AppInstance, path: string}|null
+     */
+    private function appInstanceForPath(string $cwd): ?array
+    {
+        /** @var list<array{app: App, instance: AppInstance, path: string}> $candidates */
+        $candidates = [];
+
+        /** @var list<App> $apps */
+        $apps = App::query()
+            ->with(['node', 'instances'])
+            ->get()
+            ->all();
+
+        foreach ($apps as $app) {
+            foreach ($app->instances as $instance) {
+                $path = $this->instancePath($instance);
+
+                if ($path === null || $path === '') {
+                    continue;
+                }
+
+                $candidates[] = [
+                    'app' => $app,
+                    'instance' => $instance,
+                    'path' => $path,
+                ];
+            }
+        }
+
+        usort(
+            $candidates,
+            fn (array $first, array $second): int => (
+                strlen($this->normalizePath($second['path'])) <=> strlen($this->normalizePath($first['path']))
+            ),
+        );
+
+        foreach ($candidates as $candidate) {
+            $path = $this->normalizePath($candidate['path']);
+
+            if (! $this->pathMatches($path, $cwd)) {
+                continue;
+            }
+
+            return [
+                'app' => $candidate['app'],
+                'instance' => $candidate['instance'],
+                'path' => $path,
+            ];
+        }
+
+        return null;
+    }
+
+    private function instancePath(AppInstance $instance): ?string
+    {
+        $config = $instance->driver_config;
+
+        if ($config instanceof OrbitAppInstanceDriverConfigData && is_string($config->path) && $config->path !== '') {
+            return $config->path;
+        }
+
+        return null;
+    }
+
+    private function selectionLabel(App $app, ?AppInstance $instance): string
+    {
+        return $instance instanceof AppInstance ? "{$app->name}.{$instance->name}" : $app->name;
     }
 
     private function normalizePath(string $path): string

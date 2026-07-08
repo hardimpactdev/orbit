@@ -9,8 +9,9 @@ app, has a canonical name, and owns one workspace route lifecycle.
 These rules govern all workspace family commands.
 
 - The gateway owns workspace configuration.
-- Workspace artifacts are applied by the gateway over SSH on the owning app
-  node.
+- Workspace artifacts are applied by the gateway over SSH on the effective
+  workspace node. Instance-bound workspaces use their selected app instance
+  node; app-only legacy workspaces use the parent app's canonical node.
 - Workspace name is the canonical Orbit workspace identity. Source-control
   branch/ref metadata is optional and may be absent; when recorded, it is
   descriptive metadata rather than a separate workspace identity.
@@ -36,9 +37,10 @@ These rules govern all workspace family commands.
   route records. Workspace commands create, update, and remove the workspace
   configuration that owns those routes; proxy route registry and backend
   artifact convergence belong to the `proxy` family.
-- A workspace hostname is the workspace slug prepended to the parent app's
-  primary hostname. For a development app this yields
-  `{workspace}.{app}.{tld}`.
+- A workspace hostname is the workspace slug prepended to the selected app
+  instance's primary hostname. For a development app this yields
+  `{workspace}.{app}.{instance-tld}`. App-only legacy workspaces keep the
+  canonical app hostname behavior.
 - Workspaces inherit app process definitions as runtime units during the
   app-scoped process compatibility phase. Each inherited runtime unit is owned
   by the process family and uses the selected process runtime backend. It has
@@ -109,7 +111,7 @@ result state, such as the git ref used by `workspace:new`, belongs beside the
 entity rather than inside it.
 
 List renderers are the one documented exception: `workspace:list` rows are
-summary rows carrying only `name`, `app`, `node`, `url`, and
+summary rows carrying only `name`, `app`, `app_instance`, `node`, `url`, and
 `lifecycle_status`. Summary rows must be a strict subset of the canonical
 entity fields with identical meanings; they never add fields the canonical
 entity does not define.
@@ -118,6 +120,7 @@ entity does not define.
 {
   "name": "feature-docs",
   "app": "docs",
+  "app_instance": null,
   "node": "app-1",
   "path": "/home/orbit/apps/docs/.worktrees/feature-docs",
   "url": "https://feature-docs.docs.test",
@@ -136,7 +139,8 @@ entity does not define.
 | --- | --- | --- |
 | `name` | string | Workspace identity slug. Unique within the parent app. |
 | `app` | string | Parent app slug. |
-| `node` | string | Owning node slug inherited from the parent app. |
+| `app_instance` | string/null | Selected app instance name when the workspace is bound to a concrete app instance; `null` for app-only legacy workspaces. |
+| `node` | string | Effective workspace node slug. Instance-bound workspaces use the selected app instance node; app-only legacy workspaces use the parent app's canonical node. |
 | `path` | string | Absolute workspace path on the owning node. |
 | `url` | string | Primary intended workspace URL. |
 | `php_version` | string | Effective PHP version for the workspace. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |

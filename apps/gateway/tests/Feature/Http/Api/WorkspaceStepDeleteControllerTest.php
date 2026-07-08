@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,6 +45,52 @@ function grantWorkspaceStepDeleteAccess(Node $caller, Node $appNode): void
 }
 
 describe('WorkspaceStepDeleteController', function (): void {
+    it('deletes app-level step policy through an app-instance selector on the selected node', function (): void {
+        $caller = createWorkspaceStepDeleteCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepDeleteAccess($caller, $localNode);
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                path: '/Users/nckrtl/apps/happie',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        $removed = WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'phase' => WorkspaceLifecyclePhase::Setup,
+            'command' => 'composer install',
+        ]);
+
+        $response = $this->call(
+            'DELETE',
+            "/api/workspaces/steps/setup/{$removed->id}",
+            [
+                'app' => 'happie.nmbp',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_DELETE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.result.action', 'removed')
+            ->assertJsonPath('success.data.step.app', 'happie');
+
+        expect(WorkspaceStep::query()->whereKey($removed->id)->exists())->toBeFalse();
+    });
+
     it('deletes a workspace step for authorized callers and compacts order', function (): void {
         $caller = createWorkspaceStepDeleteCallerNode();
         $node = createTestAppHostNode();

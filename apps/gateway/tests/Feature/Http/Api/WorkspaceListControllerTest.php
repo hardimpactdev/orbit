@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Workspace;
@@ -108,6 +111,57 @@ describe('WorkspaceListController', function (): void {
             ->assertOk()
             ->assertJsonCount(1, 'success.data.workspaces')
             ->assertJsonPath('success.data.workspaces.0.name', 'docs-feature');
+    });
+
+    it('filters workspaces by app instance selector', function (): void {
+        $caller = createWorkspaceListCallerNode();
+        $canonicalNode = createWorkspaceListAppNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createWorkspaceListAppNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceListAccess($caller, $localNode);
+
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'domain' => 'happie.test',
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        $instance = AppInstance::factory()
+            ->for($app)
+            ->create([
+                'name' => 'nmbp',
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $localNode->id,
+                    node: 'NMBP',
+                    path: '/Users/nckrtl/apps/happie',
+                    document_root: 'public',
+                    domain: 'happie.nmbp',
+                ),
+            ]);
+        Workspace::factory()->create([
+            'name' => 'recipes',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces?app=happie.nmbp',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.workspaces')
+            ->assertJsonPath('success.data.workspaces.0.name', 'recipes')
+            ->assertJsonPath('success.data.workspaces.0.app', 'happie')
+            ->assertJsonPath('success.data.workspaces.0.app_instance', 'nmbp')
+            ->assertJsonPath('success.data.workspaces.0.node', 'NMBP')
+            ->assertJsonPath('success.data.workspaces.0.url', 'https://recipes.happie.nmbp');
     });
 
     it('omits hidden workspaces from the result', function (): void {
@@ -222,6 +276,7 @@ describe('WorkspaceListController', function (): void {
             ->assertJsonPath('success.data.workspaces.0', [
                 'name' => 'feature-docs',
                 'app' => 'docs',
+                'app_instance' => null,
                 'node' => 'app-1',
                 'url' => 'https://feature-docs.docs.test',
                 'lifecycle_status' => 'setup-pending',

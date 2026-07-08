@@ -22,6 +22,11 @@ final readonly class WorkspaceRoleGuard
 
         $node = $app->node;
 
+        $this->ensureNodeSupportsWorkspaces($app, $node);
+    }
+
+    public function ensureNodeSupportsWorkspaces(App $app, ?Node $node): void
+    {
         if (! $node instanceof Node) {
             return;
         }

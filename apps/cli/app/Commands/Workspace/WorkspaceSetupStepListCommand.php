@@ -16,7 +16,7 @@ final class WorkspaceSetupStepListCommand extends GatewayCommand
 
     #[\Override]
     protected $signature = 'workspace-setup-step:list
-        {--app= : Parent app slug}
+        {--app= : Parent app or app.instance selector}
         {--json}';
 
     #[\Override]

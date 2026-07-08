@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\ProcessRestartPolicy;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
@@ -147,6 +150,60 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('error.code', 'workspace.ambiguous_name')
             ->assertJsonPath('error.meta.name', 'feature-docs')
             ->assertJsonPath('error.meta.apps', ['docs', 'api']);
+    });
+
+    it('returns instance-bound workspace details for app instance selectors', function (): void {
+        $caller = createWorkspaceShowCallerNode();
+        $canonicalNode = Node::factory()->create(['name' => 'beast', 'tld' => 'test']);
+        $localNode = Node::factory()->create(['name' => 'NMBP', 'host' => 'nmbp', 'tld' => 'nmbp']);
+        assignWorkspaceShowRole($canonicalNode);
+        assignWorkspaceShowRole($localNode);
+        grantWorkspaceShowAccess($caller, $localNode);
+
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'domain' => 'happie.test',
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        $instance = AppInstance::factory()
+            ->for($app)
+            ->create([
+                'name' => 'nmbp',
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $localNode->id,
+                    node: 'NMBP',
+                    path: '/Users/nckrtl/apps/happie',
+                    document_root: 'public',
+                    domain: 'happie.nmbp',
+                ),
+            ]);
+        Workspace::factory()->create([
+            'name' => 'recipes',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'path' => '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/recipes?app=happie.nmbp',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.workspace.name', 'recipes')
+            ->assertJsonPath('success.data.workspace.app', 'happie')
+            ->assertJsonPath('success.data.workspace.app_instance', 'nmbp')
+            ->assertJsonPath('success.data.workspace.node', 'NMBP')
+            ->assertJsonPath('success.data.workspace.url', 'https://recipes.happie.nmbp')
+            ->assertJsonPath('success.data.node.name', 'NMBP')
+            ->assertJsonPath('success.data.node.host', 'nmbp');
     });
 
     it('resolves a visible workspace by path prefix', function (): void {

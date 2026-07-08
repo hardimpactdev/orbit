@@ -16,6 +16,7 @@ use App\Services\GatewayApiClient;
 use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationFollower;
+use App\Services\GatewayProgressStreamClient;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use App\Services\Profile\CurlProfileRequestProfiler;
@@ -103,6 +104,11 @@ final class GatewayApiServiceProvider extends ServiceProvider
                 preferCurl: ! $this->app->runningUnitTests(),
             );
         });
+
+        $this->app->bind(
+            GatewayProgressStreamClient::class,
+            fn (): GatewayProgressStreamClient => $this->app->make(GatewayStreamClient::class),
+        );
 
         $this->app->singleton(GatewayOperationEventStreamClient::class, function (): GatewayOperationEventStreamClient {
             $config = $this->gatewayConnectionConfig();

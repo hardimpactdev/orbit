@@ -116,6 +116,7 @@ final class WorkspaceSetupController implements Loggable
 
         $data = [
             'app' => $result['app'],
+            'app_instance' => $result['app_instance'],
             'workspace' => $result['workspace'],
             'node' => $result['node'],
             'url' => $result['url'],

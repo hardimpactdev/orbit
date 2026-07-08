@@ -373,6 +373,12 @@ message = "Class has too many methods."
 count = 1
 
 [[issues]]
+file = "app/Actions/Workspaces/CreateWorkspaceProgress.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
 file = "app/Actions/Workspaces/CreateWorkspaceProgressPlan.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -2786,8 +2792,26 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
+code = "halstead"
+message = "Method has a high halstead effort"
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
@@ -2800,13 +2824,7 @@ count = 1
 file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 8
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
-code = "prefer-static-closure"
-message = "This closure does not use `$this` and should be declared static."
-count = 1
+count = 4
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceHistoryController.php"
@@ -2822,9 +2840,27 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceListController.php"
+code = "halstead"
+message = "Method has a high halstead effort"
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceListController.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceListController.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceListController.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
-count = 1
+count = 4
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceListController.php"
@@ -2836,7 +2872,7 @@ count = 1
 file = "app/Http/Controllers/Api/WorkspaceListController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 11
+count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceListController.php"
@@ -2858,6 +2894,18 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
+code = "halstead"
+message = "Method has a high halstead effort"
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
 code = "no-empty"
 message = "Use of the `empty` construct."
 count = 1
@@ -2866,7 +2914,7 @@ count = 1
 file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 3
+count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceRemoveController.php"
@@ -2918,8 +2966,20 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceShowController.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceShowController.php"
 code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Http/Controllers/Api/WorkspaceShowController.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
@@ -2932,13 +2992,7 @@ count = 1
 file = "app/Http/Controllers/Api/WorkspaceShowController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 8
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceShowController.php"
-code = "prefer-static-closure"
-message = "This closure does not use `$this` and should be declared static."
-count = 1
+count = 4
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceShowController.php"
@@ -2960,21 +3014,9 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepDeleteController.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepDeleteController.php"
 code = "no-empty"
 message = "Use of the `empty` construct."
 count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepDeleteController.php"
-code = "prefer-static-closure"
-message = "This closure does not use `$this` and should be declared static."
-count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepDeleteController.php"
@@ -2990,12 +3032,6 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepListController.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepListController.php"
 code = "no-empty"
 message = "Use of the `empty` construct."
 count = 1
@@ -3005,12 +3041,6 @@ file = "app/Http/Controllers/Api/WorkspaceStepListController.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepListController.php"
-code = "prefer-static-closure"
-message = "This closure does not use `$this` and should be declared static."
-count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepListController.php"
@@ -3032,21 +3062,9 @@ count = 1
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
-code = "literal-named-argument"
-message = "Literal argument `'/'` should be passed as a named argument for clarity."
-count = 3
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
 code = "no-empty"
 message = "Use of the `empty` construct."
 count = 1
-
-[[issues]]
-file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
-code = "prefer-static-closure"
-message = "This closure does not use `$this` and should be declared static."
-count = 2
 
 [[issues]]
 file = "app/Http/Controllers/Api/WorkspaceStepStoreController.php"
@@ -3514,7 +3532,7 @@ count = 1
 file = "app/Services/Apps/AppDevelopmentInnerTlsPolicy.php"
 code = "literal-named-argument"
 message = "Literal argument `'.'` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Services/Apps/AppDevelopmentInnerTlsPolicy.php"
@@ -3883,6 +3901,48 @@ message = "Use of the shorthand ternary operator."
 count = 1
 
 [[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Services/Apps/AppSelectorResolver.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
 file = "app/Services/Apps/AppSetupStepListPayload.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
@@ -4054,6 +4114,12 @@ count = 1
 file = "app/Services/Authorization/ServingNodeResolver.php"
 code = "kan-defect"
 message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/Authorization/ServingNodeResolver.php"
+code = "no-redundant-nullsafe"
+message = "The nullsafe operator (`?->`) is redundant when used with `??`."
 count = 1
 
 [[issues]]
@@ -6919,6 +6985,12 @@ message = "Constant name `Command` should be in constant case."
 count = 1
 
 [[issues]]
+file = "app/Services/Processes/EnsureFrankenPhpRuntimeProcess.php"
+code = "no-redundant-nullsafe"
+message = "The nullsafe operator (`?->`) is redundant when used with `??`."
+count = 1
+
+[[issues]]
 file = "app/Services/Processes/ProcessDockerContainer.php"
 code = "constant-name"
 message = "Constant name `SourceTarget` should be in constant case."
@@ -7082,6 +7154,18 @@ count = 2
 
 [[issues]]
 file = "app/Services/Processes/ProcessOwnerContextResolver.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/Processes/ProcessOwnerContextResolver.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Services/Processes/ProcessOwnerContextResolver.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
 count = 1
@@ -7090,7 +7174,7 @@ count = 1
 file = "app/Services/Processes/ProcessOwnerContextResolver.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 8
+count = 2
 
 [[issues]]
 file = "app/Services/Processes/ProcessRuntimeDriverRegistry.php"
@@ -9831,12 +9915,6 @@ count = 2
 [[issues]]
 file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
 code = "literal-named-argument"
-message = "Literal argument `'.'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Workspaces/EnsureWorkspaceProxyRoute.php"
-code = "literal-named-argument"
 message = "Literal argument `'/'` should be passed as a named argument for clarity."
 count = 3
 
@@ -9928,6 +10006,36 @@ count = 3
 file = "app/Services/Workspaces/WorkspaceLogPayload.php"
 code = "prefer-first-class-callable"
 message = "Use first-class callable syntax `...` instead of a arrow function."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "literal-named-argument"
+message = "Literal argument `'.'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "app/Services/Workspaces/WorkspacePlacement.php"
+code = "too-many-methods"
+message = "Class has too many methods."
 count = 1
 
 [[issues]]
@@ -10108,7 +10216,7 @@ count = 2
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspaceSetupTargetResolver.php"
@@ -10129,15 +10237,15 @@ message = "This arrow function does not use `$this` and should be declared stati
 count = 1
 
 [[issues]]
-file = "app/Services/Workspaces/WorkspaceUrlResolver.php"
-code = "kan-defect"
-message = "Class has a high kan defect score."
+file = "app/Services/Workspaces/WorkspacesProbe.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
 count = 1
 
 [[issues]]
 file = "app/Services/Workspaces/WorkspacesProbe.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
 count = 1
 
 [[issues]]
@@ -10234,6 +10342,24 @@ count = 1
 file = "app/Support/GitRepositoryReference.php"
 code = "prefer-early-continue"
 message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Support/OpenApi/GatewayOpenApi.php"
+code = "constant-name"
+message = "Constant name `OperationIds` should be in constant case."
+count = 1
+
+[[issues]]
+file = "app/Support/OpenApi/GatewayOpenApi.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 1
+
+[[issues]]
+file = "app/Support/OpenApi/GatewayOpenApi.php"
+code = "no-redundant-use"
+message = "Unused import: `UnexpectedValueException`."
 count = 1
 
 [[issues]]
@@ -10909,6 +11035,18 @@ message = "Missing `declare(strict_types=1);` statement at the beginning of the 
 count = 1
 
 [[issues]]
+file = "config/scramble.php"
+code = "literal-named-argument"
+message = "Literal argument `'0.0.0'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/scramble.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
 file = "config/services.php"
 code = "literal-named-argument"
 message = "Literal argument `'/home/orbit/.wg-easy/wg-easy.db'` should be passed as a named argument for clarity."
@@ -11477,6 +11615,12 @@ file = "database/migrations/2026_07_08_110624_migrate_process_definition_runtime
 code = "no-empty-comment"
 message = "Empty comments are not allowed."
 count = 1
+
+[[issues]]
+file = "database/migrations/2026_07_08_120000_add_app_instance_id_to_workspaces_table.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 2
 
 [[issues]]
 file = "database/seeders/DatabaseSeeder.php"
@@ -18260,6 +18404,12 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Http/Api/WorkspaceHistoryControllerTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/WorkspaceHistoryControllerTest.php"
 code = "prefer-dedicated-status-assertion"
 message = "Use the dedicated `assertBadRequest()` assertion instead of `assertStatus(400)`."
 count = 1
@@ -18370,7 +18520,7 @@ count = 1
 file = "tests/Feature/Http/Api/WorkspaceRemoveControllerTest.php"
 code = "use-specific-expectations"
 message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
-count = 1
+count = 2
 
 [[issues]]
 file = "tests/Feature/Http/Api/WorkspaceShowControllerTest.php"
@@ -18454,6 +18604,12 @@ count = 1
 file = "tests/Feature/Http/Api/WorkspaceStepStoreControllerTest.php"
 code = "function-name"
 message = "Function name `grantWorkspaceStepStoreAccess` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Http/Api/WorkspaceStepStoreControllerTest.php"
+code = "halstead"
+message = "Closure has a high halstead volume"
 count = 1
 
 [[issues]]
@@ -18695,6 +18851,204 @@ file = "tests/Feature/Models/WorkspaceTest.php"
 code = "literal-named-argument"
 message = "Literal argument `64` should be passed as a named argument for clarity."
 count = 3
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'1G'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'components.schemas.OrbitErrorEnvelope.properties.error.properties.code.type'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'components.schemas.OrbitSuccessEnvelope.properties.data'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'components.securitySchemes.orbitWireGuardIdentity.in'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'components.securitySchemes.orbitWireGuardIdentity.name'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'components.securitySchemes.orbitWireGuardIdentity.type'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'info.description'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'info.title'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'info.version'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'paths./processes.get.parameters'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'paths./tools/{tool}/restart.post.operationId'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'paths./tools/{tool}/start.post.operationId'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'paths./tools/{tool}/stop.post.operationId'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSchemaContractTest.php"
+code = "no-ini-set"
+message = "ini_set should not be used."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `coveredSdkOperations` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `decodedJsonObject` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `dummySdkArgument` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `exportOpenApiSchemaForSdkSurface` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `instantiateSdkRequest` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `openApiSdkSurfaceContract` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `openApiSdkSurfaceOperations` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `pathShapeMatches` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `schemaOperations` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `sdkCoversOperation` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `sdkOperation` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "function-name"
+message = "Function name `sdkRequestClass` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'1G'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/OpenApiSdkSurfaceContractTest.php"
+code = "no-ini-set"
+message = "ini_set should not be used."
+count = 1
 
 [[issues]]
 file = "tests/Feature/Release/GatewayImageWorkflowTest.php"

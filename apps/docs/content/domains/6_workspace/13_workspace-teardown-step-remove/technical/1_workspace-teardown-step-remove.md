@@ -31,7 +31,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved app and `phase=teardown`. |
-| `app` | `--app` | No local context resolves to a parent app. | Never. | Cwd-inferred parent app. | Existing app slug authorized for this caller. |
+| `app` | `--app` | No local context resolves to a parent app. | Never. | Cwd-inferred parent app. | Existing parent app slug or app-instance selector authorized for this caller. Dot notation such as `happie.nmbp` selects one concrete app instance for authorization/path resolution while removing policy stored on the parent app. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
@@ -41,7 +41,8 @@ This command follows the shared
    [`workspace:new`](../../1_workspace-new/workspace-new.md) and
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md)
    precedence chain:
-   - Explicit `--app=<slug>`.
+   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
+     app-instance selector such as `happie.nmbp`.
    - `.orbit/config` marker on the caller filesystem that names the owning app
      slug.
    - Gateway path-ownership lookup keyed on `(caller node identity,

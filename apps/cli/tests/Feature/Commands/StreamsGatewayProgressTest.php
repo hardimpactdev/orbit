@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
-use App\Services\GatewayStreamClient;
+use App\Services\GatewayProgressStreamClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Http;
@@ -37,7 +37,7 @@ class TestStreamingCommand extends GatewayCommand
  */
 function fakeStreamClient(array $frames): void
 {
-    app()->bind(GatewayStreamClient::class, fn () => new class($frames) {
+    app()->bind(GatewayProgressStreamClient::class, fn () => new class($frames) implements GatewayProgressStreamClient {
         /** @param list<array{type: ProgressEventType, payload: array<string, mixed>}> $frames */
         public function __construct(
             private readonly array $frames,
@@ -46,9 +46,17 @@ function fakeStreamClient(array $frames): void
         /**
          * @param  array<string, mixed>  $payload
          * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+         *
+         * @mago-ignore lint:excessive-parameter-list
          */
-        public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
-        {
+        public function streamEvents(
+            string $path,
+            array $payload,
+            callable $onEvent,
+            string $method = 'post',
+            ?callable $onIdle = null,
+            int $idleIntervalMicroseconds = 300_000,
+        ): int {
             foreach ($this->frames as $frame) {
                 $onEvent($frame['type'], $frame['payload']);
 

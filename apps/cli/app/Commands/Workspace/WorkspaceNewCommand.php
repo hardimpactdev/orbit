@@ -16,7 +16,7 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
     #[\Override]
     protected $signature = 'workspace:new
         {name? : Workspace name}
-        {--app= : Parent app name}
+        {--app= : Parent app name or app.instance selector}
         {--base=main : Base git ref}
         {--php-version= : PHP version override}
         {--json : Output JSON}

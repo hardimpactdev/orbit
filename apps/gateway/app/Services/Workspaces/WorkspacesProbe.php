@@ -24,6 +24,7 @@ final readonly class WorkspacesProbe
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
         private ?WorkspaceRuntimeContainerRenderer $workspaceRuntimeContainerRenderer = null,
+        private ?WorkspacePlacement $placement = null,
     ) {}
 
     public function key(): string
@@ -38,9 +39,10 @@ final readonly class WorkspacesProbe
 
     public function introspect(Workspace $workspace): ProbeSnapshot
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $node = $this->placement()->nodeForWorkspace($workspace);
 
-        if (! $workspace->app instanceof App || ! $workspace->app->node instanceof Node) {
+        if (! $workspace->app instanceof App || ! $node instanceof Node) {
             return new ProbeSnapshot([]);
         }
 
@@ -146,7 +148,7 @@ final readonly class WorkspacesProbe
             '__CONTAINER_SPEC_HASH_LABEL__' => escapeshellarg($spec['container_spec_hash_label']),
         ]);
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app?->node, $script, [
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
             'throw' => true,
             'input' => json_encode($spec, JSON_THROW_ON_ERROR),
         ]);
@@ -291,7 +293,7 @@ final readonly class WorkspacesProbe
                     detail: [
                         'workspace' => $workspace->name,
                         'app' => $workspace->app->name,
-                        'node' => $workspace->app->node?->name,
+                        'node' => $this->placement()->nodeForWorkspace($workspace)?->name,
                         'container' => $containerName,
                     ],
                 ),
@@ -308,7 +310,7 @@ final readonly class WorkspacesProbe
                     detail: [
                         'workspace' => $workspace->name,
                         'app' => $workspace->app->name,
-                        'node' => $workspace->app->node?->name,
+                        'node' => $this->placement()->nodeForWorkspace($workspace)?->name,
                         'container' => $containerName,
                     ],
                 ),
@@ -330,7 +332,7 @@ final readonly class WorkspacesProbe
                     detail: [
                         'workspace' => $workspace->name,
                         'app' => $workspace->app->name,
-                        'node' => $workspace->app->node?->name,
+                        'node' => $this->placement()->nodeForWorkspace($workspace)?->name,
                         'container' => $containerName,
                         'expected_hash' => $expectedHash,
                         'actual_hash' => $actualHash,
@@ -417,13 +419,14 @@ final readonly class WorkspacesProbe
      */
     private function checkDevelopmentSecurity(Workspace $workspace, ProbeSnapshot $snapshot): array
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $node = $this->placement()->nodeForWorkspace($workspace);
 
-        if (! $workspace->app instanceof App || ! $workspace->app->node instanceof Node) {
+        if (! $workspace->app instanceof App || ! $node instanceof Node) {
             return [];
         }
 
-        if ($this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-prod')) {
+        if ($this->nodeRoleAssignments()->nodeHasActiveRole($node, 'app-prod')) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -433,13 +436,13 @@ final readonly class WorkspacesProbe
                     detail: [
                         'workspace' => $workspace->name,
                         'app' => $workspace->app?->name,
-                        'node' => $workspace->app?->node?->name,
+                        'node' => $node->name,
                     ],
                 ),
             ];
         }
 
-        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app?->node, 'app-dev')) {
+        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($node, 'app-dev')) {
             return [];
         }
 
@@ -494,7 +497,8 @@ final readonly class WorkspacesProbe
      */
     private function checkParentApp(Workspace $workspace): array
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
+        $node = $this->placement()->nodeForWorkspace($workspace);
 
         if (! $workspace->app instanceof App) {
             return [
@@ -508,9 +512,9 @@ final readonly class WorkspacesProbe
         }
 
         if (
-            ! $workspace->app->node instanceof Node
-            || ! $workspace->app->node->isActive()
-            || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($workspace->app->node)
+            ! $node instanceof Node
+            || ! $node->isActive()
+            || ! $this->nodeRoleAssignments()->nodeHasActiveAppHostRole($node)
         ) {
             return [
                 new DriftEntry(
@@ -590,11 +594,13 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app');
 
-        if (! $workspace->app instanceof App || $workspace->app->path === '') {
+        $appPath = $this->placement()->appPathForWorkspace($workspace);
+
+        if (! $workspace->app instanceof App || ! is_string($appPath) || $appPath === '') {
             return false;
         }
 
-        $appPath = $this->normalizePath($workspace->app->path);
+        $appPath = $this->normalizePath($appPath);
         $workspacePath = $this->normalizePath($workspace->path);
 
         if ($workspacePath === $appPath) {
@@ -643,5 +649,10 @@ final readonly class WorkspacesProbe
     private function workspaceRuntimeContainerRenderer(): WorkspaceRuntimeContainerRenderer
     {
         return $this->workspaceRuntimeContainerRenderer ?? app(WorkspaceRuntimeContainerRenderer::class);
+    }
+
+    private function placement(): WorkspacePlacement
+    {
+        return $this->placement ?? app(WorkspacePlacement::class);
     }
 }

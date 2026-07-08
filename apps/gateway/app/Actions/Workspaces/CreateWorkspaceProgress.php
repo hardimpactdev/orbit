@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Workspaces;
 
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 
 final readonly class CreateWorkspaceProgress
@@ -20,6 +21,7 @@ final readonly class CreateWorkspaceProgress
         string $name,
         string $base,
         ?string $phpVersion,
+        ?AppInstance $instance = null,
     ): CreateWorkspaceProgressPlan {
         return new CreateWorkspaceProgressPlan(
             createWorkspace: $this->createWorkspace,
@@ -29,6 +31,7 @@ final readonly class CreateWorkspaceProgress
             name: $name,
             base: $base,
             phpVersion: $phpVersion,
+            instance: $instance,
         );
     }
 }

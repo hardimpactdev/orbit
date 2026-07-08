@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit workspace:list [--app=<slug>] [--node=<slug>] [--node-transport=<transport>] [--json]
+orbit workspace:list [--app=<app>] [--node=<slug>] [--node-transport=<transport>] [--json]
 ```
 
 ## Input Contract
@@ -26,15 +26,15 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | Optional. | Never. | None. | App slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single app slug. Unknown slugs fail before side effects. |
+| `app` | `--app` | Optional. | Never. | None. | Parent app slug or app-instance selector present in the gateway registry. Dot notation such as `happie.nmbp` selects one concrete app instance. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single app selector. Unknown selectors fail before side effects. |
 | `node` | `--node` | Optional. | Never. | None. | App-role slug present in the gateway registry. Single value only; comma-separated input fails as `validation_failed` because it is not a valid single node slug. Unknown slugs fail before side effects. |
 | `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
-`--app` and `--node` are scalar slug filters. Multi-value semantics are not part
-of the initial contract. Operators who need to query multiple apps or nodes at
-once should run `workspace:list --json` without that filter and post-filter the
-result, or run separate scoped invocations.
+`--app` and `--node` are scalar filters. Multi-value semantics are not part of
+the initial contract. Operators who need to query multiple apps, app
+instances, or nodes at once should run `workspace:list --json` without that
+filter and post-filter the result, or run separate scoped invocations.
 
 ## Visibility Behavior
 
@@ -51,7 +51,7 @@ identity is authorized to see.
 ## Input Resolution
 
 1. Resolve `workspace_list.app` from `--app` when present. Validate immediately
-   against the gateway app registry.
+   against the gateway app/app-instance registry.
 2. Resolve `workspace_list.node` from `--node` when present. Validate
    immediately against the gateway node registry.
 3. Select the output renderer and query the gateway for visible workspace
@@ -62,8 +62,9 @@ identity is authorized to see.
 1. **Query gateway registry.** Read visible workspace registry configuration scoped to
    the current consuming node's access policy. No host probing is performed.
 2. **Apply filters.** If `--app` is present, include only workspaces belonging
-   to that app. If `--node` is present, include only workspaces residing on that
-   node. Filters combine with AND semantics.
+   to that app or selected app instance. If `--node` is present, include only
+   workspaces whose effective workspace node is that node. Filters combine
+   with AND semantics.
 3. **Sort results.** Workspaces are sorted by owning node name (ascending,
    case-insensitive), then by parent app name (ascending, case-insensitive), then
    by workspace name (ascending, case-insensitive). Every output renderer uses
@@ -102,7 +103,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Invalid filter value | `--app` or `--node` references an unknown slug, or contains comma-separated input. | Failure |
+| Invalid filter value | `--app` or `--node` references an unknown selector/slug, or contains comma-separated input. | Failure |
 
 ## Doctor Relationship
 

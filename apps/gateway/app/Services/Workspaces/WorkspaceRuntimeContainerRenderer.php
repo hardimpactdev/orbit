@@ -34,6 +34,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -98,9 +99,11 @@ final readonly class WorkspaceRuntimeContainerRenderer
             $mounts[] = $mount;
         }
 
-        if ($this->innerTlsPolicy->appliesToWorkspace($workspace) && $app->node !== null) {
+        $node = $this->placement->nodeForWorkspace($workspace);
+
+        if ($this->innerTlsPolicy->appliesToWorkspace($workspace) && $node !== null) {
             foreach ($this->innerTlsPolicy->runtimeTlsMounts(
-                $app->node,
+                $node,
                 $this->innerTlsPolicy->workspaceRouteDomain($workspace),
             ) as $mount) {
                 $mounts[] = $mount;
@@ -147,16 +150,17 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
     public function runtimeConfigPath(Workspace $workspace): string
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
         $app = $workspace->app;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof App || ! $app->node instanceof Node) {
+        if (! $app instanceof App || ! $node instanceof Node) {
             throw new RuntimeException(
                 "Workspace '{$workspace->name}' has no owning app node; cannot render runtime config path.",
             );
         }
 
-        return $this->nodeHostPaths->workspaceRuntimeConfigPath($app->node, $app->name, $workspace->name);
+        return $this->nodeHostPaths->workspaceRuntimeConfigPath($node, $app->name, $workspace->name);
     }
 
     public function upstreamUrl(Workspace $workspace): string
@@ -173,12 +177,13 @@ final readonly class WorkspaceRuntimeContainerRenderer
      */
     private function environmentFor(App $app, Workspace $workspace, string $phpVersion): array
     {
+        $documentRoot = $this->placement->documentRootForWorkspace($workspace);
         $environment = [
-            'SERVER_ROOT' => $this->documentRootInContainer($app),
+            'SERVER_ROOT' => $this->documentRootInContainer($documentRoot),
             'XDG_CONFIG_HOME' => AppRuntimeContainerRenderer::XdgConfigHome,
             'XDG_DATA_HOME' => AppRuntimeContainerRenderer::XdgDataHome,
             'ORBIT_APP' => $app->name,
-            'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
+            'ORBIT_APP_DOCUMENT_ROOT' => $documentRoot,
             'ORBIT_WORKSPACE' => $workspace->name,
             'ORBIT_PHP_VERSION' => $phpVersion,
         ];
@@ -201,9 +206,9 @@ final readonly class WorkspaceRuntimeContainerRenderer
         return $environment;
     }
 
-    public function documentRootInContainer(App $app): string
+    public function documentRootInContainer(string $documentRoot): string
     {
-        $documentRoot = trim($app->document_root, '/');
+        $documentRoot = trim($documentRoot, '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return WorkspaceRuntimeContainer::SourceTarget;

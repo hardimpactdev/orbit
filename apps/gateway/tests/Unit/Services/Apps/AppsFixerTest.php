@@ -24,6 +24,7 @@ use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -87,6 +88,7 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
         new EnsureFrankenPhpRuntimeProcess(
             $appRuntimeContainerRenderer,
             new WorkspaceRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
+            new WorkspacePlacement,
         ),
         new SiteCertificateInstallerFake,
     );

@@ -5,13 +5,16 @@ declare(strict_types=1);
 use App\Actions\Workspaces\SetupWorkspace;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
@@ -22,8 +25,10 @@ use App\Models\WorkspaceStep;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
+use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -288,6 +293,96 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
             'sha256',
             $caddySite,
         ));
+});
+
+it('sets up a Codex worktree against the selected app instance node', function (): void {
+    $canonicalNode = Node::query()->findOrFail(1);
+    $canonicalNode->update([
+        'name' => 'beast',
+        'host' => 'beast',
+        'tld' => 'test',
+    ]);
+
+    $localNode = Node::factory()->create([
+        'name' => 'NMBP',
+        'host' => 'nmbp',
+        'user' => 'nckrtl',
+        'platform' => 'macos',
+        'tld' => 'nmbp',
+        'status' => 'active',
+        'wireguard_address' => '10.47.0.55',
+    ]);
+    NodeRoleAssignment::factory()
+        ->for($localNode, 'node')
+        ->create([
+            'role' => 'app-dev',
+            'status' => 'active',
+        ]);
+
+    $app = App::query()->firstOrFail();
+    $app->update([
+        'name' => 'happie',
+        'domain' => 'happie.test',
+        'path' => '/home/nckrtl/apps/happie',
+        'node_id' => $canonicalNode->id,
+    ]);
+    $app->refresh();
+
+    $instance = AppInstance::factory()
+        ->for($app)
+        ->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                node: 'NMBP',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+
+    $shell = new SetupWorkspaceActionTestShell;
+    $certificates = new SetupWorkspaceActionTestCertificateInstaller;
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(SiteCertificateInstaller::class, $certificates);
+
+    [$workspace, $resolvedApp, $resolvedNode, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve(
+        name: 'recipes',
+        appName: 'happie.nmbp',
+        path: '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        callerCwd: null,
+        callerNode: $localNode,
+    );
+
+    expect($resolvedApp->is($app))
+        ->toBeTrue()
+        ->and($resolvedNode->is($localNode))
+        ->toBeTrue()
+        ->and($workspace->app_instance_id)
+        ->toBe($instance->id)
+        ->and($workspace->url())
+        ->toBe('https://recipes.happie.nmbp')
+        ->and($isAdoption)
+        ->toBeTrue();
+
+    $result = app(SetupWorkspace::class)->handle($resolvedApp, $workspace, $resolvedNode, $isAdoption);
+    $workspace->refresh();
+
+    expect($result['node'])
+        ->toBe('NMBP')
+        ->and($result['url'])
+        ->toBe('https://recipes.happie.nmbp')
+        ->and($workspace->lifecycle_status)
+        ->toBe(WorkspaceLifecycleStatus::Active)
+        ->and($workspace->proxyRoutes()->where('domain', 'recipes.happie.nmbp')->exists())
+        ->toBeTrue()
+        ->and($shell->runs)
+        ->each(fn (Pest\Expectation $run) => $run->node->toBe($localNode->id))
+        ->and($certificates->hosts)
+        ->toContain('recipes.happie.nmbp');
+
+    expectWorkspaceFrankenPhpRuntimeProcess($workspace, $localNode->id);
 });
 
 it('installs workspace app-dev runtime trust pool through the managed file agent path', function (): void {
@@ -574,8 +669,6 @@ it('starts configured app processes for the workspace after rendering runtime un
             'count' => 1,
             'names' => ['vite'],
         ])
-        ->and($certificates->hosts)
-        ->toBe(['feature-a.demo', 'feature-a.demo.beast'])
         ->and($requests)
         ->toHaveCount(5)
         ->and(array_slice($requests[3]['argv'] ?? [], offset: 0, length: 3))
@@ -583,7 +676,10 @@ it('starts configured app processes for the workspace after rendering runtime un
         ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_feature-a_vite.service'])
         ->and($shell->scripts)
-        ->not->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
+        ->not
+        ->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'")
+        ->and(array_values(array_unique($certificates->hosts)))
+        ->toBe(['feature-a.demo']);
 });
 
 it('reports converged for already-active workspace', function (): void {
@@ -829,24 +925,28 @@ it('passes lifecycle environment into containerized setup steps', function (): v
     $composerRun = collect($shell->runs)
         ->first(fn (array $run): bool => str_contains($run['script'], 'composer install'));
 
+    $workspaceHost = 'feature-a.demo';
+    $workspaceUrl = "https://{$workspaceHost}";
+
     expect($composerRun['script'])->toContain("'ORBIT_APP=demo'");
     expect($composerRun['script'])->toContain("'ORBIT_WORKSPACE_NAME=feature-a'");
-    expect($composerRun['script'])->toContain("'APP_URL=https://feature-a.demo.beast'");
-    expect($composerRun['script'])->toContain("'VITE_APP_URL=https://feature-a.demo.beast'");
+    expect($composerRun['script'])->toContain("'ORBIT_URL={$workspaceUrl}'");
+    expect($composerRun['script'])->toContain("'APP_URL={$workspaceUrl}'");
+    expect($composerRun['script'])->toContain("'VITE_APP_URL={$workspaceUrl}'");
     expect($composerRun['script'])
         ->toContain(
-            "'VITE_DEV_SERVER_KEY=/home/gateway/.config/orbit/certs/feature-a.demo.beast.key'",
+            "'VITE_DEV_SERVER_KEY=/home/gateway/.config/orbit/certs/{$workspaceHost}.key'",
         );
     expect($composerRun['script'])
         ->toContain(
-            "'VITE_DEV_SERVER_CERT=/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt'",
+            "'VITE_DEV_SERVER_CERT=/home/gateway/.config/orbit/certs/{$workspaceHost}.crt'",
         );
     expect($composerRun['options']['metadata'])->toMatchArray([
-        'APP_URL' => 'https://feature-a.demo.beast',
-        'VITE_APP_URL' => 'https://feature-a.demo.beast',
-        'VITE_VALET_HOST' => 'feature-a.demo.beast',
-        'VITE_DEV_SERVER_KEY' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.key',
-        'VITE_DEV_SERVER_CERT' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt',
+        'APP_URL' => $workspaceUrl,
+        'VITE_APP_URL' => $workspaceUrl,
+        'VITE_VALET_HOST' => $workspaceHost,
+        'VITE_DEV_SERVER_KEY' => "/home/gateway/.config/orbit/certs/{$workspaceHost}.key",
+        'VITE_DEV_SERVER_CERT' => "/home/gateway/.config/orbit/certs/{$workspaceHost}.crt",
     ]);
 });
 
@@ -993,9 +1093,12 @@ final readonly class SetupWorkspaceActionTestCa extends OrbitCaService
     }
 }
 
-function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
+function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace, ?int $expectedNodeId = null): void
 {
     $workspace->loadMissing('app');
+    $expectedNodeId ??= $workspace->app->node_id;
+    $node = Node::query()->findOrFail($expectedNodeId);
+    $home = NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
 
     $process = OrbitProcess::query()
         ->ownedBy($workspace)
@@ -1006,7 +1109,7 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
         ->not
         ->toBeNull()
         ->and($process?->node_id)
-        ->toBe($workspace->app->node_id)
+        ->toBe($expectedNodeId)
         ->and($process?->command)
         ->toBe('frankenphp')
         ->and($process?->restart_policy)
@@ -1019,8 +1122,8 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
         ->toBeNull()
         ->and($process?->runtime_config)
         ->toMatchArray([
-            'container_name' => 'orbit-ws-demo-feature-a',
-            'php_ini_path' => '/home/gateway/.config/orbit/workspaces/demo-feature-a.ini',
+            'container_name' => "orbit-ws-{$workspace->app->name}-{$workspace->name}",
+            'php_ini_path' => "{$home}/.config/orbit/workspaces/{$workspace->app->name}-{$workspace->name}.ini",
             'container_spec_hash_label' => 'orbit.workspace.spec_hash',
         ]);
 }

@@ -6,13 +6,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\Workspaces\RemoveWorkspace;
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppSelectorResolver;
 use App\Services\Nodes\Access\AuthorizationResult;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
+use App\Services\Workspaces\WorkspacePlacement;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +30,8 @@ final class WorkspaceRemoveController implements Loggable
 
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
+        private readonly AppSelectorResolver $appSelectorResolver,
+        private readonly WorkspacePlacement $placement,
     ) {}
 
     public function __invoke(string $name, Request $request, RemoveWorkspace $removeWorkspace): JsonResponse
@@ -47,7 +53,22 @@ final class WorkspaceRemoveController implements Loggable
         }
 
         $app = $this->stringQuery($request, 'app');
-        $matches = $this->matchingWorkspaces($name, $app);
+        $selection = null;
+
+        if ($app !== null) {
+            try {
+                $selection = $this->appSelectorResolver->resolveRequired($app);
+            } catch (AppSelectionResolutionFailed) {
+                return $this->error(
+                    'workspace.not_found',
+                    "Workspace '{$name}' not found in registry.",
+                    ['name' => $name, 'app' => $app],
+                    404,
+                );
+            }
+        }
+
+        $matches = $this->matchingWorkspaces($name, $selection);
 
         if ($matches->isEmpty()) {
             return $this->error(
@@ -77,7 +98,7 @@ final class WorkspaceRemoveController implements Loggable
 
         $workspace = $matches->firstOrFail();
 
-        $node = $workspace->app?->node;
+        $node = $this->placement->nodeForWorkspace($workspace);
 
         if (! $node instanceof Node) {
             return $this->error(
@@ -123,17 +144,27 @@ final class WorkspaceRemoveController implements Loggable
     /**
      * @return Collection<int, Workspace>
      */
-    private function matchingWorkspaces(string $name, ?string $app): Collection
+    private function matchingWorkspaces(string $name, ?AppSelection $selection): Collection
     {
-        return Workspace::query()
-            ->with(['app.node', 'app.processes'])
+        /** @var Collection<int, Workspace> $workspaces */
+        $workspaces = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance', 'app.processes'])
             ->where('name', $name)
-            ->when($app
-            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
-                'name',
-                $app,
-            )))
+            ->when($selection instanceof AppSelection, fn (Builder $query): Builder => $query->where(
+                'app_id',
+                $selection?->app->id,
+            ))
             ->get();
+
+        /** @var Collection<int, Workspace> $matches */
+        $matches = $workspaces
+            ->filter(
+                fn (Workspace $workspace, int $key): bool => ! $selection instanceof AppSelection
+                || $this->appSelectorResolver->matchesWorkspace($workspace, $selection),
+            )
+            ->values();
+
+        return $matches;
     }
 
     private function stringQuery(Request $request, string $key): ?string

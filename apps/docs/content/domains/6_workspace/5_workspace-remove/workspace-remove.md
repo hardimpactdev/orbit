@@ -13,7 +13,7 @@ workspace or reset its state.
 Run this command to tear down a workspace and its owned artifacts.
 
 ```bash
-orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
+orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--node-transport=<transport>] [--json]
 ```
 
 Destructive consent is always required before removal side effects start.
@@ -56,18 +56,31 @@ Use `--force` in non-interactive environments or scripts that have already obtai
 orbit workspace:remove feature-api --force
 ```
 
+### Force transitional SSH fallback during cleanup
+
+Use `--node-transport=transitional-ssh-fallback` when node-side cleanup must
+avoid agent-push transport.
+
+```bash
+orbit workspace:remove feature-api --force --node-transport=transitional-ssh-fallback
+```
+
 ## Arguments and options
 
 - `name`: workspace name. Optional when running from inside a registered
   workspace directory.
-- `--app=<app>`: the parent app slug. Required only when the workspace name
-  is ambiguous across multiple apps.
+- `--app=<app>`: the parent app slug or app-instance selector. Use dot
+  notation such as `happie.nmbp` to target one concrete app instance.
+  Required only when the workspace name is ambiguous across visible targets.
 - `--keep-files`: remove Orbit configuration and runtime artifacts (proxy
   routes, inherited processes, runtime container) but leave the workspace worktree on
   the node.
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt. Required in non-interactive input mode. `--json` never implies
   `--force`.
+- `--node-transport=<transport>`: Node command transport preference for
+  node-side cleanup. Allowed values are `auto`, `agent-push`, and
+  `transitional-ssh-fallback`.
 - `--json`: Output JSON.
 
 ## Behavior Summary
@@ -114,6 +127,7 @@ The output format depends on whether `--json` is passed.
 
 - CLI caller must reach the Orbit gateway.
 - Caller identity must have `workspace:remove` on the workspace's owning node.
+  Instance-bound workspaces use the selected app instance node for cleanup.
 - Gateway SSH access to the node is used for artifact cleanup when
   available. If cleanup cannot finish after workspace configuration removal,
   the command still succeeds and reports warnings with repair commands.

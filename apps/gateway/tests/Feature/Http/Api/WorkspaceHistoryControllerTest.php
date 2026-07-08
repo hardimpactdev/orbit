@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
@@ -123,6 +126,57 @@ describe('WorkspaceHistoryController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.runs.0.workspace', 'feature-docs');
+    });
+
+    it('returns history for app instance selectors', function (): void {
+        $caller = createWorkspaceHistoryCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceHistoryAccess($caller, $localNode);
+
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'domain' => 'happie.test',
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        $instance = AppInstance::factory()
+            ->for($app)
+            ->create([
+                'name' => 'nmbp',
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $localNode->id,
+                    node: 'NMBP',
+                    path: '/Users/nckrtl/apps/happie',
+                    document_root: 'public',
+                    domain: 'happie.nmbp',
+                ),
+            ]);
+        $workspace = Workspace::factory()->create([
+            'name' => 'recipes',
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+        ]);
+        WorkspaceRun::factory()->create([
+            'workspace_id' => $workspace->id,
+            'status' => 'completed',
+            'started_at' => '2026-05-02 10:00:00',
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/recipes/history?app=happie.nmbp',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.runs')
+            ->assertJsonPath('success.data.runs.0.workspace', 'recipes');
     });
 
     it('returns validation errors for invalid filters', function (): void {

@@ -19,7 +19,7 @@ final class WorkspaceHistoryCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'workspace:history
         {name? : Workspace name}
-        {--app= : Parent app slug}
+        {--app= : Parent app slug or app.instance selector}
         {--limit= : Maximum number of runs to return}
         {--since= : ISO 8601 lower started_at bound}
         {--until= : ISO 8601 exclusive upper started_at bound}

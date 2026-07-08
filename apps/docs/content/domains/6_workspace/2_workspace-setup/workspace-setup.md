@@ -24,25 +24,36 @@ orbit workspace:setup
 # Set up or adopt a workspace by explicit identity
 orbit workspace:setup feature-a --app=my-app
 
+# Target a concrete app instance with dot notation
+orbit workspace:setup recipes --app=happie.nmbp --path=/Users/nckrtl/.codex/worktrees/a59f/happie
+
 # Adopt an existing path as a workspace
 orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/feature-a
 
 # Stream setup progress as newline-delimited JSON
 orbit workspace:setup feature-a --app=my-app --stream-json
+
+# Force the transitional SSH fallback for node-side setup work
+orbit workspace:setup feature-a --app=my-app --node-transport=transitional-ssh-fallback
 ```
 
 ## Arguments and options
 
 - `name`: The workspace identity slug. Required unless local workspace context
   can resolve it; can be prompted in interactive mode.
-- `--app=<app>`: The parent app slug. Defaults to the existing workspace's
-  parent app, the local app context, or an interactive prompt.
+- `--app=<app>`: The parent app slug or app-instance selector. Use dot
+  notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
+  Defaults to the existing workspace's parent app, the local app context, or
+  an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
   that node. The path may live outside the parent app path, including external
   agent worktrees such as Codex or Claude worktree directories. The parent app
   root itself is not a valid workspace path. A relative or non-absolute value
   fails before side effects.
+- `--node-transport=<transport>`: Node command transport preference for
+  node-side setup work. Allowed values are `auto`, `agent-push`, and
+  `transitional-ssh-fallback`.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
   with `--json` and forces non-interactive mode.
@@ -54,7 +65,8 @@ when explicit input is not supplied. The gateway path-ownership lookup keyed
 on (caller node identity, absolute CWD) returns one of:
 
 - **A registered workspace path** — the workspace identity (`name` and
-  parent `app`) and `path` are resolved from gateway configuration. The
+  parent `app`, selected app instance when present, and `path` are resolved
+  from gateway configuration. The
   command proceeds as a re-converge or repair of that workspace.
 - **A registered app's own root path** — the CWD is the parent app's own
   path, not a workspace path under it. The command fails before side effects
@@ -114,7 +126,8 @@ The following steps describe what the command does during a successful run.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
 - **Artifact Apply**: Applies runtime and proxy backend artifacts on the
-  node via SSH.
+  selected workspace node via SSH. Instance-bound workspaces inherit the app
+  instance node, base path, document root, and domain.
 - **Setup Steps**: Runs setup steps when configured.
 - **HTTP Probe**: Performs a setup-time HTTP probe against the workspace URL.
   A failed probe is reported as a command warning, not as setup failure or a

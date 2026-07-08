@@ -19,7 +19,7 @@ final class WorkspaceShowCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'workspace:show
         {name? : Workspace name}
-        {--app= : Parent app slug}
+        {--app= : Parent app slug or app.instance selector}
         {--json}';
 
     #[\Override]

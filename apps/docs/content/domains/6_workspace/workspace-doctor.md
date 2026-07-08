@@ -8,8 +8,10 @@ The workspace family doctor implements the
 
 `doctor --family=workspace` verifies whether gateway workspace records still
 match the workspace facts that make those records usable development contexts
-on their parent app's node. It also detects stale workspace artifacts owned by Orbit
-with identities absent from active gateway workspace configuration, so
+on their effective workspace node. Instance-bound workspaces use their selected
+app instance node; app-only legacy workspaces use the parent app's canonical
+node. It also detects stale workspace artifacts owned by Orbit with identities
+absent from active gateway workspace configuration, so
 post-removal cleanup can be repaired without recreating deleted workspace
 records.
 
@@ -17,8 +19,9 @@ The workspace family owns these facts:
 
 - gateway-owned workspace records: name, parent app, workspace path, derived
   hostname, PHP version override or inheritance, and lifecycle status;
-- workspace source location: the managed workspace path exists on the parent
-  app's node and is allowed by the workspace source driver that created it;
+- workspace source location: the managed workspace path exists on the
+  effective workspace node and is allowed by the workspace source driver that
+  created it;
 - workspace runtime artifacts: workspace FrankenPHP container configuration,
   effective PHP image selection, managed runtime configuration, and filesystem
   ownership required for the workspace environment;
@@ -48,7 +51,7 @@ The workspaces probe reads gateway workspace records and checks these layers:
 2. **Parent app eligibility:** the parent app reference resolves to an app
    record that can own workspaces. App runtime health is not diagnosed here;
    app drift is reported by the app family.
-3. **Source path:** the workspace path exists on the parent app's node, is
+3. **Source path:** the workspace path exists on the effective workspace node, is
    usable as the workspace source directory, and is distinct from the parent
    app root. Generic and adapter-owned workspace sources may live outside the
    parent app path.
@@ -82,7 +85,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | --- | --- |
 | `workspace.record_incomplete` | A selected workspace record lacks name, parent app reference, workspace path, derived hostname, effective PHP version, or required lifecycle fields. |
 | `workspace.parent_app_invalid` | The workspace record points at a missing app, unauthorized app, or app that cannot own workspaces. |
-| `workspace.path_missing` | The configured workspace path does not exist on the parent app's node. |
+| `workspace.path_missing` | The configured workspace path does not exist on the effective workspace node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
 | `workspace.path_outside_policy` | A generic workspace path equals the parent app root instead of a distinct workspace path. Adapter-owned paths are checked against their adapter metadata instead of this generic policy. |
 | `workspace.php_version_unavailable` | An active workspace's effective PHP version cannot serve the workspace runtime on the owning node. |

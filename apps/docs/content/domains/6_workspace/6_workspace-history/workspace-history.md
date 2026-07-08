@@ -4,14 +4,15 @@ Show workspace setup and lifecycle history.
 
 ## Usage
 
-`orbit workspace:history [name] [--app=<slug>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
+`orbit workspace:history [name] [--app=<app>] [--limit=<int>] [--since=<date>] [--until=<date>] [--json]`
 
 ## Arguments and options
 
 - `name`: Workspace slug. Optional when the current working directory resolves
   to a known workspace path.
-- `--app=<slug>`: Parent app slug. Required only when `name` matches multiple
-  visible workspaces.
+- `--app=<app>`: Parent app slug or app-instance selector. Use dot notation
+  such as `happie.nmbp` to target one concrete app instance. Required only
+  when `name` matches multiple visible workspaces.
 - `--json`: Output structured JSON.
 - `--limit=<int>`: Maximum number of runs to return. Default `50`; hard cap
   `500`.
@@ -25,6 +26,9 @@ Show workspace setup and lifecycle history.
 
 ### View history for a workspace in a specific app
 `orbit workspace:history feature-docs --app=ohdear`
+
+### View history for an app-instance workspace
+`orbit workspace:history recipes --app=happie.nmbp`
 
 ### Get history as JSON
 `orbit workspace:history feature-docs --json`
