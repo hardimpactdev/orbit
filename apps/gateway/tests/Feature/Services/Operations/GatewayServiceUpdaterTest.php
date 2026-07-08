@@ -9,8 +9,10 @@ use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\GatewayHostAgentServiceRestarter;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
+use App\Services\RemoteShell\RemoteHostExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,6 +30,10 @@ beforeEach(function (): void {
     config()->set('orbit.paths.config_root', $this->configRoot);
     $this->remoteShell = gateway_service_updater_fake_remote_shell();
     app()->instance(RemoteShell::class, $this->remoteShell);
+    app()->instance(
+        GatewayHostAgentServiceRestarter::class,
+        new GatewayHostAgentServiceRestarter(app(RemoteHostExecutor::class), $this->remoteShell),
+    );
 });
 
 afterEach(function (): void {
@@ -299,6 +305,46 @@ it('restarts the gateway host agent service after host cli install reports no un
         ->toContain('restart_gateway_agent_unit')
         ->toContain('"$systemctl_bin" restart "$unit_name"')
         ->toContain('gateway_agent_unit_active');
+});
+
+it('container-resolved gateway host agent restart still forces host ssh despite the RemoteShell binding', function (): void {
+    app()->forgetInstance(GatewayHostAgentServiceRestarter::class);
+    Process::fake([
+        '*' => Process::result(output: "restart_gateway_agent_unit\ngateway_agent_unit_active\n"),
+    ]);
+
+    $run = gatewayServiceUpdaterRun();
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'host' => '10.6.0.2',
+            'wireguard_address' => '10.6.0.2',
+            'platform' => 'debian_12',
+            'user' => 'orbit',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+    markNodeSecurityBaselineClean($gateway);
+
+    app(GatewayHostAgentServiceRestarter::class)->restart($run, $gateway, [
+        'unit_name' => 'orbit-agent.service',
+        'exec_start' => '/usr/local/bin/orbit-agent',
+        'config_path' => '/etc/orbit-agent/config.env',
+        'http_bind' => '10.6.0.2:9477',
+        'user' => 'orbit',
+    ]);
+
+    Process::assertRan(function ($process): bool {
+        $command = (string) $process->command;
+
+        return (
+            str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+            && str_contains($command, "'orbit'@'10.6.0.2'")
+            && str_contains($command, 'systemctl')
+            && str_contains($command, 'restart "$unit_name"')
+            && ! str_starts_with($command, 'bash -c ')
+        );
+    });
 });
 
 it('records gateway host CLI install when the gateway agent transport disconnects during self update', function (): void {

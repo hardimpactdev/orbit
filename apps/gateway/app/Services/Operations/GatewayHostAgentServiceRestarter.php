@@ -12,8 +12,12 @@ use RuntimeException;
 
 final readonly class GatewayHostAgentServiceRestarter
 {
+    /**
+     * @param  RemoteShell|null  $remoteShellForTests
+     */
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
+        private RemoteHostExecutor $remoteHostExecutor,
+        private mixed $remoteShellForTests = null,
     ) {}
 
     /**
@@ -29,14 +33,14 @@ final readonly class GatewayHostAgentServiceRestarter
             'throw' => true,
         ];
 
-        if ($this->remoteShell instanceof RemoteShell) {
-            $result = $this->remoteShell->run(
+        if ($this->remoteShellForTests instanceof RemoteShell) {
+            $result = $this->remoteShellForTests->run(
                 node: $gatewayNode,
                 script: $this->script($this->systemdServiceName($agentService['unit_name'])),
                 options: $options,
             );
         } else {
-            $result = app(RemoteHostExecutor::class)->run(
+            $result = $this->remoteHostExecutor->run(
                 node: $gatewayNode,
                 script: $this->script($this->systemdServiceName($agentService['unit_name'])),
                 options: [
