@@ -25,6 +25,7 @@ use Orbit\Core\Security\OperationToken;
 use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -688,36 +689,125 @@ describe(RemoteLocalExecutor::class, function (): void {
             input: null,
         );
 
-        expect($call['options'])
-            ->toMatchArray([
-                'cwd' => '/home/orbit',
-                'input' => $input,
-                'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
-                'environment' => $expectedEnvironment,
-            ])
-            ->not->toHaveKeys([
-                'transport',
-                'ssh_bootstrap_binary',
-                'ssh_bootstrap_input_file',
-                'bind_application_key',
-                'bind_input',
-            ])->and($call['script'])->toContain('download_executor_bootstrap')->toContain(
-                "payload_path='{$payloadPath}'",
-            )->toContain('cat > "$payload_path"')->toContain(
-                "check_executor_bootstrap_sha256 '{$inputSha256}' \"\$payload_path\"",
-            )->toContain($artifactUrl)->toContain($sha256)->toContain('unset APP_KEY')->toContain(
-                "export HOME='/home/orbit'",
-            )->toContain("export ORBIT_CONFIG_PATH='/home/orbit/.config/orbit/config.json'")->toContain(
+        expect($call['options'])->toMatchArray([
+            'cwd' => '/home/orbit',
+            'input' => $input,
+            'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+            'environment' => $expectedEnvironment,
+        ]);
+        foreach ([
+            'transport',
+            'ssh_bootstrap_binary',
+            'ssh_bootstrap_input_file',
+            'bind_application_key',
+            'bind_input',
+        ] as $transportOptionKey) {
+            expect(array_key_exists($transportOptionKey, $call['options']))->toBeFalse();
+        }
+
+        expect($call['script'])
+            ->toContain('download_executor_bootstrap')
+            ->toContain("payload_path='{$payloadPath}'")
+            ->toContain('cat > "$payload_path"')
+            ->toContain("check_executor_bootstrap_sha256 '{$inputSha256}' \"\$payload_path\"")
+            ->toContain($artifactUrl)
+            ->toContain($sha256)
+            ->toContain('unset APP_KEY')
+            ->toContain("export HOME='/home/orbit'")
+            ->toContain("export ORBIT_CONFIG_PATH='/home/orbit/.config/orbit/config.json'")
+            ->toContain(
                 "internal:fleet-update:install-cli --payload-file={$payloadPath} --payload-sha256={$inputSha256} --operation-token='{$token}' --json",
-            )->and($call['script'])
-            ->not->toContain('gateway-secret')->and(new OperationTokenVerifier(new OperationTokenSigner)->verify(
-                secretsByKeyId: ['current' => 'gateway-secret'],
-                token: OperationToken::parse($token),
-                expectedNode: $node->name,
-                expectedCommand: 'internal:fleet-update:install-cli',
-                expectedCommandContextHash: $expectedContext->hash(),
-                now: 1_798_105_200,
-            ))->toBeTrue();
+            );
+        expect(str_contains($call['script'], 'gateway-secret'))->toBeFalse();
+        expect(new OperationTokenVerifier(new OperationTokenSigner)->verify(
+            secretsByKeyId: ['current' => 'gateway-secret'],
+            token: OperationToken::parse($token),
+            expectedNode: $node->name,
+            expectedCommand: 'internal:fleet-update:install-cli',
+            expectedCommandContextHash: $expectedContext->hash(),
+            now: 1_798_105_200,
+        ))->toBeTrue();
+    });
+
+    it('keeps bootstrap verification output out of wrapped command stdout', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000617';
+        $input = '{"install":true}';
+        $payloadPath = sys_get_temp_dir().'/orbit-bootstrap-payload-'.bin2hex(random_bytes(4)).'.json';
+        $bootstrapPath = tempnam(directory: sys_get_temp_dir(), prefix: 'orbit-bootstrap-binary-');
+
+        if (! is_string($bootstrapPath)) {
+            throw new RuntimeException('Could not allocate bootstrap binary path.');
+        }
+
+        file_put_contents($bootstrapPath, <<<'BASH'
+            #!/usr/bin/env bash
+            printf '{"success":{"data":{"agent_installed":true}}}\n'
+            BASH);
+        $bootstrapSha256 = hash_file('sha256', $bootstrapPath);
+
+        if (! is_string($bootstrapSha256)) {
+            throw new RuntimeException('Could not hash bootstrap binary.');
+        }
+
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            function (Node $node, string $script, array $options): RemoteShellResult {
+                $process = new Process(['/bin/bash', '-lc', $script]);
+                $process->setInput(is_string($options['input'] ?? null) ? $options['input'] : '');
+                $process->run();
+
+                return new RemoteShellResult(
+                    exitCode: $process->getExitCode() ?? 1,
+                    stdout: $process->getOutput(),
+                    stderr: $process->getErrorOutput(),
+                    durationMs: 1,
+                );
+            },
+        );
+        $executor = remoteLocalExecutor($transport);
+
+        try {
+            $result = $executor->runInternal(
+                node: remoteLocalExecutorNode(['gateway']),
+                commandName: 'internal:fleet-update:install-cli',
+                commandOptions: [
+                    'payload-file' => $payloadPath,
+                    'payload-sha256' => hash('sha256', $input),
+                ],
+                transportOptions: [
+                    'transport' => NodeTransportPreference::TransitionalSshFallback,
+                    'cwd' => '/home/orbit',
+                    'input' => $input,
+                    'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+                    'bind_application_key' => false,
+                    'bind_input' => false,
+                    'ssh_bootstrap_binary' => [
+                        'url' => 'file://'.$bootstrapPath,
+                        'sha256' => $bootstrapSha256,
+                    ],
+                    'ssh_bootstrap_input_file' => [
+                        'path' => $payloadPath,
+                        'sha256' => hash('sha256', $input),
+                    ],
+                ],
+            );
+        } finally {
+            if (is_file($bootstrapPath)) {
+                unlink($bootstrapPath);
+            }
+
+            if (is_file($payloadPath)) {
+                unlink($payloadPath);
+            }
+        }
+
+        expect($result->stdout)
+            ->toBe("{\"success\":{\"data\":{\"agent_installed\":true}}}\n")
+            ->and(str_contains($result->stdout, ': OK'))
+            ->toBeFalse()
+            ->and($result->stderr)
+            ->toContain(': OK')
+            ->and($transport->calls[0]['script'])
+            ->toContain('prepare_executor_bootstrap 1>&2');
     });
 
     it('rejects long-running local executor dispatch through start before minting a token', function (): void {

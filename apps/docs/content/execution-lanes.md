@@ -188,7 +188,9 @@ payload file and the file path plus SHA-256 are bound in command argv through
 cwd, and the non-secret executor environment; stdin itself is not part of this
 bootstrap token context because the CLI guard verifies before the install
 command reads the payload. The verify endpoint has no legacy unbound payload
-form.
+form. Bootstrap staging diagnostics must not prefix the wrapped command stdout;
+the transport result stdout remains the candidate internal command's stdout
+verbatim.
 
 #### Result-boundary redaction patterns
 

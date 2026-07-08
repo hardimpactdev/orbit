@@ -1302,7 +1302,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $environment,
     ): string {
         $environmentLines = $this->shellEnvironmentLines($environment);
-        $inputFileLines = $this->shellInputFileLines($inputFile);
+        $inputFileLines = array_map(
+            static fn (string $line): string => "    {$line}",
+            $this->shellInputFileLines($inputFile),
+        );
         $argvLine = $this->shellArgvLine($argv);
         $url = escapeshellarg($bootstrapBinary['url']);
         $sha256 = escapeshellarg($bootstrapBinary['sha256']);
@@ -1339,10 +1342,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             '    echo "No SHA-256 checksum tool found." >&2',
             '    return 127',
             '}',
+            'prepare_executor_bootstrap() {',
             ...$inputFileLines,
-            "download_executor_bootstrap {$url} \"\$bootstrap_path\"",
-            "check_executor_bootstrap_sha256 {$sha256} \"\$bootstrap_path\"",
-            'chmod 0755 "$bootstrap_path"',
+            "    download_executor_bootstrap {$url} \"\$bootstrap_path\"",
+            "    check_executor_bootstrap_sha256 {$sha256} \"\$bootstrap_path\"",
+            '    chmod 0755 "$bootstrap_path"',
+            '}',
+            'prepare_executor_bootstrap 1>&2',
             "\"\$bootstrap_path\" {$argvLine}",
         ]);
     }
