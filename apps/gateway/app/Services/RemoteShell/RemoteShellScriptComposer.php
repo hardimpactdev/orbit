@@ -15,9 +15,11 @@ final readonly class RemoteShellScriptComposer
      *     cwd?: string,
      *     timeout?: int,
      *     input?: string,
+     *     environment?: array<string, string>,
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     public function compose(string $script, array $options): string
@@ -44,9 +46,11 @@ final readonly class RemoteShellScriptComposer
      *     cwd?: string,
      *     timeout?: int,
      *     input?: string,
+     *     environment?: array<string, string>,
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @return array<string, string>
      */
@@ -77,9 +81,11 @@ final readonly class RemoteShellScriptComposer
      *     cwd?: string,
      *     timeout?: int,
      *     input?: string,
+     *     environment?: array<string, string>,
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     private function composeStrict(string $script, array $options): string

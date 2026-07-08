@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Nodes\NodeRoleStatus;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteHostExecutor;
@@ -175,6 +176,46 @@ it('uses ssh for gateway host commands when running inside the gateway container
             putenv("ORBIT_GATEWAY_EXPOSURE_MODE={$previousExposureMode}");
         }
     }
+});
+
+it('can force gateway host commands over ssh when the gateway fast path would run locally', function (): void {
+    Process::preventStrayProcesses();
+    Process::fake([
+        '*' => Process::result(output: "gateway-host-ok\n"),
+    ]);
+
+    $node = remoteHostExecutorNode([
+        'name' => 'gateway',
+        'host' => '10.6.0.2',
+        'wireguard_address' => '10.6.0.2',
+        'user' => 'orbit',
+    ]);
+    $node->roleAssignments()->create([
+        'role' => 'gateway',
+        'status' => NodeRoleStatus::Active,
+        'settings' => [],
+    ]);
+    $node->unsetRelation('roleAssignments');
+
+    app(RemoteHostExecutor::class)->run($node, 'systemctl restart orbit-agent.service', [
+        'force_remote_host' => true,
+    ]);
+
+    Process::assertRan(function (PendingProcess $process): bool {
+        $command = $process->command;
+
+        if (! is_string($command)) {
+            return false;
+        }
+
+        return (
+            str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+            && str_contains($command, "'orbit'@'10.6.0.2'")
+            && str_contains($command, 'bash -lc')
+            && str_contains($command, 'systemctl restart orbit-agent.service')
+            && ! str_starts_with($command, 'bash -c ')
+        );
+    });
 });
 
 it('starts host shell processes with the same command composition surface', function (): void {

@@ -177,9 +177,27 @@ final readonly class LocalFleetUpdateInstallCliAction
                 agent_bin_path="${ORBIT_AGENT_BIN_PATH:-/usr/local/bin/orbit-agent}"
                 systemctl_bin="$(find_command systemctl || true)"
 
-                if [ -n "$systemctl_bin" ] && {
-                    "$systemctl_bin" status orbit-agent >/dev/null 2>&1 || "$systemctl_bin" is-enabled orbit-agent >/dev/null 2>&1
-                }; then
+                if [ -n "$systemctl_bin" ]; then
+                    if "$systemctl_bin" status orbit-agent >/dev/null 2>&1; then
+                        status_rc=0
+                    else
+                        status_rc="$?"
+                    fi
+
+                    if "$systemctl_bin" is-enabled orbit-agent >/dev/null 2>&1; then
+                        enabled_rc=0
+                    else
+                        enabled_rc="$?"
+                    fi
+
+                    echo "probe_agent_unit systemctl=$systemctl_bin status=$status_rc enabled=$enabled_rc"
+                else
+                    status_rc=127
+                    enabled_rc=127
+                    echo "probe_agent_unit systemctl=missing status=$status_rc enabled=$enabled_rc"
+                fi
+
+                if [ "$status_rc" -eq 0 ] || [ "$enabled_rc" -eq 0 ]; then
                     systemd_run_bin="$(find_command systemd-run || true)"
 
                     if [ -n "$systemd_run_bin" ]; then

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationEvent;
@@ -25,6 +26,8 @@ beforeEach(function (): void {
     Process::preventStrayProcesses();
     $this->configRoot = sys_get_temp_dir().'/orbit-gateway-service-updater-'.Str::random(8);
     config()->set('orbit.paths.config_root', $this->configRoot);
+    $this->remoteShell = gateway_service_updater_fake_remote_shell();
+    app()->instance(RemoteShell::class, $this->remoteShell);
 });
 
 afterEach(function (): void {
@@ -224,6 +227,78 @@ it('retries gateway host CLI install when the previous launcher exits during sel
         ->toEqual($localExecutor->payloads()[1])
         ->and($gateway->fresh()->installed_cli?->version)
         ->toBe('1.2.3');
+});
+
+it('restarts the gateway host agent service after host cli install reports no unit restart', function (): void {
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $localExecutor = gateway_service_updater_fake_local_executor([
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'stdout' => "install_agent\nverify_agent\nskip_agent_restart_no_unit",
+                    ],
+                    'meta' => [],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 20,
+        ),
+    ]);
+    app()->instance(RunsInternalCommands::class, $localExecutor);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+            'user' => 'orbit',
+        ]);
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('migrate', ['--force' => true, '--no-interaction' => true])
+        ->andReturn(0);
+
+    Process::fake(function ($process) use ($plan, $previousImage) {
+        $command = (string) $process->command;
+
+        return match ($command) {
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
+                => Process::result(output: "{$previousImage}\n"),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
+                => Process::result(),
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
+                => Process::result(),
+            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    app(GatewayServiceUpdater::class)->update($run, $plan);
+
+    expect($this->remoteShell->calls)
+        ->toHaveCount(1)
+        ->and($this->remoteShell->calls[0]['node'])
+        ->toBe('gateway-1')
+        ->and($this->remoteShell->calls[0]['options'])
+        ->toMatchArray([
+            'timeout' => 60,
+            'metadata' => ['ORBIT_OPERATION_ID' => $run->id],
+        ])
+        ->and($this->remoteShell->calls[0]['script'])
+        ->toContain("unit_name='orbit-agent.service'")
+        ->toContain('restart_gateway_agent_unit')
+        ->toContain('"$systemctl_bin" restart "$unit_name"')
+        ->toContain('gateway_agent_unit_active');
 });
 
 it('records gateway host CLI install when the gateway agent transport disconnects during self update', function (): void {
@@ -686,6 +761,45 @@ function gateway_service_updater_fake_local_executor(array $responses = []): Run
 
                 return is_array($payload) ? $payload : [];
             }, $this->calls);
+        }
+    };
+}
+
+function gateway_service_updater_fake_remote_shell(array $responses = []): RemoteShell
+{
+    return new class($responses) implements RemoteShell {
+        /**
+         * @var list<array{node: string, script: string, options: array<string, mixed>}>
+         */
+        public array $calls = [];
+
+        /**
+         * @param  list<RemoteShellResult>  $responses
+         */
+        public function __construct(
+            private array $responses,
+        ) {}
+
+        /**
+         * @param  array<string, mixed>  $options
+         */
+        #[Override]
+        public function run(Node $node, string $script, array $options = []): RemoteShellResult
+        {
+            $this->calls[] = [
+                'node' => $node->name,
+                'script' => $script,
+                'options' => $options,
+            ];
+
+            return (
+                array_shift($this->responses) ?? new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "restart_gateway_agent_unit\ngateway_agent_unit_active\n",
+                    stderr: '',
+                    durationMs: 20,
+                )
+            );
         }
     };
 }

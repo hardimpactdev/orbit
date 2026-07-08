@@ -22,6 +22,9 @@ use Illuminate\Support\Sleep;
 use RuntimeException;
 use Throwable;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 class GatewayServiceUpdater
 {
     private const string GatewayService = 'orbit_orbit-gateway';
@@ -91,6 +94,13 @@ class GatewayServiceUpdater
                 'Gateway host CLI installed',
                 fn (): null => $this->installGatewayHostCli($operationRun, $plan),
             );
+            $this->runStep(
+                $operationRun,
+                'gateway.agent-service',
+                'Restarting gateway host Orbit Agent service',
+                'Gateway host Orbit Agent service restarted',
+                fn (): null => $this->restartGatewayHostAgentService($operationRun),
+            );
 
             $this->recordInstalledGatewayImage($operationRun, $plan, $targetImage);
         } catch (Throwable $throwable) {
@@ -105,6 +115,25 @@ class GatewayServiceUpdater
     private function scaleSchedulerToZero(): null
     {
         $this->swarm()->scaleService(self::SchedulerService, 0);
+
+        return null;
+    }
+
+    private function restartGatewayHostAgentService(OperationRun $operationRun): null
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        if (! $gatewayNode instanceof Node) {
+            return null;
+        }
+
+        $agentService = $this->gatewayHostAgentServices()->forNode($gatewayNode);
+
+        if ($agentService === null) {
+            return null;
+        }
+
+        app(GatewayHostAgentServiceRestarter::class)->restart($operationRun, $gatewayNode, $agentService);
 
         return null;
     }

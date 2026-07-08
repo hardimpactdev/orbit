@@ -32,13 +32,14 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $composedScript = $this->scripts->compose($script, $options);
-        $command = $this->command($node, $composedScript);
+        $command = $this->command($node, $composedScript, $options);
 
         $startedAt = hrtime(true);
         $processResult = $this->pendingProcess($options)->run($command);
@@ -69,13 +70,14 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
     public function start(Node $node, string $script, array $options = []): InvokedProcess
     {
         $process = $this->pendingProcess($options)->start(
-            $this->command($node, $this->scripts->compose($script, $options)),
+            $this->command($node, $this->scripts->compose($script, $options), $options),
         );
 
         $this->auditLogger->log('remote_shell.start', $node, $script, $options);
@@ -92,6 +94,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     private function pendingProcess(array $options): PendingProcess
@@ -140,9 +143,25 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
         return $resolved;
     }
 
-    private function command(Node $node, string $script): string
+    /**
+     * @param  array{
+     *     cwd?: string,
+     *     timeout?: int,
+     *     input?: string,
+     *     throw?: bool,
+     *     environment?: array<string, string>,
+     *     metadata?: array<string, string>,
+     *     strict?: bool,
+     *     force_remote_host?: bool,
+     * }  $options
+     */
+    private function command(Node $node, string $script, array $options): string
     {
-        if ($this->roleAssignments->nodeIsGateway($node) && ! $this->runningInsideOrbitGateway()) {
+        if (
+            $this->roleAssignments->nodeIsGateway($node)
+            && ! $this->runningInsideOrbitGateway()
+            && ! ($options['force_remote_host'] ?? false)
+        ) {
             return 'bash -c '.escapeshellarg($script);
         }
 

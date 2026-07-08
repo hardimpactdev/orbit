@@ -290,6 +290,7 @@ describe('internal fleet update install cli command', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($data['stdout'] ?? '')
+            ->toContain('probe_agent_unit')
             ->toContain('schedule_agent_restart')
             ->and($calls)
             ->toContain('systemd-run')
@@ -468,6 +469,7 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
 
         expect($exitCode)->toBe(0);
         expect($stdout)
+            ->toContain('probe_agent_unit')
             ->toContain('kill_agent_port_owner')
             ->toContain('adopt_agent_unit');
         expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();

@@ -592,6 +592,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @param  array{
      *     detach: bool,
@@ -652,6 +653,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     throw?: bool,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @return array{
      *     cwd?: string,
@@ -664,7 +666,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      */
     private function shellFallbackComposeOptions(array $options): array
     {
-        unset($options['cwd'], $options['metadata']);
+        unset($options['cwd'], $options['force_remote_host'], $options['metadata']);
 
         return $options;
     }
