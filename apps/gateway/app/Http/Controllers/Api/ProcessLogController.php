@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessOwnerContextResolver;
+use App\Support\Streaming\StreamFlusher;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ final class ProcessLogController implements Loggable
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly ProcessOwnerContextResolver $contexts,
+        private readonly StreamFlusher $streamFlusher,
     ) {}
 
     public function __invoke(
@@ -135,6 +137,7 @@ final class ProcessLogController implements Loggable
                     ? $showProcessLogs->followTargetViaRemoteShell(...)
                     : $showProcessLogs->followTarget(...);
 
+                $this->streamFlusher->flush();
                 $follow($target, $this->writeStreamChunk(...));
             },
             200,
@@ -149,11 +152,7 @@ final class ProcessLogController implements Loggable
     private function writeStreamChunk(string $output): void
     {
         echo $output;
-
-        if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
-            @ob_flush();
-            @flush();
-        }
+        $this->streamFlusher->flush();
     }
 
     private function lines(Request $request): int

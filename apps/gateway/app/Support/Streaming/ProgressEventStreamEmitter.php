@@ -8,9 +8,13 @@ final readonly class ProgressEventStreamEmitter
 {
     private const int BUFFERING_PRELUDE_BYTES = 1;
 
+    private StreamFlusher $flusher;
+
     public function __construct(
         private string $sapi = PHP_SAPI,
-    ) {}
+    ) {
+        $this->flusher = new StreamFlusher($this->sapi);
+    }
 
     public function bufferingPrelude(): void
     {
@@ -100,11 +104,6 @@ final readonly class ProgressEventStreamEmitter
 
     private function flush(): void
     {
-        if (! in_array($this->sapi, ['fpm-fcgi', 'cli-server', 'frankenphp'], true)) {
-            return;
-        }
-
-        @ob_flush();
-        @flush();
+        $this->flusher->flush();
     }
 }
