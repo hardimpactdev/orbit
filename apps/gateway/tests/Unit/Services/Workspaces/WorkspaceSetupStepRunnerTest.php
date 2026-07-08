@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
@@ -72,6 +73,16 @@ function workspace_setup_step_runner_signing_key(): string
     return hash('sha256', WorkspaceSetupStepRunner::class);
 }
 
+function workspace_setup_step_runner_test_app(Node $node): App
+{
+    return App::factory()->create([
+        'name' => 'demo',
+        'node_id' => $node->id,
+        'path' => '/home/orbit/apps/demo',
+        'php_version' => '8.5',
+    ]);
+}
+
 it('executes setup steps sequentially on the host by default', function (): void {
     allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
@@ -112,10 +123,11 @@ it('executes setup steps sequentially on the host by default', function (): void
     expect($run->status)->toBe('completed');
 });
 
-it('routes php and composer commands through the workspace container when given a container name', function (): void {
+it('routes php and composer commands through the selected workspace host php toolchain', function (): void {
     allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
+    $app = workspace_setup_step_runner_test_app($node);
     $shell = new WorkspaceSetupStepRunnerTestShell;
 
     $runner = new WorkspaceSetupStepRunner($shell);
@@ -139,39 +151,39 @@ it('routes php and composer commands through the workspace container when given 
     ];
 
     $env = ['ORBIT_APP' => 'demo', 'ORBIT_WORKSPACE_NAME' => 'feature'];
-    $result = $runner->run($run, $steps, '/app/path', $env, $node, 'orbit-ws-demo-feature');
+    $result = $runner->run($run, $steps, '/app/path', $env, $node, $app);
 
     expect($result)->toBeTrue();
 
     $composerRun = $shell->runs[0];
     expect($composerRun['script'])
-        ->toContain("'docker'")
-        ->toContain("'exec'")
-        ->toContain("'orbit-ws-demo-feature'")
-        ->toContain("'composer install'")
-        ->toContain("'-w'")
-        ->toContain("'/app'");
-    expect($composerRun['options']['cwd'] ?? null)->toBeNull();
+        ->toContain("'sudo'")
+        ->toContain("'-u'")
+        ->toContain("'orbit'")
+        ->toContain('/opt/orbit/php/')
+        ->toContain("cd '\\''/app/path'\\''")
+        ->toContain('composer install')
+        ->and($composerRun['options']['cwd'])
+        ->toBe('/app/path');
 
     $artisanRun = $shell->runs[1];
     expect($artisanRun['script'])
-        ->toContain("'docker'")
-        ->toContain("'exec'")
-        ->toContain("'orbit-ws-demo-feature'")
-        ->toContain("'php artisan migrate'")
-        ->toContain("'-w'")
-        ->toContain("'/app'");
-    expect($artisanRun['options']['cwd'] ?? null)->toBeNull();
+        ->toContain("'sudo'")
+        ->toContain('/opt/orbit/php/')
+        ->toContain("cd '\\''/app/path'\\''")
+        ->toContain('php artisan migrate');
+    expect($artisanRun['options']['cwd'])->toBe('/app/path');
 
     $npmRun = $shell->runs[2];
     expect($npmRun['script'])->toBe('npm ci');
     expect($npmRun['options']['cwd'])->toBe('/app/path');
 });
 
-it('passes lifecycle environment into containerized commands via docker exec -e', function (): void {
+it('passes lifecycle environment into host-routed php setup commands', function (): void {
     allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
+    $app = workspace_setup_step_runner_test_app($node);
     $shell = new WorkspaceSetupStepRunnerTestShell;
 
     $runner = new WorkspaceSetupStepRunner($shell);
@@ -185,11 +197,13 @@ it('passes lifecycle environment into containerized commands via docker exec -e'
     ];
 
     $env = ['ORBIT_APP' => 'demo', 'VITE_APP_URL' => 'https://feature.demo.test'];
-    $runner->run($run, $steps, '/app/path', $env, $node, 'orbit-ws-demo-feature');
+    $runner->run($run, $steps, '/app/path', $env, $node, $app);
 
     expect($shell->runs[0]['script'])
-        ->toContain("'ORBIT_APP=demo'")
-        ->toContain("'VITE_APP_URL=https://feature.demo.test'");
+        ->toContain('ORBIT_APP=')
+        ->toContain('demo')
+        ->toContain('VITE_APP_URL=')
+        ->toContain('https://feature.demo.test');
 });
 
 it('fails fast on first non-zero exit and records the failed step', function (): void {
@@ -345,6 +359,70 @@ it('runs setup steps through the local executor by default for agent capable nod
         ->toBe(0)
         ->and($runStep?->output)
         ->toBe("created\n");
+});
+
+it('routes php setup commands before dispatching through the local executor', function (): void {
+    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+            'user' => 'orbit',
+        ]);
+    $app = workspace_setup_step_runner_test_app($node);
+    $shell = new WorkspaceSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success([
+            'exit_code' => 0,
+            'stdout' => "installed\n",
+            'stderr' => '',
+            'duration_ms' => 12,
+        ]), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 14,
+    ));
+
+    $runner = new WorkspaceSetupStepRunner(
+        remoteShell: $shell,
+        localExecutor: workspace_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        new WorkspaceStep([
+            'id' => 1,
+            'command' => 'composer install',
+            'timeout_seconds' => 60,
+        ]),
+    ];
+
+    $result = $runner->run(
+        $run,
+        $steps,
+        '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        ['ORBIT_APP' => 'happie'],
+        $node,
+        $app,
+    );
+
+    $payload = json_decode(
+        (string) $transport->runs[0]['options']['input'],
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($result)
+        ->toBeTrue()
+        ->and($payload['command'])
+        ->toContain("'sudo'")
+        ->toContain('/opt/orbit/php/')
+        ->toContain('composer install')
+        ->not
+        ->toContain('docker exec')
+        ->and($payload['cwd'])
+        ->toBe('/Users/nckrtl/.codex/worktrees/a59f/happie');
 });
 
 it('requires a local executor or explicit transitional ssh fallback before running workspace setup commands', function (): void {

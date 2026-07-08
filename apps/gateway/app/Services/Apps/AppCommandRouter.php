@@ -22,6 +22,18 @@ final readonly class AppCommandRouter
      */
     public function route(App $app, string $command, array $environment = []): string
     {
+        return $this->routeForPath($app, $command, $app->path, $environment);
+    }
+
+    /**
+     * Route PHP, Composer, and Artisan commands through Orbit's version-matched
+     * host PHP toolchain while using a caller-selected source path. Non-PHP
+     * commands run as provided in the caller's working directory.
+     *
+     * @param  array<string, string>  $environment
+     */
+    public function routeForPath(App $app, string $command, string $path, array $environment = []): string
+    {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return $command;
         }
@@ -30,7 +42,7 @@ final readonly class AppCommandRouter
             return $command;
         }
 
-        return $this->wrapForHost($app, $command, $environment);
+        return $this->wrapForHost($app, $command, $path, $environment);
     }
 
     public function usesPhpTools(string $command): bool
@@ -63,9 +75,9 @@ final readonly class AppCommandRouter
     /**
      * @param  array<string, string>  $environment
      */
-    private function wrapForHost(App $app, string $command, array $environment): string
+    private function wrapForHost(App $app, string $command, string $path, array $environment): string
     {
-        $appPath = rtrim($app->path, '/');
+        $workingDirectory = rtrim($path, '/');
         $phpVersion = $app->php_version;
         $runtimeUser = $this->appRuntimeUser->forApp($app);
         $envPrefix = '';
@@ -76,7 +88,7 @@ final readonly class AppCommandRouter
 
         $inner =
             'cd '
-            .escapeshellarg($appPath)
+            .escapeshellarg($workingDirectory)
             .' && PATH=/opt/orbit/php/'
             .escapeshellarg($phpVersion)
             .'/bin:$PATH '

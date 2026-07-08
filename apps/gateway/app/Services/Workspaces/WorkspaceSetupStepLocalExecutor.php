@@ -60,12 +60,13 @@ final readonly class WorkspaceSetupStepLocalExecutor
     private function fromSuccessEnvelope(RemoteShellResult $result): RemoteShellResult
     {
         $data = RemoteShellSuccessData::fromJsonEnvelope($result);
-        $exitCode = $data['exit_code'] ?? null;
-        $stdout = $data['stdout'] ?? null;
-        $stderr = $data['stderr'] ?? null;
-        $durationMs = $data['duration_ms'] ?? null;
 
-        if (! is_int($exitCode) || ! is_string($stdout) || ! is_string($stderr) || ! is_int($durationMs)) {
+        if (
+            ! is_int($data['exit_code'] ?? null)
+            || ! is_string($data['stdout'] ?? null)
+            || ! is_string($data['stderr'] ?? null)
+            || ! is_int($data['duration_ms'] ?? null)
+        ) {
             return new RemoteShellResult(
                 exitCode: 1,
                 stdout: $result->stdout,
@@ -75,10 +76,10 @@ final readonly class WorkspaceSetupStepLocalExecutor
         }
 
         return new RemoteShellResult(
-            exitCode: $exitCode,
-            stdout: $stdout,
-            stderr: $stderr,
-            durationMs: $durationMs,
+            exitCode: $data['exit_code'],
+            stdout: $data['stdout'],
+            stderr: $data['stderr'],
+            durationMs: $data['duration_ms'],
         );
     }
 
