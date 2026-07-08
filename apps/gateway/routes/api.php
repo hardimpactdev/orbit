@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\AppWorkerController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\CloudflareController;
 use App\Http\Controllers\Api\CodexAppController;
+use App\Http\Controllers\Api\DashboardRuntimeInventoryController;
 use App\Http\Controllers\Api\DatabaseConnections\DatabaseConnectionAddUserController;
 use App\Http\Controllers\Api\DatabaseConnections\DatabaseConnectionAttachController;
 use App\Http\Controllers\Api\DatabaseConnections\DatabaseConnectionDescribeController;
@@ -150,6 +151,7 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);
         Route::post('/agent-ide/message', AgentIdeMessageController::class);
         Route::post('/analytics/update', AnalyticsUpdateController::class);
+        Route::get('/dashboard/runtime-inventory', DashboardRuntimeInventoryController::class);
         Route::middleware(RequireGatewayExtension::class.':cloudflare')->group(function (): void {
             Route::get('/cloudflare/zones', [CloudflareController::class, 'zones']);
             Route::get('/cloudflare/zones/{zone}/dns', [CloudflareController::class, 'dnsRecords']);

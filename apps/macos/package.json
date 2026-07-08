@@ -6,6 +6,7 @@
         "build": "npm run prepare:sdk && vite build",
         "dev": "npm run prepare:sdk && vite --host 127.0.0.1 --port 5174",
         "prepare:sdk": "npm --prefix ../../packages/sdk-typescript run build",
+        "test": "node --test --experimental-strip-types frontend/src/**/*.test.ts",
         "tauri": "tauri",
         "typecheck": "npm run prepare:sdk && tsc --noEmit"
     },

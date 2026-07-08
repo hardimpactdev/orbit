@@ -19,5 +19,8 @@
     "include": [
         "frontend/src/**/*.ts",
         "vite.config.ts"
+    ],
+    "exclude": [
+        "frontend/src/**/*.test.ts"
     ]
 }
