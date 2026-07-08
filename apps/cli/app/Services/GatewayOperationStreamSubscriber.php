@@ -56,7 +56,7 @@ class GatewayOperationStreamSubscriber
             ]);
 
             $this->waitForSubscription($transport, $channel);
-            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences);
+            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
             $this->receiveFrames(
                 $operationRunId,
                 $descriptor,
