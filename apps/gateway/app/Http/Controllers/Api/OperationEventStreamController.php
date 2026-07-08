@@ -63,17 +63,14 @@ final readonly class OperationEventStreamController
 
     private function lastEventSequence(Request $request): ?int
     {
-        $value = $request->headers->get('Last-Event-ID');
-
-        if ($value === null) {
-            $queryValue = $request->query('last_event_id');
-            $value = is_scalar($queryValue) ? $queryValue : null;
-        }
-
-        if ($value === null) {
-            $queryValue = $request->query('since');
-            $value = is_scalar($queryValue) ? $queryValue : null;
-        }
+        $value = array_find(
+            [
+                $request->headers->get('Last-Event-ID'),
+                $request->query('last_event_id'),
+                $request->query('since'),
+            ],
+            static fn (mixed $candidate): bool => is_scalar($candidate),
+        );
 
         if (! is_string($value)) {
             return null;
