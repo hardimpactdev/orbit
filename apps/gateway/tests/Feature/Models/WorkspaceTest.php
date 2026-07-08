@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -48,6 +51,49 @@ it('stores workspace registry intent and derives canonical fields', function ():
         ->toBe('https://feature-docs.docs.test')
         ->and($workspace->lifecycle_status)
         ->toBe(WorkspaceLifecycleStatus::SetupPending);
+});
+
+it('derives workspace url from a matching orbit app instance placement', function (): void {
+    $beast = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'Beast']);
+    $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
+
+    $app = App::factory()->for($beast, 'node')->create([
+        'name' => 'happie',
+        'path' => '/Users/nckrtl/apps/happie-beast',
+        'domain' => null,
+    ]);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $beast->id,
+            node: 'Beast',
+            path: '/Users/nckrtl/apps/happie-beast',
+            document_root: 'public',
+            domain: null,
+        ),
+    ]);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $nmbp->id,
+            node: 'NMBP',
+            path: '/Users/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: 'happie.nmbp',
+        ),
+    ]);
+
+    $workspace = Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'recipe',
+        'path' => '/Users/nckrtl/apps/happie/workspaces/recipe',
+    ]);
+
+    expect($workspace->url())->toBe('https://recipe.happie.nmbp');
 });
 
 it('prefers an explicit workspace php version over the parent app version', function (): void {

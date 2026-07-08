@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Services\Workspaces\WorkspaceUrlResolver;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -123,14 +124,6 @@ class Workspace extends Model
 
     public function url(): string
     {
-        $this->loadMissing('app.node');
-
-        $app = $this->app;
-
-        if (! $app instanceof App) {
-            return "https://{$this->name}";
-        }
-
-        return 'https://'.$this->name.'.'.parse_url($app->url(), PHP_URL_HOST);
+        return app(WorkspaceUrlResolver::class)->url($this);
     }
 }
