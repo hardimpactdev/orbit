@@ -13,6 +13,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
+use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Workspaces\WorkspacePlacement;
@@ -143,7 +144,17 @@ final readonly class RemoveWorkspace
 
                 foreach ($teardownSteps as $teardownStep) {
                     $teardownStepsRun++;
-                    $teardownResult = $this->remoteShell->run($node, $teardownStep->command, [
+                    $command = $app instanceof App
+                        ? app(AppCommandRouter::class)->routeLifecycleForNodePath(
+                            $app,
+                            $node,
+                            (string) $teardownStep->command,
+                            $workspace->path,
+                            $this->teardownEnvironment($workspace),
+                        )
+                        : (string) $teardownStep->command;
+
+                    $teardownResult = $this->remoteShell->run($node, $command, [
                         'cwd' => $workspace->path,
                         'timeout' => (int) $teardownStep->timeoutSeconds(),
                         'metadata' => $this->teardownEnvironment($workspace),

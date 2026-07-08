@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -10,6 +11,7 @@ use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
+ * @mago-expect lint:cyclomatic-complexity
  * @mago-expect lint:halstead
  */
 describe('internal process logs command', function (): void {
@@ -101,6 +103,78 @@ describe('internal process logs command', function (): void {
             ->toBe("Vite ready\n")
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('logs --tail 25 --follow orbit_docs_main_queue');
+    });
+
+    it('publishes followed docker logs to the operation stream when metadata is provided', function (): void {
+        $bin = install_process_logs_fake_bin();
+
+        app()->instance(
+            App\Services\GatewayOperationStreamPublisher::class,
+            new App\Services\GatewayOperationStreamPublisher(baseUrl: null, timeout: 30),
+        );
+
+        Http::fake([
+            'https://gateway.test/api/internal-executor/token/verify' => Http::response(fakeSuccessEnvelope([
+                'allowed' => true,
+            ])),
+            'https://gateway.test/api/operations/run-1/stream/publish' => Http::response(fakeSuccessEnvelope([
+                'broadcast' => ['delivered' => true],
+            ])),
+            'https://gateway.test/api/operations/run-1/stream/stop-decision' => Http::response(fakeSuccessEnvelope([
+                'should_stop_tail' => false,
+            ])),
+        ]);
+
+        [$exitCode, $output] = run_internal_process_logs_command(
+            [
+                '--operation-token' => process_logs_signed_operation_token(),
+                '--json' => true,
+            ],
+            json_encode([
+                'backend' => 'docker',
+                'runtime_unit' => 'orbit_docs_main_queue',
+                'lines' => 25,
+                'follow' => true,
+                'operation_stream' => [
+                    'operation_uuid' => 'run-1',
+                    'channel' => 'private-operations.run-1',
+                    'gateway_url' => 'https://gateway.test',
+                    'ca_pem_path' => null,
+                    'publish_endpoint' => '/api/operations/run-1/stream/publish',
+                    'stop_decision_endpoint' => '/api/operations/run-1/stream/stop-decision',
+                    'publisher_token' => process_logs_publisher_token(),
+                ],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Vite ready\n")
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain('logs --tail 25 --follow orbit_docs_main_queue');
+
+        Http::assertSent(function (Illuminate\Http\Client\Request $request): bool {
+            if (
+                $request->method() !== 'POST'
+                || $request->url() !== 'https://gateway.test/api/operations/run-1/stream/publish'
+            ) {
+                return false;
+            }
+
+            $frame = $request['frame'];
+
+            return (
+                hash_equals(process_logs_publisher_token(), (string) $request['publisher_token'])
+                && is_array($frame)
+                && $frame['operation_uuid'] === 'run-1'
+                && $frame['channel'] === 'private-operations.run-1'
+                && $frame['sequence'] === 1
+                && $frame['type'] === 'stdout'
+                && $frame['payload']['data'] === "Vite ready\n"
+                && $frame['payload']['encoding'] === 'utf-8'
+            );
+        });
     });
 
     it('accepts launchd backend and tails explicit stdout/stderr paths with single tail argv for follow', function (): void {
@@ -215,6 +289,11 @@ function process_logs_signed_operation_token(
             expiresAt: $expiresAt,
         )
         ->toString();
+}
+
+function process_logs_publisher_token(): string
+{
+    return implode('-', ['publisher', 'token']);
 }
 
 function process_logs_operation_secret(): string

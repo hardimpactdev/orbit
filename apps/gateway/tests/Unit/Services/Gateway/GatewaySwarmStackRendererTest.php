@@ -87,3 +87,53 @@ it('omits gateway host ports when router-owned Caddy fronts the gateway', functi
         ->toContain('orbit-scheduler:')
         ->toContain('order: stop-first');
 });
+
+it('renders a gateway-colocated operations Reverb service isolated from the app websocket role', function (): void {
+    $yaml = new GatewaySwarmStackRenderer()->render(
+        gatewaySwarmImageForTest(),
+        GatewayExposureMode::RouterColocated,
+        operationsReverbImage: 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+    );
+
+    $operationsBlock = substr(
+        $yaml,
+        strpos($yaml, '  orbit-operations-reverb:'),
+        strrpos($yaml, "\nnetworks:") - strpos($yaml, '  orbit-operations-reverb:'),
+    );
+
+    expect($operationsBlock)
+        ->toContain('  orbit-operations-reverb:')
+        ->toContain(
+            'image: "hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"',
+        )
+        ->toContain('aliases:')
+        ->toContain('- orbit-operations-reverb')
+        ->toContain('APP_ENV: production')
+        ->toContain('APP_DEBUG: "false"')
+        ->toContain('CACHE_STORE: array')
+        ->toContain('ORBIT_WEBSOCKET_APPS_CONFIG: /etc/orbit/operations-websocket/apps.php')
+        ->toContain('REVERB_HOST: orbit-operations-reverb')
+        ->toContain('REVERB_PORT: "8080"')
+        ->toContain('REVERB_SCALING_ENABLED: "false"')
+        ->toContain('REVERB_SCHEME: http')
+        ->toContain('REVERB_SERVER_HOST: 0.0.0.0')
+        ->toContain('REVERB_SERVER_PORT: "8080"')
+        ->toContain(
+            'command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080", "--hostname=orbit-operations-reverb"]',
+        )
+        ->toContain(
+            '${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}/operations-websocket:/etc/orbit/operations-websocket:ro',
+        )
+        ->toContain(
+            'test: ["CMD-SHELL", "php -r \'$$socket = @fsockopen(\"127.0.0.1\", 8080); exit(is_resource($$socket) ? 0 : 1);\'"]',
+        )
+        ->toContain('replicas: 1')
+        ->toContain('orbit.service: orbit-operations-reverb')
+        ->toContain('node.labels.orbit.role.gateway == true')
+        ->toContain('order: stop-first')
+        ->not->toContain('ports:')
+        ->not->toContain('REDIS_HOST')
+        ->not->toContain('REDIS_PORT')
+        ->not->toContain('websocket.orbit')
+        ->not->toContain('node.labels.orbit.role.websocket == true');
+});

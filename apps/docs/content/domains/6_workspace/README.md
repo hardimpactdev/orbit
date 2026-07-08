@@ -26,8 +26,9 @@ These rules govern all workspace family commands.
 - Each workspace owns a Docker runtime container derived from workspace,
   app, and PHP image configuration. The container serves the workspace's web
   route through FrankenPHP and is represented as a process with Docker runtime.
-  Workspace setup, teardown, and ad-hoc PHP/Composer/Artisan run on the node's
-  host PHP toolchain against the workspace source.
+  Workspace setup and teardown run through the selected app user's host tool
+  path against the workspace source. PHP/Composer/Artisan commands include the
+  node's versioned host PHP toolchain.
 - Orbit must not create, require, read, or trust `.php-version` files in app or
   workspace project trees.
 - During `doctor --family=workspace --adopt`, project files are adoption hints

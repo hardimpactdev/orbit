@@ -45,6 +45,21 @@ return [
         'retention_days' => env('ORBIT_OPERATION_RUNS_RETENTION_DAYS', 90),
     ],
 
+    'operations' => [
+        'stream_auth_ttl_seconds' => (int) env('ORBIT_OPERATIONS_STREAM_AUTH_TTL_SECONDS', 300),
+        'publisher_token_ttl_seconds' => (int) env(key: 'ORBIT_OPERATIONS_PUBLISHER_TOKEN_TTL_SECONDS', default: 120),
+        'subscriber_lease_ttl_seconds' => (int) env(key: 'ORBIT_OPERATIONS_SUBSCRIBER_LEASE_TTL_SECONDS', default: 60),
+        'reverb' => [
+            'app_id' => env(key: 'ORBIT_OPERATIONS_REVERB_APP_ID', default: 'orbit-operations'),
+            'app_key' => env('ORBIT_OPERATIONS_REVERB_APP_KEY'),
+            'app_secret' => env('ORBIT_OPERATIONS_REVERB_APP_SECRET'),
+            'host' => env(key: 'ORBIT_OPERATIONS_REVERB_HOST', default: 'orbit-operations-reverb'),
+            'port' => (int) env(key: 'ORBIT_OPERATIONS_REVERB_PORT', default: 8080),
+            'scheme' => env(key: 'ORBIT_OPERATIONS_REVERB_SCHEME', default: 'http'),
+            'timeout_seconds' => (int) env(key: 'ORBIT_OPERATIONS_REVERB_TIMEOUT_SECONDS', default: 2),
+        ],
+    ],
+
     'artifacts' => [
         'disk' => env('ORBIT_ARTIFACTS_DISK', 'orbit-artifacts'),
         'base_url' => env('ORBIT_ARTIFACTS_BASE_URL'),
@@ -59,10 +74,10 @@ return [
         'allow_request_image_override' => env('ORBIT_UPDATE_ALLOW_REQUEST_IMAGE_OVERRIDE', false),
         'artifact_base_url' => env('ORBIT_UPDATE_ARTIFACT_BASE_URL', env('APP_URL', 'http://localhost')),
         'artifact_cache_ttl_seconds' => env('ORBIT_UPDATE_ARTIFACT_CACHE_TTL_SECONDS', 86400),
-        'artifact_download_timeout_seconds' => env('ORBIT_UPDATE_ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS', 60),
+        'artifact_download_timeout_seconds' => env(key: 'ORBIT_UPDATE_ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS', default: 60),
         'gateway_image' => env('ORBIT_GATEWAY_IMAGE'),
         'gateway_image_archive' => env('ORBIT_GATEWAY_IMAGE_ARCHIVE'),
-        'lease_ttl_seconds' => env('ORBIT_UPDATE_LEASE_TTL_SECONDS', 300),
+        'lease_ttl_seconds' => env(key: 'ORBIT_UPDATE_LEASE_TTL_SECONDS', default: 300),
         'manifest_snapshot' => [],
     ],
 ];

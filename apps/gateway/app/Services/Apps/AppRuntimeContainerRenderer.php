@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Workspaces\WorkspacePlacement;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -38,11 +39,12 @@ final readonly class AppRuntimeContainerRenderer
         private OrbitContainerNames $names,
         private AppRuntimeUser $appRuntimeUser = new AppRuntimeUser,
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
-        private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
+        private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService(new WorkspacePlacement),
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -86,7 +88,10 @@ final readonly class AppRuntimeContainerRenderer
             $mounts[] = $packagesMount;
         }
 
-        foreach ($this->appRuntimeMounts->mountsForRuntime($app) as $mount) {
+        $app->loadMissing(['instances', 'runtimeMounts']);
+        $instance = $this->placement->matchingOrbitInstanceForPath($app, $sourcePath);
+
+        foreach ($this->appRuntimeMounts->mountsForRuntime($app, $instance) as $mount) {
             $mounts[] = $mount;
         }
 
@@ -225,7 +230,7 @@ final readonly class AppRuntimeContainerRenderer
 
     public function documentRootInContainer(App $app): string
     {
-        $documentRoot = trim($app->document_root, '/');
+        $documentRoot = trim($app->document_root, characters: '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return AppRuntimeContainer::SourceTarget;
@@ -241,7 +246,7 @@ final readonly class AppRuntimeContainerRenderer
      */
     public static function workerFileRelativeToSource(App $app): string
     {
-        $documentRoot = trim($app->document_root, '/');
+        $documentRoot = trim($app->document_root, characters: '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return self::WorkerFileName;

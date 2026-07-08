@@ -55,5 +55,6 @@ enum InternalCommand: string
     case WireguardSelfRoute = 'internal:wireguard-self-route';
     case WorkspaceAdapterLookup = 'internal:workspace-adapter:lookup';
     case WorkspaceAdapterUpdate = 'internal:workspace-adapter:update';
+    case WorkspaceSetupStep = 'internal:workspace-setup-step';
     case WorkspaceSourceCreate = 'internal:workspace-source:create';
 }

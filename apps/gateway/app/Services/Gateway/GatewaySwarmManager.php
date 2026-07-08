@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 final readonly class GatewaySwarmManager
 {
     public const string StackFile = 'orbit-gateway-stack.yml';
@@ -118,6 +121,41 @@ final readonly class GatewaySwarmManager
                 .escapeshellarg($this->normalizeName($stack, 'stack')),
             'deploy gateway Swarm stack',
         );
+    }
+
+    public function loadImageArchive(string $url, string $sha256): void
+    {
+        $url = trim($url);
+        $sha256 = trim($sha256);
+
+        if ($url === '') {
+            throw new InvalidArgumentException('Docker image archive URL cannot be empty.');
+        }
+
+        if (preg_match('/^[a-f0-9]{64}$/', $sha256) !== 1) {
+            throw new InvalidArgumentException('Docker image archive sha256 must be a sha256 hash.');
+        }
+
+        $script = implode("\n", [
+            'set -euo pipefail',
+            'archive="$(mktemp /tmp/orbit-image-archive.XXXXXX.tar)"',
+            'cleanup() { rm -f "$archive"; }',
+            'trap cleanup EXIT',
+            'curl -fsSL '.escapeshellarg($url).' -o "$archive"',
+            'printf "%s  %s\n" '.escapeshellarg($sha256).' "$archive" | sha256sum -c -',
+            'docker load -i "$archive" >/dev/null',
+            '',
+        ]);
+
+        $result = Process::timeout(900)->input($script)->run('bash -s');
+
+        if ($result->successful()) {
+            return;
+        }
+
+        $message = trim($result->errorOutput().$result->output());
+
+        throw new RuntimeException("Failed to load Docker image archive: {$message}");
     }
 
     public function updateServiceImage(string $service, GatewayImageReference $image, string $order): void

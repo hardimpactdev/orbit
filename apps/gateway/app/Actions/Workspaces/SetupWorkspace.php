@@ -259,7 +259,6 @@ final readonly class SetupWorkspace
 
         $env = $this->workspaceEnv($app, $workspace, $node);
         $renderedSteps = $this->renderSteps($steps->all(), $workspace->name);
-        $containerName = $this->workspaceContainerName($workspace);
 
         $success = $this->stepRunner->run(
             $run,
@@ -267,7 +266,7 @@ final readonly class SetupWorkspace
             $workspace->path,
             $env,
             $node,
-            $containerName,
+            $app,
             $onStepProgress,
         );
 
@@ -409,18 +408,6 @@ final readonly class SetupWorkspace
         ], $steps);
 
         return hash('sha256', json_encode($data));
-    }
-
-    private function workspaceContainerName(Workspace $workspace): ?string
-    {
-        $workspace->loadMissing('app');
-        $app = $workspace->app;
-
-        if ($app === null || $app->runtimeKind() !== AppRuntimeKind::Php) {
-            return null;
-        }
-
-        return $this->runtimeContainerRenderer->containerName($workspace);
     }
 
     /**

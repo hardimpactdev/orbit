@@ -85,6 +85,7 @@ it('generates a topology candidate manifest with candidate asset urls and build 
     $mac = "{$root}/orbit-macos-arm64";
     $agentLinux = "{$root}/orbit-agent-linux-x64";
     $agentMac = "{$root}/orbit-agent-macos-arm64";
+    $reverbImage = "{$root}/orbit-reverb-linux-amd64.tar";
     $output = "{$root}/orbit-release-manifest.json";
 
     mkdir($root, 0700, true);
@@ -92,6 +93,7 @@ it('generates a topology candidate manifest with candidate asset urls and build 
     file_put_contents($mac, 'candidate-mac-binary');
     file_put_contents($agentLinux, 'candidate-agent-linux-binary');
     file_put_contents($agentMac, 'candidate-agent-mac-binary');
+    file_put_contents($reverbImage, data: 'candidate-reverb-image');
 
     try {
         $process = new Process([
@@ -108,6 +110,7 @@ it('generates a topology candidate manifest with candidate asset urls and build 
             "--agent-artifact=darwin-arm64=orbit-agent-macos-arm64={$agentMac}",
             '--role-image=orbit-caddy=caddy:2-alpine',
             '--role-image=orbit-websocket=hardimpact/orbit-reverb:1.2.3',
+            "--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar={$reverbImage}",
             "--output={$output}",
         ], repo_path());
         $process->run();
@@ -139,6 +142,12 @@ it('generates a topology candidate manifest with candidate asset urls and build 
                 'darwin-arm64' => [
                     'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-agent-macos-arm64',
                     'sha256' => hash_file('sha256', $agentMac),
+                ],
+            ],
+            'role_image_artifacts' => [
+                'orbit-websocket' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-reverb-linux-amd64.tar',
+                    'sha256' => hash_file('sha256', $reverbImage),
                 ],
             ],
         ]);

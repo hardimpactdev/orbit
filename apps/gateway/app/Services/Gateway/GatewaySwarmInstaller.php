@@ -10,7 +10,9 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\CaddyTool;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use RuntimeException;
+use SensitiveParameter;
 
 class GatewaySwarmInstaller
 {
@@ -72,6 +74,11 @@ class GatewaySwarmInstaller
             $this->transitionGuard->assertPublicPortsReleased();
             $this->convergeRouterOwnedOrbitCaddy($wireguardAddress, $wireguardCidr, $gatewayLeaf);
         }
+    }
+
+    public function bootstrapRuntimeConfig(?string $configRoot = null): void
+    {
+        $this->bootstrapConfigRoot($this->configRoot($configRoot));
     }
 
     /**
@@ -177,8 +184,9 @@ class GatewaySwarmInstaller
 
     private function bootstrapConfigRoot(string $configRoot): void
     {
-        File::ensureDirectoryExists($configRoot, 0700);
-        File::ensureDirectoryExists("{$configRoot}/certs", 0700);
+        File::ensureDirectoryExists($configRoot, 0o700);
+        File::ensureDirectoryExists("{$configRoot}/certs", 0o700);
+        File::ensureDirectoryExists("{$configRoot}/operations-websocket", 0o700);
 
         $database = "{$configRoot}/gateway.sqlite";
 
@@ -202,7 +210,91 @@ class GatewaySwarmInstaller
             $contents = $this->setEnvValue($contents, $key, $value);
         }
 
+        $operationsReverb = [
+            'ORBIT_OPERATIONS_REVERB_APP_ID' =>
+                $this->envValue($contents, 'ORBIT_OPERATIONS_REVERB_APP_ID') ?? 'orbit-operations',
+            'ORBIT_OPERATIONS_REVERB_APP_KEY' => $this->envValue(
+                $contents,
+                'ORBIT_OPERATIONS_REVERB_APP_KEY',
+            ) ?? Str::random(20),
+            'ORBIT_OPERATIONS_REVERB_APP_SECRET' => $this->envValue(
+                $contents,
+                'ORBIT_OPERATIONS_REVERB_APP_SECRET',
+            ) ?? Str::random(32),
+            'ORBIT_OPERATIONS_REVERB_HOST' =>
+                $this->envValue($contents, 'ORBIT_OPERATIONS_REVERB_HOST') ?? 'orbit-operations-reverb',
+            'ORBIT_OPERATIONS_REVERB_PORT' => $this->envValue($contents, 'ORBIT_OPERATIONS_REVERB_PORT') ?? '8080',
+            'ORBIT_OPERATIONS_REVERB_SCHEME' => $this->envValue($contents, 'ORBIT_OPERATIONS_REVERB_SCHEME') ?? 'http',
+        ];
+
+        foreach ($operationsReverb as $key => $value) {
+            if ($this->envValue($contents, $key) !== null) {
+                continue;
+            }
+
+            $contents = $this->setEnvValue($contents, $key, $value);
+        }
+
         File::put($envPath, $contents);
+
+        $operationsWebSocketApps = "{$configRoot}/operations-websocket/apps.php";
+        $scheme = $operationsReverb['ORBIT_OPERATIONS_REVERB_SCHEME'];
+
+        File::put(
+            $operationsWebSocketApps,
+            $this->operationsWebSocketAppsFile(
+                appId: $operationsReverb['ORBIT_OPERATIONS_REVERB_APP_ID'],
+                appKey: $operationsReverb['ORBIT_OPERATIONS_REVERB_APP_KEY'],
+                appSecret: $operationsReverb['ORBIT_OPERATIONS_REVERB_APP_SECRET'],
+                host: $operationsReverb['ORBIT_OPERATIONS_REVERB_HOST'],
+                port: (int) $operationsReverb['ORBIT_OPERATIONS_REVERB_PORT'],
+                scheme: $scheme,
+            ),
+        );
+    }
+
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
+    private function operationsWebSocketAppsFile(
+        string $appId,
+        string $appKey,
+        #[SensitiveParameter]
+        string $appSecret,
+        string $host,
+        int $port,
+        string $scheme,
+    ): string {
+        $apps = [
+            [
+                'key' => $appKey,
+                'secret' => $appSecret,
+                'app_id' => $appId,
+                'options' => [
+                    'host' => $host,
+                    'port' => $port,
+                    'scheme' => $scheme,
+                    'useTLS' => $scheme === 'https',
+                ],
+                'allowed_origins' => ['*'],
+                'ping_interval' => 60,
+                'activity_timeout' => 30,
+                'max_message_size' => 10_000,
+            ],
+        ];
+
+        return "<?php\n\ndeclare(strict_types=1);\n\nreturn ".var_export(value: $apps, return: true).";\n";
+    }
+
+    private function envValue(string $contents, string $key): ?string
+    {
+        $matches = [];
+
+        if (preg_match('/^'.preg_quote($key, '/').'=(.*)$/m', $contents, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
     }
 
     private function setEnvValue(string $contents, string $key, string $value): string
@@ -226,6 +318,6 @@ class GatewaySwarmInstaller
             throw new RuntimeException('Gateway Swarm config root is not configured.');
         }
 
-        return rtrim($configRoot, '/');
+        return rtrim($configRoot, characters: '/');
     }
 }

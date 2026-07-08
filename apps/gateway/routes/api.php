@@ -69,12 +69,14 @@ use App\Http\Controllers\Api\NodeShowController;
 use App\Http\Controllers\Api\NodeStoreController;
 use App\Http\Controllers\Api\NodeUpdateController;
 use App\Http\Controllers\Api\OperationEventStreamController;
+use App\Http\Controllers\Api\OperationStreamControlPlaneController;
 use App\Http\Controllers\Api\PhpRuntimeController;
 use App\Http\Controllers\Api\PhpUseController;
 use App\Http\Controllers\Api\ProcessDestroyController;
 use App\Http\Controllers\Api\ProcessEventIngestController;
 use App\Http\Controllers\Api\ProcessListController;
 use App\Http\Controllers\Api\ProcessLogController;
+use App\Http\Controllers\Api\ProcessLogStreamStartController;
 use App\Http\Controllers\Api\ProcessRestartController;
 use App\Http\Controllers\Api\ProcessStartController;
 use App\Http\Controllers\Api\ProcessStopController;
@@ -139,6 +141,30 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class])->group(function (): void {
         Route::get('/operations/{operationRun}/events', OperationEventStreamController::class)
             ->name('api.operations.events');
+        Route::get('/operations/{operationRun}/stream', [OperationStreamControlPlaneController::class, 'show'])
+            ->name('api.operations.stream.descriptor');
+        Route::post('/operations/{operationRun}/stream/auth', [OperationStreamControlPlaneController::class, 'auth'])
+            ->name('api.operations.stream.auth');
+        Route::post('/operations/{operationRun}/stream/leave', [OperationStreamControlPlaneController::class, 'leave'])
+            ->name('api.operations.stream.leave');
+        Route::get('/operations/{operationRun}/stream/stop-decision', [
+            OperationStreamControlPlaneController::class,
+            'stopDecision',
+        ])
+            ->name('api.operations.stream.stopDecision');
+    });
+
+    Route::middleware(WireGuardIdentity::class)->group(function (): void {
+        Route::post('/operations/{operationRun}/stream/publisher-credentials', [
+            OperationStreamControlPlaneController::class,
+            'publisherCredentials',
+        ])
+            ->name('api.operations.stream.publisherCredentials');
+        Route::post('/operations/{operationRun}/stream/publish', [
+            OperationStreamControlPlaneController::class,
+            'publish',
+        ])
+            ->name('api.operations.stream.publish');
     });
 
     Route::middleware([
@@ -202,6 +228,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/processes/restart', ProcessRestartController::class);
         Route::post('/processes/start', ProcessStartController::class);
         Route::post('/processes/stop', ProcessStopController::class);
+        Route::post('/processes/{name}/log-stream', ProcessLogStreamStartController::class)
+            ->name('api.processes.logStream.start');
         Route::get('/processes/{name}/log', ProcessLogController::class);
         Route::delete('/processes/{name}', ProcessDestroyController::class);
         Route::patch('/processes/{name}', ProcessUpdateController::class);

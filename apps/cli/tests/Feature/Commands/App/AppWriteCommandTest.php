@@ -725,6 +725,47 @@ describe('app write commands', function (): void {
 
         expect($removeExitCode)->toBe(0);
     });
+
+    it('forwards dotted app instance selectors unchanged to the app:mount gateway endpoints', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => ['name' => 'hauser'],
+            'target' => [
+                'type' => 'app_instance',
+                'app' => 'hauser',
+                'instance' => 'nmbp',
+            ],
+            'mount' => [
+                'source' => '/Users/nckrtl/projects',
+                'target' => '/projects',
+                'read_only' => true,
+            ],
+            'mounts' => [],
+            'action' => 'created',
+            'inherited_by_workspaces' => true,
+        ]));
+
+        [$exitCode] = runCommand($this, 'app:mount', [
+            'action' => 'add',
+            'app' => 'hauser.nmbp',
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/hauser.nmbp/mounts'
+                && $request->data() === [
+                    'source' => '/Users/nckrtl/projects',
+                    'target' => '/projects',
+                    'read_only' => true,
+                ]
+            ),
+        );
+
+        expect($exitCode)->toBe(0);
+    });
 });
 
 describe('app mutation command human renderers', function (): void {

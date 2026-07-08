@@ -130,6 +130,14 @@ happen only on the gateway.
 
 A node carries one or more **roles** assigned by the gateway. Roles are fixed code-defined bundles: `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, and `analytics`. The `gateway` role is the singleton authority role described above.
 
+The `gateway` role also owns the operations WebSocket/Reverb surface for Orbit
+operation streams. In v1 the gateway Swarm stack renders a single
+`orbit-operations-reverb` service on the gateway role, using the same
+`orbit-reverb` runtime image as the workload websocket role. This service is
+separate from app WebSocket bindings and `websocket.orbit`: it has its own
+operations app config path, does not depend on Redis or a database-role node,
+and does not move non-stream command APIs off gateway API plus agent-push.
+
 The `vpn` role is a gateway-coupled infrastructure role in this version. It
 owns the WireGuard server runtime, public WireGuard endpoint settings, VPN
 peer defaults, and the VPN-facing DNS runtime. First gateway bootstrap assigns

@@ -7,6 +7,9 @@ namespace App\Actions\Processes;
 use App\Contracts\RemoteShellStream;
 use App\Models\Node;
 use App\Models\Process;
+use App\Services\Nodes\NodeHostPaths;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationStreamTokens;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
@@ -16,16 +19,26 @@ use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
 use App\Services\Processes\ProcessServiceMetadataPayload;
 use App\Services\Processes\RemoteProcessLogs;
+use Illuminate\Support\Str;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use RuntimeException;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final readonly class ShowProcessLogs
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private RemoteShellStream $remoteShellStream,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private RemoteProcessLogs $remoteLogs,
         private ProcessServiceMetadataPayload $serviceMetadata,
+        private OperationRunRecorder $operationRuns,
+        private OperationStreamTokens $streamTokens,
+        private NodeHostPaths $nodeHostPaths,
     ) {}
 
     /**
@@ -78,13 +91,51 @@ final readonly class ShowProcessLogs
     /**
      * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}
      */
-    public function streamTarget(ProcessOwnerContext $context, string $name, int $lines): array
-    {
+    public function streamTarget(
+        ProcessOwnerContext $context,
+        string $name,
+        int $lines,
+    ): array {
         return $this->target($context, $name, $lines, true);
     }
 
     /**
-     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null}  $target
+     * @return array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null, operation_stream: array<string, mixed>}
+     */
+    public function operationStreamTarget(
+        ProcessOwnerContext $context,
+        string $name,
+        int $lines,
+        ?string $gatewayUrl = null,
+    ): array {
+        $target = $this->streamTarget($context, $name, $lines);
+
+        $run = $this->operationRuns->queued(
+            operationId: (string) Str::uuid(),
+            lane: 'gateway',
+            operationType: 'process.logs.follow',
+            targetNodeId: $target['node']->id,
+        );
+        $this->operationRuns->running($run->id);
+
+        $channel = "private-operations.{$run->id}";
+        $publisher = $this->streamTokens->publisherToken($run, $channel);
+        $target['operation_stream'] = [
+            'operation_uuid' => $run->id,
+            'channel' => $channel,
+            'gateway_url' => $gatewayUrl,
+            'ca_pem_path' => $this->nodeHostPaths->runtimeTrustPoolPath($target['node']),
+            'publish_endpoint' => "/api/operations/{$run->id}/stream/publish",
+            'stop_decision_endpoint' => "/api/operations/{$run->id}/stream/stop-decision",
+            'publisher_token' => $publisher['token'],
+            'publisher_expires_at' => $publisher['expires_at']->toIso8601String(),
+        ];
+
+        return $target;
+    }
+
+    /**
+     * @param  array{node: Node, process: Process, workspace: string|null, runtime_unit: string, backend: string, script: string, lines: int, stdout_path: string|null, stderr_path: string|null, operation_stream?: array<string, mixed>}  $target
      * @param  callable(string): void  $onOutput
      */
     public function followTarget(array $target, callable $onOutput): void
@@ -97,6 +148,7 @@ final readonly class ShowProcessLogs
             onOutput: $onOutput,
             stdoutPath: $target['stdout_path'],
             stderrPath: $target['stderr_path'],
+            operationStream: $target['operation_stream'] ?? null,
         );
     }
 

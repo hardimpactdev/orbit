@@ -10,20 +10,20 @@ use PHPUnit\Framework\Assert;
 test('gateway openapi schema-only operations are classified for sdk generation', function (): void {
     ini_set('memory_limit', '1G');
 
-    $schema = exportOpenApiSchemaForSdkSurface();
-    $surface = openApiSdkSurfaceContract();
-    $sdkOperations = coveredSdkOperations();
-    $surfaceOperations = openApiSdkSurfaceOperations($surface);
+    $schema = export_open_api_schema_for_sdk_surface();
+    $surface = open_api_sdk_surface_contract();
+    $sdkOperations = covered_sdk_operations();
+    $surfaceOperations = open_api_sdk_surface_operations($surface);
 
-    $schemaOperations = collect(schemaOperations($schema));
+    $schemaOperations = collect(schema_operations($schema));
 
-    Assert::assertSame(160, $schemaOperations->count());
+    Assert::assertSame(167, $schemaOperations->count());
 
     $schemaOnlyOperations = $schemaOperations
-        ->reject(fn (array $operation): bool => sdkCoversOperation($sdkOperations, $operation['operation']))
+        ->reject(fn (array $operation): bool => sdk_covers_operation($sdkOperations, $operation['operation']))
         ->values();
 
-    Assert::assertSame(63, $schemaOnlyOperations->count());
+    Assert::assertSame(70, $schemaOnlyOperations->count());
 
     $classifiedOperations = collect($surfaceOperations)
         ->pluck('operation')
@@ -56,9 +56,9 @@ test('gateway openapi schema-only operations are classified for sdk generation',
     }
 
     Assert::assertSame([
-        'internal_only' => 8,
+        'internal_only' => 14,
         'deferred_optional' => 33,
-        'public_sdk' => 22,
+        'public_sdk' => 23,
     ], $classifications);
 
     $publicFollowUps = collect($surfaceOperations)
@@ -88,6 +88,12 @@ test('gateway openapi schema-only operations are classified for sdk generation',
     Assert::assertSame([
         'POST /analytics/update',
         'POST /internal-executor/token/verify',
+        'GET /operations/{operationRun}/stream',
+        'POST /operations/{operationRun}/stream/auth',
+        'POST /operations/{operationRun}/stream/leave',
+        'GET /operations/{operationRun}/stream/stop-decision',
+        'POST /operations/{operationRun}/stream/publisher-credentials',
+        'POST /operations/{operationRun}/stream/publish',
         'POST /events/process',
         'GET /solo/tools',
         'GET /solo/projects',
@@ -100,7 +106,7 @@ test('gateway openapi schema-only operations are classified for sdk generation',
 /**
  * @return array<string, mixed>
  */
-function exportOpenApiSchemaForSdkSurface(): array
+function export_open_api_schema_for_sdk_surface(): array
 {
     $path = storage_path('framework/testing/openapi/gateway-openapi-sdk-surface.json');
 
@@ -114,27 +120,27 @@ function exportOpenApiSchemaForSdkSurface(): array
     Assert::assertSame(0, $exitCode);
     Assert::assertTrue(File::exists($path));
 
-    return decodedJsonObject(File::get($path));
+    return decoded_json_object(File::get($path));
 }
 
 /**
  * @return array<string, mixed>
  */
-function openApiSdkSurfaceContract(): array
+function open_api_sdk_surface_contract(): array
 {
     $path = base_path('openapi-sdk-surface.json');
 
     Assert::assertTrue(File::exists($path));
 
-    return decodedJsonObject(File::get($path));
+    return decoded_json_object(File::get($path));
 }
 
 /**
  * @return array<string, mixed>
  */
-function decodedJsonObject(string $json): array
+function decoded_json_object(string $json): array
 {
-    $decoded = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+    $decoded = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
 
     Assert::assertIsArray($decoded);
 
@@ -146,7 +152,7 @@ function decodedJsonObject(string $json): array
  * @param  array<string, mixed>  $surface
  * @return list<array{operation: string, classification: string, follow_up?: string}>
  */
-function openApiSdkSurfaceOperations(array $surface): array
+function open_api_sdk_surface_operations(array $surface): array
 {
     /** @var list<array{operation: string, classification: string, follow_up?: string}>|null $operations */
     $operations = $surface['schema_only_operations'] ?? null;
@@ -160,7 +166,7 @@ function openApiSdkSurfaceOperations(array $surface): array
  * @param  array<string, mixed>  $schema
  * @return list<array{operation: string, operation_id: string}>
  */
-function schemaOperations(array $schema): array
+function schema_operations(array $schema): array
 {
     $operations = [];
     /** @var array<string, array<string, array<string, mixed>>>|null $paths */
@@ -174,7 +180,7 @@ function schemaOperations(array $schema): array
         foreach ($methods as $method => $operation) {
             $method = strtoupper($method);
 
-            if (! in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+            if (! in_array($method, ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], strict: true)) {
                 continue;
             }
 
@@ -193,7 +199,7 @@ function schemaOperations(array $schema): array
 /**
  * @return list<string>
  */
-function coveredSdkOperations(): array
+function covered_sdk_operations(): array
 {
     $sdkRequestsPath = realpath(base_path('../../packages/sdk/src/Requests'));
 
@@ -202,19 +208,19 @@ function coveredSdkOperations(): array
     $operations = [];
 
     foreach (File::allFiles($sdkRequestsPath) as $file) {
-        $class = sdkRequestClass($file->getPathname());
+        $class = sdk_request_class($file->getPathname());
 
         if ($class === null) {
             continue;
         }
 
-        $request = instantiateSdkRequest($class);
+        $request = instantiate_sdk_request($class);
 
         if ($request === null) {
             continue;
         }
 
-        $operations[] = sdkOperation($request);
+        $operations[] = sdk_operation($request);
     }
 
     return array_values(array_unique($operations));
@@ -223,7 +229,7 @@ function coveredSdkOperations(): array
 /**
  * @return class-string<GatewayRequest>|null
  */
-function sdkRequestClass(string $path): ?string
+function sdk_request_class(string $path): ?string
 {
     $contents = File::get($path);
     $namespace = [];
@@ -249,7 +255,7 @@ function sdkRequestClass(string $path): ?string
 /**
  * @param  class-string<GatewayRequest>  $class
  */
-function instantiateSdkRequest(string $class): ?GatewayRequest
+function instantiate_sdk_request(string $class): ?GatewayRequest
 {
     try {
         $reflection = new ReflectionClass($class);
@@ -262,7 +268,7 @@ function instantiateSdkRequest(string $class): ?GatewayRequest
                     continue;
                 }
 
-                $arguments[] = dummySdkArgument($parameter->getType(), $parameter->getName());
+                $arguments[] = dummy_sdk_argument($parameter->getType(), $parameter->getName());
             }
         }
 
@@ -278,7 +284,7 @@ function instantiateSdkRequest(string $class): ?GatewayRequest
     return $request;
 }
 
-function dummySdkArgument(?ReflectionType $type, string $name): mixed
+function dummy_sdk_argument(?ReflectionType $type, string $name): mixed
 {
     if ($type instanceof ReflectionNamedType && ! $type->isBuiltin()) {
         $typeName = $type->getName();
@@ -302,9 +308,9 @@ function dummySdkArgument(?ReflectionType $type, string $name): mixed
     };
 }
 
-function sdkOperation(GatewayRequest $request): string
+function sdk_operation(GatewayRequest $request): string
 {
-    $endpoint = preg_replace('#^/api#', '', $request->resolveEndpoint());
+    $endpoint = preg_replace(pattern: '#^/api#', replacement: '', subject: $request->resolveEndpoint());
 
     return "{$request->getMethod()->value} {$endpoint}";
 }
@@ -312,18 +318,18 @@ function sdkOperation(GatewayRequest $request): string
 /**
  * @param  list<string>  $sdkOperations
  */
-function sdkCoversOperation(array $sdkOperations, string $schemaOperation): bool
+function sdk_covers_operation(array $sdkOperations, string $schemaOperation): bool
 {
-    [$schemaMethod, $schemaPath] = explode(' ', $schemaOperation, 2);
+    [$schemaMethod, $schemaPath] = explode(separator: ' ', string: $schemaOperation, limit: 2);
 
     foreach ($sdkOperations as $sdkOperation) {
-        [$sdkMethod, $sdkPath] = explode(' ', $sdkOperation, 2);
+        [$sdkMethod, $sdkPath] = explode(separator: ' ', string: $sdkOperation, limit: 2);
 
         if ($schemaMethod !== $sdkMethod) {
             continue;
         }
 
-        if (pathShapeMatches($schemaPath, $sdkPath)) {
+        if (path_shape_matches($schemaPath, $sdkPath)) {
             return true;
         }
     }
@@ -331,10 +337,10 @@ function sdkCoversOperation(array $sdkOperations, string $schemaOperation): bool
     return false;
 }
 
-function pathShapeMatches(string $schemaPath, string $sdkPath): bool
+function path_shape_matches(string $schemaPath, string $sdkPath): bool
 {
-    $schemaSegments = explode('/', trim($schemaPath, '/'));
-    $sdkSegments = explode('/', trim($sdkPath, '/'));
+    $schemaSegments = explode(separator: '/', string: trim($schemaPath, characters: '/'));
+    $sdkSegments = explode(separator: '/', string: trim($sdkPath, characters: '/'));
 
     if (count($schemaSegments) !== count($sdkSegments)) {
         return false;

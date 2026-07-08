@@ -116,6 +116,7 @@ use App\Commands\Internal\WireGuardInterfacePublicKeyReadCommand;
 use App\Commands\Internal\WireGuardSelfRouteCommand;
 use App\Commands\Internal\WorkspaceAdapterLookupCommand;
 use App\Commands\Internal\WorkspaceAdapterUpdateCommand;
+use App\Commands\Internal\WorkspaceSetupStepCommand;
 use App\Commands\Internal\WorkspaceSourceCreateCommand;
 use App\Commands\Manifest\ManifestRemoveCommand;
 use App\Commands\Manifest\ManifestUpdateCommand;
@@ -429,6 +430,7 @@ return [
         WireGuardSelfRouteCommand::class,
         WorkspaceAdapterLookupCommand::class,
         WorkspaceAdapterUpdateCommand::class,
+        WorkspaceSetupStepCommand::class,
         WorkspaceSourceCreateCommand::class,
     ],
 

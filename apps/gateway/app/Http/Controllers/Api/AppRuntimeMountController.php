@@ -5,18 +5,26 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Apps\AppSelection;
 use App\Enums\ActivityLogType;
+use App\Exceptions\AppSelectionResolutionFailed;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Models\AppInstance;
+use App\Models\AppInstanceRuntimeMount;
 use App\Models\AppRuntimeMount;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\AppRuntimeMountValidationException;
-use Illuminate\Database\Eloquent\Collection;
+use App\Services\Apps\AppSelectorResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 final class AppRuntimeMountController implements Loggable
 {
     private ?App $activitySubject = null;
@@ -25,32 +33,62 @@ final class AppRuntimeMountController implements Loggable
 
     private ?string $currentTarget = null;
 
+    public function __construct(
+        private readonly AppSelectorResolver $selectorResolver,
+    ) {}
+
     #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
     public function index(string $app, AppRuntimeMountService $mounts): JsonResponse
     {
         $this->currentAction = 'list';
 
-        $targetApp = $this->resolveApp($app);
-        $this->activitySubject = $targetApp;
+        $resolved = $this->resolveMountTarget($app);
 
-        if (! $targetApp instanceof App) {
+        if ($resolved instanceof JsonResponse) {
+            return $resolved;
+        }
+
+        if ($resolved === null) {
             return $this->notFound($app);
         }
 
-        return $this->success($this->mountsPayload($targetApp, $mounts->list($targetApp), $mounts));
+        $targetApp = $resolved['app'];
+        $this->activitySubject = $targetApp;
+
+        $targetInstance = $resolved['instance'];
+
+        if ($targetInstance instanceof AppInstance) {
+            return $this->success($this->instanceMountsPayload(
+                $targetApp,
+                $targetInstance,
+                $mounts->listForInstance($targetInstance),
+                $mounts,
+            ));
+        }
+
+        return $this->success($this->appMountsPayload($targetApp, $mounts->list($targetApp), $mounts));
     }
 
     #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
+    /**
+     * @mago-expect lint:halstead
+     */
     public function store(string $app, Request $request, AppRuntimeMountService $mounts): JsonResponse
     {
         $this->currentAction = 'add';
 
-        $targetApp = $this->resolveApp($app);
-        $this->activitySubject = $targetApp;
+        $resolved = $this->resolveMountTarget($app);
 
-        if (! $targetApp instanceof App) {
+        if ($resolved instanceof JsonResponse) {
+            return $resolved;
+        }
+
+        if ($resolved === null) {
             return $this->notFound($app);
         }
+
+        $targetApp = $resolved['app'];
+        $this->activitySubject = $targetApp;
 
         $source = $this->stringInput($request, 'source');
         $target = $this->stringInput($request, 'target');
@@ -64,7 +102,24 @@ final class AppRuntimeMountController implements Loggable
             return $this->validationFailed('Target path is required.', ['field' => 'target']);
         }
 
+        $targetInstance = $resolved['instance'];
+
         try {
+            if ($targetInstance instanceof AppInstance) {
+                $result = $mounts->addToInstance(
+                    instance: $targetInstance,
+                    source: $source,
+                    target: $target,
+                    readOnly: $this->readOnly($request),
+                );
+
+                return $this->success([
+                    ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
+                    'mount' => $mounts->instanceMountPayload($result['mount']),
+                    'action' => $result['action'],
+                ]);
+            }
+
             $result = $mounts->add(
                 app: $targetApp,
                 source: $source,
@@ -76,23 +131,32 @@ final class AppRuntimeMountController implements Loggable
         }
 
         return $this->success([
-            ...$this->mountsPayload($targetApp, $result['mounts'], $mounts),
+            ...$this->appMountsPayload($targetApp, $result['mounts'], $mounts),
             'mount' => $mounts->mountPayload($result['mount']),
             'action' => $result['action'],
         ]);
     }
 
     #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
+    /**
+     * @mago-expect lint:halstead
+     */
     public function destroy(string $app, Request $request, AppRuntimeMountService $mounts): JsonResponse
     {
         $this->currentAction = 'remove';
 
-        $targetApp = $this->resolveApp($app);
-        $this->activitySubject = $targetApp;
+        $resolved = $this->resolveMountTarget($app);
 
-        if (! $targetApp instanceof App) {
+        if ($resolved instanceof JsonResponse) {
+            return $resolved;
+        }
+
+        if ($resolved === null) {
             return $this->notFound($app);
         }
+
+        $targetApp = $resolved['app'];
+        $this->activitySubject = $targetApp;
 
         $target = $this->stringInput($request, 'target');
         $this->currentTarget = $target;
@@ -101,14 +165,31 @@ final class AppRuntimeMountController implements Loggable
             return $this->validationFailed('Target path is required.', ['field' => 'target']);
         }
 
+        $targetInstance = $resolved['instance'];
+
         try {
+            if ($targetInstance instanceof AppInstance) {
+                $result = $mounts->removeFromInstance($targetInstance, $target);
+
+                $payload = [
+                    ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
+                    'action' => $result['action'],
+                ];
+
+                if ($result['mount'] instanceof AppInstanceRuntimeMount) {
+                    $payload['mount'] = $mounts->instanceMountPayload($result['mount']);
+                }
+
+                return $this->success($payload);
+            }
+
             $result = $mounts->remove($targetApp, $target);
         } catch (AppRuntimeMountValidationException $exception) {
             return $this->validationFailed($exception->getMessage(), $exception->meta);
         }
 
         $payload = [
-            ...$this->mountsPayload($targetApp, $result['mounts'], $mounts),
+            ...$this->appMountsPayload($targetApp, $result['mounts'], $mounts),
             'action' => $result['action'],
         ];
 
@@ -141,41 +222,84 @@ final class AppRuntimeMountController implements Loggable
         return $value === '' ? null : $value;
     }
 
-    private function resolveApp(string $selector): ?App
+    /**
+     * @return array{app: App, instance: AppInstance|null}|JsonResponse|null
+     */
+    private function resolveMountTarget(string $selector): array|JsonResponse|null
     {
-        $baseQuery = App::query()->with(['node.roleAssignments', 'runtimeMounts']);
-
-        $nameMatch = (clone $baseQuery)
-            ->where('name', $selector)
-            ->first();
-
-        if ($nameMatch instanceof App) {
-            return $nameMatch;
+        try {
+            $selection = $this->selectorResolver->resolve($selector);
+        } catch (AppSelectionResolutionFailed $exception) {
+            return $this->validationFailed($exception->getMessage(), $exception->meta);
         }
 
-        return $baseQuery
-            ->where('domain', $selector)
-            ->first();
+        if (! $selection instanceof AppSelection) {
+            return null;
+        }
+
+        return [
+            'app' => $selection->app,
+            'instance' => $selection->instance,
+        ];
     }
 
     /**
      * @param  Collection<int, AppRuntimeMount>  $mounts
      * @return array{
      *     app: array<string, mixed>,
+     *     target: array{type: string, app: string},
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     inherited_by_workspaces: bool
      * }
      */
-    private function mountsPayload(App $app, Collection $mounts, AppRuntimeMountService $service): array
+    private function appMountsPayload(App $app, Collection $mounts, AppRuntimeMountService $service): array
     {
-        $app->loadMissing('node');
+        $mountPayloads = $mounts
+            ->map($service->mountPayload(...))
+            ->values()
+            ->all();
 
+        /** @var list<array{source: string, target: string, read_only: bool}> $mountPayloads */
         return [
             'app' => $this->appPayload($app),
-            'mounts' => $mounts
-                ->map(fn (AppRuntimeMount $mount): array => $service->mountPayload($mount))
-                ->values()
-                ->all(),
+            'target' => [
+                'type' => 'app',
+                'app' => $app->name,
+            ],
+            'mounts' => $mountPayloads,
+            'inherited_by_workspaces' => true,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, AppInstanceRuntimeMount>  $mounts
+     * @return array{
+     *     app: array<string, mixed>,
+     *     target: array{type: string, app: string, instance: string},
+     *     mounts: list<array{source: string, target: string, read_only: bool}>,
+     *     inherited_by_workspaces: bool
+     * }
+     */
+    private function instanceMountsPayload(
+        App $app,
+        AppInstance $instance,
+        Collection $mounts,
+        AppRuntimeMountService $service,
+    ): array {
+        $mountPayloads = $mounts
+            ->map($service->instanceMountPayload(...))
+            ->values()
+            ->all();
+
+        /** @var list<array{source: string, target: string, read_only: bool}> $mountPayloads */
+        return [
+            'app' => $this->appPayload($app),
+            'target' => [
+                'type' => 'app_instance',
+                'app' => $app->name,
+                'instance' => $instance->name,
+            ],
+            'mounts' => $mountPayloads,
             'inherited_by_workspaces' => true,
         ];
     }
@@ -284,7 +408,7 @@ final class AppRuntimeMountController implements Loggable
                 'action' => $this->currentAction,
                 'target' => $this->currentTarget,
             ],
-            fn (mixed $value): bool => $value !== null,
+            static fn (mixed $value): bool => $value !== null,
         );
     }
 

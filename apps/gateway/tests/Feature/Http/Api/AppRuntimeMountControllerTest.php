@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
@@ -220,6 +222,137 @@ describe('AppRuntimeMountController', function (): void {
             'target_reserved',
         ],
     ]);
+
+    it('stores runtime mounts on an app instance independently from legacy app mounts', function (): void {
+        $caller = createAppRuntimeMountCaller();
+        $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
+        grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
+
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'hauser',
+            'path' => '/Users/nckrtl/apps/hauser',
+            'document_root' => 'public',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $instance = $app->instances()->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: 'NMBP',
+                path: '/Users/nckrtl/apps/hauser',
+                document_root: 'public',
+                domain: 'hauser.nmbp',
+            ),
+        ]);
+
+        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ])->assertOk();
+
+        expect($app->runtimeMounts()->count())
+            ->toBe(0)
+            ->and($instance->runtimeMounts()->count())
+            ->toBe(1)
+            ->and($instance->runtimeMounts()->first()?->source)
+            ->toBe('/Users/nckrtl/projects');
+    });
+
+    it('returns app instance target metadata and validates source against the instance node home', function (): void {
+        $caller = createAppRuntimeMountCaller();
+        $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
+        grantAppRuntimeMountAccess($caller, $appNode, ['app:read', 'app:mount']);
+
+        $app = App::factory()->for($appNode, 'node')->create([
+            'name' => 'hauser',
+            'path' => '/Users/nckrtl/apps/hauser',
+            'document_root' => 'public',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $app->instances()->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $appNode->id,
+                node: 'NMBP',
+                path: '/Users/nckrtl/apps/hauser',
+                document_root: 'public',
+                domain: 'hauser.nmbp',
+            ),
+        ]);
+
+        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.target.type', 'app_instance')
+            ->assertJsonPath('success.data.target.app', 'hauser')
+            ->assertJsonPath('success.data.target.instance', 'nmbp')
+            ->assertJsonPath('success.data.mount.source', '/Users/nckrtl/projects');
+
+        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+            'source' => '/home/nckrtl/projects',
+            'target' => '/projects',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.home', '/Users/nckrtl');
+    });
+
+    it('keeps an exact app domain as an app-level mount target before dotted instance selectors', function (): void {
+        $caller = createAppRuntimeMountCaller();
+        $domainAppNode = createTestAppHostNode([
+            'name' => 'domain-node',
+            'platform' => 'ubuntu_24-04',
+            'user' => 'nckrtl',
+        ]);
+        $instanceNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
+        grantAppRuntimeMountAccess($caller, $domainAppNode, ['app:read', 'app:mount']);
+        grantAppRuntimeMountAccess($caller, $instanceNode, ['app:read', 'app:mount']);
+
+        $domainApp = App::factory()->for($domainAppNode, 'node')->create([
+            'name' => 'domain-app',
+            'domain' => 'hauser.nmbp',
+            'path' => '/home/nckrtl/apps/domain-app',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+
+        $hauser = App::factory()->for($instanceNode, 'node')->create([
+            'name' => 'hauser',
+            'path' => '/Users/nckrtl/apps/hauser',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        $hauser
+            ->instances()
+            ->create([
+                'name' => 'nmbp',
+                'driver' => AppInstanceDriver::Orbit,
+                'driver_config' => new OrbitAppInstanceDriverConfigData(
+                    node_id: $instanceNode->id,
+                    node: 'NMBP',
+                    path: '/Users/nckrtl/apps/hauser',
+                    document_root: 'public',
+                    domain: 'hauser.nmbp',
+                ),
+            ]);
+
+        postAppRuntimeMountJson('/api/apps/hauser.nmbp/mounts', [
+            'source' => '/home/nckrtl/projects',
+            'target' => '/projects',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success.data.target.type', 'app')
+            ->assertJsonPath('success.data.target.app', 'domain-app')
+            ->assertJsonPath('success.data.mount.source', '/home/nckrtl/projects');
+
+        expect($domainApp->runtimeMounts()->count())
+            ->toBe(1)
+            ->and($hauser->instances()->first()?->runtimeMounts()->count())
+            ->toBe(0);
+    });
 
     it('rejects configurable runtime mounts for static apps and app-prod apps in the first slice', function (
         array $nodeState,

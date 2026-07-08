@@ -29,7 +29,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private PhpRuntimePolicy $phpRuntimePolicy,
         private OrbitContainerNames $names,
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
-        private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
+        private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService(new WorkspacePlacement),
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private RuntimeClientTrustPolicy $runtimeClientTrust = new RuntimeClientTrustPolicy,
@@ -97,7 +97,10 @@ final readonly class WorkspaceRuntimeContainerRenderer
             $mounts[] = $packagesMount;
         }
 
-        foreach ($this->appRuntimeMounts->mountsForRuntime($app) as $mount) {
+        $workspace->loadMissing(['app.instances', 'app.runtimeMounts', 'appInstance.runtimeMounts']);
+        $instance = $this->placement->instanceForWorkspace($workspace);
+
+        foreach ($this->appRuntimeMounts->mountsForRuntime($app, $instance) as $mount) {
             $mounts[] = $mount;
         }
 

@@ -67,6 +67,7 @@ use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
+use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
@@ -178,6 +179,7 @@ final readonly class DoctorReportRunner
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
         private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
         private DnsRuntimeProbe $dnsRuntimeProbe,
+        private WorkspacePlacement $workspacePlacement = new WorkspacePlacement,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
     ) {}
 
@@ -187,6 +189,25 @@ final readonly class DoctorReportRunner
     public function supportedFamilies(): array
     {
         return self::SUPPORTED_FAMILIES;
+    }
+
+    /**
+     * @return Collection<int, Workspace>
+     */
+    private function workspacesForNode(Node $node): Collection
+    {
+        $workspaces = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->get()
+            ->filter(
+                fn (Workspace $workspace): bool => (
+                    $this->workspacePlacement->nodeForWorkspace($workspace)?->id === $node->id
+                ),
+            )
+            ->values();
+
+        /** @var Collection<int, Workspace> $workspaces */
+        return $workspaces;
     }
 
     /**
@@ -1168,18 +1189,14 @@ final readonly class DoctorReportRunner
 
         if (in_array('workspace', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
+            $workspaces = $this->workspacesForNode($node);
+
             $this->runFamilyCheckPlan(
                 $onFamilyProgress,
                 'workspace',
-                Workspace::query()
-                    ->with('app.node')
-                    ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
-                    ->count(),
-                function (callable $advance) use ($node, &$issues): void {
-                    foreach (Workspace::query()
-                        ->with('app.node')
-                        ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
-                        ->get() as $workspace) {
+                $workspaces->count(),
+                function (callable $advance) use ($workspaces, &$issues): void {
+                    foreach ($workspaces as $workspace) {
                         $snapshot = $this->workspacesProbe->introspect($workspace);
 
                         foreach ($this->workspacesProbe->diff($workspace, $snapshot) as $entry) {
@@ -1942,11 +1959,11 @@ final readonly class DoctorReportRunner
      */
     private function workspaceIssuePayload(DriftEntry $entry, Workspace $workspace): array
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'app.instances', 'appInstance']);
 
         return $this->annotateIssue([
             'family' => $entry->family,
-            'node' => $workspace->app?->node?->name,
+            'node' => $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
             'key' => $entry->key,
             'kind' => $entry->kind->value,
             'summary' => $entry->summary,
@@ -2346,9 +2363,13 @@ final readonly class DoctorReportRunner
             return $app instanceof App ? $app->node?->name : null;
         }
 
-        $workspace = Workspace::query()->with('app.node')->find($targetId);
+        $workspace = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance'])
+            ->find($targetId);
 
-        return $workspace instanceof Workspace ? $workspace->app?->node?->name : null;
+        return $workspace instanceof Workspace
+            ? $this->workspacePlacement->nodeForWorkspace($workspace)?->name
+            : null;
     }
 
     /**
@@ -2404,17 +2425,20 @@ final readonly class DoctorReportRunner
         }
 
         $appName = is_string($detail['app'] ?? null) ? $detail['app'] : null;
-        $workspace = Workspace::query()
-            ->with('app.node')
+        $workspaces = Workspace::query()
+            ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('name', $workspaceName)
-            ->whereHas('app', function ($query) use ($node, $appName): void {
-                $query->where('node_id', $node->id);
-
+            ->whereHas('app', function ($query) use ($appName): void {
                 if ($appName !== null) {
                     $query->where('name', $appName);
                 }
             })
-            ->first();
+            ->get();
+        $workspace = $workspaces->first(
+            fn (Workspace $workspace): bool => (
+                $this->workspacePlacement->nodeForWorkspace($workspace)?->id === $node->id
+            ),
+        );
 
         if (! $workspace instanceof Workspace) {
             return null;
@@ -2629,10 +2653,11 @@ final readonly class DoctorReportRunner
         Process $process,
         Workspace $workspace,
     ): array {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'appInstance']);
         $app = $workspace->app;
+        $workspaceNode = $this->workspacePlacement->nodeForWorkspace($workspace);
 
-        if (! $app instanceof App || ! $app->node instanceof Node || $app->node->id !== $node->id) {
+        if (! $app instanceof App || ! $workspaceNode instanceof Node || $workspaceNode->id !== $node->id) {
             return [
                 'family' => 'process',
                 'node' => $node->name,
@@ -2651,14 +2676,14 @@ final readonly class DoctorReportRunner
 
         try {
             app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
-            $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $node);
+            $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $workspaceNode);
 
             $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
-            $outcome = $this->workspaceRuntimeContainerManagerForAgentPush()->apply($node, $container);
+            $outcome = $this->workspaceRuntimeContainerManagerForAgentPush()->apply($workspaceNode, $container);
         } catch (\Throwable $e) {
             return [
                 'family' => 'process',
-                'node' => $node->name,
+                'node' => $workspaceNode instanceof Node ? $workspaceNode->name : $node->name,
                 'code' => $key,
                 'key' => $key,
                 'mode' => 'restore',
@@ -2675,7 +2700,7 @@ final readonly class DoctorReportRunner
 
         return [
             'family' => 'process',
-            'node' => $node->name,
+            'node' => $workspaceNode->name,
             'code' => $key,
             'key' => $key,
             'mode' => 'restore',
@@ -2771,7 +2796,7 @@ final readonly class DoctorReportRunner
     {
         $process->loadMissing('owner');
 
-        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $config = $process->runtime_config;
         $hashLabel = is_string($config['container_spec_hash_label'] ?? null)
             ? $config['container_spec_hash_label']
             : null;
@@ -4024,7 +4049,7 @@ final readonly class DoctorReportRunner
 
         return [
             'family' => $entry->family,
-            'node' => $workspace->app?->node?->name,
+            'node' => $this->workspacePlacement->nodeForWorkspace($workspace)?->name,
             'code' => $entry->key,
             'key' => $entry->key,
             'mode' => 'restore',
@@ -4038,9 +4063,9 @@ final readonly class DoctorReportRunner
      */
     private function restoreWorkspaceRuntimeContainer(Workspace $workspace, DriftEntry $entry): array
     {
-        $workspace->loadMissing('app.node');
+        $workspace->loadMissing(['app.node', 'appInstance']);
         $app = $workspace->app;
-        $node = $app?->node;
+        $node = $this->workspacePlacement->nodeForWorkspace($workspace);
 
         if (! $app instanceof App || ! $node instanceof Node) {
             return [

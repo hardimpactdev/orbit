@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -132,6 +135,100 @@ it('mounts the macos app-dev node user packages directory at /packages', functio
         'source' => '/Users/nckrtl/packages',
         'target' => '/packages',
         'read_only' => false,
+    ]);
+});
+
+it('prefers matching app instance runtime mounts over legacy app mounts for app containers', function (): void {
+    $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
+    $app = makeRuntimeRendererApp($node, [
+        'name' => 'hauser',
+        'path' => '/home/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $app->runtimeMounts()->create([
+        'source' => '/home/nckrtl/projects',
+        'target' => '/projects',
+        'read_only' => true,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: 'beast',
+            path: '/home/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.development',
+        ),
+    ]);
+    assert(
+        $instance instanceof AppInstance,
+        description: 'Factory must return an app instance for runtime mount preference coverage.',
+    );
+    $instance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/home/nckrtl/volumes/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+
+    $mounts = rendererForTest()->render($app)->mounts();
+
+    expect($mounts)
+        ->toContain([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ])
+        ->and($mounts)
+        ->toContain([
+            'source' => '/home/nckrtl/volumes/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ])
+        ->and($mounts)
+        ->not->toContain([
+            'source' => '/home/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+});
+
+it('falls back to legacy app runtime mounts when the matching instance has none', function (): void {
+    $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
+    $app = makeRuntimeRendererApp($node, [
+        'name' => 'hauser',
+        'path' => '/home/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: 'beast',
+            path: '/home/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.development',
+        ),
+    ]);
+    $app->runtimeMounts()->create([
+        'source' => '/home/nckrtl/projects',
+        'target' => '/projects',
+        'read_only' => true,
+    ]);
+
+    $mounts = rendererForTest()->render($app)->mounts();
+
+    expect($mounts)->toContain([
+        'source' => '/home/nckrtl/projects',
+        'target' => '/projects',
+        'read_only' => true,
     ]);
 });
 
@@ -283,6 +380,47 @@ it('changes the spec hash when configured app runtime mounts change', function (
     $app->unsetRelation('runtimeMounts');
 
     expect($withoutConfiguredMount)->not->toBe($renderer->render($app)->specHash());
+});
+
+it('changes the spec hash when matching app instance runtime mounts change', function (): void {
+    $renderer = rendererForTest();
+    $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
+    $app = makeRuntimeRendererApp($node, [
+        'name' => 'hauser',
+        'path' => '/home/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: 'beast',
+            path: '/home/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.development',
+        ),
+    ]);
+    assert(
+        $instance instanceof AppInstance,
+        description: 'Factory must return an app instance for runtime mount hash coverage.',
+    );
+
+    $withoutInstanceMount = $renderer->render($app)->specHash();
+
+    $instance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/home/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+    $instance->unsetRelation('runtimeMounts');
+    $app->unsetRelation('instances');
+
+    expect($withoutInstanceMount)->not->toBe($renderer->render($app)->specHash());
 });
 
 it('renders opcache directives from the PHP runtime policy', function (): void {

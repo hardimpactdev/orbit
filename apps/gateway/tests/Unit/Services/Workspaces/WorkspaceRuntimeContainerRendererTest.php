@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\AppInstance;
@@ -24,19 +25,25 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
 {
     $node = createTestAppHostNode(['user' => 'orbit']);
 
-    $app = makeWorkspaceRendererApp($node, array_merge([
+    /** @var array<string, mixed> $appAttributes */
+    $appAttributes = array_merge([
         'name' => 'demo',
         'path' => '/home/orbit/apps/demo',
         'document_root' => 'public',
         'php_version' => '8.5',
         'runtime' => AppRuntimeKind::Php,
-    ], $appOverrides));
+    ], $appOverrides);
 
-    $workspace = makeWorkspaceRendererWorkspace($app, array_merge([
+    $app = makeWorkspaceRendererApp($node, $appAttributes);
+
+    /** @var array<string, mixed> $workspaceAttributes */
+    $workspaceAttributes = array_merge([
         'name' => 'feature-a',
         'path' => '/home/orbit/apps/demo/.worktrees/feature-a',
         'php_version' => null,
-    ], $workspaceOverrides));
+    ], $workspaceOverrides);
+
+    $workspace = makeWorkspaceRendererWorkspace($app, $workspaceAttributes);
 
     $workspace->setRelation('app', $app);
 
@@ -49,7 +56,7 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
 function makeWorkspaceRendererApp(Node $node, array $attributes): App
 {
     $app = App::factory()->for($node, 'node')->create($attributes);
-    assert($app instanceof App);
+    assert($app instanceof App, description: 'Workspace factory must return an App model.');
 
     return $app;
 }
@@ -60,7 +67,7 @@ function makeWorkspaceRendererApp(Node $node, array $attributes): App
 function makeWorkspaceRendererWorkspace(App $app, array $attributes): Workspace
 {
     $workspace = Workspace::factory()->for($app, 'app')->create($attributes);
-    assert($workspace instanceof Workspace);
+    assert($workspace instanceof Workspace, description: 'Workspace factory must return a Workspace model.');
 
     return $workspace;
 }
@@ -214,7 +221,64 @@ it('uses the selected app instance node for workspace runtime node-local mounts'
         ->toBeFalse();
 });
 
-it('inherits configured app runtime mounts from the parent app', function (): void {
+it('uses selected app instance runtime mounts for workspace containers', function (): void {
+    $node = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
+    $app = makeWorkspaceRendererApp($node, [
+        'name' => 'hauser',
+        'path' => '/Users/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $app->runtimeMounts()->create([
+        'source' => '/home/nckrtl/projects',
+        'target' => '/projects',
+        'read_only' => true,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: 'NMBP',
+            path: '/Users/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.nmbp',
+        ),
+    ]);
+    assert($instance instanceof AppInstance);
+    $instance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+    $workspace = makeWorkspaceRendererWorkspace($app, [
+        'name' => 'feature-a',
+        'path' => '/Users/nckrtl/apps/hauser/.worktrees/feature-a',
+        'app_instance_id' => $instance->id,
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('appInstance', $instance);
+
+    $mounts = workspaceRendererForTest()->render($workspace)->mounts();
+
+    expect($mounts)
+        ->toContain([
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ])
+        ->and($mounts)
+        ->not->toContain([
+            'source' => '/home/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+});
+
+it('inherits configured app runtime mounts from the parent app when no instance mounts exist', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
     $app = makeWorkspaceRendererApp($node, [
         'name' => 'nckrtl',
@@ -333,9 +397,15 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
 
     $withPackagesMount = $renderer->render($workspace)->specHash();
     $app = $workspace->app;
-    assert($app instanceof App);
+    assert(
+        $app instanceof App,
+        description: 'Workspace must retain its app relation before packages mount hash coverage.',
+    );
     $node = $app->node;
-    assert($node instanceof Node);
+    assert(
+        $node instanceof Node,
+        description: 'App must retain its node relation before packages mount hash coverage.',
+    );
 
     $node->roleAssignments()->update(['status' => 'pending']);
     $node->unsetRelation('roleAssignments');
@@ -365,6 +435,54 @@ it('changes the spec hash when configured parent app runtime mounts change', fun
     $workspace->unsetRelation('app');
 
     expect($withoutConfiguredMount)->not->toBe($renderer->render($workspace)->specHash());
+});
+
+it('changes the spec hash when selected app instance runtime mounts change', function (): void {
+    $renderer = workspaceRendererForTest();
+    $node = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
+    $app = makeWorkspaceRendererApp($node, [
+        'name' => 'hauser',
+        'path' => '/Users/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            node: 'NMBP',
+            path: '/Users/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.nmbp',
+        ),
+    ]);
+    assert(
+        $instance instanceof AppInstance,
+        description: 'Factory must return an app instance for selected-instance hash coverage.',
+    );
+    $workspace = makeWorkspaceRendererWorkspace($app, [
+        'name' => 'feature-a',
+        'path' => '/Users/nckrtl/apps/hauser/.worktrees/feature-a',
+        'app_instance_id' => $instance->id,
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('appInstance', $instance);
+
+    $withoutInstanceMount = $renderer->render($workspace)->specHash();
+
+    $instance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+    $instance->unsetRelation('runtimeMounts');
+    $workspace->unsetRelation('appInstance');
+
+    expect($withoutInstanceMount)->not->toBe($renderer->render($workspace)->specHash());
 });
 
 it('renders opcache directives from the PHP runtime policy', function (): void {

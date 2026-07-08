@@ -812,7 +812,7 @@ it('reports progress while setup steps are running', function (): void {
     ]);
 });
 
-it('routes php and composer setup steps through the workspace runtime container', function (): void {
+it('routes php and composer setup steps through the selected workspace host php toolchain', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -853,20 +853,20 @@ it('routes php and composer setup steps through the workspace runtime container'
     expect($stepRuns)->toHaveCount(2);
 
     expect($stepRuns[0]['script'])
-        ->toContain("'docker'")
-        ->toContain("'exec'")
-        ->toContain("'orbit-ws-demo-feature-a'")
-        ->toContain("'composer install --no-interaction'")
-        ->toContain("'-w'")
-        ->toContain("'/app'");
+        ->toContain("'sudo'")
+        ->toContain("'-u'")
+        ->toContain("'gateway'")
+        ->toContain('/opt/orbit/php/')
+        ->toContain('/home/nckrtl/apps/demo/.worktrees/feature-a')
+        ->toContain('composer install --no-interaction');
+    expect($stepRuns[0]['options']['cwd'] ?? null)->toBe('/home/nckrtl/apps/demo/.worktrees/feature-a');
 
     expect($stepRuns[1]['script'])
-        ->toContain("'docker'")
-        ->toContain("'exec'")
-        ->toContain("'orbit-ws-demo-feature-a'")
-        ->toContain("'php artisan migrate --force'")
-        ->toContain("'-w'")
-        ->toContain("'/app'");
+        ->toContain("'sudo'")
+        ->toContain('/opt/orbit/php/')
+        ->toContain('/home/nckrtl/apps/demo/.worktrees/feature-a')
+        ->toContain('php artisan migrate --force');
+    expect($stepRuns[1]['options']['cwd'] ?? null)->toBe('/home/nckrtl/apps/demo/.worktrees/feature-a');
 });
 
 it('keeps non-php setup steps on the host', function (): void {
@@ -895,11 +895,15 @@ it('keeps non-php setup steps on the host', function (): void {
     $npmRun = collect($shell->runs)
         ->first(fn (array $run): bool => str_contains($run['script'], 'npm ci'));
 
-    expect($npmRun['script'])->not->toContain("'docker'");
+    expect($npmRun['script'])
+        ->toContain('/home/gateway/.local/bin')
+        ->toContain('/home/gateway/.vite-plus/bin')
+        ->toContain('npm ci')
+        ->not->toContain("'docker'");
     expect($npmRun['options']['cwd'] ?? null)->toBe('/home/nckrtl/apps/demo/.worktrees/feature-a');
 });
 
-it('passes lifecycle environment into containerized setup steps', function (): void {
+it('passes lifecycle environment into host-routed setup steps', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -928,19 +932,21 @@ it('passes lifecycle environment into containerized setup steps', function (): v
     $workspaceHost = 'feature-a.demo';
     $workspaceUrl = "https://{$workspaceHost}";
 
-    expect($composerRun['script'])->toContain("'ORBIT_APP=demo'");
-    expect($composerRun['script'])->toContain("'ORBIT_WORKSPACE_NAME=feature-a'");
-    expect($composerRun['script'])->toContain("'ORBIT_URL={$workspaceUrl}'");
-    expect($composerRun['script'])->toContain("'APP_URL={$workspaceUrl}'");
-    expect($composerRun['script'])->toContain("'VITE_APP_URL={$workspaceUrl}'");
+    expect($composerRun['script'])->toContain('ORBIT_APP=');
+    expect($composerRun['script'])->toContain('demo');
+    expect($composerRun['script'])->toContain('ORBIT_WORKSPACE_NAME=');
+    expect($composerRun['script'])->toContain('feature-a');
+    expect($composerRun['script'])->toContain('ORBIT_URL=');
+    expect($composerRun['script'])->toContain($workspaceUrl);
+    expect($composerRun['script'])->toContain('APP_URL=');
+    expect($composerRun['script'])->toContain('VITE_APP_URL=');
     expect($composerRun['script'])
-        ->toContain(
-            "'VITE_DEV_SERVER_KEY=/home/gateway/.config/orbit/certs/{$workspaceHost}.key'",
-        );
+        ->toContain('VITE_DEV_SERVER_KEY=')
+        ->toContain("/home/gateway/.config/orbit/certs/{$workspaceHost}.key");
     expect($composerRun['script'])
-        ->toContain(
-            "'VITE_DEV_SERVER_CERT=/home/gateway/.config/orbit/certs/{$workspaceHost}.crt'",
-        );
+        ->toContain('VITE_DEV_SERVER_CERT=')
+        ->toContain("/home/gateway/.config/orbit/certs/{$workspaceHost}.crt");
+    expect($composerRun['script'])->not->toContain('feature-a.demo.beast');
     expect($composerRun['options']['metadata'])->toMatchArray([
         'APP_URL' => $workspaceUrl,
         'VITE_APP_URL' => $workspaceUrl,

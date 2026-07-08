@@ -37,7 +37,7 @@ This command follows the shared
 3. Returns a skipped result when no setup steps exist.
 4. Returns the latest completed run when its step-set hash matches.
 5. Creates a setup run when execution is needed.
-6. Routes PHP, Composer, and Artisan commands through the app host PHP toolchain.
+6. Routes setup commands through the app user's host tool path, including the app host PHP toolchain for PHP commands.
 7. Stops at the first failed setup step.
 8. Stores per-step result status and captured output.
 

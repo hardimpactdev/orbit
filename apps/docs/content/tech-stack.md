@@ -274,6 +274,15 @@ collected stdout, stderr, status, and exit frames; stream requests forward raw
 stdout/stderr chunks for scoped long-running commands such as process log
 follow. V1 does not add a gateway-side Orbit command whitelist.
 
+Gateway operations WebSocket/Reverb is a gateway-role streaming plane, not the
+app-facing websocket role. The gateway Swarm stack renders a single
+`orbit-operations-reverb` service on the gateway role using the existing
+`orbit-reverb` runtime image. The v1 service has its own operations app config
+path, does not require Redis, a database-role node, or scale-out configuration,
+and is reserved for future operation-scoped streaming payloads. Non-stream
+commands stay on gateway API plus agent-push, and current stream migrations
+remain explicit later-slice work.
+
 VPN-role runtime administration is the one runtime exception to the normal
 gateway-to-node flow. Commands that administer VPN clients (`vpn-client:*`) or
 the VPN web UI (`vpn-web-ui:*`) execute against the active `vpn` role runtime.
@@ -449,12 +458,15 @@ ceremony. `app-prod` runtimes do not receive this client-trust configuration.
 Octane worker mode; worker mode stays opt-in through `app:worker` after
 readiness validation.
 
-PHP apps on `app-dev` nodes may also store app-level additional runtime mount
-intent through `app:mount`. These mounts are rendered into the app runtime
-container and inherited by workspace runtime containers for that app. Sources
-must be explicit safe paths under `/home/<node-user>/`, sensitive home paths are
-rejected, reserved runtime targets such as `/app`, `/packages`, `/data`, and
-`/config` are blocked, the internal ephemeral XDG root
+PHP apps on `app-dev` nodes may also store instance-scoped additional runtime
+mount intent through `app:mount` with dotted selectors such as `hauser.nmbp`.
+These mounts are rendered into the app runtime container for the selected
+instance and inherited by workspace runtime containers that use that instance.
+Different instances may use different host source paths for the same container
+target. Legacy app-level mounts remain compatibility fallback only. Sources must
+be explicit safe paths under the resolved instance node's home directory,
+sensitive home paths are rejected, reserved runtime targets such as `/app`,
+`/packages`, `/data`, and `/config` are blocked, the internal ephemeral XDG root
 `/tmp/orbit-frankenphp` is blocked, and mounts default to read-only. This keeps
 package symlink support configurable without reintroducing PHP-FPM or mounting
 the entire host home directory by default.
@@ -512,6 +524,11 @@ node.
 Current product support is one active websocket backend. Route internals keep a
 backend-pool-shaped configuration for future scaling, but multiple active
 websocket backends fail clearly instead of silently fanning out.
+
+The gateway-owned operations Reverb service is intentionally outside this
+app-facing websocket role. It is colocated with the gateway Swarm services and
+does not use `websocket.orbit`, app WebSocket bindings, or the websocket role's
+Redis scaling dependency in v1.
 
 ### S3 runtime
 

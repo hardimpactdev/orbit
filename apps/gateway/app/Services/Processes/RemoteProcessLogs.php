@@ -48,6 +48,7 @@ final readonly class RemoteProcessLogs
 
     /**
      * @param  callable(string): void  $onOutput
+     * @param  array<string, mixed>|null  $operationStream
      */
     /**
      * @mago-expect lint:excessive-parameter-list
@@ -60,6 +61,7 @@ final readonly class RemoteProcessLogs
         callable $onOutput,
         ?string $stdoutPath = null,
         ?string $stderrPath = null,
+        ?array $operationStream = null,
     ): void {
         $this->localExecutor->streamInternal(
             node: $node,
@@ -72,6 +74,7 @@ final readonly class RemoteProcessLogs
                     'follow' => true,
                     ...($stdoutPath !== null ? ['stdout_path' => $stdoutPath] : []),
                     ...($stderrPath !== null ? ['stderr_path' => $stderrPath] : []),
+                    ...($operationStream !== null ? ['operation_stream' => $operationStream] : []),
                 ], JSON_THROW_ON_ERROR),
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => 'process.logs.follow',

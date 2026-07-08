@@ -25,9 +25,10 @@ The terms below define the core identity vocabulary for the workspace family.
   live readiness result.
 - **Workspace runtime container:** Docker container derived from workspace
   configuration, parent app configuration, and the selected PHP image. It
-  serves the workspace's web route through FrankenPHP. Ad-hoc workspace
-  PHP/Composer/Artisan run on the node's host PHP toolchain, not inside the
-  container. Workspaces whose parent app is on an `app-dev` node receive the
+  serves the workspace's web route through FrankenPHP. Workspace setup and
+  teardown run through the selected app user's host tool path, not inside the
+  container; PHP/Composer/Artisan commands include the node's versioned host PHP
+  toolchain. Workspaces whose parent app is on an `app-dev` node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
   container.
@@ -36,8 +37,10 @@ The terms below define the core identity vocabulary for the workspace family.
   path on the owning node. That keeps source-local absolute paths, such as
   SQLite database files, available inside the runtime container.
 
-  Workspaces also inherit configurable app runtime mounts managed through
-  `app:mount`; the workspace family does not own separate runtime mount intent.
+  Workspaces inherit configurable runtime mounts from their selected app
+  instance through `app:mount`; the workspace family does not own separate
+  runtime mount intent. App-level mounts apply only when the selected
+  instance has no instance mounts configured.
   Workspace FrankenPHP XDG state is ephemeral inside the container under
   `/tmp/orbit-frankenphp`, matching app runtimes, and is not stored in the
   workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`.

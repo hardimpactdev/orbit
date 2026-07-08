@@ -2,36 +2,45 @@
 
 [Back to App commands.](../README.md)
 
-List or change additional Docker runtime mounts for an app.
+List or change additional Docker runtime mounts for an app instance.
 
-App runtime mounts are app-level configuration. A configured mount is rendered
-into the PHP app runtime container and inherited by every workspace runtime
-container for that app. This is used for development-time paths such as
-package repositories that Composer symlinks into `vendor`.
+Configurable runtime mounts belong to app instances, not logical apps. A
+configured mount is rendered into the PHP app runtime container for the
+selected instance and inherited by workspace runtime containers that use that
+instance. Different instances of the same app may use different host source
+paths — for example, `hauser.development` on Linux may mount
+`/home/nckrtl/projects` while `hauser.nmbp` on macOS mounts
+`/Users/nckrtl/projects` at the same container target.
+
+Bare-app selectors (`hauser` without an instance suffix) still read and
+write app-level mounts for compatibility only. New mount intent should use dotted
+instance selectors such as `hauser.nmbp`.
 
 ## Usage
 
 ```bash
-orbit app:mount list <app> [--json]
-orbit app:mount add <app> <source> <target> [--read-only|--read-write] [--json]
-orbit app:mount remove <app> <target> [--json]
+orbit app:mount list <app>[.<instance>] [--json]
+orbit app:mount add <app>.<instance> <source> <target> [--read-only|--read-write] [--json]
+orbit app:mount remove <app>.<instance> <target> [--json]
 ```
 
 ## Examples
 
 ```bash
-orbit app:mount list docs
-orbit app:mount add docs /home/orbit/packages /home/orbit/packages
-orbit app:mount add docs /home/orbit/shared /home/orbit/shared --read-write
-orbit app:mount remove docs /home/orbit/shared --json
+orbit app:mount list hauser.development
+orbit app:mount add hauser.development /home/nckrtl/projects /projects
+orbit app:mount add hauser.nmbp /Users/nckrtl/projects /projects
+orbit app:mount remove hauser.nmbp /projects --json
 ```
 
 ## Arguments and options
 
 - `action`: one of `list`, `add`, `remove`. Required.
-- `app`: app name or hostname. Required. Name match wins; the hostname match
-  is consulted only when no name match exists.
-- `source`: host source path. Required for `add`.
+- `app`: app name, hostname, or dotted instance selector such as `hauser.nmbp`.
+  Required. Bare app names resolve compatibility app-level mounts. Dotted selectors
+  resolve the named instance under the app.
+- `source`: host source path. Required for `add`. Must live under the resolved
+  instance node's home directory.
 - `target`: container target path. Required for `add` and `remove`.
 - `--read-only`: mount read-only. This is the default for `add`.
 - `--read-write`: mount read-write.
@@ -39,20 +48,25 @@ orbit app:mount remove docs /home/orbit/shared --json
 
 ## What Happens
 
-Run `app:mount` to manage app-level additional runtime mount intent.
+Run `app:mount` to manage instance-scoped additional runtime mount intent.
 
-`app:mount list` reads the configured mounts without changing gateway state.
+`app:mount list` reads the configured mounts for the resolved target without
+changing gateway state.
 
-`app:mount add` validates the source and target, then creates or updates the
-mount for the target path. Adding the same target again updates the stored
-source or read/write mode.
+`app:mount add` validates the source and target against the selected instance's
+node and home boundary, then creates or updates the mount for the target path.
+Adding the same target again updates the stored source or read/write mode.
 
-`app:mount remove` deletes the configured mount for the target path.
+`app:mount remove` deletes the configured mount for the target path on the
+resolved instance.
 
-Configured mounts are rendered after Orbit's built-in runtime mounts. The
-runtime spec hash changes when mount configuration changes, so the runtime
-manager can recreate the affected app or workspace container during normal
-runtime convergence. The command does not restart containers directly.
+Configured mounts are rendered after Orbit's built-in runtime mounts. App and
+workspace runtime containers prefer selected-instance mounts when present and
+fall back to app-level mounts only when the selected instance has no
+instance mounts configured. The runtime spec hash changes when mount
+configuration changes, so the runtime manager can recreate the affected app or
+workspace container during normal runtime convergence. The command does not
+restart containers directly.
 
 `app:mount` does not:
 
@@ -71,7 +85,9 @@ boundary.
 
 - Only PHP apps on `app-dev` nodes can store configurable runtime mounts in
   the current slice.
-- `source` must be an absolute path under `/home/<node-user>/`.
+- `source` must be an absolute path under the resolved instance node's home
+  directory, such as `/home/<node-user>/` on Linux or `/Users/<node-user>/` on
+  macOS.
 - The home root itself and sensitive home subtrees such as `.ssh`, `.gnupg`,
   `.aws`, `.config`, `.netrc`, `.npmrc`, and Composer auth material are
   rejected.
@@ -84,8 +100,8 @@ boundary.
 
 ## Output
 
-You see the app, configured mounts, and whether they are inherited
-by workspaces.
+You see the app, mount target (`app` or `app_instance`), configured mounts, and
+whether they are inherited by workspaces that use the selected instance.
 
 Use `--json` when another tool needs the machine-readable envelope. The exact
 payload shape is documented in the
@@ -103,6 +119,7 @@ Use these commands when you need to inspect the app, manage related runtime
 settings, or repair runtime drift.
 
 - [`app:show`](../4_app-show/app-show.md) - inspect the canonical app entity.
+- [`app:instance`](../19_app-instance/app-instance.md) - inspect app instances.
 - [`app:worker`](../11_app-worker/app-worker.md) - manage FrankenPHP worker mode.
 - [`doctor --family=app`](../app-doctor.md) - verify and repair app runtime drift.
 

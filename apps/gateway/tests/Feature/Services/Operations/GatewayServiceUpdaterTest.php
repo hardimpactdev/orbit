@@ -44,7 +44,7 @@ afterEach(function (): void {
 
 it('updates gateway and scheduler services to the plan image after in-process migrations and gateway health', function (): void {
     $run = gatewayServiceUpdaterRun();
-    $plan = gatewayServiceUpdaterPlan($run);
+    $plan = gateway_service_updater_plan_with_reverb_artifact($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
     $localExecutor = gateway_service_updater_fake_local_executor();
@@ -72,18 +72,16 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         $command = (string) $process->command;
         $operations[] = $command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         return match ($command) {
-            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
-                => Process::result(output: "{$previousImage}\n"),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
-                => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
                 output: "completed\n",
             ),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
-                => Process::result(),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -99,9 +97,28 @@ it('updates gateway and scheduler services to the plan image after in-process mi
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+            'bash -s',
+            gateway_service_updater_stack_deploy_command(),
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
+            "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
+            "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
         ])
         ->and(array_filter($operations, fn (string $operation): bool => str_starts_with($operation, 'docker run')))
         ->toBe([]);
+
+    Process::assertRan(function ($process): bool {
+        if ((string) $process->command !== 'bash -s') {
+            return false;
+        }
+
+        $input = (string) $process->input;
+
+        return (
+            str_contains($input, 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar')
+            && str_contains($input, str_repeat('e', times: 64))
+            && str_contains($input, 'docker load -i "$archive"')
+        );
+    });
 
     expect(
         OperationEvent::query()
@@ -176,6 +193,24 @@ it('updates gateway and scheduler services to the plan image after in-process mi
             'role_images' => [],
         ]);
 
+    $stack = File::get("{$this->configRoot}/swarm/orbit-gateway-stack.yml");
+
+    expect(File::get("{$this->configRoot}/.env"))
+        ->toContain('ORBIT_OPERATIONS_REVERB_APP_ID=orbit-operations')
+        ->toContain('ORBIT_OPERATIONS_REVERB_APP_KEY=')
+        ->toContain('ORBIT_OPERATIONS_REVERB_APP_SECRET=')
+        ->and(File::get("{$this->configRoot}/operations-websocket/apps.php"))
+        ->toContain("'app_id' => 'orbit-operations'")
+        ->and($stack)
+        ->toContain('orbit-operations-reverb:')
+        ->toContain(
+            'image: "hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"',
+        )
+        ->toContain(
+            '${ORBIT_CONFIG_ROOT:-'.$this->configRoot.'}/operations-websocket:/etc/orbit/operations-websocket:ro',
+        )
+        ->not->toContain('ORBIT_OPERATIONS_REVERB_APP_SECRET');
+
     $agentConfig = File::get("{$this->configRoot}/agent.toml");
 
     expect($agentConfig)
@@ -211,18 +246,16 @@ it('retries gateway host CLI install when the previous launcher exits during sel
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         return match ($command) {
-            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
-                => Process::result(output: "{$previousImage}\n"),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
-                => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
                 output: "completed\n",
             ),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
-                => Process::result(),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -275,18 +308,16 @@ it('restarts the gateway host agent service after host cli install reports no un
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         return match ($command) {
-            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
-                => Process::result(output: "{$previousImage}\n"),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
-                => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
                 output: "completed\n",
             ),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
-                => Process::result(),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -375,18 +406,16 @@ it('records gateway host CLI install when the gateway agent transport disconnect
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         return match ($command) {
-            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
-                => Process::result(output: "{$previousImage}\n"),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
-                => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
                 output: "completed\n",
             ),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
-                => Process::result(),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -427,20 +456,18 @@ it('fails gateway host CLI install when the transport failure is not an agent re
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         return match ($command) {
-            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
-                => Process::result(output: "{$previousImage}\n"),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
-                => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
                 output: "completed\n",
             ),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
-                => Process::result(),
             "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
                 => Process::result(),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -507,6 +534,12 @@ it('waits for a detached gateway service update to complete before starting the 
     Process::fake(function ($process) use (&$gatewayStates, &$gatewayStateChecks, $plan, $previousImage) {
         $command = (string) $process->command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         if (
             $command
             === "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
@@ -533,7 +566,7 @@ it('waits for a detached gateway service update to complete before starting the 
 
     app(GatewayServiceUpdater::class)->update($run, $plan);
 
-    expect($gatewayStateChecks)->toBe(2);
+    expect($gatewayStateChecks)->toBe(3);
 
     Sleep::assertSleptTimes(1);
 });
@@ -559,12 +592,13 @@ it('treats a same-image gateway service update with no Docker update status as h
         $command = (string) $process->command;
         $operations[] = $command;
 
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
         return match ($command) {
-            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
-                => Process::result(output: "{$previousImage}\n"),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
-                => Process::result(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
                 errorOutput: "template: :1:15: executing \"\" at <.UpdateStatus.State>: map has no entry for key \"UpdateStatus\"\n",
                 exitCode: 1,
@@ -574,9 +608,6 @@ it('treats a same-image gateway service update with no Docker update status as h
             "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'" => Process::result(
                 output: "1/1\n",
             ),
-            "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
-                => Process::result(),
-            "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
             default => throw new RuntimeException("Unexpected process command [{$command}]."),
         };
     });
@@ -593,6 +624,12 @@ it('treats a same-image gateway service update with no Docker update status as h
         "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+        gateway_service_updater_stack_deploy_command(),
+        "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
+        "docker service ls --filter 'name=orbit_orbit-gateway' --format '{{.Replicas}}'",
+        "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
+        "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
     ]);
 
     Sleep::assertSleptTimes(0);
@@ -696,7 +733,22 @@ function gatewayServiceUpdaterRun(): OperationRun
     );
 }
 
-function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
+function gateway_service_updater_plan_with_reverb_artifact(OperationRun $run): OperationUpdatePlan
+{
+    return gatewayServiceUpdaterPlan($run, [
+        'role_image_artifacts' => [
+            'orbit-websocket' => [
+                'url' => 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar',
+                'sha256' => str_repeat('e', times: 64),
+            ],
+        ],
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $manifestSnapshotOverrides
+ */
+function gatewayServiceUpdaterPlan(OperationRun $run, array $manifestSnapshotOverrides = []): OperationUpdatePlan
 {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifact = [
@@ -707,24 +759,14 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
         'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
         'sha256' => str_repeat('d', times: 64),
     ];
+    $roleImages = [
+        'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+    ];
 
-    return OperationUpdatePlan::query()->create([
-        'operation_run_id' => $run->id,
-        'target_version' => '1.2.3',
-        'gateway_image' => $gatewayImage,
-        'manifest_source' => 'github-release',
-        'manifest_version' => '1.2.3',
-        'manifest_snapshot' => [
-            'version' => '1.2.3',
-            'images' => [
-                'gateway' => $gatewayImage,
-            ],
-            'cli_artifacts' => [
-                'linux-amd64' => $cliArtifact,
-            ],
-            'agent_artifacts' => [
-                'linux-amd64' => $agentArtifact,
-            ],
+    $manifestSnapshot = [
+        'version' => '1.2.3',
+        'images' => [
+            'gateway' => $gatewayImage,
         ],
         'cli_artifacts' => [
             'linux-amd64' => $cliArtifact,
@@ -732,13 +774,66 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
         'agent_artifacts' => [
             'linux-amd64' => $agentArtifact,
         ],
-        'role_images' => [],
+        'role_images' => $roleImages,
+    ];
+
+    $manifestSnapshot = array_replace_recursive($manifestSnapshot, $manifestSnapshotOverrides);
+
+    return OperationUpdatePlan::query()->create([
+        'operation_run_id' => $run->id,
+        'target_version' => '1.2.3',
+        'gateway_image' => $gatewayImage,
+        'manifest_source' => 'github-release',
+        'manifest_version' => '1.2.3',
+        'manifest_snapshot' => $manifestSnapshot,
+        'cli_artifacts' => [
+            'linux-amd64' => $cliArtifact,
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => $agentArtifact,
+        ],
+        'role_images' => $roleImages,
     ]);
 }
 
 function gatewayServiceUpdaterPreviousImage(): string
 {
     return 'ghcr.io/hardimpactdev/orbit-gateway:1.2.2@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+}
+
+function gateway_service_updater_stack_deploy_command(): string
+{
+    return (
+        'docker stack deploy -c '
+        .escapeshellarg(config('orbit.paths.config_root').'/swarm/orbit-gateway-stack.yml')
+        ." 'orbit'"
+    );
+}
+
+function gateway_service_updater_common_process_result(
+    string $command,
+    OperationUpdatePlan $plan,
+    string $previousImage,
+): mixed {
+    return match ($command) {
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
+            => Process::result(output: "{$previousImage}\n"),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'"
+            => Process::result(),
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
+            => Process::result(),
+        "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+        'bash -s' => Process::result(),
+        gateway_service_updater_stack_deploy_command() => Process::result(),
+        "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
+        "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'" => Process::result(
+            output: "1/1\n",
+        ),
+        default => null,
+    };
 }
 
 /**

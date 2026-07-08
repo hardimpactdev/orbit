@@ -7,6 +7,8 @@ namespace App\Services\Apps;
 use App\Contracts\AppRuntimeUserResolver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Node;
+use App\Services\Nodes\NodeHostPaths;
 
 final readonly class AppCommandRouter
 {
@@ -18,9 +20,21 @@ final readonly class AppCommandRouter
      * Route PHP, Composer, and Artisan commands through Orbit's version-matched
      * host PHP toolchain. Non-PHP commands run as provided in the app path.
      *
-     * @param  array<string, string>  $environment
+     * @param array<string, string> $environment
      */
     public function route(App $app, string $command, array $environment = []): string
+    {
+        return $this->routeForPath($app, $command, $app->path, $environment);
+    }
+
+    /**
+     * Route PHP, Composer, and Artisan commands through Orbit's version-matched
+     * host PHP toolchain while using a caller-selected source path. Non-PHP
+     * commands run as provided in the caller's working directory.
+     *
+     * @param array<string, string> $environment
+     */
+    public function routeForPath(App $app, string $command, string $path, array $environment = []): string
     {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return $command;
@@ -30,7 +44,68 @@ final readonly class AppCommandRouter
             return $command;
         }
 
-        return $this->wrapForHost($app, $command, $environment);
+        $runtimeUser = $this->appRuntimeUser->forApp($app);
+
+        return $this->wrapWithPathAssignment(
+            command: $command,
+            path: $path,
+            environment: $environment,
+            pathAssignment: 'PATH=/opt/orbit/php/'.escapeshellarg($app->php_version).'/bin:$PATH ',
+            runtimeUser: $runtimeUser,
+        );
+    }
+
+    /**
+     * Route lifecycle setup/teardown commands through the selected app user's
+     * host toolchain while using a caller-selected source path.
+     *
+     * @param array<string, string> $environment
+     */
+    public function routeLifecycleForPath(App $app, string $command, string $path, array $environment = []): string
+    {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
+            return $command;
+        }
+
+        $runtimeUser = $this->appRuntimeUser->forApp($app);
+
+        return $this->wrapWithPathAssignment(
+            command: $command,
+            path: $path,
+            environment: $environment,
+            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser),
+            runtimeUser: $runtimeUser,
+        );
+    }
+
+    /**
+     * Route workspace lifecycle commands through the selected workspace node's
+     * host toolchain while retaining the app's PHP/runtime settings.
+     *
+     * @param array<string, string> $environment
+     */
+    public function routeLifecycleForNodePath(
+        App $app,
+        Node $node,
+        string $command,
+        string $path,
+        array $environment = [],
+    ): string {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
+            return $command;
+        }
+
+        $runtimeUser = is_string($node->user) && trim($node->user) !== ''
+            ? trim($node->user)
+            : 'orbit';
+
+        return $this->wrapWithPathAssignment(
+            command: $command,
+            path: $path,
+            environment: $environment,
+            pathAssignment: $this->managedToolPathAssignment($app, $runtimeUser, $node),
+            runtimeUser: $runtimeUser,
+        );
     }
 
     public function usesPhpTools(string $command): bool
@@ -63,26 +138,55 @@ final readonly class AppCommandRouter
     /**
      * @param  array<string, string>  $environment
      */
-    private function wrapForHost(App $app, string $command, array $environment): string
-    {
-        $appPath = rtrim($app->path, '/');
-        $phpVersion = $app->php_version;
-        $runtimeUser = $this->appRuntimeUser->forApp($app);
+    private function wrapWithPathAssignment(
+        string $command,
+        string $path,
+        array $environment,
+        string $pathAssignment,
+        string $runtimeUser,
+    ): string {
+        $workingDirectory = rtrim($path, '/');
         $envPrefix = '';
 
         foreach ($environment as $key => $value) {
             $envPrefix .= "{$key}=".escapeshellarg($value).' ';
         }
 
-        $inner =
-            'cd '
-            .escapeshellarg($appPath)
-            .' && PATH=/opt/orbit/php/'
-            .escapeshellarg($phpVersion)
-            .'/bin:$PATH '
-            .$envPrefix
-            .$command;
+        $inner = 'cd '.escapeshellarg($workingDirectory).' && '.$pathAssignment.$envPrefix.$command;
 
         return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
+    }
+
+    private function managedToolPathAssignment(App $app, string $runtimeUser, ?Node $node = null): string
+    {
+        $home = $node instanceof Node
+            ? NodeHostPaths::homeDirectoryFor($node->platform, $runtimeUser)
+            : $this->homeDirectory($app, $runtimeUser);
+
+        $pathPrefix = implode(':', [
+            "/opt/orbit/php/{$app->php_version}/bin",
+            "{$home}/.local/bin",
+            "{$home}/.vite-plus/bin",
+            "{$home}/.bun/bin",
+            '/opt/homebrew/bin',
+            '/opt/homebrew/sbin',
+            '/usr/local/bin',
+            '/usr/bin',
+            '/bin',
+        ]);
+
+        return 'PATH='.escapeshellarg($pathPrefix).':$PATH ';
+    }
+
+    private function homeDirectory(App $app, string $runtimeUser): string
+    {
+        $app->loadMissing('node');
+        $node = $app->node;
+
+        if ($node instanceof Node) {
+            return NodeHostPaths::homeDirectoryFor($node->platform, $runtimeUser);
+        }
+
+        return NodeHostPaths::homeDirectoryFor(null, $runtimeUser);
     }
 }

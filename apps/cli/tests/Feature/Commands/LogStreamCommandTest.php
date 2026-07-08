@@ -2,12 +2,38 @@
 
 declare(strict_types=1);
 
+use App\Services\GatewayOperationStreamSubscriber;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('LogStream commands', function (): void {
-    it('streams process follow output as plain text from the gateway', function (): void {
-        fakeGatewayTextStream("vite ready\nhmr updated\n");
+    it('streams process follow output through the operation websocket surface', function (): void {
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->instance(GatewayOperationStreamSubscriber::class, new class extends GatewayOperationStreamSubscriber {
+            public function __construct() {}
+
+            /**
+             * @param  callable(array<string, mixed>): void  $onFrame
+             */
+            #[Override]
+            public function subscribe(string $operationRunId, ?int $lastReplayCursor, callable $onFrame): void
+            {
+                expect($operationRunId)->toBe('run-1')->and($lastReplayCursor)->toBeNull();
+
+                $onFrame(['type' => 'stdout', 'payload' => ['data' => "vite ready\n"]]);
+                $onFrame(['type' => 'stdout', 'payload' => ['data' => "hmr updated\n"]]);
+            }
+        });
+
+        Http::fake([
+            'https://gateway.test/*' => Http::response(fakeSuccessEnvelope([
+                'operation' => [
+                    'uuid' => 'run-1',
+                    'stream_descriptor_url' => '/api/operations/run-1/stream',
+                ],
+            ]), 202),
+        ]);
 
         [$exitCode, $output] = runCommand($this, 'process:logs', [
             'name' => 'vite',
@@ -21,13 +47,11 @@ describe('LogStream commands', function (): void {
             $url = urldecode($request->url());
 
             return (
-                $request->method() === 'GET'
-                && $request->hasHeader('Accept', 'text/plain')
-                && str_contains($url, '/api/processes/vite/log')
-                && str_contains($url, 'app=docs')
-                && str_contains($url, 'workspace=feature-docs')
-                && str_contains($url, 'lines=5')
-                && str_contains($url, 'follow=1')
+                $request->method() === 'POST'
+                && str_contains($url, '/api/processes/vite/log-stream')
+                && $request['app'] === 'docs'
+                && $request['workspace'] === 'feature-docs'
+                && $request['lines'] === 5
             );
         });
 
