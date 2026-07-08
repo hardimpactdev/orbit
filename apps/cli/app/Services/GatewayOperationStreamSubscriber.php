@@ -67,6 +67,7 @@ class GatewayOperationStreamSubscriber
                 $seenSequences,
                 $lastEventId,
             );
+            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
         } catch (GatewayApiException $exception) {
             if (! $this->shouldReplayFallback($exception)) {
                 throw $exception;

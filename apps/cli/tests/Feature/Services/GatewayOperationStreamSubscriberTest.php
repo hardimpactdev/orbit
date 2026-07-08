@@ -132,7 +132,10 @@ it('subscribes to a private operation stream and backfills after the last durabl
             ],
         ])
         ->and($events->replays)
-        ->toBe([['/api/operations/run-1/events?once=1', 10]])
+        ->toBe([
+            ['/api/operations/run-1/events?once=1', 10],
+            ['/api/operations/run-1/events?once=1', 102],
+        ])
         ->and($history)
         ->toBe([
             'connect',
@@ -142,6 +145,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
             'replay:/api/operations/run-1/events?once=1:10',
             'receive:operation.stream.frame',
             'receive:null',
+            'replay:/api/operations/run-1/events?once=1:102',
             'close',
         ])
         ->and($frames)
@@ -295,7 +299,10 @@ it('replays frames published after descriptor fetch but before subscription conf
     });
 
     expect($events->replays)
-        ->toBe([['/api/operations/run-1/events?once=1', null]])
+        ->toBe([
+            ['/api/operations/run-1/events?once=1', null],
+            ['/api/operations/run-1/events?once=1', 101],
+        ])
         ->and($frames)
         ->toBe([
             [
@@ -303,6 +310,78 @@ it('replays frames published after descriptor fetch but before subscription conf
                 'sequence' => 11,
                 'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
                 'payload' => ['line' => 'post-descriptor'],
+            ],
+        ]);
+});
+
+it('replays frames missed between initial replay and websocket close', function (): void {
+    $transport = new FakeOperationStreamWebSocketTransport([
+        [
+            'event' => 'pusher:connection_established',
+            'data' => json_encode(['socket_id' => '1234.5678'], JSON_THROW_ON_ERROR),
+        ],
+        ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-operations.run-1'],
+        null,
+    ]);
+    $events = new FakeOperationStreamBackfillClient([
+        [],
+        [
+            [
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => 'operation_stream.frame',
+                    'frame' => [
+                        'operation_uuid' => 'run-1',
+                        'sequence' => 11,
+                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                        'payload' => ['line' => 'final-replay'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+    $frames = [];
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+        'https://gateway.test/api/operations/run-1/stream/auth' => Http::response([
+            'success' => [
+                'data' => [
+                    'auth' => 'gateway-reverb-key:signed-subscribe-payload',
+                    'channel' => 'private-operations.run-1',
+                ],
+            ],
+        ]),
+        'https://gateway.test/api/operations/run-1/stream/leave' => Http::response([
+            'success' => ['data' => ['lease' => ['active_subscribers' => 0]]],
+        ]),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: $transport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([
+            ['/api/operations/run-1/events?once=1', null],
+            ['/api/operations/run-1/events?once=1', null],
+        ])
+        ->and($frames)
+        ->toBe([
+            [
+                'operation_uuid' => 'run-1',
+                'sequence' => 11,
+                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                'payload' => ['line' => 'final-replay'],
             ],
         ]);
 });
