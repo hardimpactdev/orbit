@@ -45,7 +45,13 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Creates or updates a custom gateway proxy route row.
 - Stores upstream routes with owner `custom`, kind `proxy`, and target type `upstream`.
 - Stores redirect routes with owner `custom`, kind `redirect`, target type `redirect`, and a redirect code.
-- Applies the proxy backend route and Orbit-managed TLS material through the gateway.
+- Reports `proxy.enactment_deferred`; proxy backend route and Orbit-managed
+  TLS material are restored by `doctor --family=proxy --restore --node=<node>`.
+- When an upstream route targets a host-local service through `127.0.0.1`,
+  `localhost`, or `host.docker.internal`, reports
+  `firewall_rule.host_upstream_may_block` with the upstream port and a scoped
+  `firewall:allow` command shape. This warning is informational; the `proxy`
+  family does not create firewall-rule intent.
 
 ### Ownership Boundary Rules
 
@@ -62,8 +68,10 @@ consent, supplied either as an interactive confirmation prompt or `--force`.
 `proxy-add` must not create apps, app WebSocket bindings, workspaces, tools,
 nodes, firewall rules, DNS records, or process definitions. It must not infer
 tool ownership from a port, WebSocket ownership from a hostname, or S3
-ownership from a hostname. S3 routes belong to `s3:*` commands and are only
-visible in `proxy:list`.
+ownership from a hostname. When an upstream targets a service on the same host
+and that service needs firewall access, that access belongs to the
+`firewall_rule` family even when `proxy:add` reports the likely missing rule.
+S3 routes belong to `s3:*` commands and are only visible in `proxy:list`.
 
 ## Renderer Contracts
 

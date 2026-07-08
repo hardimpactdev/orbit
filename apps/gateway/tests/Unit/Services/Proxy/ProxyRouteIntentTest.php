@@ -51,6 +51,16 @@ describe('ProxyRouteIntent', function (): void {
             ->toBe('created')
             ->and($result['meta']['warnings'][0]['code'])
             ->toBe('proxy.enactment_deferred')
+            ->and($result['meta']['warnings'][1])
+            ->toMatchArray([
+                'code' => 'firewall_rule.host_upstream_may_block',
+                'family' => 'firewall_rule',
+                'node' => 'app-1',
+                'port' => '5173',
+                'upstream' => 'http://127.0.0.1:5173',
+            ])
+            ->and($result['meta']['warnings'][1]['next_command'])
+            ->toContain('firewall:allow caddy-to-host-5173 --node=app-1 --port=5173')
             ->and(ProxyRoute::query()->where('domain', 'vite.docs.test')->exists())
             ->toBeTrue();
 

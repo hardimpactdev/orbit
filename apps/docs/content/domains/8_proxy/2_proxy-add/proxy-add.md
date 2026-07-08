@@ -27,6 +27,14 @@ workspaces, gateways, websocket services, S3 services, or tools. Those routes
 are listed by `proxy:list`, but their lifecycle belongs to their owning domain
 command.
 
+Custom route backend and TLS artifacts are restored by
+`doctor --family=proxy --restore --node=<node>`. When `--upstream` targets a
+host-local service such as `127.0.0.1`, `localhost`, or
+`host.docker.internal`, `proxy:add` warns that containerized `orbit-caddy`
+reaches that service from the Docker bridge. If UFW blocks that path, add a
+scoped firewall rule for the bridge/source and upstream port through the
+firewall family.
+
 ## Examples
 
 ```bash

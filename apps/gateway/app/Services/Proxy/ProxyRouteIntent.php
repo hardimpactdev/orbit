@@ -91,7 +91,10 @@ class ProxyRouteIntent
             ],
             'meta' => [
                 'action' => $action,
-                'warnings' => [$this->runtimeWarning($node->name)],
+                'warnings' => [
+                    $this->runtimeWarning($node->name),
+                    ...$this->hostFirewallWarnings($node->name, $domain, $upstream),
+                ],
             ],
         ];
     }
@@ -242,6 +245,65 @@ class ProxyRouteIntent
             'message' => 'Proxy route intent was saved, but backend/TLS enactment is deferred to proxy doctor fix mode.',
             'next_command' => "doctor --family=proxy --restore --node={$node}",
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function hostFirewallWarnings(string $node, string $domain, ?string $upstream): array
+    {
+        if ($upstream === null || ! $this->isHostLocalUpstream($upstream)) {
+            return [];
+        }
+
+        $port = $this->upstreamPort($upstream);
+
+        if ($port === null) {
+            return [];
+        }
+
+        return [[
+            'code' => 'firewall_rule.host_upstream_may_block',
+            'family' => 'firewall_rule',
+            'node' => $node,
+            'message' => 'Containerized orbit-caddy reaches host-local upstreams from the Docker bridge; if UFW blocks that path, add a scoped firewall rule for the bridge/source and upstream port.',
+            'upstream' => $upstream,
+            'port' => $port,
+            'next_command' => "firewall:allow caddy-to-host-{$port} --node={$node} --port={$port} --from=<orbit-caddy-bridge-cidr> --to=<host-address> --reason=\"orbit-caddy to {$domain}\"",
+        ]];
+    }
+
+    private function isHostLocalUpstream(string $upstream): bool
+    {
+        $host = parse_url($upstream, PHP_URL_HOST);
+
+        return (
+            is_string($host)
+            && in_array(
+                strtolower($host),
+                [
+                    '127.0.0.1',
+                    'localhost',
+                    ProxyRouteRenderer::HostLoopbackHostname,
+                ],
+                true,
+            )
+        );
+    }
+
+    private function upstreamPort(string $upstream): ?string
+    {
+        $port = parse_url($upstream, PHP_URL_PORT);
+
+        if (is_int($port)) {
+            return (string) $port;
+        }
+
+        return match (parse_url($upstream, PHP_URL_SCHEME)) {
+            'http' => '80',
+            'https' => '443',
+            default => null,
+        };
     }
 
     /**
