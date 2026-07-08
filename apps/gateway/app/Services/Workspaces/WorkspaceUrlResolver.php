@@ -18,12 +18,18 @@ final class WorkspaceUrlResolver
 {
     public function url(Workspace $workspace): string
     {
-        $workspace->loadMissing(['app.node', 'app.instances']);
+        $workspace->loadMissing(['app.node', 'app.instances', 'proxyRoutes']);
 
         $app = $workspace->app;
 
         if (! $app instanceof App) {
             return "https://{$workspace->name}";
+        }
+
+        $workspaceRouteHost = $this->workspaceRouteHost($workspace);
+
+        if ($workspaceRouteHost !== '') {
+            return "https://{$workspaceRouteHost}";
         }
 
         return "https://{$workspace->name}.{$this->placementUrlHost($workspace, $app)}";
@@ -48,6 +54,22 @@ final class WorkspaceUrlResolver
         }
 
         return $host;
+    }
+
+    private function workspaceRouteHost(Workspace $workspace): string
+    {
+        $route = $workspace
+            ->proxyRoutes
+            ->where('owner_type', 'workspace')
+            ->where('kind', 'workspace')
+            ->sortBy('id')
+            ->first();
+
+        if ($route === null || ! is_string($route->domain)) {
+            return '';
+        }
+
+        return $route->domain;
     }
 
     private function matchingOrbitInstance(Workspace $workspace, App $app): ?AppInstance

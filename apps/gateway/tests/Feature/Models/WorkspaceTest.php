@@ -96,6 +96,58 @@ it('derives workspace url from a matching orbit app instance placement', functio
     expect($workspace->url())->toBe('https://recipe.happie.nmbp');
 });
 
+it('derives workspace url from explicit workspace proxy route before path placement', function (): void {
+    $beast = Node::factory()->appDev(['tld' => 'test'])->create(['name' => 'beast']);
+    $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
+
+    $app = App::factory()->for($beast, 'node')->create([
+        'name' => 'happie',
+        'path' => '/home/nckrtl/apps/happie',
+        'domain' => null,
+    ]);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'development',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $beast->id,
+            node: 'beast',
+            path: '/home/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: null,
+        ),
+    ]);
+
+    AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $nmbp->id,
+            node: 'NMBP',
+            path: '/Users/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: 'happie.nmbp',
+        ),
+    ]);
+
+    $workspace = Workspace::factory()->for($app)->create([
+        'name' => 'recipe',
+        'path' => '/Users/nckrtl/.codex/worktrees/9891/happie',
+    ]);
+
+    ProxyRoute::query()->create([
+        'node_id' => $nmbp->id,
+        'domain' => 'recipe.happie.nmbp',
+        'app_id' => $app->id,
+        'workspace_id' => $workspace->id,
+        'owner_type' => 'workspace',
+        'kind' => 'workspace',
+        'source_hash' => str_repeat('c', 64),
+    ]);
+
+    expect($workspace->url())->toBe('https://recipe.happie.nmbp');
+});
+
 it('prefers an explicit workspace php version over the parent app version', function (): void {
     $app = App::factory()->create([
         'php_version' => '8.5',
