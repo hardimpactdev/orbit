@@ -67,6 +67,7 @@ use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
+use App\Support\OpenApi\GatewayOpenApi;
 use App\Support\Streaming\NullProgressReporter;
 use App\Tools\AntigravityCliTool;
 use App\Tools\CaddyTool;
@@ -315,6 +316,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(base_path('database/migrations'));
+
+        GatewayOpenApi::register();
     }
 
     private function orbitConfigPath(): string

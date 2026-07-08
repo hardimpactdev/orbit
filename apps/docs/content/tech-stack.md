@@ -206,6 +206,22 @@ through gateway API tests. Server-sent event emitters flush under the
 FrankenPHP request SAPI (`frankenphp`) as well as development SAPIs so durable
 operation progress remains live during gateway replacement.
 
+The gateway-owned OpenAPI export is the schema source for generated clients.
+The durable public-SDK boundary lives beside the gateway application in
+`apps/gateway/openapi-sdk-surface.json`: operations are classified as public SDK
+surface, internal-only gateway/runtime surface, or deferred optional/admin
+surface. Public SDK operations are candidates for PHP SDK request classes and
+generated into the TypeScript gateway SDK package at `packages/sdk-typescript`
+from the filtered public OpenAPI input. The generated TypeScript package is a
+thin `openapi-typescript` plus `openapi-fetch` client surface for macOS/Tauri
+and TanStack Query callers; it must consume the classified OpenAPI contract
+instead of hand-maintaining route definitions. Internal-only operations,
+including local executor token verification, process event ingest, Solo proxy
+routes, and update artifact plumbing, must not be emitted as public SDK methods.
+Deferred optional groups such as Cloudflare, S3, metrics credentials, extension
+administration, and sensitive app env routes require an explicit promotion slice
+before they enter a generated public SDK.
+
 #### Remote command progress
 
 Long-running CLI-to-gateway commands stream structured progress over Server-Sent Events when they need live feedback. The gateway emits Orbit progress events, not arbitrary stdout:

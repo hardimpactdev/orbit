@@ -17,6 +17,7 @@ final class ListToolsRequest extends GatewayRequest
     public function __construct(
         public readonly ?string $app = null,
         public readonly ?string $node = null,
+        public readonly bool $self = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -33,6 +34,7 @@ final class ListToolsRequest extends GatewayRequest
             [
                 'app' => $this->app,
                 'node' => $this->node,
+                'self' => $this->self ? true : null,
             ],
             static fn (mixed $value): bool => $value !== null,
         );

@@ -15,6 +15,7 @@ final class ListProcessesRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
+        public readonly ?string $node = null,
         public readonly ?string $app = null,
         public readonly ?string $workspace = null,
     ) {}
@@ -31,6 +32,7 @@ final class ListProcessesRequest extends GatewayRequest
     {
         return array_filter(
             [
+                'node' => $this->node,
                 'app' => $this->app,
                 'workspace' => $this->workspace,
             ],
@@ -46,6 +48,7 @@ final class ListProcessesRequest extends GatewayRequest
 
         return new ProcessListResponse(
             context: [
+                'node' => is_string($context['node'] ?? null) ? $context['node'] : null,
                 'app' => is_string($context['app'] ?? null) ? $context['app'] : null,
                 'workspace' => is_string($context['workspace'] ?? null) ? $context['workspace'] : null,
             ],

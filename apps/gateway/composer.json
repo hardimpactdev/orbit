@@ -24,6 +24,7 @@
     },
     "require-dev": {
         "carthage-software/mago": "^1.40.1",
+        "dedoc/scramble": "^0.13.31",
         "fakerphp/faker": "^1.23",
         "laravel/boost": "^2.4",
         "laravel/pail": "^1.2.5",
@@ -86,6 +87,16 @@
         "dev": [
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1 --timeout=0\" \"php artisan pail --timeout=0\" \"npm run dev\" --names=server,queue,logs,vite --kill-others"
+        ],
+        "openapi:prepare": [
+            "@php -r \"is_dir('../../.orbit/evidence') || mkdir('../../.orbit/evidence', 0777, true);\"",
+            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
+            "@php artisan migrate --force --no-ansi"
+        ],
+        "openapi:export": [
+            "Composer\\Config::disableProcessTimeout",
+            "@openapi:prepare",
+            "@php -d memory_limit=1G artisan scramble:export --no-ansi"
         ],
         "test": [
             "Composer\\Config::disableProcessTimeout",

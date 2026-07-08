@@ -20,10 +20,11 @@ it('resolves to GET /api/processes', function (): void {
     expect($request->getMethod())->toBe(Method::GET);
 });
 
-it('serializes app and workspace filters when provided', function (): void {
-    $request = new ListProcessesRequest(app: 'docs', workspace: 'feature-docs');
+it('serializes node, app, and workspace filters when provided', function (): void {
+    $request = new ListProcessesRequest(node: 'app-1', app: 'docs', workspace: 'feature-docs');
 
     expect($request->query()->all())->toBe([
+        'node' => 'app-1',
         'app' => 'docs',
         'workspace' => 'feature-docs',
     ]);
@@ -40,7 +41,7 @@ it('returns a ProcessListResponse DTO with context and processes', function (): 
         ListProcessesRequest::class => MockResponse::make([
             'success' => [
                 'data' => [
-                    'context' => ['app' => 'docs', 'workspace' => null],
+                    'context' => ['node' => 'app-1', 'app' => 'docs', 'workspace' => null],
                     'processes' => [
                         ['name' => 'queue', 'command' => 'php artisan queue:work'],
                     ],
@@ -55,7 +56,7 @@ it('returns a ProcessListResponse DTO with context and processes', function (): 
     $dto = $connector->send(new ListProcessesRequest)->dto();
 
     expect($dto)->toBeInstanceOf(ProcessListResponse::class);
-    expect($dto->context)->toBe(['app' => 'docs', 'workspace' => null]);
+    expect($dto->context)->toBe(['node' => 'app-1', 'app' => 'docs', 'workspace' => null]);
     expect($dto->processes)->toBe([
         ['name' => 'queue', 'command' => 'php artisan queue:work'],
     ]);

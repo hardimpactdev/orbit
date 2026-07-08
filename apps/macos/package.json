@@ -1,0 +1,21 @@
+{
+    "$schema": "https://www.schemastore.org/package.json",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "npm run prepare:sdk && vite build",
+        "dev": "npm run prepare:sdk && vite --host 127.0.0.1 --port 5174",
+        "prepare:sdk": "npm --prefix ../../packages/sdk-typescript run build",
+        "tauri": "tauri",
+        "typecheck": "npm run prepare:sdk && tsc --noEmit"
+    },
+    "dependencies": {
+        "@orbit/sdk-typescript": "file:../../packages/sdk-typescript",
+        "@tauri-apps/api": "^2.9.0"
+    },
+    "devDependencies": {
+        "@tauri-apps/cli": "^2.9.4",
+        "typescript": "^5.9.3",
+        "vite": "^8.0.0"
+    }
+}
