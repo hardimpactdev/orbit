@@ -211,7 +211,7 @@ final readonly class GatewaySwarmStackRenderer
             '    volumes:',
             '      - '.$configRootExpression.'/operations-websocket:/etc/orbit/operations-websocket:ro',
             '    healthcheck:',
-            '      test: ["CMD-SHELL", "php -r \'$socket = @fsockopen(\"127.0.0.1\", 8080); exit(is_resource($socket) ? 0 : 1);\'"]',
+            '      test: ["CMD-SHELL", "php -r \'$$socket = @fsockopen(\"127.0.0.1\", 8080); exit(is_resource($$socket) ? 0 : 1);\'"]',
             '      interval: 5s',
             '      timeout: 3s',
             '      retries: 12',

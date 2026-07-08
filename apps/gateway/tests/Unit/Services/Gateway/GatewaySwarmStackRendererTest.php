@@ -125,7 +125,7 @@ it('renders a gateway-colocated operations Reverb service isolated from the app 
             '${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}/operations-websocket:/etc/orbit/operations-websocket:ro',
         )
         ->toContain(
-            'test: ["CMD-SHELL", "php -r \'$socket = @fsockopen(\"127.0.0.1\", 8080); exit(is_resource($socket) ? 0 : 1);\'"]',
+            'test: ["CMD-SHELL", "php -r \'$$socket = @fsockopen(\"127.0.0.1\", 8080); exit(is_resource($$socket) ? 0 : 1);\'"]',
         )
         ->toContain('replicas: 1')
         ->toContain('orbit.service: orbit-operations-reverb')
