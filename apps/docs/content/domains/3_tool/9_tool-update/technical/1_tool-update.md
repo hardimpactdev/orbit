@@ -76,5 +76,6 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php` | CLI `tool:update` stream request forwarding for single-tool and bulk payloads, and gateway error envelope pass-through. |
 | `apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php` | CLI stream adapter behavior for update: final complete frame in `--json` mode, canonical stream request shape, human progress rendering, and pre-stream gateway error pass-through. |
+| `apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php` | CLI stream adapter forwarding of explicit node transport preference headers for streamed `tool:update` requests. |
 | `apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php` | Gateway update API expected-version writes, unsupported service-tool rejection, and service-style instance selector rejection. |
 | `apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php` | Shared in-memory tool command DTO shape, target resolution rules, and tool-family entity mapping. |

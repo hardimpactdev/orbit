@@ -134,5 +134,5 @@ automation must use the same source-agnostic config services.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php` | CLI validation, request routing, JSON pass-through, and human progress output. |
-| `apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php` | Gateway authorization, target eligibility, config read/write/apply behavior, warning payloads in `success.meta.warnings[]`, and response shapes. |
+| `apps/gateway/tests/Feature/Http/Api/CodexAppControllerTest.php` | Gateway authorization, target eligibility, config read/write/apply behavior, warning payloads in `success.meta.warnings[]`, and response shapes. |
 | `apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php` | Preserves unrelated config keys, creates missing project arrays, updates duplicate project entries in place, and removes only matching entries. |

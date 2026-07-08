@@ -261,6 +261,10 @@ trait StreamsGatewayProgress
             return $client;
         }
 
+        if (! method_exists($this, 'nodeTransportPreference')) {
+            return $client;
+        }
+
         return $client->withNodeTransportPreference($this->nodeTransportPreference());
     }
 

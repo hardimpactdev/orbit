@@ -89,5 +89,5 @@ with [`database-doctor.md`](../../database-doctor.md).
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php` | SQL and target validation, query payload posting, strict JSON stdout, and gateway error pass-through. |
 | `apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php` | Target resolution, ambiguity errors, read/write permission separation, SQLite locality handoff, and unattached-connection failures. |
-| `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php` | Read/write SQL classification for documented statement classes. |
+| `packages/core/tests/Database/DatabaseQueryClassifierTest.php` | Read/write SQL classification for documented statement classes. |
 | `apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php` | SQLite dispatch through `internal:database-query-local` without credential leakage. |

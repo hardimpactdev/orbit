@@ -2412,7 +2412,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/CodexAppControllerTest.php",
                 "apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php"
             ],
             "verification_hints": [
@@ -2424,11 +2424,11 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Codex/CodexAppCommandTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php",
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/CodexAppControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Feature/Http/Api/AppCodexControllerTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppCodexControllerTest.php"
+                    "runner_test_path": "tests/Feature/Http/Api/CodexAppControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/CodexAppControllerTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Unit/Services/CodexApp/CodexAppConfigMergerTest.php",
@@ -2920,7 +2920,7 @@
                 "apps/cli/tests/Feature/Commands/Database/DatabaseWriteCommandsTest.php",
                 "apps/gateway/tests/Feature/Http/Api/Database/DatabaseConnectionApiTest.php",
                 "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php",
-                "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php"
+                "packages/core/tests/Database/DatabaseQueryClassifierTest.php"
             ],
             "verification_hints": [
                 {
@@ -2945,11 +2945,11 @@
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/DatabaseConnections/DatabaseConnectionExecutorTest.php"
                 },
                 {
-                    "repo_test_path": "apps/gateway/tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php",
-                    "working_directory": "apps/gateway",
-                    "runner": "bin/orbit-gateway-pest",
-                    "runner_test_path": "tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php",
-                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Unit/Services/DatabaseConnections/DatabaseQueryClassifierTest.php"
+                    "repo_test_path": "packages/core/tests/Database/DatabaseQueryClassifierTest.php",
+                    "working_directory": "packages/core",
+                    "runner": "vendor/bin/pest",
+                    "runner_test_path": "tests/Database/DatabaseQueryClassifierTest.php",
+                    "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/Database/DatabaseQueryClassifierTest.php"
                 }
             ],
             "p4_mapping": {
@@ -12395,6 +12395,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
+                "apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php",
                 "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/ToolUpdateControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Tools/ToolCommandContractTest.php"
@@ -12406,6 +12407,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Tool/ToolStreamCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolStreamCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Tool/ToolUpdateStreamTransportTest.php"
                 },
                 {
                     "repo_test_path": "apps/cli/tests/Feature/Commands/Tool/ToolWriteCommandTest.php",

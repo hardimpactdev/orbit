@@ -11,7 +11,7 @@ first install, process runtime migration, or configuration-only repair.
 ## Usage
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--node-transport=<transport>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Examples
@@ -22,6 +22,7 @@ orbit tool:update composer --node=app-1 --expected-version=2.9.2
 orbit tool:update --node=app-1
 orbit tool:update opencode-cli --app=docs --json
 orbit tool:update opencode-cli --app=docs --stream-json
+orbit tool:update caddy --node=beast --node-transport=transitional-ssh-fallback --stream-json
 ```
 
 ## Arguments and options
@@ -32,6 +33,10 @@ orbit tool:update opencode-cli --app=docs --stream-json
   `--version` console option. When omitted, the tool definition's latest
   supported version is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
+- `--node-transport`: Node execution transport preference. Defaults to `auto`.
+  Use `transitional-ssh-fallback` only when the selected tool update path still
+  requires transitional SSH execution. The preference is honored for normal
+  output, `--json`, and `--stream-json`.
 - `--app`: Resolve the target node from an app.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive

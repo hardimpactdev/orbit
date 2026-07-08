@@ -22,4 +22,4 @@ The CLI never writes the target node's Codex App config file directly.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Codex/CodexAppCommandTest.php` | Client request routing, no-gateway rejection, and gateway pass-through failures. |
-| `apps/gateway/tests/Feature/Http/Api/AppCodexControllerTest.php` | Authorization denial, hidden target denial, gateway target denial, unsupported platform denial, and no remote side effects before denial. |
+| `apps/gateway/tests/Feature/Http/Api/CodexAppControllerTest.php` | Authorization denial, hidden target denial, gateway target denial, unsupported platform denial, and no remote side effects before denial. |
