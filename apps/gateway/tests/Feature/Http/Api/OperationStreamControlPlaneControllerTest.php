@@ -99,12 +99,12 @@ it('returns an explicit gateway websocket port from local gateway settings', fun
         ->assertJsonPath('success.data.reverb.scheme', 'http');
 });
 
-it('falls back to the internal operations reverb endpoint when the gateway url is absent', function (): void {
+it('falls back to the request gateway endpoint when the local gateway url is absent', function (): void {
     LocalGatewaySettings::current()->fill(['gateway_url' => null])->save();
 
-    get_operation_stream_descriptor_json($this->run->id)
+    get_operation_stream_descriptor_json($this->run->id, baseUrl: 'https://request-gateway.test')
         ->assertOk()
-        ->assertJsonPath('success.data.reverb.host', 'operations.orbit.test')
+        ->assertJsonPath('success.data.reverb.host', 'request-gateway.test')
         ->assertJsonPath('success.data.reverb.port', 443)
         ->assertJsonPath('success.data.reverb.scheme', 'https');
 });
@@ -320,18 +320,30 @@ function operation_stream_reverb_secret(): string
     return implode('-', ['gateway-reverb', 'secret']);
 }
 
-function get_operation_stream_descriptor_json(string $operationRunId): TestResponse
-{
+/**
+ * @param  array<string, string>  $server
+ */
+function get_operation_stream_descriptor_json(
+    string $operationRunId,
+    array $server = [],
+    ?string $baseUrl = null,
+): TestResponse {
+    $uri = "/api/operations/{$operationRunId}/stream";
+
+    if (is_string($baseUrl) && $baseUrl !== '') {
+        $uri = rtrim($baseUrl, characters: '/').$uri;
+    }
+
     return test()->call(
         'GET',
-        "/api/operations/{$operationRunId}/stream",
+        $uri,
         [],
         [],
         [],
-        [
+        array_merge([
             'HTTP_ACCEPT' => 'application/json',
             'REMOTE_ADDR' => OPERATION_STREAM_GATEWAY_WG_IP,
-        ],
+        ], $server),
     );
 }
 

@@ -34,11 +34,11 @@ final readonly class OperationStreamControlPlaneController
         private OperationStreamFrameBroadcaster $broadcaster,
     ) {}
 
-    public function show(OperationRun $operationRun): JsonResponse
+    public function show(Request $request, OperationRun $operationRun): JsonResponse
     {
         $channel = $this->channel($operationRun);
         $auth = $this->tokens->authToken($operationRun, $channel);
-        $reverb = $this->clientReverbEndpoint();
+        $reverb = $this->clientReverbEndpoint($request);
 
         return response()->json(JsonEnvelope::success([
             'operation' => [
@@ -347,11 +347,18 @@ final readonly class OperationStreamControlPlaneController
     /**
      * @return array{host: string, port: int, scheme: string}
      */
-    private function clientReverbEndpoint(): array
+    private function clientReverbEndpoint(Request $request): array
     {
-        $gatewayUrl = $this->normalizedUrl(LocalGatewaySettings::current()->gateway_url);
+        $gatewayUrls = [
+            $this->normalizedUrl(LocalGatewaySettings::current()->gateway_url),
+            $this->normalizedUrl($request->getSchemeAndHttpHost()),
+        ];
 
-        if ($gatewayUrl !== null) {
+        foreach ($gatewayUrls as $gatewayUrl) {
+            if ($gatewayUrl === null) {
+                continue;
+            }
+
             $parts = parse_url($gatewayUrl);
             $host = is_array($parts) && is_string($parts['host'] ?? null) ? $parts['host'] : null;
             $scheme = is_array($parts) && is_string($parts['scheme'] ?? null) ? strtolower($parts['scheme']) : null;
