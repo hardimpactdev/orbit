@@ -90,6 +90,8 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.dns_container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
 | `tool.dns_port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
 | `tool.dns_config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `node.tld` and `node.wireguard_address` of active nodes, including node-host records and role-consumed wildcard mappings. |
+| `tool.dns_client_dns_drift` | The persisted wg-easy default DNS or enabled client DNS is not pinned to the active VPN DNS endpoint. |
+| `tool.dns_forwarding_missing` | The Swarm VPN task is missing the UDP/TCP 53 DNAT and MASQUERADE rules that forward WireGuard peer DNS traffic to `orbit-dns`. |
 | `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the active agent role TLD. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
 | `tool.agent_orbit_cli_inaccessible` | An agent tool is installed on a node whose `agent` runtime user cannot execute `/usr/local/bin/orbit --version --local`. |
@@ -99,7 +101,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.seaweedfs.runtime_container_missing` | The SeaweedFS runtime container (`orbit-seaweedfs`) is absent on the node, or its rendered config diverges from gateway intent (missing or divergent). |
 | `tool.seaweedfs.bind_public_interface` | The SeaweedFS API is bound to a public or non-WireGuard interface instead of the node's WireGuard address only. |
 
-The three `tool.dns_*` codes are owned by the VPN-facing development DNS
+The five `tool.dns_*` codes are owned by the VPN-facing development DNS
 bootstrap contract; see [`dns-bootstrap-contract.md`](dns-bootstrap-contract.md)
 for the runtime layout they probe.
 
@@ -132,9 +134,11 @@ credential repair logic.
 | `tool.config_mismatch` | Rewrite managed configuration from gateway configuration when the tool definition declares a safe reconfigure path. |
 | `tool.credentials_missing` | Recreate managed credential material when the tool definition owns credential generation and declares the repair safe. |
 | `tool.credentials_mismatch` | Rewrite managed credential metadata or generated material when the tool definition declares the repair safe. |
-| `tool.dns_container_missing` | Re-run the orbit-dns installer (renders compose file + dnsmasq.conf + `docker compose up -d`). Requires wg-easy to be running first. |
-| `tool.dns_port_not_listening` | Restart the `orbit-dns` container. |
-| `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from the gateway intent and SIGHUP `orbit-dns` (no container restart). |
+| `tool.dns_container_missing` | Re-run the persisted DNS stack/compose installer; Swarm restore also reconverges VPN DNS forwarding. |
+| `tool.dns_port_not_listening` | Force the Swarm DNS service update or restart the standalone `orbit-dns` container; Swarm restore also reconverges VPN DNS forwarding. |
+| `tool.dns_config_drift` | Rewrite `dnsmasq.conf` from gateway intent and force the Swarm DNS service update or restart the standalone `orbit-dns` container; Swarm restore also reconverges VPN DNS forwarding. |
+| `tool.dns_client_dns_drift` | Rewrite wg-easy default/client DNS to the active VPN DNS endpoint. |
+| `tool.dns_forwarding_missing` | Reapply the VPN task namespace forwarding rules that DNAT WireGuard peer DNS traffic to `orbit-dns` and preserve return traffic. |
 | `tool.agent_route_missing` | Recreate the tool-owned internal proxy route for the agent tool under the active agent role TLD. |
 | `tool.agent_user_missing` | Re-apply the `agent` role baseline to recreate the `agent` user. |
 | `tool.agent_credentials_missing` | Regenerate managed credential material when the tool definition declares credential generation safe. |

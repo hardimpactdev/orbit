@@ -49,6 +49,100 @@ it('fails when the vpn Swarm task container is missing', function (): void {
         ->toThrow(RuntimeException::class, 'orbit_orbit-vpn');
 });
 
+it('reports vpn dns forwarding as ready when all nat rules exist', function (): void {
+    Process::fake([
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'" => Process::result(
+            output: "vpn-container-id\n",
+        ),
+        'docker exec*' => Process::result(),
+    ]);
+
+    $ready = new VpnDnsSwarmManager(new VpnDnsSwarmStackRenderer)->dnsForwardingReady();
+
+    expect($ready)->toBeTrue();
+
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker exec 'vpn-container-id' sh -lc")
+            && str_contains((string) $process->command, '-C PREROUTING')
+            && str_contains((string) $process->command, '-C POSTROUTING')
+            && ! str_contains((string) $process->command, ' -A ')
+            && ! str_contains((string) $process->command, ' -I ')
+        ),
+    );
+});
+
+it('reports vpn dns forwarding as missing when a nat rule probe fails', function (): void {
+    Process::fake([
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'" => Process::result(
+            output: "vpn-container-id\n",
+        ),
+        'docker exec*' => Process::result(exitCode: 1, errorOutput: "iptables: Bad rule\n"),
+    ]);
+
+    $ready = new VpnDnsSwarmManager(new VpnDnsSwarmStackRenderer)->dnsForwardingReady();
+
+    expect($ready)->toBeFalse();
+});
+
+it('converges vpn dns forwarding only when the nat rule probe fails', function (): void {
+    $vpnExecCalls = 0;
+
+    Process::fake(function ($process) use (&$vpnExecCalls) {
+        $command = (string) $process->command;
+
+        if (str_contains($command, 'docker ps -q --filter')) {
+            return Process::result(output: "vpn-container-id\n");
+        }
+
+        if (str_contains($command, "docker exec 'vpn-container-id'")) {
+            $vpnExecCalls++;
+
+            return $vpnExecCalls === 1
+                ? Process::result(exitCode: 1)
+                : Process::result();
+        }
+
+        return Process::result(exitCode: 1, errorOutput: "Unexpected command: {$command}");
+    });
+
+    $converged = new VpnDnsSwarmManager(new VpnDnsSwarmStackRenderer)->convergeDnsForwardingIfNeeded();
+
+    expect($converged)
+        ->toBeTrue()
+        ->and($vpnExecCalls)
+        ->toBe(2);
+
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker exec 'vpn-container-id' sh -lc")
+            && str_contains((string) $process->command, 'PREROUTING')
+            && str_contains((string) $process->command, 'MASQUERADE')
+        ),
+    );
+});
+
+it('skips vpn dns forwarding convergence when the nat rules already exist', function (): void {
+    Process::fake([
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'" => Process::result(
+            output: "vpn-container-id\n",
+        ),
+        'docker exec*' => Process::result(),
+    ]);
+
+    $converged = new VpnDnsSwarmManager(new VpnDnsSwarmStackRenderer)->convergeDnsForwardingIfNeeded();
+
+    expect($converged)->toBeFalse();
+
+    Process::assertNotRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker exec 'vpn-container-id' sh -lc")
+            && str_contains((string) $process->command, 'MASQUERADE')
+            && ! str_contains((string) $process->command, '-C PREROUTING')
+        ),
+    );
+});
+
 it('restarts only the dns Swarm service for config changes', function (): void {
     Process::fake([
         "docker service update --force 'orbit_orbit-dns'" => Process::result(),

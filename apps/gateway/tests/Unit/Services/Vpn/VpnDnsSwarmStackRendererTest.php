@@ -51,6 +51,11 @@ it('renders vpn and dns as separate co-located Swarm services on a shared networ
     expect($vpnBlock)
         ->toContain('node.labels.orbit.role.gateway == true')
         ->toContain('node.labels.orbit.role.vpn == true')
+        ->toContain('healthcheck:')
+        ->toContain('CMD-SHELL')
+        ->toContain('getent hosts')
+        ->toContain('PREROUTING')
+        ->toContain('MASQUERADE')
         ->not->toContain('4km3/dnsmasq')->and($dnsBlock)->toContain(
             'node.labels.orbit.role.gateway == true',
         )->toContain('node.labels.orbit.role.vpn == true')->toContain('node.labels.orbit.role.dns == true')
@@ -107,6 +112,24 @@ it('renders a vpn-side dns forwarding script from wg0 to the dns service', funct
         ->toContain('MASQUERADE')
         ->not->toContain('docker restart wg-easy')
         ->not->toContain('docker restart orbit-vpn');
+});
+
+it('renders a vpn-side dns forwarding probe script', function (): void {
+    $script = new VpnDnsSwarmStackRenderer()->renderDnsForwardingProbeScript();
+
+    expect($script)
+        ->toContain("getent hosts 'orbit-dns'")
+        ->toContain('iptables -t nat')
+        ->toContain('-C PREROUTING')
+        ->toContain('-C POSTROUTING')
+        ->toContain('-i wg0')
+        ->toContain('-p udp')
+        ->toContain('-p tcp')
+        ->toContain('--dport 53')
+        ->toContain('DNAT')
+        ->toContain('MASQUERADE')
+        ->not->toContain(' -A ')
+        ->not->toContain(' -I ');
 });
 
 it('rejects unsafe WireGuard interface names in forwarding scripts', function (): void {

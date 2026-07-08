@@ -111,6 +111,35 @@ it('recognizes the swarm dns task as the dns runtime container', function (): vo
     expect($drift)->toBe([]);
 });
 
+it('reports dns.forwarding_missing when swarm vpn dns forwarding is absent', function (): void {
+    create_dns_runtime_probe_swarm_stack_marker($this->workdir);
+    write_dns_runtime_probe_expected_config($this->workdir);
+    fake_dns_runtime_probe_swarm_runtime_without_forwarding();
+
+    $drift = $this->probe->probe();
+    $entry = collect($drift)->first(fn ($entry): bool => $entry->key === 'dns.forwarding_missing');
+
+    expect($entry)
+        ->not
+        ->toBeNull()
+        ->and($entry->summary)
+        ->toBe('VPN DNS forwarding from WireGuard peers to orbit-dns is missing.')
+        ->and($entry->detail['vpn_service'])
+        ->toBe('orbit_orbit-vpn')
+        ->and($entry->detail['dns_service'])
+        ->toBe('orbit_orbit-dns');
+});
+
+it('does not report dns.forwarding_missing when swarm vpn dns forwarding is present', function (): void {
+    create_dns_runtime_probe_swarm_stack_marker($this->workdir);
+    write_dns_runtime_probe_expected_config($this->workdir);
+    fake_dns_runtime_probe_swarm_runtime_with_forwarding();
+
+    $drift = $this->probe->probe();
+
+    expect(collect($drift)->pluck('key')->all())->not->toContain('dns.forwarding_missing');
+});
+
 it('reports dns.client_dns_drift when wg-easy client DNS is not pinned to the vpn dns endpoint', function (): void {
     Process::fake([
         'docker ps*' => Process::result('orbit-dns-id'),
@@ -192,7 +221,7 @@ it('restores wg-easy client dns drift by updating persisted default and client D
         ]);
 });
 
-it('marks the four drift kinds as restorable', function (): void {
+it('marks the five drift kinds as restorable', function (): void {
     expect($this->probe->isRestorable('dns.container_missing'))
         ->toBeTrue()
         ->and($this->probe->isRestorable('dns.port_not_listening'))
@@ -200,6 +229,8 @@ it('marks the four drift kinds as restorable', function (): void {
         ->and($this->probe->isRestorable('dns.config_drift'))
         ->toBeTrue()
         ->and($this->probe->isRestorable('dns.client_dns_drift'))
+        ->toBeTrue()
+        ->and($this->probe->isRestorable('dns.forwarding_missing'))
         ->toBeTrue()
         ->and($this->probe->isRestorable('dns.unknown'))
         ->toBeFalse();
@@ -213,6 +244,8 @@ it('does not mark dns runtime drift as adoptable', function (): void {
         ->and($this->probe->isAdoptable('dns.port_not_listening'))
         ->toBeFalse()
         ->and($this->probe->isAdoptable('dns.client_dns_drift'))
+        ->toBeFalse()
+        ->and($this->probe->isAdoptable('dns.forwarding_missing'))
         ->toBeFalse();
 });
 
@@ -237,10 +270,14 @@ it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', f
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart orbit-dns'));
 });
 
-it('restores config drift in swarm by forcing the orbit dns service update', function (): void {
+it('restores config drift in swarm by forcing the orbit dns service update and reconverging forwarding', function (): void {
     Process::fake([
         "docker service inspect 'orbit_orbit-dns'" => Process::result(),
         "docker service update --force 'orbit_orbit-dns'" => Process::result(),
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'" => Process::result(
+            "vpn-container-id\n",
+        ),
+        'docker exec*' => Process::result(),
     ]);
 
     File::ensureDirectoryExists($this->workdir.'/swarm');
@@ -260,6 +297,36 @@ it('restores config drift in swarm by forcing the orbit dns service update', fun
 
     Process::assertRan(
         fn ($process): bool => (string) $process->command === "docker service update --force 'orbit_orbit-dns'",
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker exec 'vpn-container-id' sh -lc")
+            && str_contains((string) $process->command, 'PREROUTING')
+            && str_contains((string) $process->command, 'MASQUERADE')
+        ),
+    );
+});
+
+it('restores missing swarm vpn dns forwarding by converging the vpn task namespace', function (): void {
+    Process::fake([
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn'" => Process::result(
+            "vpn-container-id\n",
+        ),
+        'docker exec*' => Process::result(),
+    ]);
+
+    $result = $this->probe->restore('dns.forwarding_missing');
+
+    expect($result)->toBeTrue();
+
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker exec 'vpn-container-id' sh -lc")
+            && str_contains((string) $process->command, 'getent hosts')
+            && str_contains((string) $process->command, 'orbit-dns')
+            && str_contains((string) $process->command, 'PREROUTING')
+            && str_contains((string) $process->command, 'MASQUERADE')
+        ),
     );
 });
 
@@ -303,6 +370,63 @@ function readDnsRuntimeProbeWgEasyDefaultDns(string $path): string
     expect($value)->toBeString();
 
     return $value;
+}
+
+function create_dns_runtime_probe_swarm_stack_marker(string $workdir): void
+{
+    File::ensureDirectoryExists($workdir.'/swarm');
+    File::put($workdir.'/swarm/orbit-vpn-dns-stack.yml', "services:\n  orbit-vpn: {}\n  orbit-dns: {}\n");
+}
+
+function write_dns_runtime_probe_expected_config(string $workdir): void
+{
+    Node::factory()->create([
+        'tld' => 'gateway',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    File::put($workdir.'/dnsmasq.conf', new DnsmasqConfigBuilder()->build(Node::query()->get()));
+}
+
+function fake_dns_runtime_probe_swarm_runtime_with_forwarding(): void
+{
+    fake_dns_runtime_probe_swarm_runtime(forwardingFailure: null);
+}
+
+function fake_dns_runtime_probe_swarm_runtime_without_forwarding(): void
+{
+    fake_dns_runtime_probe_swarm_runtime(forwardingFailure: "iptables: Bad rule\n");
+}
+
+function fake_dns_runtime_probe_swarm_runtime(?string $forwardingFailure): void
+{
+    Process::fake(function ($process) use ($forwardingFailure) {
+        $command = (string) $process->command;
+
+        if ($command === 'docker ps -a -q -f name=orbit-dns') {
+            return Process::result('');
+        }
+
+        if (str_contains($command, 'label=com.docker.swarm.service.name=orbit_orbit-dns')) {
+            return Process::result("swarm-dns-task\n");
+        }
+
+        if (str_contains($command, "docker exec 'swarm-dns-task'")) {
+            return Process::result('udp 0 0 :::53 :::* LISTEN');
+        }
+
+        if (str_contains($command, 'label=com.docker.swarm.service.name=orbit_orbit-vpn')) {
+            return Process::result("vpn-container-id\n");
+        }
+
+        if (str_contains($command, "docker exec 'vpn-container-id'")) {
+            return $forwardingFailure === null
+                ? Process::result()
+                : Process::result(exitCode: 1, errorOutput: $forwardingFailure);
+        }
+
+        return Process::result(exitCode: 1, errorOutput: "Unexpected command: {$command}");
+    });
 }
 
 /**

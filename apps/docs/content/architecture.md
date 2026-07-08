@@ -248,6 +248,8 @@ placement and networking contract. In v1 the router, vpn, and dns roles remain
 co-located on the gateway edge node. The Swarm target gives `wg-easy` and
 `orbit-dns` a shared private Swarm network, keeps DNS unpublished publicly, and
 forwards VPN-side DNS traffic from the WireGuard namespace to the DNS service.
+The VPN task self-converges that forwarding rule after task recreation, and
+tool doctor verifies the rule explicitly for Swarm DNS runtimes.
 
 ### CLI
 

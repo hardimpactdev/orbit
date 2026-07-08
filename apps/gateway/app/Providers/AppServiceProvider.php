@@ -294,9 +294,10 @@ class AppServiceProvider extends ServiceProvider
             swarmManager: $app->make(VpnDnsSwarmManager::class),
         ));
 
-        $this->app->singleton(DnsRuntimeProbe::class, fn ($app): DnsRuntimeProbe => new DnsRuntimeProbe(
+        $this->app->singleton(DnsRuntimeProbe::class, fn (Application $app): DnsRuntimeProbe => new DnsRuntimeProbe(
             configBuilder: $app->make(DnsmasqConfigBuilder::class),
             rootPath: $this->orbitConfigPath(),
+            swarmManager: $app->make(VpnDnsSwarmManager::class),
         ));
 
         $this->app->bind(TrustStoreInstaller::class, static function (Application $app): TrustStoreInstaller {

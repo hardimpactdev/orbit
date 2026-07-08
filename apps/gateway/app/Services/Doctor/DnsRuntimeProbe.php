@@ -11,6 +11,7 @@ use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\NodeRoleAssignment;
 use App\Services\Dns\DnsmasqConfigBuilder;
+use App\Services\Vpn\VpnDnsSwarmManager;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use PDO;
@@ -21,6 +22,7 @@ final readonly class DnsRuntimeProbe
     public function __construct(
         private DnsmasqConfigBuilder $configBuilder,
         private string $rootPath,
+        private VpnDnsSwarmManager $swarmManager = new VpnDnsSwarmManager,
     ) {}
 
     public function family(): string
@@ -72,6 +74,12 @@ final readonly class DnsRuntimeProbe
             $drift[] = $clientDnsDrift;
         }
 
+        $forwardingDrift = $this->vpnDnsForwardingDrift();
+
+        if ($forwardingDrift instanceof DriftEntry) {
+            $drift[] = $forwardingDrift;
+        }
+
         return $drift;
     }
 
@@ -84,6 +92,7 @@ final readonly class DnsRuntimeProbe
                 'dns.port_not_listening',
                 'dns.config_drift',
                 'dns.client_dns_drift',
+                'dns.forwarding_missing',
             ],
             true,
         );
@@ -101,6 +110,7 @@ final readonly class DnsRuntimeProbe
             'dns.port_not_listening' => $this->restartContainer(),
             'dns.config_drift' => $this->restoreConfig(),
             'dns.client_dns_drift' => $this->restoreClientDns(),
+            'dns.forwarding_missing' => $this->restoreDnsForwarding(),
             default => false,
         };
     }
@@ -216,7 +226,7 @@ final readonly class DnsRuntimeProbe
                 escapeshellarg('orbit'),
             ));
 
-            return $result->successful();
+            return $result->successful() && $this->restoreDnsForwarding();
         }
 
         $result = Process::timeout(180)->run(sprintf(
@@ -232,7 +242,7 @@ final readonly class DnsRuntimeProbe
         if (File::exists($this->swarmStackPath()) && $this->swarmDnsServiceExists()) {
             $result = Process::timeout(30)->run("docker service update --force 'orbit_orbit-dns'");
 
-            return $result->successful();
+            return $result->successful() && $this->restoreDnsForwarding();
         }
 
         $result = Process::timeout(30)->run('docker restart orbit-dns');
@@ -279,6 +289,40 @@ final readonly class DnsRuntimeProbe
                 $database->rollBack();
             }
 
+            return false;
+        }
+    }
+
+    private function vpnDnsForwardingDrift(): ?DriftEntry
+    {
+        if (! File::exists($this->swarmStackPath())) {
+            return null;
+        }
+
+        if ($this->swarmManager->dnsForwardingReady()) {
+            return null;
+        }
+
+        return new DriftEntry(
+            family: $this->family(),
+            key: 'dns.forwarding_missing',
+            kind: DriftKind::Divergent,
+            summary: 'VPN DNS forwarding from WireGuard peers to orbit-dns is missing.',
+            detail: [
+                'vpn_service' => 'orbit_orbit-vpn',
+                'dns_service' => 'orbit_orbit-dns',
+                'wireguard_interface' => 'wg0',
+            ],
+        );
+    }
+
+    private function restoreDnsForwarding(): bool
+    {
+        try {
+            $this->swarmManager->convergeDnsForwardingIfNeeded();
+
+            return true;
+        } catch (Throwable) {
             return false;
         }
     }

@@ -30,6 +30,33 @@ final readonly class VpnDnsSwarmManager
         );
     }
 
+    public function dnsForwardingReady(string $stack = 'orbit'): bool
+    {
+        try {
+            $containerId = $this->vpnTaskContainer($stack);
+        } catch (RuntimeException) {
+            return false;
+        }
+
+        $script = $this->renderer->renderDnsForwardingProbeScript();
+        $result = Process::timeout(15)->run(
+            'docker exec '.escapeshellarg($containerId).' sh -lc '.escapeshellarg($script),
+        );
+
+        return $result->successful();
+    }
+
+    public function convergeDnsForwardingIfNeeded(string $stack = 'orbit'): bool
+    {
+        if ($this->dnsForwardingReady($stack)) {
+            return false;
+        }
+
+        $this->convergeDnsForwarding($stack);
+
+        return true;
+    }
+
     public function restartDnsService(string $stack = 'orbit'): void
     {
         $dnsService = $this->stackService($stack, VpnDnsSwarmStackRenderer::DnsService);

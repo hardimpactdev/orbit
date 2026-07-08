@@ -103,6 +103,36 @@ final readonly class VpnDnsSwarmStackRenderer
         );
     }
 
+    public function renderDnsForwardingProbeScript(
+        string $dnsService = self::DnsService,
+        string $wireguardInterface = 'wg0',
+    ): string {
+        $this->assertFilled($dnsService, 'DNS service');
+        $this->assertLinuxInterface($wireguardInterface);
+
+        return sprintf(
+            <<<'SH'
+                set -eu
+
+                dns_ip="$(getent hosts %s | awk '{ print $1; exit }')"
+
+                if [ -z "$dns_ip" ]; then
+                    echo "Unable to resolve %s on the shared Swarm network" >&2
+                    exit 1
+                fi
+
+                iptables -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
+                iptables -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
+                SH,
+            escapeshellarg($dnsService),
+            $dnsService,
+            $wireguardInterface,
+            $wireguardInterface,
+        );
+    }
+
     /**
      * @return list<string>
      */
@@ -148,6 +178,18 @@ final readonly class VpnDnsSwarmStackRenderer
             '      - /dev/net/tun:/dev/net/tun',
             '      - '.$statePath.':/etc/wireguard',
             '      - /lib/modules:/lib/modules:ro',
+            '    healthcheck:',
+            '      test:',
+            '        - CMD-SHELL',
+            '        - |-',
+            ...array_map(
+                static fn (string $line): string => '          '.$line,
+                explode("\n", $this->renderDnsForwardingScript()),
+            ),
+            '      interval: 10s',
+            '      timeout: 5s',
+            '      retries: 6',
+            '      start_period: 15s',
             '    deploy:',
             '      replicas: 1',
             '      labels:',
