@@ -9,5 +9,9 @@
 :8080 {
     root * /srv/orbit/apps/gateway/public
     encode zstd gzip
+    @operations_reverb {
+        path /app/*
+    }
+    reverse_proxy @operations_reverb orbit-operations-reverb:8080
     php_server
 }

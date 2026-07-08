@@ -120,6 +120,8 @@ it('runs FrankenPHP on the internal gateway port and exposes a local health prob
     expect($caddyfile)
         ->toContain('frankenphp')
         ->toContain(':8080')
+        ->toContain('path /app/*')
+        ->toContain('reverse_proxy @operations_reverb orbit-operations-reverb:8080')
         ->toContain('php_server')
         ->toContain('root * /srv/orbit/apps/gateway/public')
         ->and($entrypoint)

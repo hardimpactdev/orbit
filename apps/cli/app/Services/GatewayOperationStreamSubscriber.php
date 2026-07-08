@@ -72,7 +72,7 @@ class GatewayOperationStreamSubscriber
                 throw $exception;
             }
 
-            $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences);
+            $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
         } finally {
             if (is_string($socketId) && $socketId !== '') {
                 $this->leave($descriptor, $socketId);
@@ -113,11 +113,12 @@ class GatewayOperationStreamSubscriber
         ?int $lastEventId,
         callable $onFrame,
         array &$seenSequences,
+        bool $force = false,
     ): ?int {
         $eventsEndpoint = $this->stringValue($descriptor, 'backfill.events_endpoint');
         $cursor = $this->integerValue($descriptor, 'backfill.cursor');
 
-        if ($cursor === null && $lastEventId === null) {
+        if (! $force && $cursor === null && $lastEventId === null) {
             return $lastEventId;
         }
 

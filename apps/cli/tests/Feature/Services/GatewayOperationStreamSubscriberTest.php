@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationStreamSubscriber;
 use App\Services\Operations\OperationStreamWebSocketConnection;
@@ -353,6 +354,63 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
         ]);
 });
 
+it('durably replays frames when the websocket fails before the descriptor cursor advances', function (): void {
+    $history = [];
+    $transport = new FailingOperationStreamWebSocketTransport($history);
+    $events = new FakeOperationStreamBackfillClient([
+        [
+            [
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => 'operation_stream.frame',
+                    'frame' => [
+                        'operation_uuid' => 'run-1',
+                        'sequence' => 11,
+                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                        'payload' => ['line' => 'fallback-after-connect-failure'],
+                    ],
+                ],
+            ],
+        ],
+    ], $history);
+    $frames = [];
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: $transport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([['/api/operations/run-1/events', null]])
+        ->and($history)
+        ->toBe([
+            'connect',
+            'replay:/api/operations/run-1/events:null',
+            'close',
+        ])
+        ->and($frames)
+        ->toBe([
+            [
+                'operation_uuid' => 'run-1',
+                'sequence' => 11,
+                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                'payload' => ['line' => 'fallback-after-connect-failure'],
+            ],
+        ]);
+});
+
 /**
  * @return array<string, mixed>
  */
@@ -451,6 +509,25 @@ class FakeOperationStreamWebSocketTransport implements OperationStreamWebSocketT
     public function close(): void
     {
         $this->history[] = 'close';
+    }
+}
+
+class FailingOperationStreamWebSocketTransport extends FakeOperationStreamWebSocketTransport
+{
+    /**
+     * @param  list<string>  $history
+     */
+    public function __construct(array &$history = [])
+    {
+        parent::__construct([], $history);
+    }
+
+    #[Override]
+    public function connect(OperationStreamWebSocketConnection $connection): void
+    {
+        parent::connect($connection);
+
+        throw GatewayApiException::networkError(new RuntimeException('socket refused'));
     }
 }
 
