@@ -141,7 +141,7 @@ final readonly class RemoveWorkspace
                     $teardownStepsRun++;
                     $teardownResult = $this->remoteShell->run($node, $teardownStep->command, [
                         'cwd' => $workspace->path,
-                        'timeout' => $teardownStep->timeoutSeconds(),
+                        'timeout' => (int) $teardownStep->timeoutSeconds(),
                         'metadata' => $this->teardownEnvironment($workspace),
                     ]);
 

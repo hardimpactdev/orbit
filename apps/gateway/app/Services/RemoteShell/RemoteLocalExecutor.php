@@ -81,6 +81,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
      *     transport?: NodeTransportPreference|string,
+     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
@@ -112,6 +113,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -286,6 +288,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -435,6 +438,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
      *     transport?: NodeTransportPreference|string,
+     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
@@ -460,6 +464,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -564,6 +569,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -710,6 +716,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -748,6 +755,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -788,6 +796,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -869,6 +878,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -902,6 +912,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -940,6 +951,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -988,6 +1000,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -1116,6 +1129,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -1163,6 +1177,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -1438,6 +1453,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
+     *     force_remote_host?: bool,
      *     ssh_bootstrap_binary?: array{url: string, sha256: string},
      *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
@@ -1449,6 +1465,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }
      */
     private function transportDispatchOptions(array $transportOptions): array

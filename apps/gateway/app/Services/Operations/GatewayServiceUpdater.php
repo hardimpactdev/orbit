@@ -158,7 +158,7 @@ class GatewayServiceUpdater
             'payload-sha256' => $payloadSha256,
         ];
 
-        /** @var array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
+        /** @var array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, force_remote_host: true, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
             'cwd' => '/home/orbit',
@@ -169,6 +169,7 @@ class GatewayServiceUpdater
             'transport' => NodeTransportPreference::TransitionalSshFallback,
             'bind_application_key' => false,
             'bind_input' => false,
+            'force_remote_host' => true,
             'ssh_bootstrap_binary' => [
                 'url' => $gatewayCliArtifact['url'],
                 'sha256' => $gatewayCliArtifact['sha256'],
@@ -206,7 +207,7 @@ class GatewayServiceUpdater
 
     /**
      * @param  array{payload-file: string, payload-sha256: string}  $commandOptions
-     * @param  array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}}  $transportOptions
+     * @param  array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, force_remote_host: true, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}}  $transportOptions
      */
     private function runCliInstall(Node $gatewayNode, array $commandOptions, array $transportOptions): RemoteShellResult
     {

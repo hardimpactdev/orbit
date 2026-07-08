@@ -14,8 +14,10 @@ final readonly class RemoteShellPoolJob
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
-     *     env?: array<string, string>,
+     *     environment?: array<string, string>,
+     *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     public function __construct(

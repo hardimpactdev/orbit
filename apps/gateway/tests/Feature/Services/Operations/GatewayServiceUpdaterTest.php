@@ -136,6 +136,8 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->toBe(hash('sha256', $localExecutor->calls[0]['options']['input']))
         ->and($localExecutor->calls[0]['options']['transport'] ?? null)
         ->toBe(NodeTransportPreference::TransitionalSshFallback)
+        ->and($localExecutor->calls[0]['options']['force_remote_host'] ?? null)
+        ->toBeTrue()
         ->and($localExecutor->calls[0]['options']['cwd'] ?? null)
         ->toBe('/home/orbit')
         ->and($localExecutor->calls[0]['options']['bind_application_key'] ?? null)

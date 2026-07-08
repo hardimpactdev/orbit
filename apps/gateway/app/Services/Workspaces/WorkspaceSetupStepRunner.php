@@ -54,11 +54,11 @@ final readonly class WorkspaceSetupStepRunner
 
             $transport = app(ExplicitRemoteShellFallback::class);
             $result = $transport->allowed()
-                ? $this->remoteShell->run($node, $command, [
-                    'cwd' => $isContainerized ? null : $path,
-                    'timeout' => $step->timeoutSeconds(),
-                    'metadata' => $env,
-                ])
+                ? $this->remoteShell->run($node, $command, $this->remoteShellOptions(
+                    cwd: $isContainerized ? null : $path,
+                    timeout: $step->timeoutSeconds(),
+                    metadata: $env,
+                ))
                 : new RemoteShellResult(
                     exitCode: 1,
                     stdout: '',
@@ -90,6 +90,24 @@ final readonly class WorkspaceSetupStepRunner
         $run->update(['status' => 'completed', 'completed_at' => now()]);
 
         return true;
+    }
+
+    /**
+     * @param  array<string, string>  $metadata
+     * @return array{cwd?: string, timeout: int, metadata: array<string, string>}
+     */
+    private function remoteShellOptions(?string $cwd, int $timeout, array $metadata): array
+    {
+        $options = [
+            'timeout' => $timeout,
+            'metadata' => $metadata,
+        ];
+
+        if ($cwd !== null && $cwd !== '') {
+            $options['cwd'] = $cwd;
+        }
+
+        return $options;
     }
 
     private function isPhpCommand(string $command): bool

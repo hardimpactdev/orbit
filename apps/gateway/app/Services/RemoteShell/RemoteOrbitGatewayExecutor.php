@@ -34,8 +34,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
@@ -70,8 +72,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
@@ -92,8 +96,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     private function pendingProcess(array $options): PendingProcess
@@ -113,8 +119,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      */
     private function runtimeScript(Node $node, string $script, array $options): string
@@ -143,8 +151,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @param  array{
      *     detach: bool,
@@ -168,8 +178,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @param  array{
      *     detach: bool,
@@ -536,8 +548,10 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @param  array{
      *     detach: bool,
@@ -590,6 +604,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      *     force_remote_host?: bool,
@@ -651,6 +666,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      *     force_remote_host?: bool,
@@ -660,6 +676,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
      * }
@@ -738,16 +755,20 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }  $options
      * @return array{
      *     cwd?: string,
      *     timeout?: int,
      *     input?: string,
      *     throw?: bool,
+     *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      * }
      */
     private function optionsWithContainerCwd(Node $node, array $options): array

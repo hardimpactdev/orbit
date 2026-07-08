@@ -190,7 +190,7 @@ final readonly class DeployManager
                 $routedCommand,
                 [
                     'cwd' => $model->path,
-                    'timeout' => $step->timeout_seconds,
+                    'timeout' => (int) $step->timeout_seconds,
                     'strict' => true,
                     'metadata' => $this->environment($context),
                 ],
