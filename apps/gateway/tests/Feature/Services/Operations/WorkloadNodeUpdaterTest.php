@@ -14,6 +14,7 @@ use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
@@ -135,6 +136,33 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->calls[0]['command_options']['payload-file'] ?? null)
+        ->toBe("/tmp/orbit-fleet-update-install-{$run->id}-agent-1.json")
+        ->and($shell->calls[0]['command_options']['payload-sha256'] ?? null)
+        ->toBe(hash('sha256', $shell->calls[0]['options']['input']))
+        ->and($shell->calls[0]['options']['transport'] ?? null)
+        ->toBe(NodeTransportPreference::TransitionalSshFallback)
+        ->and($shell->calls[0]['options']['cwd'] ?? null)
+        ->toBe('/home/orbit')
+        ->and($shell->calls[0]['options']['environment'] ?? null)
+        ->toBe([
+            'HOME' => '/home/orbit',
+            'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+        ])
+        ->and($shell->calls[0]['options']['bind_application_key'] ?? null)
+        ->toBeFalse()
+        ->and($shell->calls[0]['options']['bind_input'] ?? null)
+        ->toBeFalse()
+        ->and($shell->calls[0]['options']['ssh_bootstrap_binary'] ?? null)
+        ->toBe([
+            'url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
+            'sha256' => str_repeat('e', times: 64),
+        ])
+        ->and($shell->calls[0]['options']['ssh_bootstrap_input_file'] ?? null)
+        ->toBe([
+            'path' => "/tmp/orbit-fleet-update-install-{$run->id}-agent-1.json",
+            'sha256' => hash('sha256', $shell->calls[0]['options']['input']),
+        ])
         ->and($shell->scriptsFor('agent-1'))
         ->toBe([$shell->scriptFor('agent-1')])
         ->and($shell->activeLeases)
@@ -576,7 +604,7 @@ it('skips a workload node already on the target version and runs no remote updat
         ->toBe(0);
 });
 
-it('runs workload updates through the typed local executor without ssh fallback opt-in', function (): void {
+it('runs workload installs through the typed local executor with the ssh bootstrap bridge', function (): void {
     request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
@@ -607,9 +635,10 @@ it('runs workload updates through the typed local executor without ssh fallback 
         ->toBe(['app-dev-1'])
         ->and($shell->calls[0]['script'])
         ->toBe('internal:fleet-update:install-cli')
-        ->and($shell->calls[0]['options'])
-        ->not
-        ->toHaveKey('cwd')
+        ->and($shell->calls[0]['options']['transport'] ?? null)
+        ->toBe(NodeTransportPreference::TransitionalSshFallback)
+        ->and($shell->calls[0]['options']['cwd'] ?? null)
+        ->toBe('/home/orbit')
         ->and($node->fresh()->installed_cli?->version)
         ->toBe('2.0.0');
 });
@@ -1627,7 +1656,7 @@ function workload_updater_install_payloads(WorkloadUpdaterFakeShell $shell, stri
 final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommands
 {
     /**
-     * @var list<array{node: string, script: string, options: array<string, mixed>}>
+     * @var list<array{node: string, script: string, command_options?: array<int|string, mixed>, options: array<string, mixed>}>
      */
     public array $calls = [];
 
@@ -1729,6 +1758,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell, RunsInternalCommand
         $this->calls[] = [
             'node' => $node->name,
             'script' => $commandName,
+            'command_options' => $commandOptions,
             'options' => $transportOptions,
         ];
 

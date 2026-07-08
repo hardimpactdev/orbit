@@ -12,6 +12,7 @@ use App\Exceptions\UpdateLeaseConflict;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use RuntimeException;
@@ -137,17 +138,47 @@ final readonly class WorkloadNodeUpdater
             "Installing CLI {$plan->target_version}",
         );
 
-        /** @var array{timeout: int, input: string, metadata: array<string, string>} $transportOptions */
+        $cliArtifact = $this->cliArtifact($operationRun, $plan, $node);
+        $installPayload = json_encode(
+            $this->installPayload($operationRun, $plan, $node, $cliArtifact),
+            JSON_THROW_ON_ERROR,
+        );
+        $payloadSha256 = hash('sha256', $installPayload);
+        $payloadPath = $this->installPayloadPath($operationRun, $node);
+        $nodeHome = $this->hostPaths->homeDirectory($node);
+        $commandOptions = [
+            'payload-file' => $payloadPath,
+            'payload-sha256' => $payloadSha256,
+        ];
+
+        /** @var array{timeout: int, cwd: string, input: string, environment: array<string, string>, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
-            'input' => json_encode($this->installPayload($operationRun, $plan, $node), JSON_THROW_ON_ERROR),
+            'cwd' => $nodeHome,
+            'input' => $installPayload,
+            'environment' => [
+                'HOME' => $nodeHome,
+                'ORBIT_CONFIG_PATH' => "{$nodeHome}/.config/orbit/config.json",
+            ],
             'metadata' => $this->remoteShellMetadata($operationRun, $node),
+            'transport' => NodeTransportPreference::TransitionalSshFallback,
+            'bind_application_key' => false,
+            'bind_input' => false,
+            'ssh_bootstrap_binary' => [
+                'url' => $cliArtifact['url'],
+                'sha256' => $cliArtifact['sha256'],
+            ],
+            'ssh_bootstrap_input_file' => [
+                'path' => $payloadPath,
+                'sha256' => $payloadSha256,
+            ],
         ];
 
         $result = $this->nodeInstaller->run(
             operationRun: $operationRun,
             node: $node,
             eventKey: $this->eventKey($node),
+            commandOptions: $commandOptions,
             transportOptions: $transportOptions,
         );
 
@@ -206,6 +237,7 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
+     * @param  array{url: string, sha256: string, source_url: string}  $artifact
      * @return array{
      *     artifact_url: string,
      *     sha256: string,
@@ -216,9 +248,12 @@ final readonly class WorkloadNodeUpdater
      *     role_images: list<string>,
      * }
      */
-    private function installPayload(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
-    {
-        $artifact = $this->cliArtifact($operationRun, $plan, $node);
+    private function installPayload(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        Node $node,
+        array $artifact,
+    ): array {
         $installRoot = rtrim($node->orbit_path, '/') ?: '/home/orbit/orbit';
 
         return [
@@ -232,6 +267,13 @@ final readonly class WorkloadNodeUpdater
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'role_images' => $this->requiredRoleImages($plan, $node),
         ];
+    }
+
+    private function installPayloadPath(OperationRun $operationRun, Node $node): string
+    {
+        $safeNodeName = preg_replace('/[^A-Za-z0-9_.-]+/', '-', $node->name) ?? 'node';
+
+        return "/tmp/orbit-fleet-update-install-{$operationRun->id}-{$safeNodeName}.json";
     }
 
     private function recordInstalledCli(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void

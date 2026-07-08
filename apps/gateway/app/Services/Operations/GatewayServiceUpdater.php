@@ -116,21 +116,41 @@ class GatewayServiceUpdater
             return null;
         }
 
-        /** @var array{timeout: int, input: string, metadata: array<string, string>, transport: NodeTransportPreference} $transportOptions */
+        $gatewayCliArtifact = $this->gatewayHostCliArtifact($operationRun, $plan, $gatewayNode);
+        $installPayload = json_encode(
+            $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode, $gatewayCliArtifact),
+            JSON_THROW_ON_ERROR,
+        );
+        $payloadSha256 = hash('sha256', $installPayload);
+        $payloadPath = $this->gatewayHostCliPayloadPath($operationRun);
+        $commandOptions = [
+            'payload-file' => $payloadPath,
+            'payload-sha256' => $payloadSha256,
+        ];
+
+        /** @var array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
-            'input' => json_encode(
-                $this->gatewayHostCliInstallPayload($operationRun, $plan, $gatewayNode),
-                JSON_THROW_ON_ERROR,
-            ),
+            'cwd' => '/home/orbit',
+            'input' => $installPayload,
             'metadata' => [
                 'ORBIT_OPERATION_ID' => $operationRun->id,
             ],
             'transport' => NodeTransportPreference::TransitionalSshFallback,
+            'bind_application_key' => false,
+            'bind_input' => false,
+            'ssh_bootstrap_binary' => [
+                'url' => $gatewayCliArtifact['url'],
+                'sha256' => $gatewayCliArtifact['sha256'],
+            ],
+            'ssh_bootstrap_input_file' => [
+                'path' => $payloadPath,
+                'sha256' => $payloadSha256,
+            ],
         ];
 
         try {
-            $result = $this->runCliInstall($gatewayNode, $transportOptions);
+            $result = $this->runCliInstall($gatewayNode, $commandOptions, $transportOptions);
         } catch (RemoteLocalExecutorTransportFailed $exception) {
             if (! $this->isGatewayHostAgentRestartDisconnect($exception)) {
                 throw $exception;
@@ -142,7 +162,7 @@ class GatewayServiceUpdater
         }
 
         if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
-            $result = $this->runCliInstall($gatewayNode, $transportOptions);
+            $result = $this->runCliInstall($gatewayNode, $commandOptions, $transportOptions);
         }
 
         if (! $result->successful()) {
@@ -155,15 +175,16 @@ class GatewayServiceUpdater
     }
 
     /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>, transport: NodeTransportPreference}  $transportOptions
+     * @param  array{payload-file: string, payload-sha256: string}  $commandOptions
+     * @param  array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}}  $transportOptions
      */
-    private function runCliInstall(Node $gatewayNode, array $transportOptions): RemoteShellResult
+    private function runCliInstall(Node $gatewayNode, array $commandOptions, array $transportOptions): RemoteShellResult
     {
         return $this->localExecutor()->runInternal(
             node: $gatewayNode,
             commandName: 'internal:fleet-update:install-cli',
             arguments: [],
-            commandOptions: [],
+            commandOptions: $commandOptions,
             transportOptions: $transportOptions,
         );
     }
@@ -179,6 +200,7 @@ class GatewayServiceUpdater
     }
 
     /**
+     * @param  array{url: string, sha256: string, source_url: string}  $artifact
      * @return array{
      *     artifact_url: string,
      *     sha256: string,
@@ -193,8 +215,8 @@ class GatewayServiceUpdater
         OperationRun $operationRun,
         OperationUpdatePlan $plan,
         Node $gatewayNode,
+        array $artifact,
     ): array {
-        $artifact = $this->gatewayHostCliArtifact($operationRun, $plan, $gatewayNode);
         $installRoot = $this->gatewayInstallRoot($gatewayNode);
 
         return [
@@ -228,6 +250,11 @@ class GatewayServiceUpdater
         $installRoot = rtrim($gatewayNode->orbit_path, characters: '/');
 
         return $installRoot !== '' ? $installRoot : '/home/orbit/orbit';
+    }
+
+    private function gatewayHostCliPayloadPath(OperationRun $operationRun): string
+    {
+        return '/tmp/orbit-gateway-host-cli-install-'.$operationRun->id.'.json';
     }
 
     private function recordInstalledGatewayHostCli(

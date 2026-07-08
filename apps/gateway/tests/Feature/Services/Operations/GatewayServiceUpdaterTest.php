@@ -121,11 +121,28 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->toBe('gateway-1')
         ->and($localExecutor->calls[0]['command'])
         ->toBe('internal:fleet-update:install-cli')
-        ->and($localExecutor->calls[0]['options'])
-        ->not
-        ->toHaveKey('cwd')
+        ->and($localExecutor->calls[0]['command_options']['payload-file'] ?? null)
+        ->toBe("/tmp/orbit-gateway-host-cli-install-{$run->id}.json")
+        ->and($localExecutor->calls[0]['command_options']['payload-sha256'] ?? null)
+        ->toBe(hash('sha256', $localExecutor->calls[0]['options']['input']))
         ->and($localExecutor->calls[0]['options']['transport'] ?? null)
         ->toBe(NodeTransportPreference::TransitionalSshFallback)
+        ->and($localExecutor->calls[0]['options']['cwd'] ?? null)
+        ->toBe('/home/orbit')
+        ->and($localExecutor->calls[0]['options']['bind_application_key'] ?? null)
+        ->toBeFalse()
+        ->and($localExecutor->calls[0]['options']['bind_input'] ?? null)
+        ->toBeFalse()
+        ->and($localExecutor->calls[0]['options']['ssh_bootstrap_binary'] ?? null)
+        ->toBe([
+            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
+            'sha256' => str_repeat('c', times: 64),
+        ])
+        ->and($localExecutor->calls[0]['options']['ssh_bootstrap_input_file'] ?? null)
+        ->toBe([
+            'path' => "/tmp/orbit-gateway-host-cli-install-{$run->id}.json",
+            'sha256' => hash('sha256', $localExecutor->calls[0]['options']['input']),
+        ])
         ->and($localExecutor->payloads()[0])
         ->toMatchArray([
             'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
@@ -601,7 +618,7 @@ function gateway_service_updater_fake_local_executor(array $responses = []): Run
 {
     return new class($responses) implements RunsInternalCommands {
         /**
-         * @var list<array{node: string, command: string, options: array<string, mixed>}>
+         * @var list<array{node: string, command: string, command_options: array<int|string, mixed>, options: array<string, mixed>}>
          */
         public array $calls = [];
 
@@ -628,6 +645,7 @@ function gateway_service_updater_fake_local_executor(array $responses = []): Run
             $this->calls[] = [
                 'node' => $node->name,
                 'command' => $commandName,
+                'command_options' => $commandOptions,
                 'options' => $transportOptions,
             ];
 

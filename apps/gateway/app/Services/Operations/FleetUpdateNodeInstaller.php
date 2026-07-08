@@ -7,10 +7,10 @@ namespace App\Services\Operations;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
-use JsonException;
 use RuntimeException;
 
 final readonly class FleetUpdateNodeInstaller
@@ -19,25 +19,28 @@ final readonly class FleetUpdateNodeInstaller
         private RunsInternalCommands $localExecutor,
         private OperationRunRecorder $operationRuns,
         private FleetUpdateInstallResultInspector $installResults,
+        private FleetUpdateLegacyMacosCliPayload $legacyMacosCliPayload,
     ) {}
 
     /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, transport?: NodeTransportPreference|string, bind_application_key?: bool, bind_input?: bool, ssh_bootstrap_binary?: array{url: string, sha256: string}, ssh_bootstrap_input_file?: array{path: string, sha256: string}}  $transportOptions
      */
     public function run(
         OperationRun $operationRun,
         Node $node,
         string $eventKey,
+        array $commandOptions,
         array $transportOptions,
     ): ?RemoteShellResult {
-        $result = $this->runCliInstallAllowingAgentRestartDisconnect($node, $transportOptions);
+        $result = $this->runCliInstallAllowingAgentRestartDisconnect($node, $commandOptions, $transportOptions);
 
         if (! $result instanceof RemoteShellResult) {
             return null;
         }
 
         if ($this->shouldRetryCliInstallAfterSelfUpdate($result)) {
-            $result = $this->runCliInstallAllowingAgentRestartDisconnect($node, $transportOptions);
+            $result = $this->runCliInstallAllowingAgentRestartDisconnect($node, $commandOptions, $transportOptions);
 
             if (! $result instanceof RemoteShellResult) {
                 return null;
@@ -53,9 +56,11 @@ final readonly class FleetUpdateNodeInstaller
                     'Refreshing legacy macOS Orbit CLI path',
                 );
 
+                $legacyTransportOptions = $this->legacyMacosCliPayload->transportOptionsFor($transportOptions);
                 $bridgeResult = $this->runCliInstallAllowingAgentRestartDisconnect(
                     $node,
-                    $this->legacyMacosOrbitBinaryTransportOptions($transportOptions),
+                    $this->legacyMacosCliPayload->commandOptionsFor($commandOptions, $legacyTransportOptions),
+                    $legacyTransportOptions,
                 );
 
                 if (! $bridgeResult instanceof RemoteShellResult) {
@@ -70,7 +75,7 @@ final readonly class FleetUpdateNodeInstaller
                 'Installing Orbit Agent artifact',
             );
 
-            $result = $this->runCliInstallAllowingAgentRestartDisconnect($node, $transportOptions);
+            $result = $this->runCliInstallAllowingAgentRestartDisconnect($node, $commandOptions, $transportOptions);
 
             if (! $result instanceof RemoteShellResult) {
                 return null;
@@ -85,14 +90,16 @@ final readonly class FleetUpdateNodeInstaller
     }
 
     /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, transport?: NodeTransportPreference|string, bind_application_key?: bool, bind_input?: bool, ssh_bootstrap_binary?: array{url: string, sha256: string}, ssh_bootstrap_input_file?: array{path: string, sha256: string}}  $transportOptions
      */
     private function runCliInstallAllowingAgentRestartDisconnect(
         Node $node,
+        array $commandOptions,
         array $transportOptions,
     ): ?RemoteShellResult {
         try {
-            return $this->runCliInstall($node, $transportOptions);
+            return $this->runCliInstall($node, $commandOptions, $transportOptions);
         } catch (RemoteLocalExecutorTransportFailed $exception) {
             if (! $this->isAgentRestartDisconnect($exception)) {
                 throw $exception;
@@ -103,15 +110,16 @@ final readonly class FleetUpdateNodeInstaller
     }
 
     /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, transport?: NodeTransportPreference|string, bind_application_key?: bool, bind_input?: bool, ssh_bootstrap_binary?: array{url: string, sha256: string}, ssh_bootstrap_input_file?: array{path: string, sha256: string}}  $transportOptions
      */
-    private function runCliInstall(Node $node, array $transportOptions): RemoteShellResult
+    private function runCliInstall(Node $node, array $commandOptions, array $transportOptions): RemoteShellResult
     {
         return $this->localExecutor->runInternal(
             $node,
             'internal:fleet-update:install-cli',
             [],
-            [],
+            $commandOptions,
             $transportOptions,
         );
     }
@@ -124,29 +132,5 @@ final readonly class FleetUpdateNodeInstaller
     private function shouldRetryCliInstallAfterSelfUpdate(RemoteShellResult $result): bool
     {
         return $result->exitCode === 255 && trim($result->stdout) === '' && trim($result->stderr) === '';
-    }
-
-    /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
-     * @return array{timeout: int, input: string, metadata: array<string, string>}
-     *
-     * @throws JsonException
-     */
-    private function legacyMacosOrbitBinaryTransportOptions(array $transportOptions): array
-    {
-        /** @var mixed $payload */
-        $payload = json_decode($transportOptions['input'], associative: true, flags: JSON_THROW_ON_ERROR);
-
-        if (! is_array($payload)) {
-            throw new RuntimeException('Fleet update CLI install payload must be an object.');
-        }
-
-        $payload['bin_path'] = '/usr/local/bin/orbit';
-        $payload['shared_binary_path'] = null;
-
-        return [
-            ...$transportOptions,
-            'input' => json_encode($payload, JSON_THROW_ON_ERROR),
-        ];
     }
 }

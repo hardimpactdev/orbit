@@ -173,15 +173,22 @@ for this verify endpoint only. Identity resolution never consumes the token;
 the controller consumes it only after authorization. Non-gateway targets and
 all other gateway API routes continue to require WireGuard peer identity.
 
-During `update:all`, gateway host CLI/Agent self-update is the bootstrap
-exception to normal gateway self-execution transport: the gateway service may
-already be running a verifier that requires bound command context while the
-installed host Agent still sends the older verify payload. That step therefore
-uses explicit `transitional-ssh-fallback` for the single
-`internal:fleet-update:install-cli` dispatch instead of relaxing token
-verification. The PHP CLI guard still verifies and consumes the bound operation
-token before side effects, and this exception must not be generalized beyond
-the gateway host CLI/Agent replacement step.
+During `update:all`, fleet CLI/Agent self-update is the bootstrap exception to
+normal agent-push execution: the gateway service may already be running a
+verifier that requires bound command context while the installed Agent still
+sends the older verify payload, or the installed CLI may not contain the new
+internal fleet-update command. The install step therefore uses explicit
+`transitional-ssh-fallback`, downloads and verifies the candidate CLI artifact,
+and executes that candidate binary for `internal:fleet-update:install-cli`
+instead of invoking the installed launcher or relaxing token verification.
+
+For this SSH bootstrap, the JSON install payload is written to a temporary
+payload file and the file path plus SHA-256 are bound in command argv through
+`--payload-file` and `--payload-sha256`. The verifier continues to bind argv,
+cwd, and the non-secret executor environment; stdin itself is not part of this
+bootstrap token context because the CLI guard verifies before the install
+command reads the payload. The verify endpoint has no legacy unbound payload
+form.
 
 #### Result-boundary redaction patterns
 

@@ -631,6 +631,95 @@ describe(RemoteLocalExecutor::class, function (): void {
             ->not->toContain('gateway-secret');
     });
 
+    it('boots transitional ssh dispatch through a verified candidate binary without binding the app key', function (): void {
+        $operationId = '00000000-0000-4000-8000-000000000616';
+        $input = '{"install":true}';
+        $inputSha256 = hash('sha256', $input);
+        $payloadPath = '/tmp/orbit-bootstrap-payload.json';
+        $sha256 = str_repeat('a', 64);
+        $artifactUrl = 'https://gateway.test/api/update/artifacts/run/cli/linux-amd64?token=artifact-token';
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "installed\n", stderr: '', durationMs: 3),
+        );
+        $executor = remoteLocalExecutor($transport);
+        $node = remoteLocalExecutorNode(['gateway']);
+
+        $executor->runInternal(
+            node: $node,
+            commandName: 'internal:fleet-update:install-cli',
+            commandOptions: [
+                'payload-file' => $payloadPath,
+                'payload-sha256' => $inputSha256,
+            ],
+            transportOptions: [
+                'transport' => NodeTransportPreference::TransitionalSshFallback,
+                'cwd' => '/home/orbit',
+                'input' => $input,
+                'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+                'bind_application_key' => false,
+                'bind_input' => false,
+                'ssh_bootstrap_binary' => [
+                    'url' => $artifactUrl,
+                    'sha256' => $sha256,
+                ],
+                'ssh_bootstrap_input_file' => [
+                    'path' => $payloadPath,
+                    'sha256' => $inputSha256,
+                ],
+            ],
+        );
+
+        $call = $transport->calls[0];
+        $token = remoteLocalExecutorTokenFromScript($call['script']);
+        $expectedEnvironment = [
+            'HOME' => '/home/orbit',
+            'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+        ];
+        $expectedContext = OperationTokenCommandContext::fromTrustedDispatch(
+            argv: [
+                'internal:fleet-update:install-cli',
+                "--payload-file={$payloadPath}",
+                "--payload-sha256={$inputSha256}",
+                "--operation-token={$token}",
+                '--json',
+            ],
+            cwd: '/home/orbit',
+            environment: $expectedEnvironment,
+            input: null,
+        );
+
+        expect($call['options'])
+            ->toMatchArray([
+                'cwd' => '/home/orbit',
+                'input' => $input,
+                'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+                'environment' => $expectedEnvironment,
+            ])
+            ->not->toHaveKeys([
+                'transport',
+                'ssh_bootstrap_binary',
+                'ssh_bootstrap_input_file',
+                'bind_application_key',
+                'bind_input',
+            ])->and($call['script'])->toContain('download_executor_bootstrap')->toContain(
+                "payload_path='{$payloadPath}'",
+            )->toContain('cat > "$payload_path"')->toContain(
+                "check_executor_bootstrap_sha256 '{$inputSha256}' \"\$payload_path\"",
+            )->toContain($artifactUrl)->toContain($sha256)->toContain('unset APP_KEY')->toContain(
+                "export HOME='/home/orbit'",
+            )->toContain("export ORBIT_CONFIG_PATH='/home/orbit/.config/orbit/config.json'")->toContain(
+                "internal:fleet-update:install-cli --payload-file={$payloadPath} --payload-sha256={$inputSha256} --operation-token='{$token}' --json",
+            )->and($call['script'])
+            ->not->toContain('gateway-secret')->and(new OperationTokenVerifier(new OperationTokenSigner)->verify(
+                secretsByKeyId: ['current' => 'gateway-secret'],
+                token: OperationToken::parse($token),
+                expectedNode: $node->name,
+                expectedCommand: 'internal:fleet-update:install-cli',
+                expectedCommandContextHash: $expectedContext->hash(),
+                now: 1_798_105_200,
+            ))->toBeTrue();
+    });
+
     it('rejects long-running local executor dispatch through start before minting a token', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

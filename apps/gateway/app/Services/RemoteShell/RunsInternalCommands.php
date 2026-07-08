@@ -25,6 +25,10 @@ interface RunsInternalCommands
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
      *     transport?: NodeTransportPreference|string,
+     *     bind_application_key?: bool,
+     *     bind_input?: bool,
+     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
+     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     public function runInternal(
