@@ -619,6 +619,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             ],
             'internal:workspace-adapter:lookup' => ['app-dev'],
             'internal:workspace-adapter:update' => ['app-dev'],
+            'internal:workspace-setup-step' => ['app-dev', 'app-prod'],
             'internal:workspace-source:create' => ['app-dev'],
         ]);
     });
@@ -688,6 +689,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         'wireguard self route' => ['internal:wireguard-self-route', ['app-dev'], []],
         'workspace adapter lookup' => ['internal:workspace-adapter:lookup', ['app-dev'], ['vpn']],
         'workspace adapter update' => ['internal:workspace-adapter:update', ['app-dev'], ['gateway']],
+        'workspace setup step' => ['internal:workspace-setup-step', ['app-dev'], ['database']],
         'workspace source create' => ['internal:workspace-source:create', ['app-dev'], ['database']],
     ]);
 

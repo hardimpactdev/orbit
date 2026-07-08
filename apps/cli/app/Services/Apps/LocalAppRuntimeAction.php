@@ -664,22 +664,20 @@ final readonly class LocalAppRuntimeAction
 
     private function isOrbitRuntimeConfigDirectory(string $path): bool
     {
-        return in_array(
-            needle: $path,
-            haystack: [
-                "{$this->userConfigRoot()}/apps",
-                "{$this->userConfigRoot()}/workspaces",
-                "{$this->userConfigRoot()}/ca",
-            ],
-            strict: true,
-        );
+        $root = $this->managedUserConfigRootForPath($path);
+
+        if ($root === null) {
+            return false;
+        }
+
+        return in_array($path, ["{$root}/apps", "{$root}/workspaces", "{$root}/ca"], strict: true);
     }
 
     private function isOrbitRuntimeConfigPath(string $path): bool
     {
-        $root = $this->userConfigRoot();
+        $root = $this->managedUserConfigRootForPath($path);
 
-        if (! in_array(dirname($path), ["{$root}/apps", "{$root}/workspaces"], strict: true)) {
+        if ($root === null || ! in_array(dirname($path), ["{$root}/apps", "{$root}/workspaces"], strict: true)) {
             return false;
         }
 
@@ -688,7 +686,36 @@ final readonly class LocalAppRuntimeAction
 
     private function isOrbitRuntimeTrustPoolPath(string $path): bool
     {
-        return $path === "{$this->userConfigRoot()}/ca/root.crt";
+        $root = $this->managedUserConfigRootForPath($path);
+
+        if ($root === null) {
+            return false;
+        }
+
+        return $path === "{$root}/ca/root.crt";
+    }
+
+    private function managedUserConfigRootForPath(string $path): ?string
+    {
+        $currentRoot = $this->userConfigRoot();
+
+        if ($path === $currentRoot || str_starts_with($path, "{$currentRoot}/")) {
+            return $currentRoot;
+        }
+
+        $matches = [];
+
+        if (
+            preg_match(
+                '#^(?<home>/(?:home|Users)/(?!\.{1,2}(?:/|$))[A-Za-z0-9._-]+)/\.config/orbit(?:/|$)#',
+                $path,
+                $matches,
+            ) !== 1
+        ) {
+            return null;
+        }
+
+        return $matches['home'].'/.config/orbit';
     }
 
     private function userConfigRoot(): string

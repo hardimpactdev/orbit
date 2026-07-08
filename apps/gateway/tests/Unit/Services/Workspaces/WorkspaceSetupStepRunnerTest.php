@@ -7,10 +7,20 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationTokenSigner;
+use Tests\Fakes\WorkspaceSetupStepRunnerExecutorTransport;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -36,6 +46,30 @@ afterEach(function (): void {
 function allow_workspace_setup_remote_shell_fallback(): void
 {
     request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+}
+
+function workspace_setup_step_runner_local_executor(
+    WorkspaceSetupStepRunnerExecutorTransport $transport,
+): RemoteLocalExecutor {
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: workspace_setup_step_runner_signing_key(),
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        applicationKey: workspace_setup_step_runner_signing_key(),
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
+}
+
+function workspace_setup_step_runner_signing_key(): string
+{
+    return hash('sha256', WorkspaceSetupStepRunner::class);
 }
 
 it('executes setup steps sequentially on the host by default', function (): void {
@@ -258,7 +292,62 @@ it('reports failed progress event when a step fails', function (): void {
     ]);
 });
 
-it('requires explicit transitional ssh fallback before running workspace setup commands', function (): void {
+it('runs setup steps through the local executor by default for agent capable nodes', function (): void {
+    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+        ]);
+    $shell = new WorkspaceSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success([
+            'exit_code' => 0,
+            'stdout' => "created\n",
+            'stderr' => '',
+            'duration_ms' => 12,
+        ]), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 14,
+    ));
+
+    $runner = new WorkspaceSetupStepRunner(
+        remoteShell: $shell,
+        localExecutor: workspace_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        new WorkspaceStep([
+            'id' => 1,
+            'command' => 'test -f .env || cp .env.example .env',
+            'timeout_seconds' => 60,
+        ]),
+    ];
+
+    $result = $runner->run($run, $steps, '/Users/nckrtl/apps/happie', ['ORBIT_APP' => 'happie'], $node);
+
+    $runStep = $run->runSteps()->first();
+
+    expect($result)
+        ->toBeTrue()
+        ->and($shell->runs)
+        ->toBeEmpty()
+        ->and($transport->runs)
+        ->toHaveCount(1)
+        ->and($transport->runs[0]['script'])
+        ->toContain('internal:workspace-setup-step')
+        ->and($transport->runs[0]['script'])
+        ->toContain('--operation-token=')
+        ->and($runStep?->exit_code)
+        ->toBe(0)
+        ->and($runStep?->output)
+        ->toBe("created\n");
+});
+
+it('requires a local executor or explicit transitional ssh fallback before running workspace setup commands', function (): void {
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
     $shell = new WorkspaceSetupStepRunnerTestShell;
@@ -281,13 +370,13 @@ it('requires explicit transitional ssh fallback before running workspace setup c
     expect($result)
         ->toBeFalse()
         ->and($shell->runs)
-        ->toBe([])
+        ->toBeEmpty()
         ->and($run->status)
         ->toBe('failed')
         ->and($runStep?->exit_code)
         ->toBe(1)
         ->and($runStep?->output)
-        ->toContain('requires explicit --node-transport=transitional-ssh-fallback');
+        ->toContain('requires an Orbit Agent capable node or explicit --node-transport=transitional-ssh-fallback');
 });
 
 final class WorkspaceSetupStepRunnerTestShell implements RemoteShell

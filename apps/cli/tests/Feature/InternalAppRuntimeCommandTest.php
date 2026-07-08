@@ -196,6 +196,63 @@ describe('internal app runtime command', function (): void {
             ->toBe('0644');
     });
 
+    it('allows managed user config paths when process HOME differs from the target user home', function (): void {
+        $safeHome = app_runtime_command_safe_user_home($this->originalHome);
+
+        if ($safeHome === null) {
+            $this->markTestSkipped('Current HOME is not a safe /home or /Users path.');
+        }
+
+        assert($safeHome !== null, description: 'Safe user home is required after skip guard.');
+
+        $processHome = app_runtime_command_home();
+        $slug = 'orbit-test-'.bin2hex(random_bytes(8));
+        $configPath = "{$safeHome['home']}/.config/orbit/apps/{$slug}.ini";
+
+        try {
+            [$exitCode, $output] = run_internal_app_runtime_command(
+                'runtime-config:write',
+                [
+                    '--operation-token' => app_runtime_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'runtime_config' => [
+                        'path' => $configPath,
+                        'content_base64' => base64_encode("memory_limit=512M\n"),
+                        'directories' => [
+                            [
+                                'path' => dirname($configPath),
+                                'mode' => '0755',
+                                'owner' => null,
+                                'group' => null,
+                            ],
+                        ],
+                        'trust_pool' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+                ->toBe(JsonEnvelope::success([
+                    'action' => 'runtime-config:write',
+                    'path' => $configPath,
+                    'changed' => true,
+                ]))
+                ->and($processHome)
+                ->not
+                ->toBe($safeHome['home'])
+                ->and(file_get_contents($configPath))
+                ->toBe("memory_limit=512M\n");
+        } finally {
+            if (file_exists($configPath)) {
+                unlink($configPath);
+            }
+        }
+    });
+
     it('creates same-user runtime mount directories without sudo', function (): void {
         $safeHome = app_runtime_command_safe_user_home($this->originalHome);
 

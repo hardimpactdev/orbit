@@ -5,18 +5,24 @@ declare(strict_types=1);
 namespace App\Services\Workspaces;
 
 use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 
 final readonly class WorkspaceSetupStepRunner
 {
+    private WorkspaceSetupStepLocalExecutor $setupStepLocalExecutor;
+
     public function __construct(
         private RemoteShell $remoteShell,
-    ) {}
+        ?RemoteLocalExecutor $localExecutor = null,
+        private ExplicitRemoteShellFallback $transport = new ExplicitRemoteShellFallback,
+    ) {
+        $this->setupStepLocalExecutor = new WorkspaceSetupStepLocalExecutor($localExecutor);
+    }
 
     /**
      * @param  list<WorkspaceStep>  $steps
@@ -52,18 +58,18 @@ final readonly class WorkspaceSetupStepRunner
                 ? $this->containerCommand($step->command, $containerName, $env)
                 : $step->command;
 
-            $transport = app(ExplicitRemoteShellFallback::class);
-            $result = $transport->allowed()
+            $result = $this->transport->allowed()
                 ? $this->remoteShell->run($node, $command, $this->remoteShellOptions(
                     cwd: $isContainerized ? null : $path,
                     timeout: $step->timeoutSeconds(),
                     metadata: $env,
                 ))
-                : new RemoteShellResult(
-                    exitCode: 1,
-                    stdout: '',
-                    stderr: $transport->message('workspace:setup-step'),
-                    durationMs: 0,
+                : $this->setupStepLocalExecutor->run(
+                    node: $node,
+                    command: $command,
+                    cwd: $isContainerized ? null : $path,
+                    timeout: $step->timeoutSeconds(),
+                    environment: $env,
                 );
 
             $runStep->update([
