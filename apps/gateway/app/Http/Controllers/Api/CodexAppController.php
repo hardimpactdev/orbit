@@ -14,7 +14,7 @@ use App\Services\Tools\ToolCatalog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-final readonly class AppCodexController
+final readonly class CodexAppController
 {
     private const string ConfigPath = '~/.codex/codex-app/config.json';
 
@@ -269,7 +269,7 @@ final readonly class AppCodexController
 
         if (! $result->successful()) {
             return $this->error(
-                'codex_app.config_read_failed',
+                'app_codex.config_read_failed',
                 "Codex App config could not be read on node '{$target->name}'.",
                 [
                     'node' => $target->name,
@@ -287,7 +287,7 @@ final readonly class AppCodexController
 
         if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
             return $this->error(
-                'codex_app.config_read_failed',
+                'app_codex.config_read_failed',
                 "Codex App config is not valid JSON on node '{$target->name}'.",
                 [
                     'node' => $target->name,
@@ -316,7 +316,7 @@ final readonly class AppCodexController
         }
 
         return $this->error(
-            'codex_app.config_write_failed',
+            'app_codex.config_write_failed',
             "Codex App config write failed on node '{$target->name}'.",
             [
                 'node' => $target->name,
@@ -340,7 +340,7 @@ final readonly class AppCodexController
         }
 
         return [[
-            'code' => 'codex_app.apply_failed',
+            'code' => 'app_codex.apply_failed',
             'message' => 'Codex App config was written, but the apply callback failed.',
             'meta' => [
                 'node' => $target->name,

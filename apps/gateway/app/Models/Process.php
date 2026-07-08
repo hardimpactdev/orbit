@@ -123,11 +123,7 @@ class Process extends Model
     {
         $services = is_array($services) ? array_values($services) : [$services];
 
-        return $query->where(function (Builder $query) use ($services): void {
-            $query
-                ->whereIn('runtime_config->service', $services)
-                ->orWhereIn('runtime_config->definition', $services);
-        });
+        return $query->whereIn('runtime_config->service', $services);
     }
 
     public function ownerApp(): ?App

@@ -9,7 +9,6 @@ use App\Http\Controllers\Api\AgentIdeMessageController;
 use App\Http\Controllers\Api\AnalyticsUpdateController;
 use App\Http\Controllers\Api\AppAgentIdeController;
 use App\Http\Controllers\Api\AppAnalyticsController;
-use App\Http\Controllers\Api\AppCodexController;
 use App\Http\Controllers\Api\AppInstanceController;
 use App\Http\Controllers\Api\AppInstanceEnvController;
 use App\Http\Controllers\Api\AppListController;
@@ -26,6 +25,7 @@ use App\Http\Controllers\Api\AppWebSocketController;
 use App\Http\Controllers\Api\AppWorkerController;
 use App\Http\Controllers\Api\CaRootController;
 use App\Http\Controllers\Api\CloudflareController;
+use App\Http\Controllers\Api\CodexAppController;
 use App\Http\Controllers\Api\DatabaseConnections\DatabaseConnectionAddUserController;
 use App\Http\Controllers\Api\DatabaseConnections\DatabaseConnectionAttachController;
 use App\Http\Controllers\Api\DatabaseConnections\DatabaseConnectionDescribeController;
@@ -236,9 +236,9 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/apps', AppStoreController::class);
         Route::post('/apps/prune', AppPruneController::class);
         Route::middleware(RequireGatewayExtension::class.':codex')->group(function (): void {
-            Route::get('/codex/projects', [AppCodexController::class, 'list']);
-            Route::post('/codex/apps/{app}', [AppCodexController::class, 'add']);
-            Route::delete('/codex/apps/{app}', [AppCodexController::class, 'remove']);
+            Route::get('/codex/projects', [CodexAppController::class, 'list']);
+            Route::post('/codex/apps/{app}', [CodexAppController::class, 'add']);
+            Route::delete('/codex/apps/{app}', [CodexAppController::class, 'remove']);
         });
         Route::middleware(RequireGatewayExtension::class.':solo')->group(function (): void {
             Route::get('/solo/tools', [SoloProxyController::class, 'tools']);

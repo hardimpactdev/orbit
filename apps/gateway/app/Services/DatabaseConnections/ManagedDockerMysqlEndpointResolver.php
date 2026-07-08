@@ -8,7 +8,6 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\Process;
-use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ManagedDockerMysqlEndpointResolver
 {
@@ -46,11 +45,7 @@ final readonly class ManagedDockerMysqlEndpointResolver
         $processes = Process::query()
             ->where('node_id', $connection->node_id)
             ->where('runtime', ProcessRuntime::Docker)
-            ->where(static function (Builder $query): void {
-                $query
-                    ->where('runtime_config->service', 'mysql')
-                    ->orWhere('runtime_config->definition', 'mysql');
-            })
+            ->where('runtime_config->service', 'mysql')
             ->get();
 
         foreach ($processes as $process) {

@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Models\Workspace;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -82,6 +83,88 @@ it('stores node owned systemd process runtime configuration with a tool dependen
         ->runtime_config->toBe([
             'service' => 'opencode-server',
         ]);
+});
+
+it('migrates legacy process definition runtime config to service metadata', function (): void {
+    $node = Node::factory()->create(['name' => 'metrics-1']);
+    $definitionOnly = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'prometheus',
+            'runtime_config' => [
+                'definition' => 'prometheus',
+                'version' => '3',
+                'labels' => [
+                    'orbit.process.definition' => 'prometheus',
+                    'orbit.process.version' => '3.0.0',
+                ],
+            ],
+        ]);
+    $bothSet = Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'grafana',
+            'runtime_config' => [
+                'service' => 'grafana',
+                'definition' => 'grafana-legacy',
+                'version' => '12',
+                'labels' => [
+                    'orbit.process.service' => 'grafana',
+                    'orbit.process.definition' => 'grafana-legacy',
+                    'orbit.process.version' => '12.0.0',
+                ],
+            ],
+        ]);
+
+    processRuntimeScopeDefinitionMigration()->up();
+
+    expect(processRuntimeScopeConfig($definitionOnly))
+        ->toBe([
+            'version' => '3',
+            'labels' => [
+                'orbit.process.version' => '3.0.0',
+                'orbit.process.service' => 'prometheus',
+            ],
+            'service' => 'prometheus',
+        ])
+        ->and(processRuntimeScopeConfig($bothSet))
+        ->toBe([
+            'service' => 'grafana',
+            'version' => '12',
+            'labels' => [
+                'orbit.process.service' => 'grafana',
+                'orbit.process.version' => '12.0.0',
+            ],
+        ]);
+});
+
+it('matches runtime services by service metadata only', function (): void {
+    $node = Node::factory()->create(['name' => 'database-1']);
+    Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'legacy-mysql',
+            'runtime_config' => [
+                'definition' => 'mysql',
+            ],
+        ]);
+    Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'current-mysql',
+            'runtime_config' => [
+                'service' => 'mysql',
+            ],
+        ]);
+
+    expect(
+        Process::query()
+            ->withRuntimeService('mysql')
+            ->orderBy('name')
+            ->pluck('name')
+            ->all(),
+    )
+        ->toBe(['current-mysql']);
 });
 
 it('stores role owned process runtime configuration', function (): void {
@@ -205,3 +288,31 @@ it('defaults app and workspace host command processes to systemd when runtime is
         ->and(DB::table('processes')->where('name', 'vite-redesign')->value('runtime'))
         ->toBe(ProcessRuntime::Systemd->value);
 });
+
+function processRuntimeScopeDefinitionMigration(): Migration
+{
+    $migration = require
+        database_path(
+            'migrations/2026_07_08_110624_migrate_process_definition_runtime_config_to_service.php',
+        );
+
+    if (! $migration instanceof Migration) {
+        throw new RuntimeException('Expected process definition migration instance.');
+    }
+
+    return $migration;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function processRuntimeScopeConfig(Process $process): array
+{
+    $runtimeConfig = $process->refresh()->runtime_config;
+
+    if (! is_array($runtimeConfig)) {
+        throw new RuntimeException('Expected process runtime config to be an array.');
+    }
+
+    return $runtimeConfig;
+}

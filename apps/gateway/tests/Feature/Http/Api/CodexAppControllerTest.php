@@ -13,12 +13,12 @@ use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
-const APP_CODEX_CALLER_WG_IP = '10.44.0.90';
+const CODEX_APP_CALLER_WG_IP = '10.44.0.90';
 
 /**
  * @param  list<string>  $permissions
  */
-function grantAppCodexAccess(Node $caller, Node $servingNode, array $permissions = ['codex:app']): void
+function grantCodexAppAccess(Node $caller, Node $servingNode, array $permissions = ['codex:app']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -30,7 +30,7 @@ function grantAppCodexAccess(Node $caller, Node $servingNode, array $permissions
     ]);
 }
 
-describe('AppCodexController', function (): void {
+describe('CodexAppController', function (): void {
     beforeEach(function (): void {
         GatewayExtension::query()->updateOrCreate(
             ['slug' => 'codex'],
@@ -41,10 +41,10 @@ describe('AppCodexController', function (): void {
     /**
      * @return array<string, string>
      */
-    function app_codex_agent_push_server(): array
+    function codex_app_agent_push_server(): array
     {
         return [
-            'REMOTE_ADDR' => APP_CODEX_CALLER_WG_IP,
+            'REMOTE_ADDR' => CODEX_APP_CALLER_WG_IP,
             'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => NodeTransportPreference::AgentPush->value,
         ];
     }
@@ -54,8 +54,8 @@ describe('AppCodexController', function (): void {
             ->operator()
             ->create([
                 'name' => 'caller',
-                'host' => APP_CODEX_CALLER_WG_IP,
-                'wireguard_address' => APP_CODEX_CALLER_WG_IP,
+                'host' => CODEX_APP_CALLER_WG_IP,
+                'wireguard_address' => CODEX_APP_CALLER_WG_IP,
             ]);
         $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
         $target = Node::factory()
@@ -73,14 +73,14 @@ describe('AppCodexController', function (): void {
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
         ]);
-        grantAppCodexAccess($caller, $appNode);
-        grantAppCodexAccess($caller, $target);
+        grantCodexAppAccess($caller, $appNode);
+        grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake([
             'http://10.44.0.24:9477/v1/commands' => Http::sequence()
-                ->push(app_codex_agent_response('codex-app-config.read', ['contents' => '{}']))
-                ->push(app_codex_agent_response('codex-app-config.write', ['bytes' => 42]))
-                ->push(app_codex_agent_response('codex-app-config.apply', ['exit_code' => 0])),
+                ->push(codex_app_agent_response('codex-app-config.read', ['contents' => '{}']))
+                ->push(codex_app_agent_response('codex-app-config.write', ['bytes' => 42]))
+                ->push(codex_app_agent_response('codex-app-config.apply', ['exit_code' => 0])),
         ]);
 
         $response = $this->call(
@@ -91,7 +91,7 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            app_codex_agent_push_server(),
+            codex_app_agent_push_server(),
         );
 
         $response
@@ -102,7 +102,7 @@ describe('AppCodexController', function (): void {
             ->assertJsonPath('success.data.codex_project.ssh_alias', 'app-node')
             ->assertJsonPath('success.data.codex_project.added', true);
 
-        $requests = app_codex_agent_requests();
+        $requests = codex_app_agent_requests();
         $writtenPayload = json_decode(
             (string) ($requests[1]['input'] ?? ''),
             associative: true,
@@ -153,8 +153,8 @@ describe('AppCodexController', function (): void {
             ->operator()
             ->create([
                 'name' => 'caller',
-                'host' => APP_CODEX_CALLER_WG_IP,
-                'wireguard_address' => APP_CODEX_CALLER_WG_IP,
+                'host' => CODEX_APP_CALLER_WG_IP,
+                'wireguard_address' => CODEX_APP_CALLER_WG_IP,
             ]);
         $appNode = createTestAppHostNode(['name' => 'app-node']);
         $target = Node::factory()
@@ -164,8 +164,8 @@ describe('AppCodexController', function (): void {
                 'platform' => 'ubuntu_24-04',
             ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-        grantAppCodexAccess($caller, $appNode);
-        grantAppCodexAccess($caller, $target);
+        grantCodexAppAccess($caller, $appNode);
+        grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake();
 
@@ -177,13 +177,13 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            app_codex_agent_push_server(),
+            codex_app_agent_push_server(),
         );
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'tool.unsupported_on_node');
 
-        expect(app_codex_agent_requests())->toBe([]);
+        expect(codex_app_agent_requests())->toBe([]);
     });
 
     it('rejects malformed Codex App config before writing', function (): void {
@@ -191,8 +191,8 @@ describe('AppCodexController', function (): void {
             ->operator()
             ->create([
                 'name' => 'caller',
-                'host' => APP_CODEX_CALLER_WG_IP,
-                'wireguard_address' => APP_CODEX_CALLER_WG_IP,
+                'host' => CODEX_APP_CALLER_WG_IP,
+                'wireguard_address' => CODEX_APP_CALLER_WG_IP,
             ]);
         $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
         $target = Node::factory()
@@ -210,12 +210,12 @@ describe('AppCodexController', function (): void {
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
         ]);
-        grantAppCodexAccess($caller, $appNode);
-        grantAppCodexAccess($caller, $target);
+        grantCodexAppAccess($caller, $appNode);
+        grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake([
             'http://10.44.0.24:9477/v1/commands' => Http::sequence()
-                ->push(app_codex_agent_response('codex-app-config.read', ['contents' => '{not-json'])),
+                ->push(codex_app_agent_response('codex-app-config.read', ['contents' => '{not-json'])),
         ]);
 
         $response = $this->call(
@@ -226,15 +226,15 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            app_codex_agent_push_server(),
+            codex_app_agent_push_server(),
         );
 
         $response
             ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'codex_app.config_read_failed')
+            ->assertJsonPath('error.code', 'app_codex.config_read_failed')
             ->assertJsonPath('error.meta.path', '~/.codex/codex-app/config.json');
 
-        expect(app_codex_agent_requests())->toHaveCount(1);
+        expect(codex_app_agent_requests())->toHaveCount(1);
     });
 
     it('returns a warning when the Codex App apply callback fails after writing config', function (): void {
@@ -242,8 +242,8 @@ describe('AppCodexController', function (): void {
             ->operator()
             ->create([
                 'name' => 'caller',
-                'host' => APP_CODEX_CALLER_WG_IP,
-                'wireguard_address' => APP_CODEX_CALLER_WG_IP,
+                'host' => CODEX_APP_CALLER_WG_IP,
+                'wireguard_address' => CODEX_APP_CALLER_WG_IP,
             ]);
         $appNode = createTestAppHostNode(['name' => 'app-node', 'wireguard_address' => '10.44.0.20']);
         $target = Node::factory()
@@ -261,14 +261,14 @@ describe('AppCodexController', function (): void {
             'node_id' => $appNode->id,
             'path' => '/home/orbit/apps/docs',
         ]);
-        grantAppCodexAccess($caller, $appNode);
-        grantAppCodexAccess($caller, $target);
+        grantCodexAppAccess($caller, $appNode);
+        grantCodexAppAccess($caller, $target);
         Http::preventStrayRequests();
         Http::fake([
             'http://10.44.0.24:9477/v1/commands' => Http::sequence()
-                ->push(app_codex_agent_response('codex-app-config.read', ['contents' => '{}']))
-                ->push(app_codex_agent_response('codex-app-config.write', ['bytes' => 42]))
-                ->push(app_codex_agent_response(
+                ->push(codex_app_agent_response('codex-app-config.read', ['contents' => '{}']))
+                ->push(codex_app_agent_response('codex-app-config.write', ['bytes' => 42]))
+                ->push(codex_app_agent_response(
                     operationId: 'codex-app-config.apply',
                     data: [],
                     exitCode: 1,
@@ -284,16 +284,16 @@ describe('AppCodexController', function (): void {
             ],
             [],
             [],
-            app_codex_agent_push_server(),
+            codex_app_agent_push_server(),
         );
 
         $response
             ->assertOk()
             ->assertJsonPath('success.data.codex_project.added', true)
-            ->assertJsonPath('success.meta.warnings.0.code', 'codex_app.apply_failed')
+            ->assertJsonPath('success.meta.warnings.0.code', 'app_codex.apply_failed')
             ->assertJsonPath('success.meta.warnings.0.meta.node', 'mini');
 
-        expect(app_codex_agent_requests())->toHaveCount(3);
+        expect(codex_app_agent_requests())->toHaveCount(3);
     });
 });
 
@@ -301,7 +301,7 @@ describe('AppCodexController', function (): void {
  * @param  array<string, mixed>  $data
  * @return array<string, mixed>
  */
-function app_codex_agent_response(string $operationId, array $data, int $exitCode = 0, string $stderr = ''): array
+function codex_app_agent_response(string $operationId, array $data, int $exitCode = 0, string $stderr = ''): array
 {
     $frames = [];
 
@@ -341,7 +341,7 @@ function app_codex_agent_response(string $operationId, array $data, int $exitCod
 /**
  * @return list<Request>
  */
-function app_codex_agent_requests(): array
+function codex_app_agent_requests(): array
 {
     return Http::recorded(
         fn (Request $request): bool => $request->url() === 'http://10.44.0.24:9477/v1/commands',

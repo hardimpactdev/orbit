@@ -11,13 +11,7 @@ final class ProcessRuntimeServiceMetadata
      */
     public static function service(array $runtimeConfig): ?string
     {
-        $service = self::optionalString($runtimeConfig, 'service');
-
-        if ($service !== null) {
-            return $service;
-        }
-
-        return self::optionalString($runtimeConfig, 'definition');
+        return self::optionalString($runtimeConfig, 'service');
     }
 
     /**
@@ -25,13 +19,7 @@ final class ProcessRuntimeServiceMetadata
      */
     public static function serviceFromLabels(array $labels): ?string
     {
-        $service = self::optionalString($labels, 'orbit.process.service');
-
-        if ($service !== null) {
-            return $service;
-        }
-
-        return self::optionalString($labels, 'orbit.process.definition');
+        return self::optionalString($labels, 'orbit.process.service');
     }
 
     /**

@@ -191,8 +191,7 @@ final class AnalyticsUpdateController implements Loggable
                     ->withRuntimeService(self::ProcessService)
                     ->orWhere(function (Builder $query): void {
                         $query
-                            ->whereNull('runtime_config->service')
-                            ->whereNull('runtime_config->definition');
+                            ->whereNull('runtime_config->service');
                     });
             })
             ->first();

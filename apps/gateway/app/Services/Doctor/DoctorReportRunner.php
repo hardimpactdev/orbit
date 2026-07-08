@@ -2800,9 +2800,7 @@ final readonly class DoctorReportRunner
     private function restoreUnrenderableProcessIssue(Node $node, string $key, array $detail): ?array
     {
         $process = $this->processFromIssueDetail($node, $detail);
-        $service = is_string($detail['service'] ?? null)
-            ? $detail['service']
-            : (is_string($detail['definition'] ?? null) ? $detail['definition'] : null);
+        $service = is_string($detail['service'] ?? null) ? $detail['service'] : null;
         $version = is_string($detail['version'] ?? null)
             ? $detail['version']
             : (is_string($detail['version_family'] ?? null) ? $detail['version_family'] : null);
