@@ -1,14 +1,26 @@
 # App Commands
 
-Manage Orbit apps. Apps are logical gateway records with one or more concrete
-app instances. Orbit-driven instances live on nodes with an active `app-dev` or
-`app-prod` role; Laravel Cloud instances store the external app/environment
-relationship. Gateway-only nodes and client identities with no app role are
-never valid Orbit app-instance targets. All app commands flow through the
-gateway. Spec:
+Manage Orbit apps. An app is the unique logical product/project record in the
+gateway: keep one canonical app slug such as `happie` or `hauser` for the
+repository and product identity. Do not create node-suffixed duplicate apps such
+as `happie-nmbp` just because the same app should run on another machine.
+
+Concrete runtime/deploy placement belongs to app instances. An Orbit app
+instance is bound to one app-role node and records that node's path, document
+root, domain, driver config, runtime requirements, environment values, and
+database targets. The same logical app can therefore have instances on multiple
+nodes, for example `happie` on `beast` and `happie` on `NMBP`, while still
+remaining one app in the gateway. Orbit-driven instances live on nodes with an
+active `app-dev` or `app-prod` role; Laravel Cloud instances store the external
+app/environment relationship. Gateway-only nodes and client identities with no
+app role are never valid Orbit app-instance targets. All app commands flow
+through the gateway. Spec:
 [`apps/docs/content/domains/5_app/`](../../../apps/docs/content/domains/5_app/).
 
-Development apps are served at `{name}.{node-tld}` (e.g. `myapp.beast`). Production apps are served at the configured `--domain`, which must be globally unique across the fleet.
+Development app instances are served at the instance's configured domain,
+usually `{app}.{node-tld}` (for example `myapp.beast` or `myapp.nmbp`).
+Production app instances are served at their configured `--domain`, which must
+be globally unique across the fleet.
 
 PHP apps use dedicated FrankenPHP runtime containers represented by
 process-backed Docker runtime units. Static apps serve files through
@@ -19,6 +31,29 @@ app-role backend route unless the same node also carries `ingress`.
 App instances record driver config, required PHP extensions, and instance env
 state. Keep FrankenPHP as the web runtime; do not switch app/workspace runtime
 workflows to host PHP-FPM.
+
+## Same app on another machine
+
+When a canonical app already exists and the goal is to run it on another
+machine, add or repair an app instance for that target node instead of renaming
+the app:
+
+1. Confirm the app: `orbit app:show <app> --json`.
+2. Confirm the target node has `app-dev` or `app-prod`:
+   `orbit node:show <node> --json`.
+3. Clone or adopt the repository at the intended node-local path.
+4. Add the Orbit instance with the node-local path, root, and domain:
+   `orbit app:instance add <app> --instance=<name> --driver=orbit --node=<node> --path=<path> --root=public --domain=<app>.<node-tld> --json`.
+5. Configure instance env with `orbit app:env set <app> --instance=<name>
+   --key=<KEY> --value=<value> --apply --json`.
+6. Restore/verify node-owned runtime and proxy state with `orbit doctor
+   --family=app --node=<node> --restore` and `orbit doctor --family=proxy
+   --node=<node> --restore`, then verify the HTTPS URL.
+
+If an old workaround app exists only to avoid the app-name uniqueness rule, such
+as `happie-nmbp`, migrate its local path/domain into a real instance of the
+canonical app and remove the workaround app after verifying the canonical
+instance works.
 
 ## `orbit app:new [name]`
 
