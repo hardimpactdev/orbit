@@ -18,6 +18,8 @@ final class LocalFleetUpdateInstallCliPayload
 
     public ?LocalFleetUpdateInstallAgentPayload $agentArtifact;
 
+    public ?LocalFleetUpdateInstallAgentServicePayload $agentService;
+
     /**
      * @param  list<string>  $roleImages
      */
@@ -30,6 +32,7 @@ final class LocalFleetUpdateInstallCliPayload
         $this->binPath = '';
         $this->sharedBinaryPath = null;
         $this->agentArtifact = null;
+        $this->agentService = null;
     }
 
     /**
@@ -57,6 +60,9 @@ final class LocalFleetUpdateInstallCliPayload
         );
         $typedPayload->agentArtifact = LocalFleetUpdateInstallAgentPayload::fromPayload(
             $payload['agent_artifact'] ?? null,
+        );
+        $typedPayload->agentService = LocalFleetUpdateInstallAgentServicePayload::fromPayload(
+            $payload['agent_service'] ?? null,
         );
 
         return $typedPayload;

@@ -399,6 +399,95 @@ describe('internal fleet update install cli command', function (): void {
     });
 });
 
+describe('systemd Orbit Agent adoption during fleet update install', function (): void {
+    beforeEach(function (): void {
+        app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+        $originalPath = getenv('PATH');
+        $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] = $originalPath === false ? '' : $originalPath;
+    });
+
+    afterEach(function (): void {
+        $path = $_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '';
+
+        putenv('PATH='.$path);
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+    });
+
+    it('adopts a missing systemd Orbit Agent service from the install payload', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $systemdBin = make_fleet_update_install_cli_fake_missing_agent_systemd_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $agentConfigPath = "{$workspace}/agent.toml";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        file_put_contents(filename: $agentConfigPath, data: 'gateway_url = "https://gateway"');
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
+        $path = $systemdBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => $agentSha256,
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'agent_service' => [
+                    'unit_name' => 'orbit-agent',
+                    'exec_start' => "{$workspace}/bin/orbit-agent",
+                    'config_path' => $agentConfigPath,
+                    'http_bind' => '10.6.0.2:9477',
+                    'user' => 'orbit',
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $data = fleet_update_install_cli_success_data($output);
+        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+        $calls = file_get_contents("{$workspace}/missing-systemd-calls.log");
+        $unit = file_get_contents("{$workspace}/adopted-orbit-agent.service");
+
+        expect($exitCode)->toBe(0);
+        expect($stdout)
+            ->toContain('kill_agent_port_owner')
+            ->toContain('adopt_agent_unit');
+        expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();
+        expect($calls)
+            ->toContain('systemctl status orbit-agent')
+            ->toContain('systemctl is-enabled orbit-agent')
+            ->toContain('install -m 0644')
+            ->toContain('/etc/systemd/system/orbit-agent.service')
+            ->toContain('systemctl daemon-reload')
+            ->toContain('systemctl enable orbit-agent.service')
+            ->toContain('systemctl restart orbit-agent.service')
+            ->toContain('ss -ltnp');
+        expect($unit)
+            ->toContain('User=orbit')
+            ->toContain("Environment=ORBIT_AGENT_CONFIG={$agentConfigPath}")
+            ->toContain('Environment=ORBIT_AGENT_HTTP_BIND=10.6.0.2:9477')
+            ->toContain("ExecStart={$workspace}/bin/orbit-agent");
+    });
+});
+
 describe('macos Orbit Agent launchd restart during fleet update install', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
@@ -797,6 +886,58 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
         exit 0
         SH);
     chmod(filename: "{$bin}/systemd-run", permissions: 0o755);
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_fake_missing_agent_systemd_bin(string $workspace): string
+{
+    $bin = "{$workspace}/missing-systemd-bin";
+    $log = "{$workspace}/missing-systemd-calls.log";
+    $unit = "{$workspace}/adopted-orbit-agent.service";
+    $realInstall = trim((string) shell_exec('command -v install'));
+
+    mkdir($bin, recursive: true);
+    file_put_contents($log, '');
+
+    file_put_contents("{$bin}/systemctl", <<<SH
+        #!/usr/bin/env sh
+        echo "systemctl \$*" >> {$log}
+        if [ "\$1" = "status" ] || [ "\$1" = "is-enabled" ]; then
+          exit 1
+        fi
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/systemctl", permissions: 0o755);
+
+    file_put_contents("{$bin}/install", <<<SH
+        #!/usr/bin/env sh
+        echo "install \$*" >> {$log}
+        last=""
+        for arg in "\$@"; do
+          last="\$arg"
+        done
+        if [ "\$last" = "/etc/systemd/system/orbit-agent.service" ]; then
+          cp "\$3" {$unit}
+          exit 0
+        fi
+        exec {$realInstall} "\$@"
+        SH);
+    chmod(filename: "{$bin}/install", permissions: 0o755);
+
+    file_put_contents("{$bin}/ss", <<<SH
+        #!/usr/bin/env sh
+        echo "ss \$*" >> {$log}
+        echo 'LISTEN 0 128 10.6.0.2:9477 0.0.0.0:* users:(("orbit-agent",pid=5151,fd=8))'
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/ss", permissions: 0o755);
+
+    file_put_contents("{$bin}/sleep", <<<'SH'
+        #!/usr/bin/env sh
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/sleep", permissions: 0o755);
 
     return $bin;
 }

@@ -13,7 +13,7 @@ class GatewayHostAgentConfigWriter
     public function write(Node $gatewayNode): string
     {
         $configRoot = $this->configRoot();
-        $path = "{$configRoot}/agent.toml";
+        $path = $this->path();
         $cliConfigPath = "{$configRoot}/config.json";
         $caDir = "{$configRoot}/ca";
         $caPath = "{$configRoot}/ca/root.crt";
@@ -44,6 +44,11 @@ class GatewayHostAgentConfigWriter
         return $path;
     }
 
+    public function path(): string
+    {
+        return $this->configRoot().'/agent.toml';
+    }
+
     private function configRoot(): string
     {
         $configuredRoot = config('orbit.paths.config_root');
@@ -59,13 +64,20 @@ class GatewayHostAgentConfigWriter
     {
         if ($gatewayNode->hasActiveRole('gateway')) {
             $gatewayAddress = 'gateway';
-        } else {
-            $wireguardAddress = is_string($gatewayNode->wireguard_address)
-                ? trim($gatewayNode->wireguard_address)
-                : '';
-            $gatewayAddress = $wireguardAddress !== '' ? $wireguardAddress : $gatewayNode->host;
+
+            return $this->contentsForAddress($gatewayNode, $gatewayAddress);
         }
 
+        $wireguardAddress = is_string($gatewayNode->wireguard_address)
+            ? trim($gatewayNode->wireguard_address)
+            : '';
+        $gatewayAddress = $wireguardAddress !== '' ? $wireguardAddress : $gatewayNode->host;
+
+        return $this->contentsForAddress($gatewayNode, $gatewayAddress);
+    }
+
+    private function contentsForAddress(Node $gatewayNode, mixed $gatewayAddress): string
+    {
         if (! is_string($gatewayAddress) || trim($gatewayAddress) === '') {
             throw new RuntimeException("Gateway node [{$gatewayNode->name}] must have a WireGuard address or host.");
         }

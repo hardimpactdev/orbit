@@ -37,6 +37,7 @@ class GatewayServiceUpdater
         private readonly ?OperationRunRecorder $operationRuns = null,
         private readonly ?FleetUpdateTargetSelector $targets = null,
         private readonly ?GatewayHostAgentConfigWriter $gatewayHostAgentConfigs = null,
+        private readonly ?GatewayHostAgentServicePayloadBuilder $gatewayHostAgentServices = null,
     ) {}
 
     public function update(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -208,6 +209,7 @@ class GatewayServiceUpdater
      *     bin_path: string,
      *     shared_binary_path: string|null,
      *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
+     *     agent_service: array{unit_name: string, exec_start: string, config_path: string, http_bind: string, user: string}|null,
      *     role_images: list<string>,
      * }
      */
@@ -226,6 +228,7 @@ class GatewayServiceUpdater
             'bin_path' => FleetUpdateNodeCliLauncher::binPath($gatewayNode),
             'shared_binary_path' => null,
             'agent_artifact' => $this->gatewayHostAgentArtifactPayload($operationRun, $plan, $gatewayNode),
+            'agent_service' => $this->gatewayHostAgentServices()->forNode($gatewayNode),
             'role_images' => [],
         ];
     }
@@ -580,6 +583,11 @@ class GatewayServiceUpdater
     private function gatewayHostAgentConfigs(): GatewayHostAgentConfigWriter
     {
         return $this->gatewayHostAgentConfigs ?? app(GatewayHostAgentConfigWriter::class);
+    }
+
+    private function gatewayHostAgentServices(): GatewayHostAgentServicePayloadBuilder
+    {
+        return $this->gatewayHostAgentServices ?? app(GatewayHostAgentServicePayloadBuilder::class);
     }
 
     private function artifactRelay(): GatewayCliArtifactRelay

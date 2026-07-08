@@ -155,6 +155,13 @@ it('updates gateway and scheduler services to the plan image after in-process mi
                 'sha256' => str_repeat('d', times: 64),
                 'bin_path' => '/usr/local/bin/orbit-agent',
             ],
+            'agent_service' => [
+                'unit_name' => 'orbit-agent',
+                'exec_start' => '/usr/local/bin/orbit-agent',
+                'config_path' => "{$this->configRoot}/agent.toml",
+                'http_bind' => '10.6.0.2:9477',
+                'user' => 'orbit',
+            ],
             'role_images' => [],
         ]);
 

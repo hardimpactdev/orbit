@@ -22,7 +22,14 @@ final readonly class LocalFleetUpdateInstallCliPayloadField
 
     public static function absolutePath(mixed $value, string $field): string
     {
-        if (is_string($value) && $value !== '' && str_starts_with($value, '/') && ! str_contains($value, "\0")) {
+        if (
+            is_string($value)
+            && $value !== ''
+            && str_starts_with($value, '/')
+            && ! str_contains($value, "\0")
+            && ! str_contains($value, "\n")
+            && ! str_contains($value, "\r")
+        ) {
             return $value;
         }
 

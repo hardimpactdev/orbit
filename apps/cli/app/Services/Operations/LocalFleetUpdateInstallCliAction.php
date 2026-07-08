@@ -23,6 +23,7 @@ final readonly class LocalFleetUpdateInstallCliAction
         $process = new Process(['/usr/bin/env', 'bash', '-c', $this->installScript()]);
         $process->setTimeout(300);
         $agentArtifact = $installPayload->agentArtifact;
+        $agentService = $installPayload->agentService;
         $process->setEnv([
             'PATH' => is_string($path) ? $path : '',
             'ORBIT_CLI_ARTIFACT_URL' => $installPayload->artifactUrl,
@@ -35,6 +36,11 @@ final readonly class LocalFleetUpdateInstallCliAction
             'ORBIT_AGENT_BIN_PATH' => $agentArtifact->binPath ?? '',
             'ORBIT_AGENT_LAUNCHD_LABEL' => $this->environmentString('ORBIT_AGENT_LAUNCHD_LABEL'),
             'ORBIT_AGENT_LAUNCHCTL_BIN' => $this->environmentString('ORBIT_AGENT_LAUNCHCTL_BIN'),
+            'ORBIT_AGENT_SERVICE_UNIT_NAME' => $agentService->unitName ?? '',
+            'ORBIT_AGENT_SERVICE_EXEC_START' => $agentService->execStart ?? '',
+            'ORBIT_AGENT_SERVICE_CONFIG_PATH' => $agentService->configPath ?? '',
+            'ORBIT_AGENT_SERVICE_HTTP_BIND' => $agentService->httpBind ?? '',
+            'ORBIT_AGENT_SERVICE_USER' => $agentService->user ?? '',
             'ORBIT_ROLE_IMAGES_JSON' => json_encode($installPayload->roleImages, JSON_THROW_ON_ERROR),
         ]);
         $process->run();
@@ -72,6 +78,22 @@ final readonly class LocalFleetUpdateInstallCliAction
                 fi
 
                 sudo -n "$@"
+            }
+
+            find_command() {
+                name="$1"
+
+                if command -v "$name" >/dev/null 2>&1; then
+                    command -v "$name"
+                    return
+                fi
+
+                for candidate in /usr/local/bin/"$name" /usr/bin/"$name" /bin/"$name" /usr/sbin/"$name" /sbin/"$name"; do
+                    if [ -x "$candidate" ]; then
+                        printf '%s\n' "$candidate"
+                        return
+                    fi
+                done
             }
 
             check_sha256() {
@@ -153,12 +175,12 @@ final readonly class LocalFleetUpdateInstallCliAction
 
             restart_agent_service_if_present() {
                 agent_bin_path="${ORBIT_AGENT_BIN_PATH:-/usr/local/bin/orbit-agent}"
-                systemctl_bin="$(command -v systemctl || true)"
+                systemctl_bin="$(find_command systemctl || true)"
 
                 if [ -n "$systemctl_bin" ] && {
                     "$systemctl_bin" status orbit-agent >/dev/null 2>&1 || "$systemctl_bin" is-enabled orbit-agent >/dev/null 2>&1
                 }; then
-                    systemd_run_bin="$(command -v systemd-run || true)"
+                    systemd_run_bin="$(find_command systemd-run || true)"
 
                     if [ -n "$systemd_run_bin" ]; then
                         unit="orbit-agent-self-restart-$(date +%s)-$$"
@@ -179,10 +201,14 @@ final readonly class LocalFleetUpdateInstallCliAction
                     return
                 fi
 
+                if [ -n "$systemctl_bin" ] && adopt_agent_systemd_service "$systemctl_bin" "$agent_bin_path"; then
+                    return
+                fi
+
                 launchctl_bin="${ORBIT_AGENT_LAUNCHCTL_BIN:-}"
 
                 if [ -z "$launchctl_bin" ]; then
-                    launchctl_bin="$(command -v launchctl || true)"
+                    launchctl_bin="$(find_command launchctl || true)"
                 fi
 
                 if [ -n "$launchctl_bin" ]; then
@@ -207,15 +233,113 @@ final readonly class LocalFleetUpdateInstallCliAction
                 echo skip_agent_restart_no_unit
             }
 
-            restart_unmanaged_agent_process() {
-                agent_bin_path="$1"
-                pgrep_bin="$(command -v pgrep || true)"
+            adopt_agent_systemd_service() {
+                systemctl_bin="$1"
+                agent_bin_path="$2"
+                unit_name="${ORBIT_AGENT_SERVICE_UNIT_NAME:-}"
+                exec_start="${ORBIT_AGENT_SERVICE_EXEC_START:-$agent_bin_path}"
+                config_path="${ORBIT_AGENT_SERVICE_CONFIG_PATH:-}"
+                http_bind="${ORBIT_AGENT_SERVICE_HTTP_BIND:-}"
+                service_user="${ORBIT_AGENT_SERVICE_USER:-}"
 
-                if [ -z "$pgrep_bin" ]; then
+                if [ -z "$unit_name" ] || [ -z "$config_path" ] || [ -z "$http_bind" ]; then
                     return 1
                 fi
 
-                agent_pids="$(agent_process_pids "$agent_bin_path" "$pgrep_bin")"
+                if [ -z "$service_user" ]; then
+                    service_user="$(id -un)"
+                fi
+
+                case "$unit_name" in
+                    *.service) service="$unit_name" ;;
+                    *) service="$unit_name.service" ;;
+                esac
+
+                if [ ! -f "$config_path" ]; then
+                    echo skip_agent_adopt_no_config
+                    return 1
+                fi
+
+                unit_path="$tmp/$service"
+                {
+                    printf '%s\n' '[Unit]'
+                    printf '%s\n' 'Description=Orbit Agent'
+                    printf '%s\n' 'After=network-online.target'
+                    printf '%s\n' 'Wants=network-online.target'
+                    printf '%s\n' ''
+                    printf '%s\n' '[Service]'
+                    printf '%s\n' 'Type=simple'
+                    printf 'User=%s\n' "$service_user"
+                    printf 'Environment=ORBIT_AGENT_CONFIG=%s\n' "$config_path"
+                    printf 'Environment=ORBIT_AGENT_HTTP_BIND=%s\n' "$http_bind"
+                    printf 'ExecStart=%s\n' "$exec_start"
+                    printf '%s\n' 'Restart=always'
+                    printf '%s\n' 'RestartSec=3'
+                    printf '%s\n' ''
+                    printf '%s\n' '[Install]'
+                    printf '%s\n' 'WantedBy=multi-user.target'
+                } > "$unit_path"
+
+                run_privileged install -m 0644 "$unit_path" "/etc/systemd/system/$service"
+                run_privileged "$systemctl_bin" daemon-reload
+                run_privileged "$systemctl_bin" enable "$service"
+                kill_agent_http_bind_owner "$http_bind"
+                run_privileged "$systemctl_bin" restart "$service"
+                echo adopt_agent_unit
+            }
+
+            kill_agent_http_bind_owner() {
+                http_bind="$1"
+                port="${http_bind##*:}"
+
+                case "$port" in
+                    ''|*[!0-9]*) return ;;
+                esac
+
+                ss_bin="$(find_command ss || true)"
+
+                if [ -z "$ss_bin" ]; then
+                    return
+                fi
+
+                owner_pids="$(run_privileged "$ss_bin" -ltnp 2>/dev/null | sed -n "s/.*:${port}[[:space:]].*pid=\([0-9][0-9]*\).*/\1/p" || true)"
+
+                if [ -z "$owner_pids" ]; then
+                    return
+                fi
+
+                echo kill_agent_port_owner
+                printf '%s\n' "$owner_pids" | while IFS= read -r owner_pid; do
+                    [ -n "$owner_pid" ] || continue
+
+                    if [ "$owner_pid" = "$$" ]; then
+                        continue
+                    fi
+
+                    run_privileged kill -TERM "$owner_pid" >/dev/null 2>&1 || true
+                done
+                sleep 1
+                printf '%s\n' "$owner_pids" | while IFS= read -r owner_pid; do
+                    [ -n "$owner_pid" ] || continue
+
+                    if [ "$owner_pid" = "$$" ]; then
+                        continue
+                    fi
+
+                    run_privileged kill -KILL "$owner_pid" >/dev/null 2>&1 || true
+                done
+            }
+
+            restart_unmanaged_agent_process() {
+                agent_bin_path="$1"
+                pgrep_bin="$(find_command pgrep || true)"
+                ps_bin="$(find_command ps || true)"
+
+                if [ -z "$pgrep_bin" ] || [ -z "$ps_bin" ]; then
+                    return 1
+                fi
+
+                agent_pids="$(agent_process_pids "$agent_bin_path" "$pgrep_bin" "$ps_bin")"
 
                 if [ -z "$agent_pids" ]; then
                     return 1
@@ -260,6 +384,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             agent_process_pids() {
                 agent_bin_path="$1"
                 pgrep_bin="$2"
+                ps_bin="$3"
 
                 "$pgrep_bin" -f "$agent_bin_path" 2>/dev/null | while IFS= read -r candidate_pid; do
                     [ -n "$candidate_pid" ] || continue
@@ -268,7 +393,7 @@ final readonly class LocalFleetUpdateInstallCliAction
                         continue
                     fi
 
-                    command_line="$(ps -p "$candidate_pid" -o command= 2>/dev/null || true)"
+                    command_line="$("$ps_bin" -p "$candidate_pid" -o command= 2>/dev/null || true)"
 
                     case "$command_line" in
                         "$agent_bin_path"|"$agent_bin_path "*) echo "$candidate_pid" ;;
