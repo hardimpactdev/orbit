@@ -145,7 +145,7 @@ final readonly class RemoveWorkspace
                 foreach ($teardownSteps as $teardownStep) {
                     $teardownStepsRun++;
                     $command = $app instanceof App
-                        ? app(AppCommandRouter::class)->routeForPath(
+                        ? app(AppCommandRouter::class)->routeLifecycleForPath(
                             $app,
                             (string) $teardownStep->command,
                             $workspace->path,

@@ -57,7 +57,7 @@ final readonly class WorkspaceSetupStepRunner
             }
 
             $command = $app instanceof App
-                ? $this->commandRouter->routeForPath($app, $step->command, $path, $env)
+                ? $this->commandRouter->routeLifecycleForPath($app, $step->command, $path, $env)
                 : $step->command;
 
             $result = $this->transport->allowed()

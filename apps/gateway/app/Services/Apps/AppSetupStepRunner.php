@@ -48,7 +48,7 @@ final readonly class AppSetupStepRunner
                 $onProgress('running', $step, $index + 1, $stepCount);
             }
 
-            $command = $this->commandRouter->route($app, $step->command, $environment);
+            $command = $this->commandRouter->routeLifecycleForPath($app, $step->command, $app->path, $environment);
             $transport = app(ExplicitRemoteShellFallback::class);
             $result = $transport->allowed()
                 ? $this->remoteShell->run($node, $command, [

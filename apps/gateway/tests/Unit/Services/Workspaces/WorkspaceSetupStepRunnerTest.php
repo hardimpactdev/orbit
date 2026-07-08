@@ -123,7 +123,7 @@ it('executes setup steps sequentially on the host by default', function (): void
     expect($run->status)->toBe('completed');
 });
 
-it('routes php and composer commands through the selected workspace host php toolchain', function (): void {
+it('routes setup commands through the selected workspace host toolchain', function (): void {
     allow_workspace_setup_remote_shell_fallback();
     $run = WorkspaceRun::factory()->create(['status' => 'pending']);
     $node = Node::query()->firstOrFail();
@@ -175,7 +175,12 @@ it('routes php and composer commands through the selected workspace host php too
     expect($artisanRun['options']['cwd'])->toBe('/app/path');
 
     $npmRun = $shell->runs[2];
-    expect($npmRun['script'])->toBe('npm ci');
+    expect($npmRun['script'])
+        ->toContain("'sudo'")
+        ->toContain('/home/orbit/.local/bin')
+        ->toContain('/home/orbit/.vite-plus/bin')
+        ->toContain("cd '\\''/app/path'\\''")
+        ->toContain('npm ci');
     expect($npmRun['options']['cwd'])->toBe('/app/path');
 });
 
@@ -418,7 +423,74 @@ it('routes php setup commands before dispatching through the local executor', fu
         ->and($payload['command'])
         ->toContain("'sudo'")
         ->toContain('/opt/orbit/php/')
+        ->toContain('/home/orbit/.local/bin')
+        ->toContain('/home/orbit/.vite-plus/bin')
         ->toContain('composer install')
+        ->not
+        ->toContain('docker exec')
+        ->and($payload['cwd'])
+        ->toBe('/Users/nckrtl/.codex/worktrees/a59f/happie');
+});
+
+it('routes managed host tools before dispatching through the local executor', function (): void {
+    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+            'user' => 'orbit',
+        ]);
+    $app = workspace_setup_step_runner_test_app($node);
+    $shell = new WorkspaceSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success([
+            'exit_code' => 0,
+            'stdout' => "installed\n",
+            'stderr' => '',
+            'duration_ms' => 12,
+        ]), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 14,
+    ));
+
+    $runner = new WorkspaceSetupStepRunner(
+        remoteShell: $shell,
+        localExecutor: workspace_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        new WorkspaceStep([
+            'id' => 1,
+            'command' => 'vp install',
+            'timeout_seconds' => 60,
+        ]),
+    ];
+
+    $result = $runner->run(
+        $run,
+        $steps,
+        '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        ['ORBIT_APP' => 'happie'],
+        $node,
+        $app,
+    );
+
+    $payload = json_decode(
+        (string) $transport->runs[0]['options']['input'],
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($result)
+        ->toBeTrue()
+        ->and($payload['command'])
+        ->toContain("'sudo'")
+        ->toContain('/home/orbit/.local/bin')
+        ->toContain('/home/orbit/.vite-plus/bin')
+        ->toContain('vp install')
         ->not
         ->toContain('docker exec')
         ->and($payload['cwd'])

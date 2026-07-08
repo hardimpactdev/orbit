@@ -444,7 +444,7 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php:19,96,99` | `RemoteLocalExecutor` | Mutates Polyscope SQLite adapter state; the current Python/SQLite helper must move to token-gated local executor logic. |
 | `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceDriver.php:143` | `RemoteLocalExecutor` | Current Polyscope config lookup uses host Python/SQLite; adapter state lookup must move into token-gated local executor logic. |
 | `apps/gateway/app/Services/Workspaces/WorkspaceRuntimeContainerManager.php:354` | `RemoteHostExecutor` | Creates, inspects, removes, and starts workspace runtime containers through Docker. |
-| `apps/gateway/app/Services/Workspaces/WorkspaceSetupStepRunner.php:53` | `RemoteHostExecutor` / `RemoteLocalExecutor` | Dispatches setup steps; PHP/Composer/Artisan steps are routed through the selected app node's host PHP toolchain against the workspace source path. |
+| `apps/gateway/app/Services/Workspaces/WorkspaceSetupStepRunner.php:53` | `RemoteHostExecutor` / `RemoteLocalExecutor` | Dispatches setup steps through the selected app user's host tool PATH against the workspace source path; PHP apps include the versioned host PHP toolchain and managed user tools such as `vp`. |
 | `apps/gateway/app/Services/Workspaces/WorkspacesProbe.php:102` | `RemoteHostExecutor` | Probes workspace host path, user, and filesystem state; current host PHP helper must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Workspaces/WorktreeWorkspaceDriver.php:23` | `RemoteHostExecutor` | Creates host git worktrees. |
 

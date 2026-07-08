@@ -895,7 +895,11 @@ it('keeps non-php setup steps on the host', function (): void {
     $npmRun = collect($shell->runs)
         ->first(fn (array $run): bool => str_contains($run['script'], 'npm ci'));
 
-    expect($npmRun['script'])->not->toContain("'docker'");
+    expect($npmRun['script'])
+        ->toContain('/home/gateway/.local/bin')
+        ->toContain('/home/gateway/.vite-plus/bin')
+        ->toContain('npm ci')
+        ->not->toContain("'docker'");
     expect($npmRun['options']['cwd'] ?? null)->toBe('/home/nckrtl/apps/demo/.worktrees/feature-a');
 });
 
