@@ -26,11 +26,11 @@ beforeEach(function (): void {
     Config::set('orbit.operations.reverb.app_key', 'gateway-reverb-key');
     Config::set('orbit.operations.reverb.app_secret', operation_stream_reverb_secret());
     Config::set('orbit.operations.reverb.host', 'operations.orbit.test');
-    Config::set('orbit.operations.reverb.port', 443);
+    Config::set('orbit.operations.reverb.port', '443');
     Config::set('orbit.operations.reverb.scheme', 'https');
-    Config::set('orbit.operations.stream_auth_ttl_seconds', 300);
-    Config::set('orbit.operations.publisher_token_ttl_seconds', 120);
-    Config::set('orbit.operations.subscriber_lease_ttl_seconds', 60);
+    Config::set('orbit.operations.stream_auth_ttl_seconds', '300');
+    Config::set('orbit.operations.publisher_token_ttl_seconds', '120');
+    Config::set('orbit.operations.subscriber_lease_ttl_seconds', '60');
 
     $this->gateway = Node::factory()
         ->gateway()

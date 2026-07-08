@@ -88,6 +88,8 @@ final readonly class OperationStreamSubscriberLeases
 
     private function ttlSeconds(): int
     {
-        return max(1, Config::integer('orbit.operations.subscriber_lease_ttl_seconds', 60));
+        $value = Config::get('orbit.operations.subscriber_lease_ttl_seconds', 60);
+
+        return max(1, is_numeric($value) ? (int) $value : 60);
     }
 }

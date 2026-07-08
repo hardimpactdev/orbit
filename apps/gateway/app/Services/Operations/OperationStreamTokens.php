@@ -183,11 +183,18 @@ final readonly class OperationStreamTokens
 
     private function authTtlSeconds(): int
     {
-        return max(1, Config::integer(key: 'orbit.operations.stream_auth_ttl_seconds', default: 300));
+        return max(1, $this->integerConfig('orbit.operations.stream_auth_ttl_seconds', 300));
     }
 
     private function publisherTtlSeconds(): int
     {
-        return max(1, Config::integer(key: 'orbit.operations.publisher_token_ttl_seconds', default: 120));
+        return max(1, $this->integerConfig('orbit.operations.publisher_token_ttl_seconds', 120));
+    }
+
+    private function integerConfig(string $key, int $default): int
+    {
+        $value = Config::get($key, $default);
+
+        return is_numeric($value) ? (int) $value : $default;
     }
 }

@@ -50,7 +50,7 @@ final readonly class OperationStreamControlPlaneController
             'reverb' => [
                 'app_key' => Config::string('orbit.operations.reverb.app_key'),
                 'host' => Config::string('orbit.operations.reverb.host'),
-                'port' => Config::integer('orbit.operations.reverb.port'),
+                'port' => $this->integerConfig('orbit.operations.reverb.port', 8080),
                 'scheme' => Config::string('orbit.operations.reverb.scheme'),
             ],
             'auth' => [
@@ -403,6 +403,13 @@ final readonly class OperationStreamControlPlaneController
     private function nullableInteger(mixed $value): ?int
     {
         return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function integerConfig(string $key, int $default): int
+    {
+        $value = Config::get($key, $default);
+
+        return is_numeric($value) ? (int) $value : $default;
     }
 
     /**

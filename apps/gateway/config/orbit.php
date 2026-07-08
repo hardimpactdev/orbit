@@ -46,17 +46,17 @@ return [
     ],
 
     'operations' => [
-        'stream_auth_ttl_seconds' => env('ORBIT_OPERATIONS_STREAM_AUTH_TTL_SECONDS', 300),
-        'publisher_token_ttl_seconds' => env(key: 'ORBIT_OPERATIONS_PUBLISHER_TOKEN_TTL_SECONDS', default: 120),
-        'subscriber_lease_ttl_seconds' => env(key: 'ORBIT_OPERATIONS_SUBSCRIBER_LEASE_TTL_SECONDS', default: 60),
+        'stream_auth_ttl_seconds' => (int) env('ORBIT_OPERATIONS_STREAM_AUTH_TTL_SECONDS', 300),
+        'publisher_token_ttl_seconds' => (int) env(key: 'ORBIT_OPERATIONS_PUBLISHER_TOKEN_TTL_SECONDS', default: 120),
+        'subscriber_lease_ttl_seconds' => (int) env(key: 'ORBIT_OPERATIONS_SUBSCRIBER_LEASE_TTL_SECONDS', default: 60),
         'reverb' => [
             'app_id' => env(key: 'ORBIT_OPERATIONS_REVERB_APP_ID', default: 'orbit-operations'),
             'app_key' => env('ORBIT_OPERATIONS_REVERB_APP_KEY'),
             'app_secret' => env('ORBIT_OPERATIONS_REVERB_APP_SECRET'),
             'host' => env(key: 'ORBIT_OPERATIONS_REVERB_HOST', default: 'orbit-operations-reverb'),
-            'port' => env(key: 'ORBIT_OPERATIONS_REVERB_PORT', default: 8080),
+            'port' => (int) env(key: 'ORBIT_OPERATIONS_REVERB_PORT', default: 8080),
             'scheme' => env(key: 'ORBIT_OPERATIONS_REVERB_SCHEME', default: 'http'),
-            'timeout_seconds' => env(key: 'ORBIT_OPERATIONS_REVERB_TIMEOUT_SECONDS', default: 2),
+            'timeout_seconds' => (int) env(key: 'ORBIT_OPERATIONS_REVERB_TIMEOUT_SECONDS', default: 2),
         ],
     ],
 

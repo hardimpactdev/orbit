@@ -20,9 +20,9 @@ class OperationStreamFrameBroadcaster
         $appKey = Config::string('orbit.operations.reverb.app_key');
         $appSecret = Config::string('orbit.operations.reverb.app_secret');
         $host = Config::string('orbit.operations.reverb.host');
-        $port = Config::integer('orbit.operations.reverb.port');
+        $port = $this->integerConfig('orbit.operations.reverb.port', 8080);
         $scheme = Config::string('orbit.operations.reverb.scheme');
-        $timeoutSeconds = Config::integer('orbit.operations.reverb.timeout_seconds', 2);
+        $timeoutSeconds = $this->integerConfig('orbit.operations.reverb.timeout_seconds', 2);
 
         $body = [
             'name' => 'operation.stream.frame',
@@ -65,5 +65,12 @@ class OperationStreamFrameBroadcaster
         if ($response->failed()) {
             throw new RuntimeException('Failed to publish operation stream frame to the operations Reverb service.');
         }
+    }
+
+    private function integerConfig(string $key, int $default): int
+    {
+        $value = Config::get($key, $default);
+
+        return is_numeric($value) ? (int) $value : $default;
     }
 }

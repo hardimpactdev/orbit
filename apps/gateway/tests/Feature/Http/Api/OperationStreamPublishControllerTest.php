@@ -27,14 +27,14 @@ beforeEach(function (): void {
     Carbon::setTestNow('2026-07-08 13:00:00');
 
     Config::set('orbit.operation_token_secret', operation_stream_publish_token_secret());
-    Config::set('orbit.operations.publisher_token_ttl_seconds', 120);
+    Config::set('orbit.operations.publisher_token_ttl_seconds', '120');
     Config::set('orbit.operations.reverb.app_id', 'orbit-operations');
     Config::set('orbit.operations.reverb.app_key', 'operations-key');
     Config::set('orbit.operations.reverb.app_secret', operation_stream_publish_reverb_secret());
     Config::set('orbit.operations.reverb.host', 'orbit-operations-reverb');
-    Config::set('orbit.operations.reverb.port', 8080);
+    Config::set('orbit.operations.reverb.port', '8080');
     Config::set('orbit.operations.reverb.scheme', 'http');
-    Config::set('orbit.operations.reverb.timeout_seconds', 2);
+    Config::set('orbit.operations.reverb.timeout_seconds', '2');
 
     $this->gateway = Node::factory()
         ->gateway()
