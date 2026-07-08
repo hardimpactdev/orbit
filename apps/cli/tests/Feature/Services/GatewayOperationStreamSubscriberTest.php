@@ -118,7 +118,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
         ->and($transport->connection?->scheme)
         ->toBe('wss')
         ->and($transport->connection?->host)
-        ->toBe('operations.orbit.test')
+        ->toBe('gateway.test')
         ->and($transport->connection?->port)
         ->toBe(443)
         ->and($transport->connection?->appKey)
