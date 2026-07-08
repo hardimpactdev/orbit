@@ -56,7 +56,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
     public function __construct(
         private RemoteExecutor $transport,
-        private LocalExecutorCommandBuilder $commands,
+        private LocalExecutorCommandComposer $commands,
         private OperationTokenFactory $operationTokens,
         private ActivityLogger $activityLogger,
         private OperationRunRecorder $operationRuns,
@@ -158,7 +158,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             $result = $preference === NodeTransportPreference::TransitionalSshFallback
                 ? $this->transport->run(
                     node: $node,
-                    script: $this->sshDispatchScript($dispatch, $transportOptions),
+                    script: $this->sshDispatchScript(
+                        node: $node,
+                        commandName: $commandName,
+                        arguments: $arguments,
+                        commandOptions: $commandOptions,
+                        dispatch: $dispatch,
+                        transportOptions: $transportOptions,
+                    ),
                     options: $this->transportDispatchOptions($transportOptions),
                 )
                 : $this->runAgentPush(
@@ -363,7 +370,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
                 throw new RemoteShellFailed(
                     node: $node,
-                    script: $dispatch['script'],
+                    script: $dispatch['auditLine'],
                     result: $result,
                 );
             }
@@ -483,7 +490,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $commandOptions
      * @param  array<string, mixed>  $transportOptions
-     * @return array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}
+     * @return array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}
      *
      * @mago-expect lint:excessive-parameter-list
      */
@@ -495,13 +502,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         string $operationId,
         array $transportOptions,
     ): array {
-        $this->commands->build(
-            targetNode: $node,
-            commandName: $commandName,
-            arguments: $arguments,
-            options: $commandOptions,
-            operationToken: 'validation-placeholder',
-        );
         $trustedArgv = $this->commands->buildArgv(
             targetNode: $node,
             commandName: $commandName,
@@ -528,20 +528,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         return [
             'operationId' => $operationId,
             'operationToken' => $operationToken,
-            'script' => $this->commands->build(
-                targetNode: $node,
-                commandName: $commandName,
-                arguments: $arguments,
-                options: $commandOptions,
-                operationToken: $operationToken,
-            ),
-            'argv' => $this->commands->buildArgv(
-                targetNode: $node,
-                commandName: $commandName,
-                arguments: $arguments,
-                options: $commandOptions,
-                operationToken: $operationToken,
-            ),
+            'argv' => $this->argvWithOperationToken($trustedArgv, $operationToken),
             'auditLine' => $this->commands->buildAuditLine(
                 targetNode: $node,
                 commandName: $commandName,
@@ -550,6 +537,22 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 operationToken: $operationToken,
             ),
         ];
+    }
+
+    /**
+     * @param  list<string>  $argv
+     * @return list<string>
+     */
+    private function argvWithOperationToken(array $argv, string $operationToken): array
+    {
+        return array_map(
+            static fn (string $argument): string => str_replace(
+                OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
+                $operationToken,
+                $argument,
+            ),
+            $argv,
+        );
     }
 
     /**
@@ -608,7 +611,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
      */
     private function logCompleted(
         Node $node,
@@ -1195,15 +1198,31 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
      * @param  array<string, mixed>  $transportOptions
+     *
+     * @mago-expect lint:excessive-parameter-list
      */
-    private function sshDispatchScript(array $dispatch, array $transportOptions): string
-    {
+    private function sshDispatchScript(
+        Node $node,
+        string $commandName,
+        array $arguments,
+        array $commandOptions,
+        array $dispatch,
+        array $transportOptions,
+    ): string {
         $bootstrapBinary = $this->sshBootstrapBinary($transportOptions);
 
         if ($bootstrapBinary === null) {
-            return $dispatch['script'];
+            return $this->commands->build(
+                targetNode: $node,
+                commandName: $commandName,
+                arguments: $arguments,
+                options: $commandOptions,
+                operationToken: $dispatch['operationToken'],
+            );
         }
 
         $environment = $this->localExecutorEnvironment($transportOptions);
@@ -1541,7 +1560,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
      * @param  array<string, mixed>  $transportOptions
      */
     private function runAgentPush(
@@ -1572,7 +1591,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array{operationId: string, operationToken: string, script: string, auditLine: string, argv: list<string>}  $dispatch
+     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
      * @param  array<string, mixed>  $transportOptions
      * @param  callable(string): void  $onOutput
      */
@@ -1663,7 +1682,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             exitCode: $result->exitCode ?? 1,
             stdout: $stdout,
             stderr: $stderr,
-            durationMs: 0,
+            // Match SSH executor semantics: gateway-observed dispatch round trip.
+            durationMs: $result->timings['gateway_post_ms'],
         );
     }
 

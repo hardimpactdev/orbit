@@ -13,6 +13,7 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\LocalExecutorCommandComposer;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
@@ -26,6 +27,7 @@ use Orbit\Core\Security\OperationTokenCommandContext;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
 use Symfony\Component\Process\Process;
+use Tests\Fakes\RemoteLocalExecutorCountingCommands;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -96,6 +98,95 @@ describe(RemoteLocalExecutor::class, function (): void {
         Http::assertSent(
             fn (Request $request): bool => remote_local_executor_default_agent_push_request_matches($request),
         );
+    });
+
+    it('composes default agent-push dispatch without rendering an SSH shell script', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands' => function () {
+                usleep(20_000);
+
+                return Http::response([
+                    'transport' => 'agent-push',
+                    'operation_id' => '00000000-0000-4000-8000-000000000426',
+                    'binary' => 'orbit',
+                    'status' => 'succeeded',
+                    'exit_code' => 0,
+                    'frames' => [
+                        [
+                            'type' => 'stdout',
+                            'message' => "ok\n",
+                        ],
+                    ],
+                ]);
+            },
+        ]);
+        $commands = new RemoteLocalExecutorCountingCommands;
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException('SSH transport should not be called.'),
+            ),
+            commands: $commands,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+
+        $result = $executor->runInternal(
+            node: $node,
+            commandName: 'internal:workspace-adapter:lookup',
+            arguments: ['lookup', 'polyscope'],
+            transportOptions: [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000426',
+                ],
+            ],
+        );
+
+        expect($commands->calls)
+            ->toBe([
+                'buildArgv',
+                'buildAuditLine',
+            ])
+            ->and($result->durationMs)
+            ->toBeGreaterThanOrEqual(1);
+    });
+
+    it('renders the SSH shell script only for explicit transitional fallback dispatch', function (): void {
+        $commands = new RemoteLocalExecutorCountingCommands;
+        $transport = new RemoteLocalExecutorRecordingTransport(
+            new RemoteShellResult(exitCode: 0, stdout: "ok\n", stderr: '', durationMs: 42),
+        );
+        $executor = remoteLocalExecutor(
+            transport: $transport,
+            commands: $commands,
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+
+        $executor->runInternal(
+            node: remoteLocalExecutorNode(),
+            commandName: 'internal:executor:verify',
+            transportOptions: [
+                'transport' => NodeTransportPreference::TransitionalSshFallback,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000427',
+                ],
+            ],
+        );
+
+        expect($commands->calls)
+            ->toBe([
+                'buildArgv',
+                'buildAuditLine',
+                'build',
+            ])
+            ->and($transport->calls)
+            ->toHaveCount(1)
+            ->and($transport->calls[0]['script'])
+            ->toContain('internal:executor:verify');
     });
 
     it('streams node-local internal command output through agent-push without calling ssh transport', function (): void {
@@ -1599,10 +1690,11 @@ function remoteLocalExecutor(
     RemoteLocalExecutorRecordingTransport $transport,
     ?OperationTokenFactory $operationTokens = null,
     NodeTransportPreference $defaultTransportPreference = NodeTransportPreference::TransitionalSshFallback,
+    ?LocalExecutorCommandComposer $commands = null,
 ): RemoteLocalExecutor {
     return new RemoteLocalExecutor(
         transport: $transport,
-        commands: new LocalExecutorCommandBuilder,
+        commands: $commands ?? new LocalExecutorCommandBuilder,
         operationTokens: $operationTokens ?? remoteLocalExecutorTokenFactory(),
         activityLogger: remoteLocalExecutorActivityLogger(),
         operationRuns: app(OperationRunRecorder::class),

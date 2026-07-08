@@ -11,7 +11,7 @@ use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
 use Orbit\Core\Enums\InternalCommand;
 use SensitiveParameter;
 
-final readonly class LocalExecutorCommandBuilder
+final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommandComposer
 {
     private const string ORBIT_BINARY = '/usr/local/bin/orbit';
 
