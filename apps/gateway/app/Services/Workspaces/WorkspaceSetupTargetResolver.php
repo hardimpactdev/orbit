@@ -43,7 +43,7 @@ final readonly class WorkspaceSetupTargetResolver
         ?Node $callerNode = null,
     ): array {
         if ($path !== null) {
-            return $this->resolveByPath($path, $appName, $name);
+            return $this->resolveByPath($path, $appName, $name, $callerNode);
         }
 
         if ($name !== null && $appName !== null) {
@@ -105,8 +105,12 @@ final readonly class WorkspaceSetupTargetResolver
     /**
      * @return array{Workspace, App, Node, bool}
      */
-    private function resolveByPath(string $path, ?string $appName, ?string $name = null): array
-    {
+    private function resolveByPath(
+        string $path,
+        ?string $appName,
+        ?string $name = null,
+        ?Node $callerNode = null,
+    ): array {
         try {
             $selection = $this->appSelectorResolver->resolveRequired($appName);
         } catch (AppSelectionResolutionFailed $exception) {
@@ -118,7 +122,11 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         $app = $selection->app;
-        $instance = $selection->instance ?? $this->placement->matchingOrbitInstanceForPath($app, $path);
+        $instance =
+            $selection->instance ?? $this->placement->matchingOrbitInstanceForPath(
+                $app,
+                $path,
+            ) ?? $this->callerNodeInstanceForPath($app, $callerNode, $path);
         $workspaceName = $name ?? basename($path);
         $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
 
@@ -155,6 +163,39 @@ final readonly class WorkspaceSetupTargetResolver
         ]);
 
         return $this->unwrap($workspace->load(['app.node', 'app.instances', 'appInstance']), true);
+    }
+
+    private function callerNodeInstanceForPath(App $app, ?Node $callerNode, string $path): ?AppInstance
+    {
+        if (! $callerNode instanceof Node) {
+            return null;
+        }
+
+        $canonicalPath = $this->normalizePath($app->path);
+        $path = $this->normalizePath($path);
+
+        if ($canonicalPath !== '' && $this->pathMatches($canonicalPath, $path)) {
+            return null;
+        }
+
+        $app->loadMissing('instances');
+
+        $matches = $app
+            ->instances
+            ->filter(function (AppInstance $instance) use ($callerNode): bool {
+                $node = $this->placement->nodeForInstance($instance);
+
+                return $node instanceof Node && $node->is($callerNode);
+            })
+            ->values();
+
+        if ($matches->count() !== 1) {
+            return null;
+        }
+
+        $instance = $matches->first();
+
+        return $instance instanceof AppInstance ? $instance : null;
     }
 
     /**

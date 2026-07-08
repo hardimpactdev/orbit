@@ -385,6 +385,73 @@ it('sets up a Codex worktree against the selected app instance node', function (
     expectWorkspaceFrankenPhpRuntimeProcess($workspace, $localNode->id);
 });
 
+it('infers the caller app instance for a Codex worktree path when app selector is bare', function (): void {
+    $canonicalNode = Node::query()->findOrFail(1);
+    $canonicalNode->update([
+        'name' => 'beast',
+        'host' => 'beast',
+        'tld' => 'test',
+    ]);
+
+    $localNode = Node::factory()->create([
+        'name' => 'NMBP',
+        'host' => 'nmbp',
+        'user' => 'nckrtl',
+        'platform' => 'macos',
+        'tld' => 'nmbp',
+        'status' => 'active',
+        'wireguard_address' => '10.47.0.55',
+    ]);
+    NodeRoleAssignment::factory()
+        ->for($localNode, 'node')
+        ->create([
+            'role' => 'app-dev',
+            'status' => 'active',
+        ]);
+
+    $app = App::query()->firstOrFail();
+    $app->update([
+        'name' => 'happie',
+        'domain' => 'happie.test',
+        'path' => '/home/nckrtl/apps/happie',
+        'node_id' => $canonicalNode->id,
+    ]);
+    $app->refresh();
+
+    $instance = AppInstance::factory()
+        ->for($app)
+        ->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                node: 'NMBP',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+
+    [$workspace, $resolvedApp, $resolvedNode, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve(
+        name: 'recipes',
+        appName: 'happie',
+        path: '/Users/nckrtl/.codex/worktrees/a59f/happie',
+        callerCwd: null,
+        callerNode: $localNode,
+    );
+
+    expect($resolvedApp->is($app))
+        ->toBeTrue()
+        ->and($resolvedNode->is($localNode))
+        ->toBeTrue()
+        ->and($workspace->app_instance_id)
+        ->toBe($instance->id)
+        ->and($workspace->url())
+        ->toBe('https://recipes.happie.nmbp')
+        ->and($isAdoption)
+        ->toBeTrue();
+});
+
 it('installs workspace app-dev runtime trust pool through the managed file agent path', function (): void {
     setup_workspace_use_agent_push();
 
