@@ -180,7 +180,7 @@ readonly class OrbitCaService
         $expiresAt = new DateTimeImmutable($notAfter[1]);
         $days = $startsAt->diff($expiresAt)->days;
 
-        return is_int($days) && $days >= self::LEAF_VALIDITY_DAYS - 1;
+        return is_int($days) && $days >= (self::LEAF_VALIDITY_DAYS - 1);
     }
 
     /**

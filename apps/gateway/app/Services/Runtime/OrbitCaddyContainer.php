@@ -124,7 +124,8 @@ class OrbitCaddyContainer
             return null;
         }
 
-        $isPrivateAddress = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE) === false;
+        $isPrivateAddress =
+            filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE) === false;
         $isLoopbackAddress = str_starts_with($address, '127.');
 
         if (! $isPrivateAddress && ! $isLoopbackAddress) {

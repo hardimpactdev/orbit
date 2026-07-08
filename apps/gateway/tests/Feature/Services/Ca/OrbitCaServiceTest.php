@@ -123,10 +123,12 @@ function orbitCaServiceTestSignLeafForDays(string $host, string $keyPath, string
 
 function orbitCaServiceTestCertSerial(string $certPath): string
 {
-    return trim(new Factory()->run(sprintf(
-        'openssl x509 -in %s -serial -noout',
-        escapeshellarg($certPath),
-    ))->output());
+    return trim(
+        new Factory()->run(sprintf(
+            'openssl x509 -in %s -serial -noout',
+            escapeshellarg($certPath),
+        ))->output(),
+    );
 }
 
 function orbitCaServiceTestCertValidityDays(string $certPath): int
@@ -374,7 +376,8 @@ describe('OrbitCaService', function () {
             $renewed = $service->issueLeaf('demo.beast');
 
             expect(orbitCaServiceTestCertSerial($renewed['cert']))
-                ->not->toBe($shortSerial)
+                ->not
+                ->toBe($shortSerial)
                 ->and(orbitCaServiceTestCertValidityDays($renewed['cert']))
                 ->toBeGreaterThanOrEqual(3649);
         });
