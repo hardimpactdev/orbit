@@ -8,6 +8,7 @@ use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 use RuntimeException;
@@ -28,6 +29,7 @@ final readonly class OperationRunRecorder
     public function __construct(
         private OperationEventRecorder $events,
         private OperationEventStreamer $eventStreamer,
+        private DatabaseLockRetry $databaseLockRetry,
     ) {}
 
     /**
@@ -70,14 +72,20 @@ final readonly class OperationRunRecorder
 
     public function running(string $id, ?Carbon $startedAt = null): OperationRun
     {
-        $run = $this->findOrFail($id);
+        return $this->databaseLockRetry->transaction(function () use ($id, $startedAt): OperationRun {
+            $run = $this->findOrFail($id);
 
-        $run->forceFill([
-            'status' => OperationStatus::Running,
-            'started_at' => $run->started_at ?? $startedAt ?? Carbon::now(),
-        ])->save();
+            if ($run->status->isTerminal()) {
+                return $run;
+            }
 
-        return $run->refresh();
+            $run->forceFill([
+                'status' => OperationStatus::Running,
+                'started_at' => $run->started_at ?? $startedAt ?? Carbon::now(),
+            ])->save();
+
+            return $run->refresh();
+        });
     }
 
     /**
@@ -255,25 +263,41 @@ final readonly class OperationRunRecorder
         ?string $stdoutSummary,
         ?string $stderrSummary,
     ): OperationRun {
-        $run = $this->findOrFail($id);
+        return $this->databaseLockRetry->transaction(function () use (
+            $id,
+            $status,
+            $exitCode,
+            $result,
+            $error,
+            $stdoutSummary,
+            $stderrSummary,
+        ): OperationRun {
+            $run = $this->findOrFail($id);
 
-        $attributes = array_filter(
-            [
-                'status' => $status,
-                'finished_at' => Carbon::now(),
-                'exit_code' => $exitCode,
-                'stdout_summary' => $stdoutSummary,
-                'stderr_summary' => $stderrSummary,
-            ],
-            fn (mixed $value): bool => $value !== null,
-        );
+            if ($run->status->isTerminal()) {
+                $this->logIgnoredTerminalWrite($run, $status);
 
-        $attributes['result'] = $result;
-        $attributes['error'] = $error;
+                return $run;
+            }
 
-        $run->forceFill($attributes)->save();
+            $attributes = array_filter(
+                [
+                    'status' => $status,
+                    'finished_at' => Carbon::now(),
+                    'exit_code' => $exitCode,
+                    'stdout_summary' => $stdoutSummary,
+                    'stderr_summary' => $stderrSummary,
+                ],
+                fn (mixed $value): bool => $value !== null,
+            );
 
-        return $run->refresh();
+            $attributes['result'] = $result;
+            $attributes['error'] = $error;
+
+            $run->forceFill($attributes)->save();
+
+            return $run->refresh();
+        });
     }
 
     private function findOrFail(string $id): OperationRun
@@ -294,5 +318,15 @@ final readonly class OperationRunRecorder
                 "OperationRun lane must be one of host, runtime, local, gateway; got '{$lane}'.",
             );
         }
+    }
+
+    private function logIgnoredTerminalWrite(OperationRun $run, OperationStatus $attemptedStatus): void
+    {
+        Log::warning('Ignored operation run status write after terminal state.', [
+            'operation_run_id' => $run->id,
+            'operation_id' => $run->operation_id,
+            'current_status' => $run->status->value,
+            'attempted_status' => $attemptedStatus->value,
+        ]);
     }
 }

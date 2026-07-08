@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\OperationEvent;
+use App\Models\OperationRun;
 use App\Services\Operations\DatabaseLockRetry;
 use App\Services\Operations\OperationEventRecorder;
 use App\Services\Operations\OperationPayloadRejected;
@@ -175,6 +176,58 @@ it('retries append transactions when SQLite reports the database is locked', fun
         ->toBe(1);
 });
 
+it('retries append transactions after a sequence unique race and recomputes the next sequence', function (): void {
+    $retry = new class($this->run) extends DatabaseLockRetry {
+        private bool $failNextTransaction = true;
+
+        public int $databaseLockRetries = 0;
+
+        public function __construct(
+            private OperationRun $run,
+        ) {}
+
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->failNextTransaction) {
+                $this->failNextTransaction = false;
+
+                OperationEvent::query()->create([
+                    'operation_run_id' => $this->run->id,
+                    'sequence' => 1,
+                    'event_type' => 'step',
+                    'payload' => ['key' => 'competing', 'status' => 'done'],
+                ]);
+
+                throw operation_event_unique_sequence_exception();
+            }
+
+            return parent::runTransaction($callback);
+        }
+
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->databaseLockRetries++;
+        }
+    };
+
+    $recorder = new OperationEventRecorder(app(ResultBoundaryRedactionPolicy::class), $retry);
+
+    $event = $recorder->step($this->run, 'workload.main1', 'running', 'Updating workload node main1');
+
+    expect($event->sequence)
+        ->toBe(2)
+        ->and($event->payload)
+        ->toMatchArray([
+            'key' => 'workload.main1',
+            'status' => 'running',
+            'message' => 'Updating workload node main1',
+        ])
+        ->and($this->run->events()->orderBy('sequence')->pluck('sequence')->all())
+        ->toBe([1, 2])
+        ->and($retry->databaseLockRetries)
+        ->toBe(1);
+});
+
 it('retries batched step transactions when SQLite reports the database is locked', function (): void {
     $retry = new class extends DatabaseLockRetry {
         public bool $failNextTransaction = true;
@@ -227,3 +280,84 @@ it('retries batched step transactions when SQLite reports the database is locked
         ->and($retry->databaseLockRetries)
         ->toBe(1);
 });
+
+it('retries batched step transactions after a sequence unique race and recomputes the next sequence', function (): void {
+    $retry = new class($this->run) extends DatabaseLockRetry {
+        private bool $failNextTransaction = true;
+
+        public int $databaseLockRetries = 0;
+
+        public function __construct(
+            private OperationRun $run,
+        ) {}
+
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->failNextTransaction) {
+                $this->failNextTransaction = false;
+
+                OperationEvent::query()->create([
+                    'operation_run_id' => $this->run->id,
+                    'sequence' => 1,
+                    'event_type' => 'step',
+                    'payload' => ['key' => 'competing', 'status' => 'done'],
+                ]);
+
+                throw operation_event_unique_sequence_exception();
+            }
+
+            return parent::runTransaction($callback);
+        }
+
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->databaseLockRetries++;
+        }
+    };
+
+    $recorder = new OperationEventRecorder(app(ResultBoundaryRedactionPolicy::class), $retry);
+
+    $events = $recorder->steps($this->run, [
+        [
+            'key' => 'workload.main1',
+            'status' => 'running',
+            'message' => 'Updating workload node main1',
+        ],
+        [
+            'key' => 'workload.main1',
+            'status' => 'done',
+            'message' => 'Workload node main1 updated',
+        ],
+    ]);
+
+    expect($events)
+        ->toHaveCount(2)
+        ->and($events[0]->sequence)
+        ->toBe(2)
+        ->and($events[1]->sequence)
+        ->toBe(3)
+        ->and($this->run->events()->orderBy('sequence')->pluck('sequence')->all())
+        ->toBe([1, 2, 3])
+        ->and($retry->databaseLockRetries)
+        ->toBe(1);
+});
+
+function operation_event_unique_sequence_exception(): QueryException
+{
+    $previous = new \PDOException(
+        'SQLSTATE[23000]: Integrity constraint violation: 19 UNIQUE constraint failed: operation_events.operation_run_id, operation_events.sequence',
+        19,
+    );
+    $previous->errorInfo = [
+        '23000',
+        19,
+        'UNIQUE constraint failed: operation_events.operation_run_id, operation_events.sequence',
+    ];
+
+    return new QueryException(
+        'sqlite',
+        'insert into "operation_events" ("operation_run_id", "sequence") values (?, ?)',
+        [],
+        $previous,
+    );
+}

@@ -36,7 +36,7 @@ final readonly class OperationEventRecorder
             'metadata' => $metadata,
         ], 'progress');
 
-        return $this->databaseLockRetry->transaction(function () use (
+        return $this->databaseLockRetry->transactionRetryingUniqueConstraints(function () use (
             $operationRun,
             $eventType,
             $payload,
@@ -153,7 +153,10 @@ final readonly class OperationEventRecorder
             ];
         }
 
-        return $this->databaseLockRetry->transaction(function () use ($operationRun, $records): array {
+        return $this->databaseLockRetry->transactionRetryingUniqueConstraints(function () use (
+            $operationRun,
+            $records,
+        ): array {
             $operationRun = $this->findOrFail($operationRun);
 
             $sequence =

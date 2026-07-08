@@ -23,11 +23,42 @@ class DatabaseLockRetry
      */
     public function transaction(Closure $callback): mixed
     {
+        return $this->transactionRetriable(
+            callback: $callback,
+            shouldRetry: $this->causedByDatabaseLock(...),
+        );
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @return TReturn
+     */
+    public function transactionRetryingUniqueConstraints(Closure $callback): mixed
+    {
+        return $this->transactionRetriable(
+            callback: $callback,
+            shouldRetry: fn (QueryException $exception): bool => (
+                $this->causedByDatabaseLock($exception) || $this->causedByUniqueConstraint($exception)
+            ),
+        );
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  Closure(): TReturn  $callback
+     * @param  Closure(QueryException): bool  $shouldRetry
+     * @return TReturn
+     */
+    private function transactionRetriable(Closure $callback, Closure $shouldRetry): mixed
+    {
         for ($attempt = 1; $attempt <= self::DATABASE_LOCK_RETRY_ATTEMPTS; $attempt++) {
             try {
                 return $this->runTransaction($callback);
             } catch (QueryException $exception) {
-                if (! $this->causedByDatabaseLock($exception) || $attempt === self::DATABASE_LOCK_RETRY_ATTEMPTS) {
+                if (! $shouldRetry($exception) || $attempt === self::DATABASE_LOCK_RETRY_ATTEMPTS) {
                     throw $exception;
                 }
 
@@ -62,10 +93,20 @@ class DatabaseLockRetry
 
         return (
             in_array($driverCode, ['5', '6'], strict: true)
-            || str_contains($message, 'database is locked')
-            || str_contains($message, 'database table is locked')
-            || str_contains($message, 'database schema is locked')
-            || str_contains($message, 'database is busy')
+            || preg_match('/database (?:is|table is|schema is) locked|database is busy/', $message) === 1
+        );
+    }
+
+    private function causedByUniqueConstraint(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? '');
+        $driverCode = (string) ($exception->errorInfo[1] ?? $exception->getCode());
+        $message = strtolower($exception->getMessage());
+
+        return (
+            in_array($sqlState, ['23000', '23505'], strict: true)
+            || in_array($driverCode, ['19', '1062'], strict: true)
+            || preg_match('/unique constraint|duplicate entry/', $message) === 1
         );
     }
 }

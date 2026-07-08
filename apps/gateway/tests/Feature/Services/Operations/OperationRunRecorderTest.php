@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\OperationRun;
+use App\Services\Operations\DatabaseLockRetry;
+use App\Services\Operations\OperationEventRecorder;
+use App\Services\Operations\OperationEventStreamer;
 use App\Services\Operations\OperationRunRecorder;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
@@ -128,6 +133,48 @@ describe('OperationRunRecorder', function (): void {
             ->toBe($firstStartedAt?->toIso8601String());
     });
 
+    it('does not move a terminal run back to running', function (): void {
+        $run = $this->recorder->queued((string) Str::uuid(), 'host');
+        $this->recorder->running($run->id);
+        $done = $this->recorder->succeeded(
+            id: $run->id,
+            exitCode: 0,
+            result: ['ok' => true],
+            stdoutSummary: 'first stdout',
+            stderrSummary: '',
+        );
+
+        $afterRunning = $this->recorder->running($run->id);
+
+        expect($afterRunning->status)
+            ->toBe(OperationStatus::Succeeded)
+            ->and($afterRunning->exit_code)
+            ->toBe(0)
+            ->and($afterRunning->result)
+            ->toMatchArray(['ok' => true])
+            ->and($afterRunning->stdout_summary)
+            ->toBe('first stdout')
+            ->and($afterRunning->finished_at?->toIso8601String())
+            ->toBe($done->finished_at?->toIso8601String());
+    });
+
+    it('retries running status transactions when SQLite reports the database is locked', function (): void {
+        $retry = operation_run_lock_retry();
+        $recorder = new OperationRunRecorder(
+            app(OperationEventRecorder::class),
+            app(OperationEventStreamer::class),
+            $retry,
+        );
+        $run = $this->recorder->queued((string) Str::uuid(), 'host');
+
+        $started = $recorder->running($run->id);
+
+        expect($started->status)
+            ->toBe(OperationStatus::Running)
+            ->and($retry->databaseLockRetries)
+            ->toBe(1);
+    });
+
     it('finalizes a run as succeeded with exit code and result', function (): void {
         $run = $this->recorder->queued((string) Str::uuid(), 'gateway', operationType: 'tool.install');
         $this->recorder->running($run->id);
@@ -150,6 +197,62 @@ describe('OperationRunRecorder', function (): void {
             ->toBe('ok')
             ->and($done->finished_at)
             ->not->toBeNull();
+    });
+
+    it('preserves the first terminal result and warns on duplicate finalization', function (): void {
+        $run = $this->recorder->queued((string) Str::uuid(), 'gateway', operationType: 'tool.install');
+        $first = $this->recorder->failed(
+            id: $run->id,
+            exitCode: 42,
+            error: ['code' => 'first_failure'],
+            stderrSummary: 'first stderr',
+        );
+
+        Log::spy();
+
+        $duplicate = $this->recorder->succeeded(
+            id: $run->id,
+            exitCode: 0,
+            result: ['late' => true],
+            stdoutSummary: 'late stdout',
+            stderrSummary: '',
+        );
+
+        expect($duplicate->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($duplicate->exit_code)
+            ->toBe(42)
+            ->and($duplicate->error)
+            ->toMatchArray(['code' => 'first_failure'])
+            ->and($duplicate->result)
+            ->toBeNull()
+            ->and($duplicate->stdout_summary)
+            ->toBeNull()
+            ->and($duplicate->stderr_summary)
+            ->toBe('first stderr')
+            ->and($duplicate->finished_at?->toIso8601String())
+            ->toBe($first->finished_at?->toIso8601String());
+
+        Log::shouldHaveReceived('warning')->once();
+    });
+
+    it('retries finalizer transactions when SQLite reports the database is locked', function (): void {
+        $retry = operation_run_lock_retry();
+        $recorder = new OperationRunRecorder(
+            app(OperationEventRecorder::class),
+            app(OperationEventStreamer::class),
+            $retry,
+        );
+        $run = $this->recorder->queued((string) Str::uuid(), 'host');
+
+        $done = $recorder->succeeded($run->id, exitCode: 0, result: ['ok' => true]);
+
+        expect($done->status)
+            ->toBe(OperationStatus::Succeeded)
+            ->and($done->result)
+            ->toMatchArray(['ok' => true])
+            ->and($retry->databaseLockRetries)
+            ->toBe(1);
     });
 
     it('clears a queued result payload when finalizing as failed', function (): void {
@@ -248,6 +351,36 @@ describe('OperationRunRecorder', function (): void {
             ->toBe(OperationStatus::Succeeded);
     });
 });
+
+function operation_run_lock_retry(): DatabaseLockRetry
+{
+    return new class extends DatabaseLockRetry {
+        public bool $failNextTransaction = true;
+
+        public int $databaseLockRetries = 0;
+
+        protected function runTransaction(\Closure $callback): mixed
+        {
+            if ($this->failNextTransaction) {
+                $this->failNextTransaction = false;
+
+                throw new QueryException(
+                    'sqlite',
+                    'update "operation_runs" set "status" = ?',
+                    [],
+                    new \PDOException('SQLSTATE[HY000]: General error: 5 database is locked', 5),
+                );
+            }
+
+            return parent::runTransaction($callback);
+        }
+
+        protected function beforeDatabaseLockRetry(QueryException $exception, int $attempt): void
+        {
+            $this->databaseLockRetries++;
+        }
+    };
+}
 
 describe('activity_log linkage', function (): void {
     it('exposes a nullable operation_run_id foreign key on the Spatie activity_log table', function (): void {
