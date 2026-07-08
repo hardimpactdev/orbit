@@ -37,7 +37,7 @@ function gatewayApplicationCommands(): array
     return collect(Artisan::all())
         ->map(fn (SymfonyCommand $command, string $name): array => [
             'name' => $name,
-            'class' => get_class($command),
+            'class' => $command::class,
         ])
         ->filter(fn (array $command): bool => str_starts_with($command['class'], 'App\\Console\\Commands\\'))
         ->sortBy('name')
