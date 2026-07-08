@@ -6,9 +6,9 @@ namespace Orbit\Sdk\Laravel\Tests\Unit;
 
 use Orbit\Sdk\Laravel\GatewayRequest;
 use Orbit\Sdk\Laravel\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Laravel\Requests\Dashboard\ShowRuntimeInventoryRequest;
 use Orbit\Sdk\Laravel\Requests\Database\DetachDatabaseConnectionTargetRequest;
 use Orbit\Sdk\Laravel\Requests\Database\ListDatabaseConnectionsRequest;
-use Orbit\Sdk\Laravel\Requests\Dashboard\ShowRuntimeInventoryRequest;
 use Orbit\Sdk\Laravel\Requests\Deploy\ListDeployHistoryRequest;
 use Orbit\Sdk\Laravel\Requests\Deploy\ListDeployStepsRequest;
 use Orbit\Sdk\Laravel\Requests\Deploy\RemoveDeployStepRequest;

@@ -1047,6 +1047,10 @@ final readonly class AppRuntimeContainerManager
 
     private function localExecutor(Node $node): ?RemoteLocalExecutor
     {
+        if ($this->explicitFallback->allowed()) {
+            return null;
+        }
+
         if (! $this->localExecutor instanceof RemoteLocalExecutor) {
             return null;
         }

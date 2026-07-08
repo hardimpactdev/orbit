@@ -15,8 +15,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\ToolPayloadMapper;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 
 final readonly class RuntimeInventoryPayload
 {
@@ -39,15 +38,19 @@ final readonly class RuntimeInventoryPayload
     {
         return [
             'nodes' => $this->nodePayloads($this->fetchNodes()),
-            'apps' => $this
-                ->fetchApps($caller)
-                ->map(fn (App $app): array => $this->appPayload->forApp($app))
-                ->all(),
+            'apps' => array_values(
+                $this
+                    ->fetchApps($caller)
+                    ->map(fn (App $app): array => $this->appPayload->forApp($app))
+                    ->all(),
+            ),
             'processes' => $this->processPayloads($this->fetchProcesses($caller)),
-            'tools' => $this
-                ->fetchTools($caller)
-                ->map(fn (NodeTool $tool): array => $this->toolPayload->toArray($tool))
-                ->all(),
+            'tools' => array_values(
+                $this
+                    ->fetchTools($caller)
+                    ->map(fn (NodeTool $tool): array => $this->toolPayload->toArray($tool))
+                    ->all(),
+            ),
         ];
     }
 
@@ -56,7 +59,7 @@ final readonly class RuntimeInventoryPayload
      */
     private function fetchNodes(): Collection
     {
-        return Node::query()
+        $nodes = Node::query()
             ->with('roleAssignments')
             ->get()
             ->sortBy(fn (Node $node): array => [
@@ -64,6 +67,9 @@ final readonly class RuntimeInventoryPayload
                 mb_strtolower($node->name),
             ])
             ->values();
+
+        /** @var Collection<int, Node> $nodes */
+        return $nodes;
     }
 
     /**
@@ -77,18 +83,22 @@ final readonly class RuntimeInventoryPayload
             $this->nodeRoleAssignments->activeAppHostNodeIds(),
         );
 
-        return App::query()
-            ->with(['node', 'dependencyAuditSummaries'])
-            ->when($visibleNodeIds !== null, static fn (Builder $query): Builder => $query->whereIn(
-                'node_id',
-                $visibleNodeIds,
-            ))
+        $query = App::query()->with(['node', 'dependencyAuditSummaries']);
+
+        if ($visibleNodeIds !== null) {
+            $query->whereIn('node_id', $visibleNodeIds);
+        }
+
+        $apps = $query
             ->get()
             ->sortBy(static fn (App $app): array => [
                 mb_strtolower((string) $app->node?->name),
                 mb_strtolower($app->name),
             ])
             ->values();
+
+        /** @var Collection<int, App> $apps */
+        return $apps;
     }
 
     /**
@@ -102,12 +112,13 @@ final readonly class RuntimeInventoryPayload
             $this->nodeRoleAssignments->activeRoleBearingNodeIds(),
         );
 
-        return Process::query()
-            ->with(['node', 'owner'])
-            ->when($visibleNodeIds !== null, static fn (Builder $query): Builder => $query->whereIn(
-                'node_id',
-                $visibleNodeIds,
-            ))
+        $query = Process::query()->with(['node', 'owner']);
+
+        if ($visibleNodeIds !== null) {
+            $query->whereIn('node_id', $visibleNodeIds);
+        }
+
+        $processes = $query
             ->get()
             ->sortBy(static fn (Process $process): array => [
                 mb_strtolower((string) $process->node?->name),
@@ -116,6 +127,9 @@ final readonly class RuntimeInventoryPayload
                 mb_strtolower($process->name),
             ])
             ->values();
+
+        /** @var Collection<int, Process> $processes */
+        return $processes;
     }
 
     /**
@@ -129,15 +143,21 @@ final readonly class RuntimeInventoryPayload
         ]));
         $visibleNodeIds = $this->visibleNodeIds($caller, 'tool:read', $candidateNodeIds) ?? $candidateNodeIds;
 
-        return NodeTool::query()
+        $tools = NodeTool::query()
             ->with('node')
             ->whereIn('node_id', $visibleNodeIds)
-            ->get()
+            ->get();
+
+        /** @var Collection<int, NodeTool> $tools */
+        $sortedTools = $tools
             ->sortBy(static fn (NodeTool $tool): array => [
                 mb_strtolower((string) $tool->node?->name),
                 mb_strtolower($tool->name),
             ])
             ->values();
+
+        /** @var Collection<int, NodeTool> $sortedTools */
+        return $sortedTools;
     }
 
     /**
@@ -150,14 +170,19 @@ final readonly class RuntimeInventoryPayload
             return null;
         }
 
-        return Node::query()
+        $nodes = Node::query()
             ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $candidateNodeIds)
-            ->get()
+            ->get();
+
+        /** @var Collection<int, Node> $nodes */
+        $nodeIds = $nodes
             ->filter(fn (Node $node): bool => $this->authorizer->allows($caller, $node, $permission))
             ->map(static fn (Node $node): int => $node->id)
             ->values()
             ->all();
+
+        return array_values($nodeIds);
     }
 
     /**
@@ -166,19 +191,21 @@ final readonly class RuntimeInventoryPayload
      */
     private function nodePayloads(Collection $nodes): array
     {
-        return $nodes->map(static fn (Node $node): array => [
-            'name' => $node->name,
-            'host' => $node->host,
-            'addresses' => [
-                'wireguard' => $node->wireguard_address,
-            ],
-            'platform' => $node->platform ?? 'unknown',
-            'status' => $node->status->value,
-            'roles' => $node
-                ->roleAssignments
-                ->map(NodeRoleAssignmentPayload::fromModel(...))
-                ->all(),
-        ])->all();
+        return array_values(
+            $nodes->map(static fn (Node $node): array => [
+                'name' => $node->name,
+                'host' => $node->host,
+                'addresses' => [
+                    'wireguard' => $node->wireguard_address,
+                ],
+                'platform' => $node->platform ?? 'unknown',
+                'status' => $node->status->value,
+                'roles' => $node
+                    ->roleAssignments
+                    ->map(NodeRoleAssignmentPayload::fromModel(...))
+                    ->all(),
+            ])->all(),
+        );
     }
 
     /**
@@ -187,22 +214,24 @@ final readonly class RuntimeInventoryPayload
      */
     private function processPayloads(Collection $processes): array
     {
-        return $processes->map(static function (Process $process): array {
-            $app = $process->app;
-            $workspace = $process->owner instanceof Workspace ? $process->owner : null;
+        return array_values(
+            $processes->map(static function (Process $process): array {
+                $app = $process->app;
+                $workspace = $process->owner instanceof Workspace ? $process->owner : null;
 
-            return [
-                'node' => $process->node?->name,
-                'app' => $app?->name,
-                'workspace' => $workspace?->name,
-                'name' => $process->name,
-                'command' => $process->command,
-                'restart_policy' => $process->restart_policy->value,
-                'crash_notification' => $process->crash_notification->value,
-                'runtime' => $process->runtime->value,
-                'tool' => $process->tool,
-                'status' => 'managed',
-            ];
-        })->all();
+                return [
+                    'node' => $process->node?->name,
+                    'app' => $app?->name,
+                    'workspace' => $workspace?->name,
+                    'name' => $process->name,
+                    'command' => $process->command,
+                    'restart_policy' => $process->restart_policy->value,
+                    'crash_notification' => $process->crash_notification->value,
+                    'runtime' => $process->runtime->value,
+                    'tool' => $process->tool,
+                    'status' => 'managed',
+                ];
+            })->all(),
+        );
     }
 }

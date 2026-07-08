@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
@@ -12,6 +13,7 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
+use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -81,6 +83,45 @@ it('uses the resolved local executor for agent-capable app runtime nodes', funct
             ],
         ),
     );
+});
+
+it('lets explicit transitional SSH fallback override local executor for agent capable app runtime nodes', function (): void {
+    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+    Http::preventStrayRequests();
+
+    $node = app_runtime_manager_node();
+    $container = app_runtime_manager_app_container();
+    $transport = new AppRuntimeManagerRecordingTransport(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: app_runtime_manager_inspect_payload($container),
+            stderr: '',
+            durationMs: 1,
+        ),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+    );
+
+    $outcome = new AppRuntimeContainerManager(
+        $transport,
+        new DockerCommandBuilder,
+        app_runtime_manager_ca(),
+        localExecutor: app_runtime_manager_executor(),
+    )->apply($node, $container);
+
+    expect($outcome)
+        ->toBe(AppRuntimeContainerApplyOutcome::Unchanged)
+        ->and($transport->calls)
+        ->toHaveCount(3)
+        ->and($transport->calls[0]['script'])
+        ->toContain('docker network inspect')
+        ->and($transport->calls[1]['script'])
+        ->toContain('docker container inspect')
+        ->and($transport->calls[2]['script'])
+        ->toContain('docker image inspect');
+
+    Http::assertNothingSent();
+    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 });
 
 it('applies workspace runtime containers through the agent-push local executor', function (): void {
@@ -288,6 +329,20 @@ function app_runtime_manager_app_container(): AppRuntimeContainer
     );
 }
 
+function app_runtime_manager_inspect_payload(AppRuntimeContainer $container): string
+{
+    return json_encode([
+        'State' => [
+            'Running' => true,
+        ],
+        'Config' => [
+            'Labels' => [
+                AppRuntimeContainer::SpecHashLabel => $container->specHash(),
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+}
+
 function app_runtime_manager_workspace_container(): WorkspaceRuntimeContainer
 {
     return new WorkspaceRuntimeContainer(
@@ -390,6 +445,37 @@ final class AppRuntimeManagerUnusedTransport implements RemoteExecutor
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         throw new RuntimeException('SSH transport should not be called for app runtime manager actions.');
+    }
+
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        throw new RuntimeException('App runtime manager tests do not start long-running transports.');
+    }
+}
+
+/**
+ * @mago-expect lint:file-name
+ */
+final class AppRuntimeManagerRecordingTransport implements RemoteExecutor
+{
+    /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
+    public array $calls = [];
+
+    /** @var list<RemoteShellResult> */
+    private array $responses;
+
+    public function __construct(RemoteShellResult ...$responses)
+    {
+        $this->responses = $responses;
+    }
+
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->calls[] = ['node' => $node, 'script' => $script, 'options' => $options];
+
+        return (
+            array_shift($this->responses) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)
+        );
     }
 
     public function start(Node $node, string $script, array $options = []): InvokedProcess
