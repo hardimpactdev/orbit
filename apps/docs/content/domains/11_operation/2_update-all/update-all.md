@@ -70,10 +70,10 @@ orbit update:all --stream-json
    source-dev topologies keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit`.
    The same immutable update plan selects both the CLI artifact and Orbit Agent
-   artifact for agent-capable Linux nodes. The signed internal installer
-   replaces the node-local `orbit-agent` binary, restarts an existing
-   `orbit-agent` systemd service when present, and records installed artifact
-   identity for future drift checks.
+   artifact for agent-capable nodes. The signed internal installer replaces the
+   node-local `orbit-agent` binary, restarts an existing managed service when
+   present, falls back to replacing an unmanaged listener when one is running,
+   and records installed artifact identity for future drift checks.
 5. The CLI follows the operation event journal over Server-Sent Events. If the
    gateway service is replaced mid-stream, the CLI reconnects with
    `Last-Event-ID` and replays only events it has not rendered.
@@ -138,7 +138,8 @@ the exact shape of both modes.
   download binaries from the gateway's per-operation artifact endpoint, not
   directly from GitHub or the candidate source. Targets also need permission to
   write the binary, update the user-local launcher link, and restart an existing
-  `orbit-agent` systemd service when the Agent artifact is present.
+  managed or unmanaged `orbit-agent` listener when the Agent artifact is
+  present.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.

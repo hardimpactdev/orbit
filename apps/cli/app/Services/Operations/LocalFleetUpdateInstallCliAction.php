@@ -152,6 +152,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             }
 
             restart_agent_service_if_present() {
+                agent_bin_path="${ORBIT_AGENT_BIN_PATH:-/usr/local/bin/orbit-agent}"
                 systemctl_bin="$(command -v systemctl || true)"
 
                 if [ -n "$systemctl_bin" ] && {
@@ -199,7 +200,73 @@ final readonly class LocalFleetUpdateInstallCliAction
                     fi
                 fi
 
+                if restart_unmanaged_agent_process "$agent_bin_path"; then
+                    return
+                fi
+
                 echo skip_agent_restart_no_unit
+            }
+
+            restart_unmanaged_agent_process() {
+                agent_bin_path="$1"
+                pgrep_bin="$(command -v pgrep || true)"
+                pkill_bin="$(command -v pkill || true)"
+
+                if [ -z "$pgrep_bin" ] || [ -z "$pkill_bin" ]; then
+                    return 1
+                fi
+
+                if ! "$pgrep_bin" -f "$agent_bin_path" >/dev/null 2>&1; then
+                    return 1
+                fi
+
+                first_pid="$("$pgrep_bin" -f "$agent_bin_path" | head -n 1)"
+                agent_config="${ORBIT_AGENT_CONFIG:-}"
+                agent_http_bind="${ORBIT_AGENT_HTTP_BIND:-}"
+
+                if [ -n "$first_pid" ] && [ -r "/proc/$first_pid/environ" ]; then
+                    if [ -z "$agent_config" ]; then
+                        agent_config="$(tr '\0' '\n' < "/proc/$first_pid/environ" | sed -n 's/^ORBIT_AGENT_CONFIG=//p' | head -n 1)"
+                    fi
+
+                    if [ -z "$agent_http_bind" ]; then
+                        agent_http_bind="$(tr '\0' '\n' < "/proc/$first_pid/environ" | sed -n 's/^ORBIT_AGENT_HTTP_BIND=//p' | head -n 1)"
+                    fi
+                fi
+
+                if [ -z "$agent_config" ]; then
+                    agent_config="$HOME/.config/orbit/agent.toml"
+                fi
+
+                if [ ! -f "$agent_config" ]; then
+                    echo skip_agent_restart_no_config
+                    return 0
+                fi
+
+                echo restart_agent_unmanaged
+                run_privileged "$pkill_bin" -TERM -f "$agent_bin_path" >/dev/null 2>&1 || true
+                sleep 1
+                run_privileged "$pkill_bin" -KILL -f "$agent_bin_path" >/dev/null 2>&1 || true
+                start_unmanaged_agent "$agent_bin_path" "$agent_config" "$agent_http_bind"
+            }
+
+            start_unmanaged_agent() {
+                agent_bin_path="$1"
+                agent_config="$2"
+                agent_http_bind="$3"
+                log_path="${ORBIT_AGENT_LOG_PATH:-$HOME/.config/orbit/agent.log}"
+                log_dir="$(dirname "$log_path")"
+
+                mkdir -p "$log_dir"
+
+                echo start_agent_unmanaged
+
+                if [ -n "$agent_http_bind" ]; then
+                    nohup env ORBIT_AGENT_CONFIG="$agent_config" ORBIT_AGENT_HTTP_BIND="$agent_http_bind" "$agent_bin_path" > "$log_path" 2>&1 &
+                    return
+                fi
+
+                nohup env ORBIT_AGENT_CONFIG="$agent_config" "$agent_bin_path" > "$log_path" 2>&1 &
             }
 
             echo download_cli

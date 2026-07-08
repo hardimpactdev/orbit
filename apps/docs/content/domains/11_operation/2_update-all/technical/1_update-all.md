@@ -262,6 +262,11 @@ The expected target shape per calling context:
   and verify the installed binary hash after relinking the launcher. The gateway
   writes `installed_cli` for that node only after the remote replacement command
   exits successfully.
+- When an Orbit Agent artifact is selected, the remote update verifies the
+  installed `orbit-agent` hash and restarts a managed `orbit-agent` service when
+  one is present. If no systemd or launchd service is present but an unmanaged
+  listener is running from the installed binary path, the update replaces that
+  listener with the new binary and preserves the configured Agent endpoint.
 - The remote update reconciles a shadowing launcher: when `orbit` resolves
   through the node's `PATH` to a launcher other than the relinked one and that
   launcher points at a different binary, it relinks that launcher to the new

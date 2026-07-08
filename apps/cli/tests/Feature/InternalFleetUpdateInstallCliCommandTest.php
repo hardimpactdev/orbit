@@ -297,6 +297,74 @@ describe('internal fleet update install cli command', function (): void {
             ->toContain('systemctl restart orbit-agent');
     });
 
+    it('restarts an unmanaged Orbit Agent listener when no service unit is present', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $agentRuntimeBin = make_fleet_update_install_cli_fake_unmanaged_agent_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $agentConfigPath = "{$workspace}/agent.toml";
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+        file_put_contents(filename: $agentConfigPath, data: 'gateway_url = "https://gateway"');
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        $agentSha256 = fleet_update_install_cli_sha256($agentArtifactPath);
+        $path = $agentRuntimeBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+        $originalAgentConfig = getenv('ORBIT_AGENT_CONFIG');
+        $originalAgentHttpBind = getenv('ORBIT_AGENT_HTTP_BIND');
+        $originalAgentLogPath = getenv('ORBIT_AGENT_LOG_PATH');
+
+        putenv("PATH={$path}");
+        putenv("ORBIT_AGENT_CONFIG={$agentConfigPath}");
+        putenv('ORBIT_AGENT_HTTP_BIND=10.6.0.2:9477');
+        putenv("ORBIT_AGENT_LOG_PATH={$workspace}/agent.log");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        try {
+            [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+                [
+                    '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'artifact_url' => "file://{$artifactPath}",
+                    'sha256' => $sha256,
+                    'install_root' => "{$workspace}/install-root",
+                    'bin_path' => "{$workspace}/bin/orbit",
+                    'shared_binary_path' => null,
+                    'agent_artifact' => [
+                        'artifact_url' => "file://{$agentArtifactPath}",
+                        'sha256' => $agentSha256,
+                        'bin_path' => "{$workspace}/bin/orbit-agent",
+                    ],
+                    'role_images' => [],
+                ], JSON_THROW_ON_ERROR),
+            );
+        } finally {
+            fleet_update_install_cli_restore_env_var('ORBIT_AGENT_CONFIG', $originalAgentConfig);
+            fleet_update_install_cli_restore_env_var('ORBIT_AGENT_HTTP_BIND', $originalAgentHttpBind);
+            fleet_update_install_cli_restore_env_var('ORBIT_AGENT_LOG_PATH', $originalAgentLogPath);
+        }
+
+        $data = fleet_update_install_cli_success_data($output);
+        $stdout = is_string($data['stdout'] ?? null) ? $data['stdout'] : '';
+        $calls = file_get_contents("{$workspace}/agent-runtime-calls.log");
+
+        if (! is_string($calls)) {
+            $calls = '';
+        }
+
+        expect($exitCode)->toBe(0);
+        expect($stdout)
+            ->toContain('restart_agent_unmanaged')
+            ->toContain('start_agent_unmanaged');
+        expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();
+        expect($calls)
+            ->toContain('pgrep -f '.$workspace.'/bin/orbit-agent')
+            ->toContain('pkill -TERM -f '.$workspace.'/bin/orbit-agent')
+            ->toContain('pkill -KILL -f '.$workspace.'/bin/orbit-agent');
+    });
+
     it('keeps cli installs successful when role image pre-pulls are unavailable', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";
@@ -517,6 +585,20 @@ function fleet_update_install_cli_restore_environment(): void
     $_ENV['ORBIT_AGENT_LAUNCHD_LABEL'] = $launchdLabel;
 }
 
+function fleet_update_install_cli_restore_env_var(string $key, string|false $value): void
+{
+    if ($value === false) {
+        putenv($key);
+        unset($_ENV[$key], $_SERVER[$key]);
+
+        return;
+    }
+
+    putenv("{$key}={$value}");
+    $_ENV[$key] = $value;
+    $_SERVER[$key] = $value;
+}
+
 /**
  * @param  array<string, mixed>  $parameters
  * @return array{int, string}
@@ -716,6 +798,54 @@ function make_fleet_update_install_cli_fake_systemd_bin(string $workspace): stri
         exit 0
         SH);
     chmod(filename: "{$bin}/systemd-run", permissions: 0o755);
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_fake_unmanaged_agent_bin(string $workspace): string
+{
+    $bin = "{$workspace}/agent-runtime-bin";
+    $log = "{$workspace}/agent-runtime-calls.log";
+
+    mkdir($bin, recursive: true);
+    file_put_contents($log, '');
+
+    foreach (['systemctl', 'launchctl'] as $command) {
+        file_put_contents("{$bin}/{$command}", <<<SH
+            #!/usr/bin/env sh
+            echo "{$command} \$*" >> {$log}
+            exit 1
+            SH);
+        chmod(filename: "{$bin}/{$command}", permissions: 0o755);
+    }
+
+    file_put_contents("{$bin}/pgrep", <<<SH
+        #!/usr/bin/env sh
+        echo "pgrep \$*" >> {$log}
+        echo 4242
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/pgrep", permissions: 0o755);
+
+    file_put_contents("{$bin}/pkill", <<<SH
+        #!/usr/bin/env sh
+        echo "pkill \$*" >> {$log}
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/pkill", permissions: 0o755);
+
+    file_put_contents("{$bin}/nohup", <<<SH
+        #!/usr/bin/env sh
+        echo "nohup \$*" >> {$log}
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/nohup", permissions: 0o755);
+
+    file_put_contents("{$bin}/sleep", <<<'SH'
+        #!/usr/bin/env sh
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/sleep", permissions: 0o755);
 
     return $bin;
 }

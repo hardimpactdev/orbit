@@ -63,10 +63,10 @@ target results include both successful and failed targets when a fleet update
 partially fails.
 
 The update plan selects both the Orbit CLI artifact and Orbit Agent artifact for
-an agent-capable Linux node. The current Orbit Agent bootstrap still owns first
-install and service unit creation; fleet update replaces and restarts an
-existing node-local Agent binary but does not sign, notarize, or produce
-platform-native packages.
+agent-capable nodes. The current Orbit Agent bootstrap still owns first install
+and managed service creation; fleet update replaces and restarts an existing
+node-local Agent binary but does not sign, notarize, or produce platform-native
+packages.
 
 ## Doctor
 
