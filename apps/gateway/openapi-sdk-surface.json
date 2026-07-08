@@ -370,11 +370,61 @@
       "follow_up": "Add a dedicated PHP SDK stream request/client for operation events."
     },
     {
+      "operation": "GET /operations/{operationRun}/stream",
+      "operation_id": "operations.stream.descriptor",
+      "classification": "internal_only",
+      "group": "operation_stream_control_plane",
+      "reason": "Operation WebSocket descriptors are protocol control-plane metadata for Reverb subscriptions, not generated public SDK methods."
+    },
+    {
+      "operation": "POST /operations/{operationRun}/stream/auth",
+      "operation_id": "operations.stream.auth",
+      "classification": "internal_only",
+      "group": "operation_stream_control_plane",
+      "reason": "Operation WebSocket auth exchanges short-lived subscription tokens and remains tied to the gateway Reverb protocol."
+    },
+    {
+      "operation": "POST /operations/{operationRun}/stream/leave",
+      "operation_id": "operations.stream.leave",
+      "classification": "internal_only",
+      "group": "operation_stream_control_plane",
+      "reason": "Subscriber leave tracking is gateway control-plane state used to decide whether target agents should keep tailing."
+    },
+    {
+      "operation": "GET /operations/{operationRun}/stream/stop-decision",
+      "operation_id": "operations.stream.stopDecision",
+      "classification": "internal_only",
+      "group": "operation_stream_control_plane",
+      "reason": "Stop-decision polling is consumed by target agents publishing a stream and should not be generated as public SDK surface."
+    },
+    {
+      "operation": "POST /operations/{operationRun}/stream/publisher-credentials",
+      "operation_id": "operations.stream.publisherCredentials",
+      "classification": "internal_only",
+      "group": "operation_stream_control_plane",
+      "reason": "Publisher credentials are trusted target-agent credentials and are not public client SDK surface."
+    },
+    {
+      "operation": "POST /operations/{operationRun}/stream/publish",
+      "operation_id": "operations.stream.publish",
+      "classification": "internal_only",
+      "group": "operation_stream_control_plane",
+      "reason": "Frame publishing is target-agent to gateway protocol traffic, not operator or dashboard SDK surface."
+    },
+    {
       "operation": "POST /events/process",
       "operation_id": "processEventIngest",
       "classification": "internal_only",
       "group": "process_event_ingest",
       "reason": "Process event ingestion is node/runtime-to-gateway telemetry, not public SDK surface."
+    },
+    {
+      "operation": "POST /processes/{name}/log-stream",
+      "operation_id": "processes.logStream.start",
+      "classification": "public_sdk",
+      "group": "process_logs",
+      "reason": "Process log-stream start is a public lifecycle endpoint for CLI and dashboard clients to initiate operation WebSocket log tails.",
+      "follow_up": "Add a dedicated PHP SDK request class for starting process log operation streams."
     },
     {
       "operation": "GET /profile/resolve",

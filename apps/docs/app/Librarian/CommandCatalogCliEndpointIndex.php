@@ -33,7 +33,12 @@ final class CommandCatalogCliEndpointIndex
         }
 
         if (count($unique) !== 1) {
-            return null;
+            $canonical = array_filter(
+                $unique,
+                static fn (array $endpoint): bool => ! str_ends_with((string) $endpoint['uri'], '/log-stream'),
+            );
+
+            return count($canonical) === 1 ? array_values($canonical)[0] : null;
         }
 
         return array_values($unique)[0];

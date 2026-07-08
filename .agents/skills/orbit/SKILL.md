@@ -19,6 +19,12 @@ Reverb, SeaweedFS, Prometheus/Grafana metrics services, node-exporter, and
 similar backing services. PHP-FPM and Supervisor are not app/workspace runtime
 fallbacks.
 
+The gateway role also renders an `orbit-operations-reverb` Swarm service for
+future Orbit operation streams. That gateway-owned operations surface reuses the
+`orbit-reverb` image but is separate from app-facing `websocket` role traffic,
+`websocket.orbit`, app WebSocket bindings, and the websocket role's Redis
+scaling dependency.
+
 Orbit Agent is a separate native lane. The headless Orbit Agent service lives
 under `apps/agent` as a Rust/Axum service binary for supported explicitly
 agent-capable Linux/Ubuntu and macOS `app-dev` or self-managed workload nodes.

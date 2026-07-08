@@ -7,7 +7,14 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 
 it('keeps command action progress streams on their canonical api routes', function (): void {
-    $allowedStreamRoutes = [];
+    $allowedStreamRoutes = [
+        'api/operations/{operationRun}/stream',
+        'api/operations/{operationRun}/stream/auth',
+        'api/operations/{operationRun}/stream/leave',
+        'api/operations/{operationRun}/stream/publisher-credentials',
+        'api/operations/{operationRun}/stream/publish',
+        'api/operations/{operationRun}/stream/stop-decision',
+    ];
 
     $violations = collect(Route::getRoutes())
         ->map(fn ($route): string => $route->uri())

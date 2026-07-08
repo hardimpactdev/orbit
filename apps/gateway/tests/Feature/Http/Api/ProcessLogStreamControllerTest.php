@@ -87,6 +87,60 @@ describe('ProcessLogController follow stream', function (): void {
             "sudo journalctl -u 'orbit_docs_main_vite.service' -n 5 -f --no-pager --output=short-iso 2>&1",
         ]);
     });
+
+    it('starts operation websocket process log streams with target-side publisher metadata', function (): void {
+        config()->set('orbit.operation_token_secret', 'process-log-stream-secret');
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://'.PROCESS_LOG_STREAM_TARGET_WG_IP.':9477/v1/commands/stream' => Http::response(
+                "target output is published by the node\n",
+                200,
+                ['Content-Type' => 'text/plain; charset=UTF-8'],
+            ),
+        ]);
+        createTestGatewayNode([
+            'name' => 'caller',
+            'host' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+            'wireguard_address' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+        ]);
+        $appNode = createTestAppHostNode([
+            'name' => 'app-1',
+            'host' => PROCESS_LOG_STREAM_TARGET_WG_IP,
+            'wireguard_address' => PROCESS_LOG_STREAM_TARGET_WG_IP,
+            'orbit_agent_capable' => true,
+            'status' => 'active',
+        ]);
+        $app = process_log_stream_create_app(['name' => 'docs', 'node_id' => $appNode->id]);
+        process_log_stream_create_process($app, name: 'vite');
+        $stream = new ProcessLogApiRecordingRemoteStream;
+        app()->instance(RemoteShellStream::class, $stream);
+
+        $response = process_log_stream_start_api_call('agent-push');
+        $operationRunId = $response->json('success.data.operation.uuid');
+
+        $response
+            ->assertAccepted()
+            ->assertJsonPath(
+                'success.data.operation.stream_descriptor_url',
+                "/api/operations/{$operationRunId}/stream",
+            );
+
+        expect($operationRunId)
+            ->toBeString()
+            ->not
+            ->toBeEmpty()
+            ->and($stream->scripts)
+            ->toBeEmpty();
+
+        app()->terminate();
+
+        Http::assertSent(
+            fn (Illuminate\Http\Client\Request $request): bool => process_log_stream_agent_push_operation_request_matches(
+                $request,
+                (string) $operationRunId,
+            ),
+        );
+    });
 });
 
 /**
@@ -119,12 +173,30 @@ function process_log_stream_create_process(App $app, string $name): Process
     return $process;
 }
 
-function process_log_stream_api_call(string $transportPreference): TestResponse
+function process_log_stream_api_call(string $transportPreference, string $uri = PROCESS_LOG_STREAM_URI): TestResponse
 {
     return call(
         'GET',
-        PROCESS_LOG_STREAM_URI,
+        $uri,
         [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
+            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => $transportPreference,
+        ],
+    );
+}
+
+function process_log_stream_start_api_call(string $transportPreference): TestResponse
+{
+    return call(
+        'POST',
+        '/api/processes/vite/log-stream',
+        [
+            'app' => 'docs',
+            'lines' => 5,
+        ],
         [],
         [],
         [
@@ -149,6 +221,43 @@ function process_log_stream_agent_push_request_matches(Illuminate\Http\Client\Re
         '\\"lines\\":5',
         '\\"follow\\":true',
     ]);
+}
+
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
+function process_log_stream_agent_push_operation_request_matches(
+    Illuminate\Http\Client\Request $request,
+    string $operationRunId,
+): bool {
+    if (! process_log_stream_agent_push_request_matches($request)) {
+        return false;
+    }
+
+    $input = $request->data()['input'] ?? null;
+
+    if (! is_string($input)) {
+        return false;
+    }
+
+    $payload = json_decode($input, associative: true);
+
+    if (! is_array($payload)) {
+        return false;
+    }
+
+    $operationStream = $payload['operation_stream'] ?? null;
+
+    return (
+        is_array($operationStream)
+        && ($operationStream['operation_uuid'] ?? null) === $operationRunId
+        && ($operationStream['channel'] ?? null) === "private-operations.{$operationRunId}"
+        && ($operationStream['publish_endpoint'] ?? null) === "/api/operations/{$operationRunId}/stream/publish"
+        && ($operationStream['stop_decision_endpoint'] ?? null)
+        === "/api/operations/{$operationRunId}/stream/stop-decision"
+        && is_string($operationStream['publisher_token'] ?? null)
+        && $operationStream['publisher_token'] !== ''
+    );
 }
 
 /**

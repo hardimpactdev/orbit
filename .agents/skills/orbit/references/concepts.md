@@ -6,7 +6,7 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 
 | Role | Platform | What it owns |
 |---|---|---|
-| `gateway` | Ubuntu | Canonical SQLite DB, typed HTTPS API, Orbit root CA, node access policy, and doctor convergence |
+| `gateway` | Ubuntu | Canonical SQLite DB, typed HTTPS API, Orbit root CA, node access policy, doctor convergence, and gateway-owned operations Reverb service |
 | `vpn` | Ubuntu | Gateway-coupled WireGuard server runtime, public endpoint settings, peer defaults, and VPN-facing DNS runtime |
 | `router` | Ubuntu | Gateway-coupled private `.orbit` service names, route artifacts, backend pools, and private routing |
 | `app-dev` | Ubuntu/macOS | Development app/workspace files, local TLD routes, FrankenPHP runtimes, and dev host toolchain |
@@ -17,6 +17,11 @@ Authoritative source: [`apps/docs/content/architecture.md`](../../../apps/docs/c
 | `websocket` | Ubuntu | Private Laravel Reverb backend, reached through router-owned routes |
 | `s3` | Ubuntu | Private SeaweedFS backend, reached through router-owned S3 routes |
 | `metrics` | Ubuntu/Debian | Private Prometheus/Grafana host-resource metrics backend, reached through `metrics.orbit` |
+
+The gateway-owned operations Reverb service is not the app-facing `websocket`
+role. It is a single gateway Swarm service for future operation streams, uses
+its own operations app config path, and does not require Redis or a
+database-role node in v1.
 
 An **operator** is a node identity with the operator permission preset and
 grants. It is not a stored role. Any gateway-known node can be a client when it
@@ -138,6 +143,11 @@ Pass `--json` to force JSON. Non-interactive mode (`-n`) auto-enables JSON. Same
 ## Streaming (long-running) commands
 
 Commands like `workspace:setup`, `deploy:run`, `tool:install`, and `node:new` stream Server-Sent Events from the gateway. The CLI renders a step tree (`tree` -> `step` events -> `complete`/`error`). If the stream closes without `complete` or `error`, the command failed.
+
+The gateway operations Reverb surface is scaffolded for future
+operation-scoped stream payloads only. Non-stream commands stay on gateway API
+plus agent-push, and existing command progress streams remain on their current
+contracts until a specific stream is migrated.
 
 For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current

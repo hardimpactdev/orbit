@@ -15,14 +15,22 @@ final readonly class GatewaySwarmStackRenderer
 
     public const string SchedulerService = 'orbit-scheduler';
 
+    public const string OPERATIONS_REVERB_SERVICE = 'orbit-operations-reverb';
+
+    public const string DEFAULT_OPERATIONS_REVERB_IMAGE = 'orbit-reverb:current';
+
+    private const string OPERATIONS_WEB_SOCKET_CONFIG_PATH = '/etc/orbit/operations-websocket/apps.php';
+
     public function render(
         GatewayImageReference $image,
         GatewayExposureMode $exposureMode,
         string $configRoot = '/home/orbit/.config/orbit',
         string $installRoot = '/home/orbit/orbit',
+        string $operationsReverbImage = self::DEFAULT_OPERATIONS_REVERB_IMAGE,
     ): string {
         $configRoot = $this->normalizeConfigRoot($configRoot);
         $installRoot = $this->normalizeInstallRoot($installRoot);
+        $operationsReverbImage = $this->normalizeOperationsReverbImage($operationsReverbImage);
         $configRootExpression = '${ORBIT_CONFIG_ROOT:-'.$configRoot.'}';
         $installRootExpression = '${ORBIT_INSTALL_ROOT:-'.$installRoot.'}';
 
@@ -31,6 +39,7 @@ final readonly class GatewaySwarmStackRenderer
             'services:',
             ...$this->gatewayService($image, $exposureMode, $configRoot, $configRootExpression, $installRootExpression),
             ...$this->schedulerService($image, $configRoot, $configRootExpression, $installRootExpression),
+            ...$this->operationsReverbService($operationsReverbImage, $configRootExpression),
             'networks:',
             '  '.self::Network.':',
             '    external: true',
@@ -173,6 +182,55 @@ final readonly class GatewaySwarmStackRenderer
         ];
     }
 
+    /**
+     * @return list<string>
+     */
+    private function operationsReverbService(string $image, string $configRootExpression): array
+    {
+        return [
+            '  '.self::OPERATIONS_REVERB_SERVICE.':',
+            '    image: '.$this->quoted($image),
+            '    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080", "--hostname='
+                .self::OPERATIONS_REVERB_SERVICE
+                .'"]',
+            '    networks:',
+            '      '.self::Network.':',
+            '        aliases:',
+            '          - '.self::OPERATIONS_REVERB_SERVICE,
+            '    environment:',
+            '      APP_ENV: production',
+            '      APP_DEBUG: "false"',
+            '      CACHE_STORE: array',
+            '      ORBIT_WEBSOCKET_APPS_CONFIG: '.self::OPERATIONS_WEB_SOCKET_CONFIG_PATH,
+            '      REVERB_HOST: '.self::OPERATIONS_REVERB_SERVICE,
+            '      REVERB_PORT: "8080"',
+            '      REVERB_SCALING_ENABLED: "false"',
+            '      REVERB_SCHEME: http',
+            '      REVERB_SERVER_HOST: 0.0.0.0',
+            '      REVERB_SERVER_PORT: "8080"',
+            '    volumes:',
+            '      - '.$configRootExpression.'/operations-websocket:/etc/orbit/operations-websocket:ro',
+            '    healthcheck:',
+            '      test: ["CMD-SHELL", "php -r \'$socket = @fsockopen(\"127.0.0.1\", 8080); exit(is_resource($socket) ? 0 : 1);\'"]',
+            '      interval: 5s',
+            '      timeout: 3s',
+            '      retries: 12',
+            '      start_period: 10s',
+            '    deploy:',
+            '      replicas: 1',
+            '      labels:',
+            '        orbit.managed: "true"',
+            '        orbit.service: '.self::OPERATIONS_REVERB_SERVICE,
+            '      placement:',
+            '        constraints:',
+            '          - node.labels.orbit.role.gateway == true',
+            '      update_config:',
+            '        parallelism: 1',
+            '        order: stop-first',
+            '        failure_action: rollback',
+        ];
+    }
+
     private function normalizeConfigRoot(string $configRoot): string
     {
         $configRoot = trim($configRoot);
@@ -201,6 +259,21 @@ final readonly class GatewaySwarmStackRenderer
         }
 
         return rtrim($installRoot, '/');
+    }
+
+    private function normalizeOperationsReverbImage(string $image): string
+    {
+        $image = trim($image);
+
+        if ($image === '') {
+            throw new InvalidArgumentException('Operations Reverb image reference cannot be empty.');
+        }
+
+        if (preg_match('/\s/', $image) === 1) {
+            throw new InvalidArgumentException('Operations Reverb image reference cannot contain whitespace.');
+        }
+
+        return $image;
     }
 
     private function quoted(string $value): string

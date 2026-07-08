@@ -5,6 +5,7 @@ use Illuminate\Contracts\Console\Kernel as ConsoleKernelContract;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 $gatewayRoot = dirname(__DIR__);
 $orbitPaths = require __DIR__.'/orbit_paths.php';
@@ -18,7 +19,9 @@ $app = Application::configure(basePath: $gatewayRoot)
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->trimStrings(except: [
+            fn (Request $request): bool => $request->is('api/operations/*/stream/publish'),
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

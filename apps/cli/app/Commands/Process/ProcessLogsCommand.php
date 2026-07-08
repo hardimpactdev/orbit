@@ -8,6 +8,8 @@ use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayLogStreamClient;
+use App\Services\GatewayOperationStreamSubscriber;
+use RuntimeException;
 
 final class ProcessLogsCommand extends GatewayCommand
 {
@@ -98,23 +100,66 @@ final class ProcessLogsCommand extends GatewayCommand
         $workspace = $this->stringOption('workspace');
 
         try {
-            return app(GatewayLogStreamClient::class)
-                ->withNodeTransportPreference($this->nodeTransportPreference())
-                ->streamText(
-                    '/api/processes/'.rawurlencode($name).'/log',
-                    $this->filledQuery([
-                        'node' => $node,
-                        'app' => $app,
-                        'workspace' => $workspace,
-                        'lines' => $lines,
-                        'follow' => 1,
-                    ]),
-                    function (string $chunk): void {
-                        $this->output->write($chunk);
-                    },
+            $query = $this->filledQuery([
+                'node' => $node,
+                'app' => $app,
+                'workspace' => $workspace,
+                'lines' => $lines,
+            ]);
+            $write = function (string $chunk): void {
+                $this->output->write($chunk);
+            };
+
+            if ($this->nodeTransportPreference() === 'transitional-ssh-fallback') {
+                return app(GatewayLogStreamClient::class)
+                    ->withNodeTransportPreference($this->nodeTransportPreference())
+                    ->streamText(
+                        '/api/processes/'.rawurlencode($name).'/log',
+                        [
+                            ...$query,
+                            'follow' => 1,
+                        ],
+                        $write,
+                    );
+            }
+
+            $response = $this->gatewayPost('/api/processes/'.rawurlencode($name).'/log-stream', $query);
+            $operationRunId = data_get(target: $response, key: 'success.data.operation.uuid');
+
+            if (! is_string($operationRunId) || trim($operationRunId) === '') {
+                throw GatewayApiException::streamMalformed(
+                    new RuntimeException('Gateway process log stream start response omitted operation uuid.'),
                 );
+            }
+
+            app(GatewayOperationStreamSubscriber::class)->subscribe(
+                trim($operationRunId),
+                null,
+                function (array $frame) use ($write): void {
+                    $this->writeOperationFrame($frame, $write);
+                },
+            );
+
+            return self::SUCCESS;
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $frame
+     * @param  callable(string): void  $write
+     */
+    private function writeOperationFrame(array $frame, callable $write): void
+    {
+        if (! in_array($frame['type'] ?? null, ['stdout', 'stderr'], strict: true)) {
+            return;
+        }
+
+        $data = data_get(target: $frame, key: 'payload.data');
+
+        if (is_string($data) && $data !== '') {
+            $write($data);
         }
     }
 

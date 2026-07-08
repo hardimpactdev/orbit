@@ -91,6 +91,12 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->toBe("gateway\n10.6.0.2\n")
         ->and(File::exists("{$this->configRoot}/gateway.sqlite"))
         ->toBeTrue()
+        ->and(File::get("{$this->configRoot}/operations-websocket/apps.php"))
+        ->toContain("'app_id' => 'orbit-operations'")
+        ->and(File::get("{$this->configRoot}/operations-websocket/apps.php"))
+        ->toContain("'key' => '")
+        ->and(File::get("{$this->configRoot}/operations-websocket/apps.php"))
+        ->toContain("'secret' => '")
         ->and(File::get("{$this->configRoot}/.env"))
         ->toContain('DB_BUSY_TIMEOUT=5000')
         ->and(File::get("{$this->configRoot}/.env"))
@@ -99,6 +105,12 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->toContain('DB_SYNCHRONOUS=NORMAL')
         ->and(File::get("{$this->configRoot}/.env"))
         ->toContain("DB_DATABASE={$this->configRoot}/gateway.sqlite")
+        ->and(File::get("{$this->configRoot}/.env"))
+        ->toContain('ORBIT_OPERATIONS_REVERB_APP_ID=orbit-operations')
+        ->and(File::get("{$this->configRoot}/.env"))
+        ->toContain('ORBIT_OPERATIONS_REVERB_APP_KEY=')
+        ->and(File::get("{$this->configRoot}/.env"))
+        ->toContain('ORBIT_OPERATIONS_REVERB_APP_SECRET=')
         ->and($stack)
         ->toContain('ORBIT_GATEWAY_EXPOSURE_MODE: gateway-direct')
         ->and($stack)
@@ -109,32 +121,33 @@ it('converges gateway-direct Swarm service with CA-rooted certs and Docker-aware
         ->toContain('published: 443')
         ->and($stack)
         ->toContain('${ORBIT_CONFIG_ROOT:-'.$this->configRoot.'}/certs:/etc/orbit/certs:ro')
-        ->and($firewallScript)
-        ->toContain('DOCKER-USER')
-        ->and($firewallScript)
-        ->toContain('wg-orbit')
-        ->and($firewallScript)
-        ->toContain('10.6.0.0/24')
-        ->and($firewallScript)
-        ->toContain('--dport 443')
-        ->and($firewallScript)
-        ->toContain('-i "$WG_IFACE" -p tcp --dport 443')
-        ->and($firewallScript)
-        ->toContain('-i "$WG_IFACE" -p udp --dport 443')
-        ->and($firewallScript)
-        ->toContain('-s "$WG_CIDR" -p tcp --dport 443')
-        ->and($firewallScript)
-        ->toContain('-s "$WG_CIDR" -p udp --dport 443')
-        ->and($firewallScript)
-        ->toContain('-p udp --dport 443 -j DROP')
-        ->and($firewallScript)
-        ->toContain('sudo ufw allow in on "$WG_IFACE" proto tcp from "$WG_CIDR" to any port 443')
-        ->and($firewallScript)
-        ->toContain('sudo ufw allow in on "$WG_IFACE" proto udp from "$WG_CIDR" to any port 443')
-        ->and($firewallScript)
-        ->toContain('sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443')
-        ->and($firewallScript)
-        ->toContain('sudo ufw deny in proto udp from 0.0.0.0/0 to any port 443');
+        ->and($stack)
+        ->toContain('orbit-operations-reverb:')
+        ->and($stack)
+        ->toContain('image: "orbit-reverb:current"')
+        ->and($stack)
+        ->toContain('ORBIT_WEBSOCKET_APPS_CONFIG: /etc/orbit/operations-websocket/apps.php')
+        ->and($stack)
+        ->toContain(
+            '${ORBIT_CONFIG_ROOT:-'.$this->configRoot.'}/operations-websocket:/etc/orbit/operations-websocket:ro',
+        )
+        ->and($stack)
+        ->not->toContain('ORBIT_OPERATIONS_REVERB_APP_SECRET')->and($stack)
+        ->not->toContain('secret')->and($firewallScript)->toContain('DOCKER-USER')->and($firewallScript)->toContain(
+            'wg-orbit',
+        )->and($firewallScript)->toContain('10.6.0.0/24')->and($firewallScript)->toContain('--dport 443')->and(
+            $firewallScript,
+        )->toContain('-i "$WG_IFACE" -p tcp --dport 443')->and($firewallScript)->toContain(
+            '-i "$WG_IFACE" -p udp --dport 443',
+        )->and($firewallScript)->toContain('-s "$WG_CIDR" -p tcp --dport 443')->and($firewallScript)->toContain(
+            '-s "$WG_CIDR" -p udp --dport 443',
+        )->and($firewallScript)->toContain('-p udp --dport 443 -j DROP')->and($firewallScript)->toContain(
+            'sudo ufw allow in on "$WG_IFACE" proto tcp from "$WG_CIDR" to any port 443',
+        )->and($firewallScript)->toContain(
+            'sudo ufw allow in on "$WG_IFACE" proto udp from "$WG_CIDR" to any port 443',
+        )->and($firewallScript)->toContain('sudo ufw deny in proto tcp from 0.0.0.0/0 to any port 443')->and(
+            $firewallScript,
+        )->toContain('sudo ufw deny in proto udp from 0.0.0.0/0 to any port 443');
 
     Process::assertRan("docker info --format '{{.Swarm.LocalNodeState}}'");
     Process::assertRan("docker node update --label-add 'orbit.role.gateway=true' 'swarm-node-id'");

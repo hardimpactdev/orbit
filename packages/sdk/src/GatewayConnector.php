@@ -13,6 +13,9 @@ final class GatewayConnector extends Connector
     use AlwaysThrowOnErrors;
     use HasCorrelationHeader;
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private readonly string $clientName = 'cli',
         private readonly ?string $baseUrl = null,

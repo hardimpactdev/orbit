@@ -4,15 +4,27 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Exceptions\GatewayApiException;
+use App\Services\GatewayOperationStreamPublisher;
 use Symfony\Component\Process\Process;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
+ */
 final readonly class LocalProcessLogsAction
 {
+    private const int OPERATION_STREAM_POLL_INTERVAL_MICROSECONDS = 1_000_000;
+
     private const int SYSTEMD_FOLLOW_FLAG_OFFSET = 6;
 
     private const int DOCKER_FOLLOW_FLAG_OFFSET = 4;
 
     private const int LAUNCHD_FOLLOW_FLAG_OFFSET = 3;
+
+    public function __construct(
+        private GatewayOperationStreamPublisher $operationStreams,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -53,12 +65,135 @@ final readonly class LocalProcessLogsAction
     public function stream(array $payload, callable $onOutput): int
     {
         $input = LocalProcessLogsPayload::from($payload);
+
+        if ($input->operationStream !== null) {
+            return $this->streamOperationFrames($input, $onOutput);
+        }
+
         $process = new Process($this->command($input));
         $process->setTimeout(null);
 
         return $process->run(static function (string $_type, string $buffer) use ($onOutput): void {
             $onOutput($buffer);
         });
+    }
+
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    private function streamOperationFrames(LocalProcessLogsPayload $input, callable $onOutput): int
+    {
+        $process = new Process($this->command($input));
+        $process->setTimeout(null);
+        $process->start();
+
+        $sequence = 0;
+        $nextStopPollAt = microtime(true) + 1.0;
+
+        while ($process->isRunning()) {
+            $this->publishIncrementalOutput($process, $input, $onOutput, $sequence);
+
+            if (microtime(true) >= $nextStopPollAt) {
+                $nextStopPollAt = microtime(true) + (self::OPERATION_STREAM_POLL_INTERVAL_MICROSECONDS / 1_000_000);
+
+                if ($this->shouldStop($input)) {
+                    $process->stop(1);
+
+                    return self::successExitCode();
+                }
+            }
+
+            usleep(100_000);
+        }
+
+        $this->publishIncrementalOutput($process, $input, $onOutput, $sequence);
+
+        return $process->getExitCode() ?? 1;
+    }
+
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    private function publishIncrementalOutput(
+        Process $process,
+        LocalProcessLogsPayload $input,
+        callable $onOutput,
+        int &$sequence,
+    ): void {
+        $stdout = $process->getIncrementalOutput();
+
+        if ($stdout !== '') {
+            $this->publishChunk($input, 'stdout', $stdout, $onOutput, $sequence);
+        }
+
+        $stderr = $process->getIncrementalErrorOutput();
+
+        if ($stderr !== '') {
+            $this->publishChunk($input, 'stderr', $stderr, $onOutput, $sequence);
+        }
+    }
+
+    /**
+     * @param  callable(string): void  $onOutput
+     */
+    private function publishChunk(
+        LocalProcessLogsPayload $input,
+        string $type,
+        string $buffer,
+        callable $onOutput,
+        int &$sequence,
+    ): void {
+        $stream = $input->operationStream;
+
+        if ($stream === null) {
+            return;
+        }
+
+        $onOutput($buffer);
+        $sequence++;
+
+        try {
+            $this->operationStreams->publishProcessLogChunk(
+                stream: $stream,
+                sequence: $sequence,
+                type: $type,
+                output: $buffer,
+            );
+        } catch (GatewayApiException $exception) {
+            throw new LocalProcessLogsFailure(
+                errorCode: 'operation_stream_publish_failed',
+                message: 'Process logs operation stream publish failed.',
+                meta: [
+                    'reason' => $exception->cliFailureCode(),
+                ],
+            );
+        }
+    }
+
+    private function shouldStop(LocalProcessLogsPayload $input): bool
+    {
+        $stream = $input->operationStream;
+
+        if ($stream === null) {
+            return false;
+        }
+
+        try {
+            return $this->operationStreams->shouldStop($stream);
+        } catch (GatewayApiException $exception) {
+            throw new LocalProcessLogsFailure(
+                errorCode: 'operation_stream_stop_decision_failed',
+                message: 'Process logs operation stream stop decision failed.',
+                meta: [
+                    'reason' => $exception->cliFailureCode(),
+                ],
+            );
+        }
+    }
+
+    private static function successExitCode(): int
+    {
+        return 0;
     }
 
     /**

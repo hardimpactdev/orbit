@@ -27,8 +27,8 @@ use Saloon\Enums\Method;
 uses(TestCase::class);
 
 it('aligns core dashboard sdk request shapes with the gateway contract', function (): void {
-    foreach (coreDashboardRequestContracts() as $contract) {
-        $request = makeContractRequest($contract['request'], $contract['arguments']);
+    foreach (core_dashboard_request_contracts() as $contract) {
+        $request = make_contract_request($contract['request'], $contract['arguments']);
 
         Assert::assertSame($contract['endpoint'], $request->resolveEndpoint(), "{$contract['name']} endpoint drifted.");
         Assert::assertSame($contract['method'], $request->getMethod(), "{$contract['name']} method drifted.");
@@ -54,8 +54,10 @@ it('aligns core dashboard sdk request shapes with the gateway contract', functio
  *     query: array<string, mixed>,
  *     body: array<string, mixed>,
  * }>
+ *
+ * @mago-expect lint:halstead
  */
-function coreDashboardRequestContracts(): array
+function core_dashboard_request_contracts(): array
 {
     return [
         [
@@ -189,7 +191,7 @@ function coreDashboardRequestContracts(): array
  * @param  class-string<GatewayRequest>  $request
  * @param  array<string, mixed>  $arguments
  */
-function makeContractRequest(string $request, array $arguments): GatewayRequest
+function make_contract_request(string $request, array $arguments): GatewayRequest
 {
     $reflection = new ReflectionClass($request);
     $constructor = $reflection->getConstructor();
@@ -215,9 +217,11 @@ function makeContractRequest(string $request, array $arguments): GatewayRequest
     $orderedArguments = [];
 
     foreach ($parameters as $parameter) {
-        if (array_key_exists($parameter, $arguments)) {
-            $orderedArguments[] = $arguments[$parameter];
+        if (! array_key_exists($parameter, $arguments)) {
+            continue;
         }
+
+        $orderedArguments[] = $arguments[$parameter];
     }
 
     $instance = $reflection->newInstanceArgs($orderedArguments);

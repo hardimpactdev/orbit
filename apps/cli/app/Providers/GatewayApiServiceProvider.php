@@ -16,6 +16,8 @@ use App\Services\GatewayApiClient;
 use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationFollower;
+use App\Services\GatewayOperationStreamPublisher;
+use App\Services\GatewayOperationStreamSubscriber;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
 use App\Services\Profile\CurlProfileRequestProfiler;
@@ -126,6 +128,27 @@ final class GatewayApiServiceProvider extends ServiceProvider
                 120,
             ),
         ));
+
+        $this->app->bind(GatewayOperationStreamPublisher::class, function (): GatewayOperationStreamPublisher {
+            $config = $this->gatewayConnectionConfig();
+
+            return new GatewayOperationStreamPublisher(
+                baseUrl: $config['base_url'],
+                timeout: $config['timeout'],
+                caPemPath: $config['ca_pem_path'],
+            );
+        });
+
+        $this->app->bind(GatewayOperationStreamSubscriber::class, function (): GatewayOperationStreamSubscriber {
+            $config = $this->gatewayConnectionConfig();
+
+            return new GatewayOperationStreamSubscriber(
+                baseUrl: $config['base_url'],
+                timeout: $config['timeout'],
+                events: $this->app->make(GatewayOperationEventStreamClient::class),
+                caPemPath: $config['ca_pem_path'],
+            );
+        });
 
         $this->app->singleton(GatewayLogStreamClient::class, function (): GatewayLogStreamClient {
             $config = $this->gatewayConnectionConfig();

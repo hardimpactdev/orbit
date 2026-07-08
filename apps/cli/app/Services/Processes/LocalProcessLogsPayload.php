@@ -22,6 +22,7 @@ final readonly class LocalProcessLogsPayload
         public bool $follow,
         public ?string $stdoutPath = null,
         public ?string $stderrPath = null,
+        public ?LocalProcessLogsOperationStream $operationStream = null,
     ) {}
 
     /**
@@ -37,6 +38,7 @@ final readonly class LocalProcessLogsPayload
             follow: self::follow($payload['follow'] ?? false),
             stdoutPath: self::nullablePath($payload['stdout_path'] ?? null),
             stderrPath: self::nullablePath($payload['stderr_path'] ?? null),
+            operationStream: LocalProcessLogsOperationStream::from($payload['operation_stream'] ?? null),
         );
 
         if ($backend === 'launchd') {

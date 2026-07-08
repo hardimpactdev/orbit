@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\GatewayOperationStreamSubscriber;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -107,7 +108,51 @@ describe('process:logs', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['logs']['node'])->toBe('app-1');
     });
 
-    it('streams followed logs as text and requests the gateway stream endpoint', function (): void {
+    it('streams followed logs through the operation websocket surface by default', function (): void {
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->instance(GatewayOperationStreamSubscriber::class, new ProcessLogsFakeOperationStreamSubscriber([
+            [
+                'type' => 'stdout',
+                'payload' => ['data' => "one\n"],
+            ],
+            [
+                'type' => 'stdout',
+                'payload' => ['data' => "two\n"],
+            ],
+        ]));
+
+        Http::fake([
+            'https://gateway.test/*' => Http::response(fakeSuccessEnvelope([
+                'operation' => [
+                    'uuid' => 'run-1',
+                    'stream_descriptor_url' => '/api/operations/run-1/stream',
+                ],
+            ]), 202),
+        ]);
+
+        [$exitCode, $output] = runCommand($this, 'process:logs', [
+            'name' => 'vite',
+            '--app' => 'docs',
+            '--follow' => true,
+            '--lines' => 5,
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            $url = urldecode($request->url());
+
+            return (
+                $request->method() === 'POST'
+                && str_contains($url, '/api/processes/vite/log-stream')
+                && $request['app'] === 'docs'
+                && $request['lines'] === 5
+            );
+        });
+
+        expect($exitCode)->toBe(0)->and($output)->toBe("one\ntwo");
+    });
+
+    it('keeps explicit ssh fallback followed logs on the gateway text stream', function (): void {
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
 
@@ -122,6 +167,7 @@ describe('process:logs', function (): void {
             '--app' => 'docs',
             '--follow' => true,
             '--lines' => 5,
+            '--node-transport' => 'transitional-ssh-fallback',
         ]);
 
         Http::assertSent(function (Request $request): bool {
@@ -130,10 +176,9 @@ describe('process:logs', function (): void {
             return (
                 $request->method() === 'GET'
                 && str_contains($url, '/api/processes/vite/log')
-                && str_contains($url, 'app=docs')
-                && str_contains($url, 'lines=5')
                 && str_contains($url, 'follow=1')
-                && $request->hasHeader('Accept', 'text/plain')
+                && ! str_contains($url, 'stream_transport=operation-websocket')
+                && $request->hasHeader('X-Orbit-Node-Transport-Preference', 'transitional-ssh-fallback')
             );
         });
 
@@ -215,3 +260,26 @@ describe('process:logs', function (): void {
         expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });
+
+class ProcessLogsFakeOperationStreamSubscriber extends GatewayOperationStreamSubscriber
+{
+    /**
+     * @param  list<array<string, mixed>>  $frames
+     */
+    public function __construct(
+        private readonly array $frames,
+    ) {}
+
+    /**
+     * @param  callable(array<string, mixed>): void  $onFrame
+     */
+    #[Override]
+    public function subscribe(string $operationRunId, ?int $lastReplayCursor, callable $onFrame): void
+    {
+        expect($operationRunId)->toBe('run-1')->and($lastReplayCursor)->toBeNull();
+
+        foreach ($this->frames as $frame) {
+            $onFrame($frame);
+        }
+    }
+}

@@ -573,17 +573,20 @@ it('starts configured app processes for the workspace after rendering runtime un
             'status' => 'started',
             'count' => 1,
             'names' => ['vite'],
-        ])
-        ->and($certificates->hosts)
-        ->toBe(['feature-a.demo', 'feature-a.demo.beast'])
-        ->and($requests)
+        ]);
+
+    expect($certificates->hosts)
+        ->toContain('feature-a.demo')
+        ->not->toContain('feature-a.demo.beast');
+
+    expect($requests)
         ->toHaveCount(5)
         ->and(array_slice($requests[3]['argv'] ?? [], offset: 0, length: 3))
         ->toBe(['internal:process-systemd-service', 'apply', 'orbit_demo_feature-a_vite.service'])
         ->and(array_slice($requests[4]['argv'] ?? [], offset: 0, length: 3))
-        ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_feature-a_vite.service'])
-        ->and($shell->scripts)
-        ->not->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
+        ->toBe(['internal:process-systemd-service', 'start', 'orbit_demo_feature-a_vite.service']);
+
+    expect($shell->scripts)->not->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
 });
 
 it('reports converged for already-active workspace', function (): void {
@@ -831,22 +834,23 @@ it('passes lifecycle environment into containerized setup steps', function (): v
 
     expect($composerRun['script'])->toContain("'ORBIT_APP=demo'");
     expect($composerRun['script'])->toContain("'ORBIT_WORKSPACE_NAME=feature-a'");
-    expect($composerRun['script'])->toContain("'APP_URL=https://feature-a.demo.beast'");
-    expect($composerRun['script'])->toContain("'VITE_APP_URL=https://feature-a.demo.beast'");
+    expect($composerRun['script'])->toContain("'APP_URL=https://feature-a.demo'");
+    expect($composerRun['script'])->toContain("'VITE_APP_URL=https://feature-a.demo'");
     expect($composerRun['script'])
         ->toContain(
-            "'VITE_DEV_SERVER_KEY=/home/gateway/.config/orbit/certs/feature-a.demo.beast.key'",
+            "'VITE_DEV_SERVER_KEY=/home/gateway/.config/orbit/certs/feature-a.demo.key'",
         );
     expect($composerRun['script'])
         ->toContain(
-            "'VITE_DEV_SERVER_CERT=/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt'",
+            "'VITE_DEV_SERVER_CERT=/home/gateway/.config/orbit/certs/feature-a.demo.crt'",
         );
+    expect($composerRun['script'])->not->toContain('feature-a.demo.beast');
     expect($composerRun['options']['metadata'])->toMatchArray([
-        'APP_URL' => 'https://feature-a.demo.beast',
-        'VITE_APP_URL' => 'https://feature-a.demo.beast',
-        'VITE_VALET_HOST' => 'feature-a.demo.beast',
-        'VITE_DEV_SERVER_KEY' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.key',
-        'VITE_DEV_SERVER_CERT' => '/home/gateway/.config/orbit/certs/feature-a.demo.beast.crt',
+        'APP_URL' => 'https://feature-a.demo',
+        'VITE_APP_URL' => 'https://feature-a.demo',
+        'VITE_VALET_HOST' => 'feature-a.demo',
+        'VITE_DEV_SERVER_KEY' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',
+        'VITE_DEV_SERVER_CERT' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
     ]);
 });
 
