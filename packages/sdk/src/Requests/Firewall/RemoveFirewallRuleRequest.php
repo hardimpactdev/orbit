@@ -6,11 +6,15 @@ namespace Orbit\Sdk\Laravel\Requests\Firewall;
 
 use Orbit\Sdk\Laravel\GatewayRequest;
 use Orbit\Sdk\Laravel\Responses\Firewall\FirewallRuleMutationResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
+use Saloon\Traits\Body\HasJsonBody;
 
-final class RemoveFirewallRuleRequest extends GatewayRequest
+final class RemoveFirewallRuleRequest extends GatewayRequest implements HasBody
 {
+    use HasJsonBody;
+
     #[\Override]
     protected Method $method = Method::DELETE;
 
@@ -27,7 +31,7 @@ final class RemoveFirewallRuleRequest extends GatewayRequest
     /**
      * @return array<string, mixed>
      */
-    protected function defaultQuery(): array
+    protected function defaultBody(): array
     {
         return [
             'node' => $this->node,

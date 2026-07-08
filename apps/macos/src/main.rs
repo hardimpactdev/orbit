@@ -3,7 +3,7 @@ use orbit_agent::{
     GatewayClient, ServiceStatusSnapshot,
 };
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -11,7 +11,7 @@ use std::time::Duration;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, Wry};
+use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow, Wry};
 
 const TRAY_ID: &str = "orbit-macos-tray";
 const STATUS_MENU_ID: &str = "connection_status";
@@ -38,6 +38,7 @@ fn main() {
     bootstrap_process_environment();
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![dashboard_config])
         .setup(|app| {
             start_embedded_agent_service();
 
@@ -71,10 +72,58 @@ fn main() {
                 })
                 .build(app)?;
 
+            show_dashboard_window(app.handle());
+
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("failed to run Orbit macOS");
+}
+
+#[tauri::command]
+fn dashboard_config() -> DashboardConfig {
+    match AgentConfig::load_default() {
+        Ok(config) => {
+            let gateway_host = gateway_host_from_config(&config);
+            let connection = ping_gateway_connection(&config).label();
+
+            DashboardConfig {
+                base_url: Some(format!("{}/api", config.gateway_url.trim_end_matches('/'))),
+                config_loaded: true,
+                connection,
+                gateway_host,
+                gateway_name: Some(config.gateway_name),
+                node_name: Some(config.node_name),
+            }
+        }
+        Err(ConfigError::MissingConfig(path)) => DashboardConfig {
+            base_url: None,
+            config_loaded: false,
+            connection: ConnectionStatus::MissingConfig(path).label(),
+            gateway_host: "unknown".to_string(),
+            gateway_name: None,
+            node_name: None,
+        },
+        Err(error) => DashboardConfig {
+            base_url: None,
+            config_loaded: false,
+            connection: ConnectionStatus::Disconnected(error.to_string()).label(),
+            gateway_host: "unknown".to_string(),
+            gateway_name: None,
+            node_name: None,
+        },
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DashboardConfig {
+    base_url: Option<String>,
+    config_loaded: bool,
+    connection: String,
+    gateway_host: String,
+    gateway_name: Option<String>,
+    node_name: Option<String>,
 }
 
 fn bootstrap_process_environment() {
@@ -185,10 +234,55 @@ fn refresh_menu(
     } else if let Ok(items) = menu_items.lock() {
         items.update(&menu_state);
     }
+}
 
+fn show_dashboard_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
+        let _ = window.set_position(dashboard_window_position(&window));
+        let _ = window.show();
+        let _ = window.set_focus();
     }
+}
+
+fn dashboard_window_position(window: &WebviewWindow<Wry>) -> PhysicalPosition<i32> {
+    window
+        .available_monitors()
+        .ok()
+        .and_then(|monitors| {
+            monitors
+                .into_iter()
+                .map(|monitor| {
+                    let work_area = *monitor.work_area();
+
+                    (monitor_work_area_score(work_area), work_area)
+                })
+                .min_by_key(|(score, _)| *score)
+                .map(|(_, work_area)| {
+                    PhysicalPosition::new(
+                        work_area.position.x.saturating_add(96),
+                        work_area.position.y.saturating_add(96),
+                    )
+                })
+        })
+        .unwrap_or_else(|| PhysicalPosition::new(96, 96))
+}
+
+fn monitor_work_area_score(work_area: tauri::PhysicalRect<i32, u32>) -> (u8, u8, i64) {
+    let width = i32::try_from(work_area.size.width).unwrap_or(i32::MAX);
+    let height = i32::try_from(work_area.size.height).unwrap_or(i32::MAX);
+    let contains_origin = work_area.position.x <= 0
+        && work_area.position.y <= 0
+        && work_area.position.x.saturating_add(width) > 0
+        && work_area.position.y.saturating_add(height) > 0;
+    let starts_on_positive_desktop = work_area.position.x >= 0 && work_area.position.y >= 0;
+    let distance_from_origin =
+        i64::from(work_area.position.x).abs() + i64::from(work_area.position.y).abs();
+
+    (
+        if contains_origin { 0 } else { 1 },
+        if starts_on_positive_desktop { 0 } else { 1 },
+        distance_from_origin,
+    )
 }
 
 fn should_replace_menu_for_refresh(
