@@ -56,7 +56,7 @@ class GatewayOperationStreamSubscriber
             ]);
 
             $this->waitForSubscription($transport, $channel);
-            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences);
+            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
             $this->receiveFrames(
                 $operationRunId,
                 $descriptor,
@@ -67,12 +67,13 @@ class GatewayOperationStreamSubscriber
                 $seenSequences,
                 $lastEventId,
             );
+            $lastEventId = $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
         } catch (GatewayApiException $exception) {
             if (! $this->shouldReplayFallback($exception)) {
                 throw $exception;
             }
 
-            $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences);
+            $this->replayBackfill($descriptor, $lastEventId, $onFrame, $seenSequences, force: true);
         } finally {
             if (is_string($socketId) && $socketId !== '') {
                 $this->leave($descriptor, $socketId);
@@ -113,11 +114,12 @@ class GatewayOperationStreamSubscriber
         ?int $lastEventId,
         callable $onFrame,
         array &$seenSequences,
+        bool $force = false,
     ): ?int {
         $eventsEndpoint = $this->stringValue($descriptor, 'backfill.events_endpoint');
         $cursor = $this->integerValue($descriptor, 'backfill.cursor');
 
-        if ($cursor === null && $lastEventId === null) {
+        if (! $force && $cursor === null && $lastEventId === null) {
             return $lastEventId;
         }
 
@@ -148,14 +150,54 @@ class GatewayOperationStreamSubscriber
      */
     private function connection(array $descriptor): OperationStreamWebSocketConnection
     {
+        $endpoint = $this->gatewayWebSocketEndpoint($descriptor);
+
         return new OperationStreamWebSocketConnection(
-            scheme: $this->websocketScheme($this->stringValue($descriptor, 'reverb.scheme')),
-            host: $this->stringValue($descriptor, 'reverb.host'),
-            port: $this->integerValue($descriptor, 'reverb.port') ?? 443,
+            scheme: $this->websocketScheme($endpoint['scheme']),
+            host: $endpoint['host'],
+            port: $endpoint['port'],
             appKey: $this->stringValue($descriptor, 'reverb.app_key'),
             timeout: $this->timeout,
             caPemPath: $this->caPemPath,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $descriptor
+     * @return array{host: string, port: int, scheme: string}
+     */
+    private function gatewayWebSocketEndpoint(array $descriptor): array
+    {
+        $baseUrl = is_string($this->baseUrl) ? trim($this->baseUrl) : '';
+        $parts = $baseUrl !== '' ? parse_url($baseUrl) : false;
+        $host = is_array($parts) && is_string($parts['host'] ?? null) ? $parts['host'] : null;
+        $scheme = is_array($parts) && is_string($parts['scheme'] ?? null) ? strtolower($parts['scheme']) : null;
+        $port = is_array($parts) && is_numeric($parts['port'] ?? null)
+            ? (int) $parts['port']
+            : null;
+
+        if ($host !== null && $scheme !== null) {
+            return [
+                'host' => $host,
+                'port' => $port ?? $this->defaultPort($scheme),
+                'scheme' => $scheme,
+            ];
+        }
+
+        return [
+            'host' => $this->stringValue($descriptor, 'reverb.host'),
+            'port' => $this->integerValue($descriptor, 'reverb.port') ?? 443,
+            'scheme' => $this->stringValue($descriptor, 'reverb.scheme'),
+        ];
+    }
+
+    private function defaultPort(string $scheme): int
+    {
+        return match ($scheme) {
+            'http', 'ws' => 80,
+            'https', 'wss' => 443,
+            default => 443,
+        };
     }
 
     /**

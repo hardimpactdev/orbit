@@ -103,6 +103,27 @@ it('continues replay after the last seen event sequence', function (): void {
         )->toContain('"status":"done"');
 });
 
+it('wraps custom operation events in progress step frames', function (): void {
+    $custom = $this->recorder->append($this->run, 'operation_stream.frame', [
+        'frame' => [
+            'type' => 'stderr',
+            'payload' => ['data' => 'log line'],
+        ],
+    ]);
+
+    $response = operationEventStreamRequest($this->run, query: ['once' => '1']);
+
+    $response->assertOk();
+
+    $content = $response->streamedContent();
+
+    expect($content)
+        ->toContain("id: {$custom->sequence}\n")
+        ->toContain("event: step\n")
+        ->toContain('"event":"operation_stream.frame"')
+        ->toContain('"data":"log line"');
+});
+
 it('streams terminal error state when the operation ended with an error event', function (): void {
     $terminal = $this->recorder->error(
         $this->run,

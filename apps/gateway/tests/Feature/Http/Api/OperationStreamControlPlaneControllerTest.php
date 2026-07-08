@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\AppWebSocketBinding;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\OperationStreamSubscriberLease;
 use App\Services\Operations\OperationEventRecorder;
@@ -31,6 +32,8 @@ beforeEach(function (): void {
     Config::set('orbit.operations.stream_auth_ttl_seconds', '300');
     Config::set('orbit.operations.publisher_token_ttl_seconds', '120');
     Config::set('orbit.operations.subscriber_lease_ttl_seconds', '60');
+
+    LocalGatewaySettings::current()->fill(['gateway_url' => 'https://gateway.test'])->save();
 
     $this->gateway = Node::factory()
         ->gateway()
@@ -72,18 +75,38 @@ it('returns an operation stream descriptor without app websocket credentials', f
         ->assertJsonPath('success.data.channel.name', "private-operations.{$this->run->id}")
         ->assertJsonPath('success.data.channel.private', true)
         ->assertJsonPath('success.data.reverb.app_key', 'gateway-reverb-key')
-        ->assertJsonPath('success.data.reverb.host', 'operations.orbit.test')
+        ->assertJsonPath('success.data.reverb.host', 'gateway.test')
         ->assertJsonPath('success.data.reverb.port', 443)
         ->assertJsonPath('success.data.reverb.scheme', 'https')
         ->assertJsonPath('success.data.auth.endpoint', "/api/operations/{$this->run->id}/stream/auth")
         ->assertJsonPath('success.data.auth.method', 'POST')
-        ->assertJsonPath('success.data.backfill.events_endpoint', "/api/operations/{$this->run->id}/events")
+        ->assertJsonPath('success.data.backfill.events_endpoint', "/api/operations/{$this->run->id}/events?once=1")
         ->assertJsonPath('success.data.backfill.cursor', $second->sequence)
         ->assertJsonPath('success.data.backfill.from_sequence', $first->sequence)
         ->assertJsonPath('success.data.backfill.available', 2)
         ->assertJsonMissingPath('success.data.reverb.app_secret')
         ->assertJsonMissingPath('success.data.publisher.token')
         ->assertJsonMissingPath('success.data.reverb_app_secret');
+});
+
+it('returns an explicit gateway websocket port from local gateway settings', function (): void {
+    LocalGatewaySettings::current()->fill(['gateway_url' => 'http://gateway.test:18080/'])->save();
+
+    get_operation_stream_descriptor_json($this->run->id)
+        ->assertOk()
+        ->assertJsonPath('success.data.reverb.host', 'gateway.test')
+        ->assertJsonPath('success.data.reverb.port', 18080)
+        ->assertJsonPath('success.data.reverb.scheme', 'http');
+});
+
+it('falls back to the request gateway endpoint when the local gateway url is absent', function (): void {
+    LocalGatewaySettings::current()->fill(['gateway_url' => null])->save();
+
+    get_operation_stream_descriptor_json($this->run->id, baseUrl: 'https://request-gateway.test')
+        ->assertOk()
+        ->assertJsonPath('success.data.reverb.host', 'request-gateway.test')
+        ->assertJsonPath('success.data.reverb.port', 443)
+        ->assertJsonPath('success.data.reverb.scheme', 'https');
 });
 
 it('mints operation scoped publisher credentials for the trusted target agent', function (): void {
@@ -297,18 +320,30 @@ function operation_stream_reverb_secret(): string
     return implode('-', ['gateway-reverb', 'secret']);
 }
 
-function get_operation_stream_descriptor_json(string $operationRunId): TestResponse
-{
+/**
+ * @param  array<string, string>  $server
+ */
+function get_operation_stream_descriptor_json(
+    string $operationRunId,
+    array $server = [],
+    ?string $baseUrl = null,
+): TestResponse {
+    $uri = "/api/operations/{$operationRunId}/stream";
+
+    if (is_string($baseUrl) && $baseUrl !== '') {
+        $uri = rtrim($baseUrl, characters: '/').$uri;
+    }
+
     return test()->call(
         'GET',
-        "/api/operations/{$operationRunId}/stream",
+        $uri,
         [],
         [],
         [],
-        [
+        array_merge([
             'HTTP_ACCEPT' => 'application/json',
             'REMOTE_ADDR' => OPERATION_STREAM_GATEWAY_WG_IP,
-        ],
+        ], $server),
     );
 }
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationStreamSubscriber;
 use App\Services\Operations\OperationStreamWebSocketConnection;
@@ -67,7 +68,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
                         'token' => operation_stream_subscriber_token(),
                     ],
                     'backfill' => [
-                        'events_endpoint' => '/api/operations/run-1/events',
+                        'events_endpoint' => '/api/operations/run-1/events?once=1',
                         'cursor' => 11,
                     ],
                 ],
@@ -117,7 +118,7 @@ it('subscribes to a private operation stream and backfills after the last durabl
         ->and($transport->connection?->scheme)
         ->toBe('wss')
         ->and($transport->connection?->host)
-        ->toBe('operations.orbit.test')
+        ->toBe('gateway.test')
         ->and($transport->connection?->port)
         ->toBe(443)
         ->and($transport->connection?->appKey)
@@ -131,16 +132,20 @@ it('subscribes to a private operation stream and backfills after the last durabl
             ],
         ])
         ->and($events->replays)
-        ->toBe([['/api/operations/run-1/events', 10]])
+        ->toBe([
+            ['/api/operations/run-1/events?once=1', 10],
+            ['/api/operations/run-1/events?once=1', 102],
+        ])
         ->and($history)
         ->toBe([
             'connect',
             'receive:pusher:connection_established',
             'send:pusher:subscribe',
             'receive:pusher_internal:subscription_succeeded',
-            'replay:/api/operations/run-1/events:10',
+            'replay:/api/operations/run-1/events?once=1:10',
             'receive:operation.stream.frame',
             'receive:null',
+            'replay:/api/operations/run-1/events?once=1:102',
             'close',
         ])
         ->and($frames)
@@ -235,6 +240,149 @@ it('renews subscriber leases on keepalive pings and refreshes expired subscriber
             operation_stream_subscriber_token(),
             operation_stream_subscriber_token(),
             operation_stream_refreshed_subscriber_token(),
+        ]);
+});
+
+it('replays frames published after descriptor fetch but before subscription confirmation', function (): void {
+    $transport = new FakeOperationStreamWebSocketTransport([
+        [
+            'event' => 'pusher:connection_established',
+            'data' => json_encode(['socket_id' => '1234.5678'], JSON_THROW_ON_ERROR),
+        ],
+        ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-operations.run-1'],
+        null,
+    ]);
+    $events = new FakeOperationStreamBackfillClient([
+        [
+            [
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => 'operation_stream.frame',
+                    'frame' => [
+                        'operation_uuid' => 'run-1',
+                        'sequence' => 11,
+                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                        'payload' => ['line' => 'post-descriptor'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+    $frames = [];
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+        'https://gateway.test/api/operations/run-1/stream/auth' => Http::response([
+            'success' => [
+                'data' => [
+                    'auth' => 'gateway-reverb-key:signed-subscribe-payload',
+                    'channel' => 'private-operations.run-1',
+                ],
+            ],
+        ]),
+        'https://gateway.test/api/operations/run-1/stream/leave' => Http::response([
+            'success' => ['data' => ['lease' => ['active_subscribers' => 0]]],
+        ]),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: $transport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([
+            ['/api/operations/run-1/events?once=1', null],
+            ['/api/operations/run-1/events?once=1', 101],
+        ])
+        ->and($frames)
+        ->toBe([
+            [
+                'operation_uuid' => 'run-1',
+                'sequence' => 11,
+                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                'payload' => ['line' => 'post-descriptor'],
+            ],
+        ]);
+});
+
+it('replays frames missed between initial replay and websocket close', function (): void {
+    $transport = new FakeOperationStreamWebSocketTransport([
+        [
+            'event' => 'pusher:connection_established',
+            'data' => json_encode(['socket_id' => '1234.5678'], JSON_THROW_ON_ERROR),
+        ],
+        ['event' => 'pusher_internal:subscription_succeeded', 'channel' => 'private-operations.run-1'],
+        null,
+    ]);
+    $events = new FakeOperationStreamBackfillClient([
+        [],
+        [
+            [
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => 'operation_stream.frame',
+                    'frame' => [
+                        'operation_uuid' => 'run-1',
+                        'sequence' => 11,
+                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                        'payload' => ['line' => 'final-replay'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+    $frames = [];
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+        'https://gateway.test/api/operations/run-1/stream/auth' => Http::response([
+            'success' => [
+                'data' => [
+                    'auth' => 'gateway-reverb-key:signed-subscribe-payload',
+                    'channel' => 'private-operations.run-1',
+                ],
+            ],
+        ]),
+        'https://gateway.test/api/operations/run-1/stream/leave' => Http::response([
+            'success' => ['data' => ['lease' => ['active_subscribers' => 0]]],
+        ]),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: $transport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([
+            ['/api/operations/run-1/events?once=1', null],
+            ['/api/operations/run-1/events?once=1', null],
+        ])
+        ->and($frames)
+        ->toBe([
+            [
+                'operation_uuid' => 'run-1',
+                'sequence' => 11,
+                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                'payload' => ['line' => 'final-replay'],
+            ],
         ]);
 });
 
@@ -333,8 +481,8 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
 
     expect($events->replays)
         ->toBe([
-            ['/api/operations/run-1/events', 100],
-            ['/api/operations/run-1/events', 101],
+            ['/api/operations/run-1/events?once=1', 100],
+            ['/api/operations/run-1/events?once=1', 101],
         ])
         ->and($frames)
         ->toBe([
@@ -349,6 +497,63 @@ it('dedupes live frames and falls back to durable replay on websocket protocol f
                 'sequence' => 12,
                 'durable_replay_cursor' => ['event_sequence' => 12, 'event_id' => 102],
                 'payload' => ['line' => 'fallback'],
+            ],
+        ]);
+});
+
+it('durably replays frames when the websocket fails before the descriptor cursor advances', function (): void {
+    $history = [];
+    $transport = new FailingOperationStreamWebSocketTransport($history);
+    $events = new FakeOperationStreamBackfillClient([
+        [
+            [
+                'id' => 101,
+                'type' => ProgressEventType::Step,
+                'payload' => [
+                    'event' => 'operation_stream.frame',
+                    'frame' => [
+                        'operation_uuid' => 'run-1',
+                        'sequence' => 11,
+                        'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                        'payload' => ['line' => 'fallback-after-connect-failure'],
+                    ],
+                ],
+            ],
+        ],
+    ], $history);
+    $frames = [];
+
+    Http::fake([
+        'https://gateway.test/api/operations/run-1/stream' => Http::response(operation_stream_descriptor(
+            operation_stream_subscriber_token(),
+            cursor: null,
+        )),
+    ]);
+
+    new GatewayOperationStreamSubscriber(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        events: $events,
+        transport: $transport,
+    )->subscribe('run-1', null, function (array $frame) use (&$frames): void {
+        $frames[] = $frame;
+    });
+
+    expect($events->replays)
+        ->toBe([['/api/operations/run-1/events?once=1', null]])
+        ->and($history)
+        ->toBe([
+            'connect',
+            'replay:/api/operations/run-1/events?once=1:null',
+            'close',
+        ])
+        ->and($frames)
+        ->toBe([
+            [
+                'operation_uuid' => 'run-1',
+                'sequence' => 11,
+                'durable_replay_cursor' => ['event_sequence' => 11, 'event_id' => 101],
+                'payload' => ['line' => 'fallback-after-connect-failure'],
             ],
         ]);
 });
@@ -388,7 +593,7 @@ function operation_stream_descriptor(
                     'token' => $authToken,
                 ],
                 'backfill' => [
-                    'events_endpoint' => '/api/operations/run-1/events',
+                    'events_endpoint' => '/api/operations/run-1/events?once=1',
                     'cursor' => $cursor,
                 ],
             ],
@@ -451,6 +656,25 @@ class FakeOperationStreamWebSocketTransport implements OperationStreamWebSocketT
     public function close(): void
     {
         $this->history[] = 'close';
+    }
+}
+
+class FailingOperationStreamWebSocketTransport extends FakeOperationStreamWebSocketTransport
+{
+    /**
+     * @param  list<string>  $history
+     */
+    public function __construct(array &$history = [])
+    {
+        parent::__construct([], $history);
+    }
+
+    #[Override]
+    public function connect(OperationStreamWebSocketConnection $connection): void
+    {
+        parent::connect($connection);
+
+        throw GatewayApiException::networkError(new RuntimeException('socket refused'));
     }
 }
 

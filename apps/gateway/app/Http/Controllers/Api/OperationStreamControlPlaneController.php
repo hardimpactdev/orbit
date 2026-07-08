@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\LocalGatewaySettings;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
@@ -33,10 +34,11 @@ final readonly class OperationStreamControlPlaneController
         private OperationStreamFrameBroadcaster $broadcaster,
     ) {}
 
-    public function show(OperationRun $operationRun): JsonResponse
+    public function show(Request $request, OperationRun $operationRun): JsonResponse
     {
         $channel = $this->channel($operationRun);
         $auth = $this->tokens->authToken($operationRun, $channel);
+        $reverb = $this->clientReverbEndpoint($request);
 
         return response()->json(JsonEnvelope::success([
             'operation' => [
@@ -49,9 +51,9 @@ final readonly class OperationStreamControlPlaneController
             ],
             'reverb' => [
                 'app_key' => Config::string('orbit.operations.reverb.app_key'),
-                'host' => Config::string('orbit.operations.reverb.host'),
-                'port' => $this->integerConfig('orbit.operations.reverb.port', 8080),
-                'scheme' => Config::string('orbit.operations.reverb.scheme'),
+                'host' => $reverb['host'],
+                'port' => $reverb['port'],
+                'scheme' => $reverb['scheme'],
             ],
             'auth' => [
                 'endpoint' => "/api/operations/{$operationRun->id}/stream/auth",
@@ -343,6 +345,64 @@ final readonly class OperationStreamControlPlaneController
     }
 
     /**
+     * @return array{host: string, port: int, scheme: string}
+     */
+    private function clientReverbEndpoint(Request $request): array
+    {
+        $gatewayUrls = [
+            $this->normalizedUrl(LocalGatewaySettings::current()->gateway_url),
+            $this->normalizedUrl($request->getSchemeAndHttpHost()),
+        ];
+
+        foreach ($gatewayUrls as $gatewayUrl) {
+            if ($gatewayUrl === null) {
+                continue;
+            }
+
+            $parts = parse_url($gatewayUrl);
+            $host = is_array($parts) && is_string($parts['host'] ?? null) ? $parts['host'] : null;
+            $scheme = is_array($parts) && is_string($parts['scheme'] ?? null) ? strtolower($parts['scheme']) : null;
+            $port = is_array($parts) && is_numeric($parts['port'] ?? null)
+                ? (int) $parts['port']
+                : null;
+
+            if ($host !== null && $scheme !== null) {
+                return [
+                    'host' => $host,
+                    'port' => $port ?? $this->defaultPort($scheme),
+                    'scheme' => $scheme,
+                ];
+            }
+        }
+
+        return [
+            'host' => Config::string('orbit.operations.reverb.host'),
+            'port' => $this->integerConfig('orbit.operations.reverb.port', 8080),
+            'scheme' => Config::string('orbit.operations.reverb.scheme'),
+        ];
+    }
+
+    private function defaultPort(string $scheme): int
+    {
+        return match ($scheme) {
+            'http', 'ws' => 80,
+            'https', 'wss' => 443,
+            default => $this->integerConfig('orbit.operations.reverb.port', 8080),
+        };
+    }
+
+    private function normalizedUrl(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : rtrim($value, characters: '/');
+    }
+
+    /**
      * @return array{events_endpoint: string, cursor: int|null, from_sequence: int|null, available: int}
      */
     private function backfill(OperationRun $operationRun): array
@@ -350,7 +410,7 @@ final readonly class OperationStreamControlPlaneController
         $query = OperationEvent::query()->where('operation_run_id', $operationRun->id);
 
         return [
-            'events_endpoint' => "/api/operations/{$operationRun->id}/events",
+            'events_endpoint' => "/api/operations/{$operationRun->id}/events?once=1",
             'cursor' => $this->nullableInteger((clone $query)->max('sequence')),
             'from_sequence' => $this->nullableInteger((clone $query)->min('sequence')),
             'available' => (clone $query)->count(),
