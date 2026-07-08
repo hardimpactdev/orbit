@@ -156,6 +156,23 @@ It never wraps local executor work in gateway container execution.
 verify operation tokens through the gateway API before any side effects, and
 nodes do not store executor token signing material.
 
+Operation tokens are signed with the gateway's dedicated operation-token key,
+carry a key id for rotation, bind the operation id, target node, command, and
+canonical hash of the dispatched `argv`, `cwd`, environment, and input, and are
+checked for not-before/expiry before use. Verification consumes the
+corresponding operation run; a second verification for the same operation id
+returns a distinct already-dispatched denial instead of authorizing another
+node-local execution.
+
+Gateway API requests normally authenticate by WireGuard peer identity. The
+`/api/internal-executor/token/verify` endpoint has one scoped exception for
+gateway self-execution: when service-network NAT hides the gateway host
+Agent's WireGuard or loopback peer identity, a valid, argument-bound token
+targeting an active gateway-role node may establish that gateway node identity
+for this verify endpoint only. Identity resolution never consumes the token;
+the controller consumes it only after authorization. Non-gateway targets and
+all other gateway API routes continue to require WireGuard peer identity.
+
 #### Result-boundary redaction patterns
 
 Activity rows, operation_runs rows, internal-command JSON results, and
@@ -199,7 +216,10 @@ Every `RemoteLocalExecutor` invocation must carry a gateway-issued operation
 token. The local executor validates the token before side effects, and
 node-local CLI execution is never an authority bypass. The token id corresponds
 to the gateway operation id supplied in `ORBIT_OPERATION_ID`, or to a generated
-operation id when the caller did not provide one.
+operation id when the caller did not provide one. The command process spawned
+after Agent-side verification carries a gateway authorization marker so the
+node-local internal command can confirm the operation id, command, and token
+without spending the single-use verify token twice.
 
 Every completion-based `RemoteLocalExecutor::runInternal()` dispatch writes two
 gateway-owned activity records on the `local_executor` channel:

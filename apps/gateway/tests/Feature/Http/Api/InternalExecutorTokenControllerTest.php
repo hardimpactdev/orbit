@@ -186,7 +186,7 @@ describe('InternalExecutorTokenController', function (): void {
             command: 'internal:runtime-backend:probe',
         );
 
-        internal_executor_verify_token_loopback_request([
+        internal_executor_verify_token_request_from_address([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:runtime-backend:probe',
         ])
@@ -205,7 +205,7 @@ describe('InternalExecutorTokenController', function (): void {
             command: 'internal:runtime-backend:probe',
         );
 
-        internal_executor_verify_token_loopback_request([
+        internal_executor_verify_token_request_from_address([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:runtime-backend:probe',
         ], remoteAddress: '127.0.1.1')
@@ -215,7 +215,65 @@ describe('InternalExecutorTokenController', function (): void {
             ->assertJsonPath('success.data.operation_id', 'operation-123');
     });
 
-    it('does not use loopback token verification as identity for non-gateway nodes', function (): void {
+    it('accepts gateway self verification from service network addresses and rejects replay in the controller', function (): void {
+        internal_executor_gateway_node();
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'gateway',
+            command: 'internal:fleet-update:install-cli',
+        );
+        $payload = [
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:fleet-update:install-cli',
+        ];
+
+        internal_executor_verify_token_request_from_address($payload, remoteAddress: '172.18.0.1')
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+
+        internal_executor_verify_token_request_from_address($payload, remoteAddress: '172.18.0.1')
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', false)
+            ->assertJsonPath('success.data.reason', 'operation.already_dispatched')
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
+    it('does not consume gateway tokens when service network identity binding fails', function (): void {
+        internal_executor_gateway_node();
+
+        $operationToken = app(OperationTokenFactory::class)->mint(
+            operationId: 'operation-123',
+            targetNode: 'gateway',
+            command: 'internal:fleet-update:install-cli',
+        );
+
+        internal_executor_verify_token_request_from_address([
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:fleet-update:install-cli',
+            'argv' => [
+                'internal:fleet-update:install-cli',
+                '--tampered',
+                '--operation-token='.$operationToken->toString(),
+            ],
+        ], remoteAddress: '172.18.0.1')
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'authorization_failed')
+            ->assertJsonPath('error.message', 'Peer identity unknown.');
+
+        internal_executor_verify_token_request_from_address([
+            'operation_token' => $operationToken->toString(),
+            'command' => 'internal:fleet-update:install-cli',
+        ], remoteAddress: '172.18.0.1')
+            ->assertOk()
+            ->assertJsonPath('success.data.allowed', true)
+            ->assertJsonPath('success.data.reason', null)
+            ->assertJsonPath('success.data.operation_id', 'operation-123');
+    });
+
+    it('does not use gateway token verification as identity for non-gateway nodes', function (): void {
         internalExecutorCallerNode();
 
         $operationToken = app(OperationTokenFactory::class)->mint(
@@ -224,7 +282,7 @@ describe('InternalExecutorTokenController', function (): void {
             command: 'internal:executor:verify',
         );
 
-        internal_executor_verify_token_loopback_request([
+        internal_executor_verify_token_request_from_address([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:executor:verify',
         ])
@@ -371,7 +429,7 @@ function internalExecutorVerifyTokenRequest(#[SensitiveParameter] array $payload
 /**
  * @param  array<string, mixed>  $payload
  */
-function internal_executor_verify_token_loopback_request(
+function internal_executor_verify_token_request_from_address(
     #[SensitiveParameter]
     array $payload,
     string $remoteAddress = '127.0.0.1',

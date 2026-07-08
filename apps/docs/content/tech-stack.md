@@ -239,10 +239,13 @@ PHP/PDO.
 `RemoteLocalExecutor` invokes the node-local Orbit CLI entry point; on
 source-mounted nodes `/usr/local/bin/orbit` points directly at
 `<source>/apps/cli/orbit`, while production installs still use the native CLI
-binary artifact. Internal executor commands verify operation tokens through the
-gateway API, and nodes do not store executor token signing material. Host PHP
-is not an app/workspace runtime fallback and must not replace FrankenPHP
-containers. See
+binary artifact. Internal executor commands verify dedicated-key,
+argument-bound, single-use operation tokens through the gateway API, and nodes
+do not store executor token signing material. The verify endpoint normally
+inherits WireGuard peer identity; for gateway self-execution only, a valid
+gateway-targeted token may establish gateway identity when service-network NAT
+hides the peer address. Host PHP is not an app/workspace runtime fallback and
+must not replace FrankenPHP containers. See
 [Runtime Execution Lanes](execution-lanes.md).
 
 `agent-push` V1 sends a structured request containing `operation_id`, `binary`,

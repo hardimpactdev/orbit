@@ -6,7 +6,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
-use App\Services\Operations\InternalExecutorLoopbackIdentityResolver;
+use App\Services\Operations\InternalExecutorTokenIdentityResolver;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,7 +15,7 @@ use Symfony\Component\HttpFoundation\Response;
 final readonly class WireGuardIdentity
 {
     public function __construct(
-        private InternalExecutorLoopbackIdentityResolver $internalExecutorLoopbackIdentityResolver,
+        private InternalExecutorTokenIdentityResolver $internalExecutorTokenIdentityResolver,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
@@ -36,7 +36,7 @@ final readonly class WireGuardIdentity
             ->first();
 
         if (! $node instanceof Node) {
-            $node = $this->internalExecutorLoopbackIdentityResolver->resolve($request, $peerAddress);
+            $node = $this->internalExecutorTokenIdentityResolver->resolve($request, $peerAddress);
 
             if (! $node instanceof Node) {
                 return $this->forbidden();

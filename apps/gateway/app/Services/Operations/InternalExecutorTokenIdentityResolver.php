@@ -13,7 +13,7 @@ use Orbit\Core\Security\OperationToken;
 /**
  * @mago-expect lint:cyclomatic-complexity
  */
-final readonly class InternalExecutorLoopbackIdentityResolver
+final readonly class InternalExecutorTokenIdentityResolver
 {
     public function __construct(
         private OperationTokenIntrospector $introspector,
@@ -21,7 +21,10 @@ final readonly class InternalExecutorLoopbackIdentityResolver
 
     public function resolve(Request $request, string $peerAddress): ?Node
     {
-        if (! $request->is('api/internal-executor/token/verify') || ! $this->isLoopbackAddress($peerAddress)) {
+        if (
+            ! $request->is('api/internal-executor/token/verify')
+            || filter_var($peerAddress, FILTER_VALIDATE_IP) === false
+        ) {
             return null;
         }
 
@@ -62,11 +65,6 @@ final readonly class InternalExecutorLoopbackIdentityResolver
         );
 
         return $introspection['allowed'] ? $node : null;
-    }
-
-    private function isLoopbackAddress(string $peerAddress): bool
-    {
-        return $peerAddress === '::1' || str_starts_with($peerAddress, '127.');
     }
 
     private function stringInput(Request $request, string $key): ?string
