@@ -25,9 +25,15 @@ use std::{
         Arc, Mutex,
     },
     task::{Context, Poll},
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+const PROCESS_STREAM_V1_CONTENT_TYPE: &str = "application/vnd.orbit.process-stream.v1";
+const FRAME_TYPE_STDOUT: u8 = 1;
+const FRAME_TYPE_STDERR: u8 = 2;
+const FRAME_TYPE_AGENT_ERROR: u8 = 3;
+const FRAME_TYPE_EXIT: u8 = 4;
 
 pub async fn run_agent_service() {
     let app = app();
@@ -227,7 +233,7 @@ async fn command_push_stream(
     match execute_binary_stream(request) {
         Ok(stream) => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, "text/plain; charset=UTF-8")],
+            [(header::CONTENT_TYPE, PROCESS_STREAM_V1_CONTENT_TYPE)],
             Body::from_stream(stream),
         )
             .into_response(),
@@ -338,13 +344,14 @@ fn execute_binary_stream(
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     let completed = Arc::new(AtomicBool::new(false));
 
-    if let Some(stdout) = child.stdout.take() {
-        spawn_stream_drain(stdout, sender.clone(), child_id);
-    }
-
-    if let Some(stderr) = child.stderr.take() {
-        spawn_stream_drain(stderr, sender.clone(), child_id);
-    }
+    let stdout_drain = child
+        .stdout
+        .take()
+        .map(|stdout| spawn_stream_drain(stdout, sender.clone(), child_id, FRAME_TYPE_STDOUT));
+    let stderr_drain = child
+        .stderr
+        .take()
+        .map(|stderr| spawn_stream_drain(stderr, sender.clone(), child_id, FRAME_TYPE_STDERR));
 
     spawn_stream_waiter(
         child,
@@ -352,6 +359,11 @@ fn execute_binary_stream(
         request.timeout_seconds,
         sender,
         completed.clone(),
+        StreamDrainHandles {
+            stdout: stdout_drain,
+            stderr: stderr_drain,
+        },
+        Instant::now(),
     );
 
     Ok(CommandOutputStream {
@@ -361,11 +373,45 @@ fn execute_binary_stream(
     })
 }
 
+fn encode_process_stream_frame(frame_type: u8, payload: &[u8]) -> Bytes {
+    let payload_len = u32::try_from(payload.len()).unwrap_or(u32::MAX);
+    let mut frame = Vec::with_capacity(8 + payload.len());
+    frame.push(frame_type);
+    frame.push(0);
+    frame.extend_from_slice(&[0_u8, 0_u8]);
+    frame.extend_from_slice(&payload_len.to_be_bytes());
+    frame.extend_from_slice(payload);
+
+    Bytes::from(frame)
+}
+
+fn encode_agent_error_frame(code: &str, message: impl Into<String>, retryable: bool) -> Bytes {
+    let payload = serde_json::json!({
+        "code": code,
+        "message": message.into(),
+        "retryable": retryable,
+    });
+
+    encode_process_stream_frame(FRAME_TYPE_AGENT_ERROR, payload.to_string().as_bytes())
+}
+
+fn encode_exit_frame(exit_code: Option<i32>, signal: Option<i32>, duration_ms: u64) -> Bytes {
+    let payload = serde_json::json!({
+        "exit_code": exit_code,
+        "signal": signal,
+        "duration_ms": duration_ms,
+    });
+
+    encode_process_stream_frame(FRAME_TYPE_EXIT, payload.to_string().as_bytes())
+}
+
 fn spawn_stream_drain<R>(
     mut reader: R,
     sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
     child_id: u32,
-) where
+    frame_type: u8,
+) -> JoinHandle<()>
+where
     R: Read + Send + 'static,
 {
     thread::spawn(move || {
@@ -375,25 +421,26 @@ fn spawn_stream_drain<R>(
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(read) => {
-                    if sender
-                        .send(Ok(Bytes::copy_from_slice(&buffer[..read])))
-                        .is_err()
-                    {
+                    let frame = encode_process_stream_frame(frame_type, &buffer[..read]);
+
+                    if sender.send(Ok(frame)).is_err() {
                         terminate_process(child_id);
 
                         break;
                     }
                 }
                 Err(error) => {
-                    let _ = sender.send(Ok(Bytes::from(format!(
-                        "failed to read command stream: {error}\n"
-                    ))));
+                    let _ = sender.send(Ok(encode_agent_error_frame(
+                        "process_read_failed",
+                        format!("failed to read command stream: {error}"),
+                        false,
+                    )));
 
                     break;
                 }
             }
         }
-    });
+    })
 }
 
 fn spawn_stream_waiter(
@@ -402,6 +449,8 @@ fn spawn_stream_waiter(
     timeout_seconds: u64,
     sender: tokio::sync::mpsc::UnboundedSender<Result<Bytes, Infallible>>,
     completed: Arc<AtomicBool>,
+    drains: StreamDrainHandles,
+    started_at: Instant,
 ) {
     thread::spawn(move || {
         let timeout_seconds = timeout_seconds.min(300);
@@ -420,12 +469,28 @@ fn spawn_stream_waiter(
             wait_receiver.recv_timeout(Duration::from_secs(timeout_seconds))
         };
 
+        let duration_ms = elapsed_millis(started_at);
+        let mut exit_code = None;
+        let mut signal = None;
+        let mut agent_error_sent = false;
+
         match wait_result {
-            Ok(Ok(_status)) => {}
+            Ok(Ok(status)) => {
+                exit_code = status.code();
+
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    signal = status.signal();
+                }
+            }
             Ok(Err(error)) => {
-                let _ = sender.send(Ok(Bytes::from(format!(
-                    "failed to wait for allowlisted binary: {error}\n"
-                ))));
+                let _ = sender.send(Ok(encode_agent_error_frame(
+                    "process_wait_failed",
+                    format!("failed to wait for allowlisted binary: {error}"),
+                    false,
+                )));
+                agent_error_sent = true;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 terminate_process(child_id);
@@ -433,19 +498,44 @@ fn spawn_stream_waiter(
                     force_terminate_process(child_id);
                     let _ = wait_receiver.recv_timeout(Duration::from_secs(2));
                 }
-                let _ = sender.send(Ok(Bytes::from(format!(
-                    "binary execution timed out after {timeout_seconds} seconds\n"
-                ))));
+                let _ = sender.send(Ok(encode_agent_error_frame(
+                    "process_timeout",
+                    format!("binary execution timed out after {timeout_seconds} seconds"),
+                    false,
+                )));
+                agent_error_sent = true;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                let _ = sender.send(Ok(Bytes::from(
-                    "failed to wait for allowlisted binary: wait worker disconnected\n",
+                let _ = sender.send(Ok(encode_agent_error_frame(
+                    "process_wait_failed",
+                    "failed to wait for allowlisted binary: wait worker disconnected",
+                    false,
                 )));
+                agent_error_sent = true;
             }
         }
 
+        if let Some(handle) = drains.stdout {
+            let _ = handle.join();
+        }
+
+        if let Some(handle) = drains.stderr {
+            let _ = handle.join();
+        }
+
+        let _ = sender.send(Ok(encode_exit_frame(
+            if agent_error_sent { None } else { exit_code },
+            if agent_error_sent { None } else { signal },
+            duration_ms,
+        )));
+
         completed.store(true, Ordering::SeqCst);
     });
+}
+
+struct StreamDrainHandles {
+    stdout: Option<JoinHandle<()>>,
+    stderr: Option<JoinHandle<()>>,
 }
 
 struct CommandOutputStream {
@@ -1395,6 +1485,157 @@ mod tests {
         assert!(payload["timings"]["result_serialization_ms"].is_u64());
     }
 
+    const PROCESS_STREAM_V1_CONTENT_TYPE: &str = "application/vnd.orbit.process-stream.v1";
+
+    fn decode_process_stream_frames(body: &[u8]) -> Vec<(u8, Vec<u8>)> {
+        let mut frames = Vec::new();
+        let mut offset = 0;
+
+        while offset + 8 <= body.len() {
+            let frame_type = body[offset];
+            let payload_len = u32::from_be_bytes([
+                body[offset + 4],
+                body[offset + 5],
+                body[offset + 6],
+                body[offset + 7],
+            ]) as usize;
+            offset += 8;
+
+            if offset + payload_len > body.len() {
+                break;
+            }
+
+            frames.push((frame_type, body[offset..offset + payload_len].to_vec()));
+            offset += payload_len;
+        }
+
+        frames
+    }
+
+    #[tokio::test]
+    async fn command_push_stream_endpoint_returns_process_stream_v1_content_type() {
+        let response = app_with_static_authorizer(true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands/stream")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_stream_ct",
+                            "binary": "orbit",
+                            "argv": [],
+                            "environment": {
+                                "ORBIT_BIN_PATH": "/usr/bin/true"
+                            },
+                            "operation_token": "op_test_123",
+                            "timeout_seconds": 30,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some(PROCESS_STREAM_V1_CONTENT_TYPE)
+        );
+    }
+
+    #[tokio::test]
+    async fn command_push_stream_endpoint_emits_exit_frame_with_child_exit_code() {
+        let response = app_with_static_authorizer(true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands/stream")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_stream_exit",
+                            "binary": "orbit",
+                            "argv": ["-c", "exit 17"],
+                            "environment": {
+                                "ORBIT_BIN_PATH": "/bin/sh"
+                            },
+                            "operation_token": "op_test_123",
+                            "timeout_seconds": 30,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("body bytes");
+        let frames = decode_process_stream_frames(&body);
+        let exit_frame = frames
+            .iter()
+            .find(|(frame_type, _)| *frame_type == 4)
+            .expect("expected exit frame");
+
+        let payload: Value = serde_json::from_slice(&exit_frame.1).expect("exit json");
+        assert_eq!(payload["exit_code"], 17);
+    }
+
+    #[tokio::test]
+    async fn command_push_stream_endpoint_emits_agent_error_frame_on_timeout() {
+        let response = app_with_static_authorizer(true)
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/v1/commands/stream")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({
+                            "operation_id": "op_agent_stream_timeout",
+                            "binary": "orbit",
+                            "argv": ["5"],
+                            "environment": {
+                                "ORBIT_BIN_PATH": "/bin/sleep"
+                            },
+                            "operation_token": "op_test_123",
+                            "timeout_seconds": 1,
+                            "stream": true,
+                        })
+                        .to_string(),
+                    ))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .expect("body bytes");
+        let frames = decode_process_stream_frames(&body);
+        let agent_error_frame = frames
+            .iter()
+            .find(|(frame_type, _)| *frame_type == 3)
+            .expect("expected agent_error frame");
+
+        let payload: Value =
+            serde_json::from_slice(&agent_error_frame.1).expect("agent_error json");
+        assert!(payload["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("timed out after 1 seconds")));
+    }
+
     #[tokio::test]
     async fn command_push_stream_endpoint_streams_allowlisted_binary_output() {
         let response = app_with_static_authorizer(true)
@@ -1424,12 +1665,18 @@ mod tests {
         let body = to_bytes(response.into_body(), 1024 * 1024)
             .await
             .expect("body bytes");
-        let output = String::from_utf8(body.to_vec()).expect("utf8 output");
+        let frames = decode_process_stream_frames(&body);
+        let stdout = frames
+            .iter()
+            .filter(|(frame_type, _)| *frame_type == 1)
+            .flat_map(|(_, payload)| payload.iter().copied())
+            .collect::<Vec<_>>();
+        let output = String::from_utf8(stdout).expect("utf8 output");
         let normalized = output.to_ascii_lowercase();
 
         assert!(
             normalized.contains("version") || normalized.contains("orbit"),
-            "expected raw version output, got: {output:?}"
+            "expected stdout version output, got: {output:?}"
         );
     }
 

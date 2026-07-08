@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Services\ActivityLogger;
 use App\Services\NodeCommandTransport\NodeAgentPushClient;
 use App\Services\NodeCommandTransport\NodeAgentPushResult;
+use App\Services\NodeCommandTransport\NodeAgentPushStreamResult;
 use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
@@ -302,14 +303,46 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 transportOptions: $transportOptions,
             );
 
-            $this->streamAgentPush(
+            $streamResult = $this->streamAgentPush(
                 node: $node,
                 dispatch: $dispatch,
                 operationId: $operationId,
                 transportOptions: $transportOptions,
                 onOutput: $onOutput,
             );
+
+            $result = new RemoteShellResult(
+                exitCode: $this->streamExitCode($streamResult),
+                stdout: '',
+                stderr: '',
+                durationMs: $this->elapsedMilliseconds($startedAt),
+            );
+
+            if ($streamResult->failed()) {
+                $this->operationRuns->failed(
+                    id: $run->id,
+                    exitCode: $streamResult->exitCode,
+                    error: $this->streamFailureError($streamResult, $result),
+                );
+
+                $this->logCompleted(
+                    node: $node,
+                    commandName: $commandName,
+                    dispatch: $dispatch,
+                    result: $result,
+                    transportOptions: $transportOptions,
+                );
+
+                throw new RemoteShellFailed(
+                    node: $node,
+                    script: $dispatch['script'],
+                    result: $result,
+                );
+            }
         } catch (Throwable $throwable) {
+            if ($throwable instanceof RemoteShellFailed) {
+                throw $throwable;
+            }
             $redactedMessage = $this->transportExceptionMessageSummary(
                 throwable: $throwable,
                 operationToken: $dispatch['operationToken'],
@@ -348,13 +381,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         $result = new RemoteShellResult(
-            exitCode: 0,
+            exitCode: $streamResult->exitCode ?? 0,
             stdout: '',
             stderr: '',
             durationMs: $this->elapsedMilliseconds($startedAt),
         );
 
-        $this->operationRuns->succeeded(id: $run->id, exitCode: 0);
+        $this->operationRuns->succeeded(id: $run->id, exitCode: $streamResult->exitCode ?? 0);
         $this->logCompleted(
             node: $node,
             commandName: $commandName,
@@ -1137,7 +1170,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         string $operationId,
         array $transportOptions,
         callable $onOutput,
-    ): void {
+    ): NodeAgentPushStreamResult {
         $preference = $this->transportPreference($transportOptions);
         $envelope = NodeCommandEnvelope::agentPushBinary(
             operationId: $operationId,
@@ -1155,7 +1188,34 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             throw new RuntimeException('agent-push streaming transport is unavailable');
         }
 
-        app(NodeAgentPushClient::class)->stream($node, $envelope, $dispatch['operationToken'], $onOutput);
+        return app(NodeAgentPushClient::class)->stream($node, $envelope, $dispatch['operationToken'], $onOutput);
+    }
+
+    private function streamExitCode(NodeAgentPushStreamResult $streamResult): int
+    {
+        if ($streamResult->agentError !== null) {
+            return 1;
+        }
+
+        return $streamResult->exitCode ?? 1;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function streamFailureError(NodeAgentPushStreamResult $streamResult, RemoteShellResult $result): array
+    {
+        if ($streamResult->agentError !== null) {
+            return [
+                'code' => 'agent_push_stream_failed',
+                'agent_error' => $streamResult->agentError,
+            ];
+        }
+
+        return [
+            'code' => 'remote_shell_failed',
+            'duration_ms' => $result->durationMs,
+        ];
     }
 
     private function agentPushResult(NodeAgentPushResult $result): RemoteShellResult

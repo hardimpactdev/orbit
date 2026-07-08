@@ -61,7 +61,7 @@ final readonly class NodeAgentPushClient
         #[SensitiveParameter]
         string $operationToken,
         callable $onOutput,
-    ): void {
+    ): NodeAgentPushStreamResult {
         $this->assertAllowlisted($envelope);
 
         $operationToken = trim($operationToken);
@@ -75,7 +75,7 @@ final readonly class NodeAgentPushClient
             'read_timeout' => 0,
             'timeout' => 0,
         ])
-            ->accept('text/plain')
+            ->accept(NodeAgentPushStreamReader::PROCESS_STREAM_V1_CONTENT_TYPE.', text/plain')
             ->withToken($operationToken)
             ->post($this->streamUrlFor($node), $this->payloadForTransport($envelope, $operationToken));
 
@@ -87,7 +87,7 @@ final readonly class NodeAgentPushClient
             ));
         }
 
-        new NodeAgentPushStreamReader()->read($response, $onOutput);
+        return new NodeAgentPushStreamReader()->read($response, $onOutput);
     }
 
     private function assertAllowlisted(NodeCommandEnvelope $envelope): void

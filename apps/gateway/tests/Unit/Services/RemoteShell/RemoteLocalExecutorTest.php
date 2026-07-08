@@ -142,6 +142,199 @@ describe(RemoteLocalExecutor::class, function (): void {
         );
     });
 
+    it('records streamed framed runs as failed with the real exit code', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands/stream' => Http::response(
+                remote_local_executor_process_stream_body(
+                    stdout: "boom\n",
+                    exitCode: 17,
+                ),
+                200,
+                ['Content-Type' => 'application/vnd.orbit.process-stream.v1'],
+            ),
+        ]);
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException('SSH transport should not be called.'),
+            ),
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+        $operationId = '00000000-0000-4000-8000-000000000408';
+
+        try {
+            $executor->streamInternal(
+                node: $node,
+                commandName: 'internal:process-logs',
+                transportOptions: [
+                    'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+                ],
+                onOutput: static function (string $chunk): void {},
+            );
+            throw new RuntimeException('Expected streamed non-zero exit to fail.');
+        } catch (RemoteShellFailed $exception) {
+            expect($exception->result->exitCode)->toBe(17);
+        }
+
+        $row = remote_local_executor_operation_run($operationId);
+
+        expect($row->status)
+            ->toBe('failed')
+            ->and((int) $row->exit_code)
+            ->toBe(17);
+    });
+
+    it('records streamed framed agent errors as failed without treating them as stdout', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands/stream' => Http::response(
+                remote_local_executor_process_stream_body(
+                    stdout: 'visible',
+                    agentError: [
+                        'code' => 'process_timeout',
+                        'message' => 'binary execution timed out after 1 seconds',
+                        'retryable' => false,
+                    ],
+                    exitCode: null,
+                ),
+                200,
+                ['Content-Type' => 'application/vnd.orbit.process-stream.v1'],
+            ),
+        ]);
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException('SSH transport should not be called.'),
+            ),
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+        $operationId = '00000000-0000-4000-8000-000000000409';
+        $chunks = [];
+
+        try {
+            $executor->streamInternal(
+                node: $node,
+                commandName: 'internal:process-logs',
+                transportOptions: [
+                    'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+                ],
+                onOutput: static function (string $chunk) use (&$chunks): void {
+                    $chunks[] = $chunk;
+                },
+            );
+            throw new RuntimeException('Expected streamed agent error to fail.');
+        } catch (RemoteShellFailed) {
+            // expected
+        }
+
+        expect($chunks)->toBe(['visible']);
+
+        $row = remote_local_executor_operation_run($operationId);
+
+        expect($row->status)->toBe('failed')->and($row->exit_code)->toBeNull();
+    });
+
+    it('records streamed framed null exit codes as failed', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands/stream' => Http::response(
+                remote_local_executor_process_stream_body(
+                    stdout: 'terminated',
+                    exitCode: null,
+                    signal: 9,
+                ),
+                200,
+                ['Content-Type' => 'application/vnd.orbit.process-stream.v1'],
+            ),
+        ]);
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException('SSH transport should not be called.'),
+            ),
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+        $operationId = '00000000-0000-4000-8000-000000000411';
+
+        try {
+            $executor->streamInternal(
+                node: $node,
+                commandName: 'internal:process-logs',
+                transportOptions: [
+                    'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+                ],
+                onOutput: static function (string $chunk): void {},
+            );
+            throw new RuntimeException('Expected streamed null exit code to fail.');
+        } catch (RemoteShellFailed $exception) {
+            expect($exception->result->exitCode)->toBe(1);
+        }
+
+        $row = remote_local_executor_operation_run($operationId);
+
+        expect($row->status)->toBe('failed')->and($row->exit_code)->toBeNull();
+    });
+
+    it('records streamed framed success with exit zero in operation runs', function (): void {
+        Http::preventStrayRequests();
+        Http::fake([
+            'http://10.44.0.70:9477/v1/commands/stream' => Http::response(
+                remote_local_executor_process_stream_body(
+                    stdout: "line one\nline two\n",
+                    exitCode: 0,
+                ),
+                200,
+                ['Content-Type' => 'application/vnd.orbit.process-stream.v1'],
+            ),
+        ]);
+        $executor = remoteLocalExecutor(
+            transport: new RemoteLocalExecutorRecordingTransport(
+                static fn (): RemoteShellResult => throw new RuntimeException('SSH transport should not be called.'),
+            ),
+            defaultTransportPreference: NodeTransportPreference::Auto,
+        );
+        $node = remoteLocalExecutorNode();
+        $node->forceFill([
+            'status' => 'active',
+            'orbit_agent_capable' => true,
+        ])->save();
+        $operationId = '00000000-0000-4000-8000-000000000410';
+        $chunks = [];
+
+        $executor->streamInternal(
+            node: $node,
+            commandName: 'internal:process-logs',
+            transportOptions: [
+                'metadata' => ['ORBIT_OPERATION_ID' => $operationId],
+            ],
+            onOutput: static function (string $chunk) use (&$chunks): void {
+                $chunks[] = $chunk;
+            },
+        );
+
+        expect(implode('', $chunks))->toBe("line one\nline two\n");
+
+        $row = remote_local_executor_operation_run($operationId);
+
+        expect($row->status)
+            ->toBe('succeeded')
+            ->and((int) $row->exit_code)
+            ->toBe(0);
+    });
+
     it('keeps ssh dispatch behind explicit transitional fallback opt-in', function (): void {
         Http::preventStrayRequests();
         $transportResult = new RemoteShellResult(exitCode: 0, stdout: "verified\n", stderr: '', durationMs: 17);
@@ -1424,6 +1617,50 @@ function remote_local_executor_json_object(mixed $json): array
     $decoded = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
 
     return $decoded;
+}
+
+/**
+ * @param  array{code: string, message: string, retryable: bool}|null  $agentError
+ */
+function remote_local_executor_process_stream_body(
+    string $stdout = '',
+    string $stderr = '',
+    ?array $agentError = null,
+    ?int $exitCode = 0,
+    ?int $signal = null,
+): string {
+    $body = '';
+
+    if ($stdout !== '') {
+        $body .= remote_local_executor_process_stream_frame(1, $stdout);
+    }
+
+    if ($stderr !== '') {
+        $body .= remote_local_executor_process_stream_frame(2, $stderr);
+    }
+
+    if ($agentError !== null) {
+        $body .= remote_local_executor_process_stream_frame(
+            3,
+            json_encode($agentError, JSON_THROW_ON_ERROR),
+        );
+    }
+
+    $body .= remote_local_executor_process_stream_frame(
+        4,
+        json_encode([
+            'exit_code' => $exitCode,
+            'signal' => $signal,
+            'duration_ms' => 0,
+        ], JSON_THROW_ON_ERROR),
+    );
+
+    return $body;
+}
+
+function remote_local_executor_process_stream_frame(int $type, string $payload): string
+{
+    return pack('CCnN', $type, 0, 0, strlen($payload)).$payload;
 }
 
 final class RemoteLocalExecutorRecordingTransport implements RemoteExecutor
