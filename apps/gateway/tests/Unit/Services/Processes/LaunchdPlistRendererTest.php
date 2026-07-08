@@ -70,6 +70,61 @@ it('renders user LaunchAgent plist content with Orbit labels logs and escaped va
         ->toContain('<key>KeepAlive</key>')
         ->toContain('<true/>')
         ->toContain('<key>PATH</key>')
+        ->toContain('/Users/nckrtl/.vite-plus/bin')
         ->toContain('<key>HOME</key>')
         ->toContain('<key>ORBIT_PROCESS</key>');
+});
+
+it('renders Vite launch agents with dynamic host and certificate environment', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'mac-app',
+        'platform' => 'darwin',
+        'user' => 'nckrtl',
+        'tld' => 'nmbp',
+    ]);
+    if (! $node instanceof Node) {
+        throw new RuntimeException('Node factory did not return a Node.');
+    }
+
+    $app = App::factory()->create([
+        'name' => 'happie-nmbp',
+        'domain' => 'happie.nmbp',
+        'node_id' => $node->id,
+        'path' => '/Users/nckrtl/apps/happie',
+    ]);
+    if (! $app instanceof App) {
+        throw new RuntimeException('App factory did not return an App.');
+    }
+
+    $app->setRelation('node', $node);
+    $factory = OrbitProcess::factory();
+    if (! $factory instanceof ProcessFactory) {
+        throw new RuntimeException('Process factory did not return a ProcessFactory.');
+    }
+
+    $process = $factory
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'command' => 'vp dev --host "$VITE_VALET_HOST"',
+            'restart_policy' => ProcessRestartPolicy::Always,
+        ]);
+    if (! $process instanceof OrbitProcess) {
+        throw new RuntimeException('Process factory did not return a Process.');
+    }
+
+    $plist = app(LaunchdPlistRenderer::class)->render($node, $app, $process);
+
+    expect($plist)
+        ->toContain('<string>vp dev --host &quot;$VITE_VALET_HOST&quot;</string>')
+        ->toContain('<key>PATH</key>')
+        ->toContain('/Users/nckrtl/.vite-plus/bin')
+        ->toContain('<key>APP_URL</key>')
+        ->toContain('<string>https://happie.nmbp</string>')
+        ->toContain('<key>VITE_VALET_HOST</key>')
+        ->toContain('<string>happie.nmbp</string>')
+        ->toContain('<key>VITE_DEV_SERVER_KEY</key>')
+        ->toContain('<string>/Users/nckrtl/.config/orbit/certs/happie.nmbp.key</string>')
+        ->toContain('<key>VITE_DEV_SERVER_CERT</key>')
+        ->toContain('<string>/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt</string>');
 });

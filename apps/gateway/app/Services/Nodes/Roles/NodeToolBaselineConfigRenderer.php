@@ -142,6 +142,10 @@ class NodeToolBaselineConfigRenderer
             return null;
         }
 
+        if (NodeHostPaths::isMacosPlatform($node->platform)) {
+            return '0.0.0.0';
+        }
+
         return is_string($node->public_ipv4)
             ? trim($node->public_ipv4)
             : null;

@@ -154,6 +154,50 @@ describe('orbit caddy container', function (): void {
             );
     });
 
+    it('can publish private HTTP listeners on loopback without exposing the backend port there', function (): void {
+        $container = OrbitCaddyContainer::forPrivateNode(
+            '10.6.0.50',
+            names: new OrbitContainerNames,
+            callerFacingAddress: '127.0.0.1',
+        );
+
+        expect($container->publishedPorts())
+            ->toBe([
+                '10.6.0.50:80:80',
+                '10.6.0.50:443:443',
+                '10.6.0.50:443:443/udp',
+                '127.0.0.1:80:80',
+                '127.0.0.1:443:443',
+                '127.0.0.1:443:443/udp',
+                '10.6.0.50:8081:8081',
+            ])
+            ->not->toContain(
+                '127.0.0.1:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort,
+            );
+    });
+
+    it('can publish private HTTP listeners on every interface without duplicating WireGuard HTTP listeners', function (): void {
+        $container = OrbitCaddyContainer::forPrivateNode(
+            '10.6.0.50',
+            names: new OrbitContainerNames,
+            callerFacingAddress: '0.0.0.0',
+        );
+
+        expect($container->publishedPorts())
+            ->toBe([
+                '80:80',
+                '443:443',
+                '443:443/udp',
+                '10.6.0.50:8081:8081',
+            ])
+            ->not->toContain(
+                '0.0.0.0:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort,
+                '10.6.0.50:80:80',
+                '10.6.0.50:443:443',
+                '10.6.0.50:443:443/udp',
+            );
+    });
+
     it('ignores non-private caller-facing IPv4 values for private node listeners', function (): void {
         $container = OrbitCaddyContainer::forPrivateNode(
             '10.6.0.50',

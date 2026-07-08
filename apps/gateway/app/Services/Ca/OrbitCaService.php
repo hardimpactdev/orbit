@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Ca;
 
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use DateTimeImmutable;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -13,7 +14,7 @@ readonly class OrbitCaService
 {
     private const int ROOT_VALIDITY_DAYS = 3650;
 
-    private const int LEAF_VALIDITY_DAYS = 90;
+    private const int LEAF_VALIDITY_DAYS = 3650;
 
     private const int RENEW_IF_WITHIN_SECONDS = 30 * 86400;
 
@@ -73,6 +74,7 @@ readonly class OrbitCaService
             File::exists($certPath)
             && File::exists($keyPath)
             && $this->isLeafFresh($certPath)
+            && $this->leafHasExpectedValidity($certPath)
             && $this->leafCoversSans($certPath, $sans)
         ) {
             return ['cert' => $certPath, 'key' => $keyPath];
@@ -90,6 +92,7 @@ readonly class OrbitCaService
         }
 
         $this->assertRootExists();
+        $this->assertRootCertificateValid();
 
         return File::get($this->caDir().'/root.crt');
     }
@@ -155,6 +158,31 @@ readonly class OrbitCaService
         ))->successful();
     }
 
+    private function leafHasExpectedValidity(string $certPath): bool
+    {
+        $result = Process::run(sprintf(
+            'openssl x509 -in %s -noout -startdate -enddate',
+            escapeshellarg($certPath),
+        ));
+
+        if (! $result->successful()) {
+            return false;
+        }
+
+        preg_match('/notBefore=(.+)/', $result->output(), $notBefore);
+        preg_match('/notAfter=(.+)/', $result->output(), $notAfter);
+
+        if (! is_string($notBefore[1] ?? null) || ! is_string($notAfter[1] ?? null)) {
+            return false;
+        }
+
+        $startsAt = new DateTimeImmutable($notBefore[1]);
+        $expiresAt = new DateTimeImmutable($notAfter[1]);
+        $days = $startsAt->diff($expiresAt)->days;
+
+        return is_int($days) && $days >= self::LEAF_VALIDITY_DAYS - 1;
+    }
+
     /**
      * @param  list<string>  $sans
      */
@@ -205,6 +233,21 @@ readonly class OrbitCaService
         if (! File::exists("{$caDir}/root.crt") || ! File::exists("{$caDir}/root.key")) {
             throw new RuntimeException('Orbit root CA is not bootstrapped; run `orbit node:new --template=gateway`.');
         }
+    }
+
+    private function assertRootCertificateValid(): void
+    {
+        $rootCrt = $this->caDir().'/root.crt';
+        $result = Process::run(sprintf(
+            'openssl x509 -in %s -noout -subject',
+            escapeshellarg($rootCrt),
+        ));
+
+        if ($result->successful()) {
+            return;
+        }
+
+        throw new RuntimeException("Orbit root CA certificate is invalid: {$rootCrt}");
     }
 
     private function isLocalNodeGateway(): bool

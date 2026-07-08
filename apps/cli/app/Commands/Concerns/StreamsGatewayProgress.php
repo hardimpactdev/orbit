@@ -41,7 +41,7 @@ trait StreamsGatewayProgress
         callable $onFinalFrame,
         string $method = 'post',
     ): int {
-        $client = app(GatewayStreamClient::class);
+        $client = $this->gatewayStreamClient();
         $wantsJson = $this->wantsJson();
         $wantsStreamJson = $this->wantsStreamingJson();
 
@@ -155,7 +155,7 @@ trait StreamsGatewayProgress
      */
     protected function captureProgressTerminalFrame(string $path, array $payload): array|int
     {
-        $client = app(GatewayStreamClient::class);
+        $client = $this->gatewayStreamClient();
         $wantsJson = $this->wantsJson();
 
         $finalType = null;
@@ -251,6 +251,17 @@ trait StreamsGatewayProgress
         }
 
         return $this->renderSuccess($data);
+    }
+
+    private function gatewayStreamClient(): mixed
+    {
+        $client = app(GatewayStreamClient::class);
+
+        if (! method_exists($client, 'withNodeTransportPreference')) {
+            return $client;
+        }
+
+        return $client->withNodeTransportPreference($this->nodeTransportPreference());
     }
 
     /**

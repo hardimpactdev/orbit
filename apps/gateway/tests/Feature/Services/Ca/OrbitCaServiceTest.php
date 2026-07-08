@@ -81,6 +81,76 @@ function orbitCaServiceTestCreateGatewayNode(): Node
         ]);
 }
 
+function orbitCaServiceTestSignLeafForDays(string $host, string $keyPath, string $certPath, int $days): void
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'orbit-ca-short-leaf-');
+    expect($tmp)->toBeString();
+
+    $csrPath = "{$tmp}.csr";
+    $extPath = "{$tmp}.ext";
+    $caDir = orbitCaServiceTestCaDir();
+    $factory = new Factory;
+
+    try {
+        $factory->run(sprintf(
+            'openssl req -new -key %s -out %s -subj %s',
+            escapeshellarg($keyPath),
+            escapeshellarg($csrPath),
+            escapeshellarg("/CN={$host}"),
+        ))->throw();
+
+        File::put($extPath, implode("\n", [
+            "subjectAltName=DNS:{$host}",
+            'keyUsage=digitalSignature,keyEncipherment',
+            'extendedKeyUsage=serverAuth',
+        ]));
+
+        $factory->run(implode(' ', [
+            'openssl x509 -req',
+            '-in '.escapeshellarg($csrPath),
+            '-CA '.escapeshellarg("{$caDir}/root.crt"),
+            '-CAkey '.escapeshellarg("{$caDir}/root.key"),
+            '-set_serial '.escapeshellarg('0x'.bin2hex(random_bytes(16))),
+            '-out '.escapeshellarg($certPath),
+            '-days '.$days,
+            '-sha256',
+            '-extfile '.escapeshellarg($extPath),
+        ]))->throw();
+    } finally {
+        File::delete([$csrPath, $extPath, $tmp]);
+    }
+}
+
+function orbitCaServiceTestCertSerial(string $certPath): string
+{
+    return trim(new Factory()->run(sprintf(
+        'openssl x509 -in %s -serial -noout',
+        escapeshellarg($certPath),
+    ))->output());
+}
+
+function orbitCaServiceTestCertValidityDays(string $certPath): int
+{
+    $dates = new Factory()->run(sprintf(
+        'openssl x509 -in %s -noout -startdate -enddate',
+        escapeshellarg($certPath),
+    ))->output();
+
+    preg_match('/notBefore=(.+)/', $dates, $notBefore);
+    preg_match('/notAfter=(.+)/', $dates, $notAfter);
+
+    expect($notBefore[1] ?? null)->toBeString();
+    expect($notAfter[1] ?? null)->toBeString();
+
+    $startsAt = new DateTimeImmutable($notBefore[1]);
+    $expiresAt = new DateTimeImmutable($notAfter[1]);
+    $days = $startsAt->diff($expiresAt)->days;
+
+    expect($days)->toBeInt();
+
+    return (int) $days;
+}
+
 describe('OrbitCaService', function () {
     beforeEach(function () {
         $this->tempStorage = sys_get_temp_dir().'/orbit-ca-test-'.uniqid();
@@ -279,6 +349,36 @@ describe('OrbitCaService', function () {
             expect($text)->toContain('DNS:demo.beast');
         });
 
+        it('issues leaf certificates with the Orbit default ten year validity', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('demo.beast');
+
+            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeGreaterThanOrEqual(3649);
+        });
+
+        it('reissues fresh leaves whose validity is shorter than the Orbit default', function () {
+            $service = new OrbitCaService;
+            $paths = $service->issueLeaf('demo.beast');
+
+            orbitCaServiceTestSignLeafForDays(
+                host: 'demo.beast',
+                keyPath: $paths['key'],
+                certPath: $paths['cert'],
+                days: 90,
+            );
+
+            $shortSerial = orbitCaServiceTestCertSerial($paths['cert']);
+
+            expect(orbitCaServiceTestCertValidityDays($paths['cert']))->toBeLessThan(3650);
+
+            $renewed = $service->issueLeaf('demo.beast');
+
+            expect(orbitCaServiceTestCertSerial($renewed['cert']))
+                ->not->toBe($shortSerial)
+                ->and(orbitCaServiceTestCertValidityDays($renewed['cert']))
+                ->toBeGreaterThanOrEqual(3649);
+        });
+
         it('embeds additional SANs when issuing a DNS host leaf', function () {
             $service = new OrbitCaService;
             $paths = $service->issueLeaf('gateway', ['10.6.0.2']);
@@ -344,12 +444,22 @@ describe('OrbitCaService', function () {
 
             $caDir = orbitCaServiceTestCaDir();
             $service = new OrbitCaService;
-            orbitCaServiceTestSeedRootFiles();
+            orbitCaServiceTestSeedValidRootFixture();
 
             $pem = $service->rootCert();
 
             expect($pem)->toContain('-----BEGIN CERTIFICATE-----');
             expect($pem)->toBe(File::get("{$caDir}/root.crt"));
+        });
+
+        it('throws RuntimeException when root.crt is not a parseable certificate', function () {
+            orbitCaServiceTestCreateGatewayNode();
+
+            $service = new OrbitCaService;
+            orbitCaServiceTestSeedRootFiles(rootCrt: 'FAKE ROOT');
+
+            expect(fn () => $service->rootCert())
+                ->toThrow(RuntimeException::class, 'invalid');
         });
 
         it('throws RuntimeException when root CA is not bootstrapped', function () {

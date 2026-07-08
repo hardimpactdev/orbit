@@ -136,7 +136,7 @@ final readonly class LaunchdPlistRenderer
     {
         $environment =
             [
-                'PATH' => "{$home}/.local/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
+                'PATH' => "{$home}/.local/bin:{$home}/.vite-plus/bin:{$home}/.bun/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin",
                 'HOME' => $home,
             ] + $this->vite->shellVariables($app, $node, $workspace);
 

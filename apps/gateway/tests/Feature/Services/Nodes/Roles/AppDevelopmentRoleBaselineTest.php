@@ -252,6 +252,13 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
 
         expect($tools)
             ->toBe(['caddy', 'composer', 'docker', 'laravel-installer', 'php-cli'])
+            ->and($caddy->config['container']['published_ports'])
+            ->toBe([
+                '80:80',
+                '443:443',
+                '443:443/udp',
+                '10.6.0.44:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort,
+            ])
             ->and($caddy->config['container']['mounts'])
             ->toContain([
                 'source' => '/Users',

@@ -7,6 +7,7 @@ namespace App\Services\Apps;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Nodes\NodeHostPaths;
 use RuntimeException;
 
 final readonly class LaravelViteDevServerEnvironment
@@ -149,10 +150,6 @@ final readonly class LaravelViteDevServerEnvironment
 
     private function hostHome(Node $node): string
     {
-        $user = is_string($node->user) && trim($node->user) !== ''
-            ? trim($node->user)
-            : 'orbit';
-
-        return $user === 'root' ? '/root' : "/home/{$user}";
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
     }
 }

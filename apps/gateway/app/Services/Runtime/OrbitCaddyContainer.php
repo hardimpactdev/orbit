@@ -81,15 +81,23 @@ class OrbitCaddyContainer
             throw new InvalidArgumentException('The orbit-caddy private listener requires a WireGuard address.');
         }
 
-        $ports = [
-            "{$wireGuardAddress}:80:80",
-            "{$wireGuardAddress}:443:443",
-            "{$wireGuardAddress}:443:443/udp",
-        ];
-
         $callerFacingAddress = self::privateCallerFacingAddress($callerFacingAddress, $wireGuardAddress);
 
-        if ($callerFacingAddress !== null) {
+        if ($callerFacingAddress === '0.0.0.0') {
+            $ports = [
+                '80:80',
+                '443:443',
+                '443:443/udp',
+            ];
+        } else {
+            $ports = [
+                "{$wireGuardAddress}:80:80",
+                "{$wireGuardAddress}:443:443",
+                "{$wireGuardAddress}:443:443/udp",
+            ];
+        }
+
+        if ($callerFacingAddress !== null && $callerFacingAddress !== '0.0.0.0') {
             $ports[] = "{$callerFacingAddress}:80:80";
             $ports[] = "{$callerFacingAddress}:443:443";
             $ports[] = "{$callerFacingAddress}:443:443/udp";
@@ -108,11 +116,18 @@ class OrbitCaddyContainer
             return null;
         }
 
+        if ($address === '0.0.0.0') {
+            return $address;
+        }
+
         if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             return null;
         }
 
-        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE) !== false) {
+        $isPrivateAddress = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE) === false;
+        $isLoopbackAddress = str_starts_with($address, '127.');
+
+        if (! $isPrivateAddress && ! $isLoopbackAddress) {
             return null;
         }
 

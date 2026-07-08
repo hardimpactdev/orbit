@@ -394,6 +394,19 @@ describe('GatewayStreamClient', function (): void {
             ->toBe(['key' => 'val']);
     });
 
+    it('forwards explicit node transport preference on progress stream requests', function (): void {
+        $body = buildSseStream([
+            ['event' => 'complete', 'data' => ['ok' => true]],
+        ]);
+
+        fakeGatewayStreamClient($body)
+            ->withNodeTransportPreference('transitional-ssh-fallback')
+            ->streamEvents('/api/stream', [], fn () => null);
+
+        expect(lastGatewayStreamPendingRequest()->header('X-Orbit-Node-Transport-Preference'))
+            ->toBe('transitional-ssh-fallback');
+    });
+
     it('verifies TLS against the configured gateway CA when a PEM file exists', function (): void {
         $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
         $pemPath = tempnam(sys_get_temp_dir(), 'orbit-ca-').'.pem';
