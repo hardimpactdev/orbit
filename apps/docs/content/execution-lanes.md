@@ -173,6 +173,16 @@ for this verify endpoint only. Identity resolution never consumes the token;
 the controller consumes it only after authorization. Non-gateway targets and
 all other gateway API routes continue to require WireGuard peer identity.
 
+During `update:all`, gateway host CLI/Agent self-update is the bootstrap
+exception to normal gateway self-execution transport: the gateway service may
+already be running a verifier that requires bound command context while the
+installed host Agent still sends the older verify payload. That step therefore
+uses explicit `transitional-ssh-fallback` for the single
+`internal:fleet-update:install-cli` dispatch instead of relaxing token
+verification. The PHP CLI guard still verifies and consumes the bound operation
+token before side effects, and this exception must not be generalized beyond
+the gateway host CLI/Agent replacement step.
+
 #### Result-boundary redaction patterns
 
 Activity rows, operation_runs rows, internal-command JSON results, and

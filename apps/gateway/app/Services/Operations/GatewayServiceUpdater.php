@@ -14,6 +14,7 @@ use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayHostAgentConfigWriter;
 use App\Services\Gateway\GatewayImageReference;
 use App\Services\Gateway\GatewaySwarmManager;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\Artisan;
@@ -115,7 +116,7 @@ class GatewayServiceUpdater
             return null;
         }
 
-        /** @var array{timeout: int, input: string, metadata: array<string, string>} $transportOptions */
+        /** @var array{timeout: int, input: string, metadata: array<string, string>, transport: NodeTransportPreference} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
             'input' => json_encode(
@@ -125,6 +126,7 @@ class GatewayServiceUpdater
             'metadata' => [
                 'ORBIT_OPERATION_ID' => $operationRun->id,
             ],
+            'transport' => NodeTransportPreference::TransitionalSshFallback,
         ];
 
         try {
@@ -153,7 +155,7 @@ class GatewayServiceUpdater
     }
 
     /**
-     * @param  array{timeout: int, input: string, metadata: array<string, string>}  $transportOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, transport: NodeTransportPreference}  $transportOptions
      */
     private function runCliInstall(Node $gatewayNode, array $transportOptions): RemoteShellResult
     {

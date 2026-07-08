@@ -7,6 +7,7 @@ use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
@@ -123,6 +124,8 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->and($localExecutor->calls[0]['options'])
         ->not
         ->toHaveKey('cwd')
+        ->and($localExecutor->calls[0]['options']['transport'] ?? null)
+        ->toBe(NodeTransportPreference::TransitionalSshFallback)
         ->and($localExecutor->payloads()[0])
         ->toMatchArray([
             'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
