@@ -44,7 +44,7 @@ afterEach(function (): void {
 
 it('updates gateway and scheduler services to the plan image after in-process migrations and gateway health', function (): void {
     $run = gatewayServiceUpdaterRun();
-    $plan = gatewayServiceUpdaterPlan($run);
+    $plan = gateway_service_updater_plan_with_reverb_artifact($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
     $localExecutor = gateway_service_updater_fake_local_executor();
@@ -97,6 +97,7 @@ it('updates gateway and scheduler services to the plan image after in-process mi
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=1'",
+            'bash -s',
             gateway_service_updater_stack_deploy_command(),
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
@@ -104,6 +105,20 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ])
         ->and(array_filter($operations, fn (string $operation): bool => str_starts_with($operation, 'docker run')))
         ->toBe([]);
+
+    Process::assertRan(function ($process): bool {
+        if ((string) $process->command !== 'bash -s') {
+            return false;
+        }
+
+        $input = (string) $process->input;
+
+        return (
+            str_contains($input, 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar')
+            && str_contains($input, str_repeat('e', times: 64))
+            && str_contains($input, 'docker load -i "$archive"')
+        );
+    });
 
     expect(
         OperationEvent::query()
@@ -718,7 +733,22 @@ function gatewayServiceUpdaterRun(): OperationRun
     );
 }
 
-function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
+function gateway_service_updater_plan_with_reverb_artifact(OperationRun $run): OperationUpdatePlan
+{
+    return gatewayServiceUpdaterPlan($run, [
+        'role_image_artifacts' => [
+            'orbit-websocket' => [
+                'url' => 'https://artifacts.example.test/orbit-reverb-linux-amd64.tar',
+                'sha256' => str_repeat('e', times: 64),
+            ],
+        ],
+    ]);
+}
+
+/**
+ * @param  array<string, mixed>  $manifestSnapshotOverrides
+ */
+function gatewayServiceUpdaterPlan(OperationRun $run, array $manifestSnapshotOverrides = []): OperationUpdatePlan
 {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     $cliArtifact = [
@@ -733,25 +763,29 @@ function gatewayServiceUpdaterPlan(OperationRun $run): OperationUpdatePlan
         'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     ];
 
+    $manifestSnapshot = [
+        'version' => '1.2.3',
+        'images' => [
+            'gateway' => $gatewayImage,
+        ],
+        'cli_artifacts' => [
+            'linux-amd64' => $cliArtifact,
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => $agentArtifact,
+        ],
+        'role_images' => $roleImages,
+    ];
+
+    $manifestSnapshot = array_replace_recursive($manifestSnapshot, $manifestSnapshotOverrides);
+
     return OperationUpdatePlan::query()->create([
         'operation_run_id' => $run->id,
         'target_version' => '1.2.3',
         'gateway_image' => $gatewayImage,
         'manifest_source' => 'github-release',
         'manifest_version' => '1.2.3',
-        'manifest_snapshot' => [
-            'version' => '1.2.3',
-            'images' => [
-                'gateway' => $gatewayImage,
-            ],
-            'cli_artifacts' => [
-                'linux-amd64' => $cliArtifact,
-            ],
-            'agent_artifacts' => [
-                'linux-amd64' => $agentArtifact,
-            ],
-            'role_images' => $roleImages,
-        ],
+        'manifest_snapshot' => $manifestSnapshot,
         'cli_artifacts' => [
             'linux-amd64' => $cliArtifact,
         ],
@@ -790,6 +824,7 @@ function gateway_service_updater_common_process_result(
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'"
             => Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
+        'bash -s' => Process::result(),
         gateway_service_updater_stack_deploy_command() => Process::result(),
         "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'" => Process::result(
             output: "1/1\n",

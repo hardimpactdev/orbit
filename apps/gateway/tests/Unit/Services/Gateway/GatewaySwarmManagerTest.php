@@ -125,6 +125,32 @@ it('deploys a stack file with docker stack deploy', function (): void {
     Process::assertRan("docker stack deploy -c '/tmp/orbit-stack.yml' 'orbit'");
 });
 
+it('loads docker image archives after verifying the artifact hash', function (): void {
+    $script = null;
+
+    Process::fake(function ($process) use (&$script) {
+        if ((string) $process->command === 'bash -s') {
+            $script = (string) $process->input;
+
+            return Process::result();
+        }
+
+        throw new RuntimeException("Unexpected process command [{$process->command}].");
+    });
+
+    new GatewaySwarmManager()->loadImageArchive(
+        'https://s3.example.test/orbit/candidates/build/orbit-reverb-linux-amd64.tar',
+        str_repeat('a', times: 64),
+    );
+
+    expect($script)
+        ->toContain('curl -fsSL')
+        ->toContain('https://s3.example.test/orbit/candidates/build/orbit-reverb-linux-amd64.tar')
+        ->toContain(str_repeat('a', times: 64))
+        ->toContain('sha256sum -c -')
+        ->toContain('docker load -i "$archive"');
+});
+
 it('updates and scales Swarm services using the planned command shapes', function (): void {
     $image = GatewayImageReference::fromString(
         'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',

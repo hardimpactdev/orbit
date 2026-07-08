@@ -227,12 +227,6 @@ cmd_build() {
     rm -rf "$ghcr_docker_config"
     ghcr_docker_config=""
 
-    gh api \
-        --method PATCH \
-        /orgs/hardimpactdev/packages/container/orbit-reverb/visibility \
-        -f visibility=public \
-        >/dev/null
-
     local gateway_digest reverb_digest
     gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/gateway-image-push.log" | tail -1)"
     reverb_digest="$(awk '/digest: sha256:/ { print $3 }' "${work_dir}/reverb-image-push.log" | tail -1)"
@@ -247,6 +241,8 @@ cmd_build() {
         exit 1
     fi
 
+    docker save "$candidate_reverb_image" -o "${work_dir}/orbit-reverb-linux-amd64.tar"
+
     "${repo_root}/bin/orbit-release-manifest" \
         --version="$version" \
         --source=topology-candidate \
@@ -260,6 +256,7 @@ cmd_build() {
         --agent-artifact="darwin-arm64=orbit-agent-macos-arm64=${work_dir}/orbit-agent-macos-arm64" \
         --role-image="orbit-caddy=caddy:2-alpine" \
         --role-image="orbit-websocket=${candidate_reverb_image}@${reverb_digest}" \
+        --role-image-artifact="orbit-websocket=orbit-reverb-linux-amd64.tar=${work_dir}/orbit-reverb-linux-amd64.tar" \
         --output="${work_dir}/orbit-release-manifest.candidate.json"
 
     ORBIT_CANDIDATE_PREFIX="$candidate_prefix" \
@@ -329,7 +326,7 @@ cmd_build() {
                 throw $lastThrowable;
             };
 
-            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
+            foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-agent-linux-x64", "orbit-agent-macos-arm64", "orbit-release-manifest.candidate.json", "orbit-reverb-linux-amd64.tar"] as $asset) {
                 $retryingUpload("{$prefix}/{$asset}", "{$dir}/{$asset}");
             }
 
@@ -353,10 +350,13 @@ cmd_build() {
     cp "${work_dir}/orbit-agent-linux-x64" "${state_dir}/orbit-agent-linux-x64"
     cp "${work_dir}/orbit-agent-macos-arm64" "${state_dir}/orbit-agent-macos-arm64"
     cp "${work_dir}/orbit-release-manifest.candidate.json" "${state_dir}/orbit-release-manifest.candidate.json"
+    cp "${work_dir}/orbit-reverb-linux-amd64.tar" "${state_dir}/orbit-reverb-linux-amd64.tar"
     cp "${work_dir}/gateway-image-push.log" "${state_dir}/gateway-image-push.log"
     cp "${work_dir}/reverb-image-push.log" "${state_dir}/reverb-image-push.log"
 
     local candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
+    local sha256_reverb_linux_amd64
+    sha256_reverb_linux_amd64="$(compute_sha256 "${work_dir}/orbit-reverb-linux-amd64.tar")"
 
     {
         printf 'version=%s\n' "$version"
@@ -375,6 +375,7 @@ cmd_build() {
         printf 'sha256_darwin_arm64=%s\n' "$sha256_darwin_arm64"
         printf 'sha256_agent_linux_amd64=%s\n' "$sha256_agent_linux_amd64"
         printf 'sha256_agent_darwin_arm64=%s\n' "$sha256_agent_darwin_arm64"
+        printf 'sha256_reverb_linux_amd64=%s\n' "$sha256_reverb_linux_amd64"
     } > "${state_dir}/candidate.env"
 
     printf '%s\n' "$build_id" > "$latest_pointer"

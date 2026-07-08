@@ -83,6 +83,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'orbit-agent-linux-x64',
             'orbit-agent-macos-arm64',
             'orbit-release-manifest.candidate.json',
+            'orbit-reverb-linux-amd64.tar',
             'reverb-image-push.log',
         ] as $stateFile) {
             expect("{$stateDir}/{$stateFile}")->toBeFile();
@@ -107,6 +108,7 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
             'sha256_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
             'sha256_agent_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-agent-linux-x64"),
             'sha256_agent_darwin_arm64' => hash_file('sha256', "{$stateDir}/orbit-agent-macos-arm64"),
+            'sha256_reverb_linux_amd64' => hash_file('sha256', "{$stateDir}/orbit-reverb-linux-amd64.tar"),
         ]);
 
         expect($process->getOutput())
@@ -131,8 +133,9 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
                     .str_repeat('cd', times: 32),
             )
             ->toContain(
-                'gh api --method PATCH /orgs/hardimpactdev/packages/container/orbit-reverb/visibility -f visibility=public',
+                '--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar=',
             )
+            ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
             ->not->toContain('Storage::disk')
             ->not->toContain('release create')
             ->not->toContain('push origin')
@@ -419,6 +422,21 @@ function release_candidate_prepare_root(string $temp): string
             esac
             exit 0
         fi
+        if [ "$1" = 'save' ]; then
+            output=''
+            while [ "$#" -gt 0 ]; do
+                case "$1" in
+                    -o)
+                        shift
+                        output="$1"
+                        ;;
+                esac
+                shift || true
+            done
+            [ -n "$output" ] || exit 1
+            printf 'stub-reverb-image-tar\n' > "$output"
+            exit 0
+        fi
         exit 1
         BASH);
 
@@ -428,7 +446,6 @@ function release_candidate_prepare_root(string $temp): string
             'auth status') exit 0 ;;
             'auth token') printf 'stub-ghcr-token\n' ;;
             'api user') printf 'stub-user\n' ;;
-            'api --method') exit 0 ;;
             *) exit 1 ;;
         esac
         BASH);
@@ -570,6 +587,7 @@ function release_candidate_write_state(
     file_put_contents("{$stateDir}/orbit-agent-linux-x64", "agent-linux-artifact-{$buildId}\n");
     file_put_contents("{$stateDir}/orbit-agent-macos-arm64", "agent-mac-artifact-{$buildId}\n");
     file_put_contents("{$stateDir}/orbit-release-manifest.candidate.json", "{\"stub\":true}\n");
+    file_put_contents("{$stateDir}/orbit-reverb-linux-amd64.tar", "reverb-image-artifact-{$buildId}\n");
     file_put_contents("{$stateDir}/gateway-image-push.log", "candidate: digest: sha256:stub size: 1\n");
 
     $values = array_merge([
@@ -589,6 +607,7 @@ function release_candidate_write_state(
         'sha256_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-macos-arm64"),
         'sha256_agent_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-agent-linux-x64"),
         'sha256_agent_darwin_arm64' => (string) hash_file('sha256', "{$stateDir}/orbit-agent-macos-arm64"),
+        'sha256_reverb_linux_amd64' => (string) hash_file('sha256', "{$stateDir}/orbit-reverb-linux-amd64.tar"),
     ], $overrides);
 
     $lines = '';

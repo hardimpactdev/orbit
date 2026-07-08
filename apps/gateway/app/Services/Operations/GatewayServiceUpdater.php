@@ -459,6 +459,7 @@ class GatewayServiceUpdater
     private function convergeGatewayStack(GatewayImageReference $targetImage, OperationUpdatePlan $plan): null
     {
         $this->swarmInstaller()->bootstrapRuntimeConfig();
+        $this->loadOperationsReverbImageArchive($plan);
 
         $stackPath = $this->swarm()->writeStackFile(
             $this->stackRenderer()->render(
@@ -476,6 +477,47 @@ class GatewayServiceUpdater
         $this->waitForServiceReplica(self::OPERATIONS_REVERB_SERVICE);
 
         return null;
+    }
+
+    private function loadOperationsReverbImageArchive(OperationUpdatePlan $plan): void
+    {
+        $artifact = $this->operationsReverbImageArtifact($plan);
+
+        if ($artifact === null) {
+            return;
+        }
+
+        $this->swarm()->loadImageArchive($artifact['url'], $artifact['sha256']);
+    }
+
+    /**
+     * @return array{url: string, sha256: string}|null
+     */
+    private function operationsReverbImageArtifact(OperationUpdatePlan $plan): ?array
+    {
+        $artifacts = $plan->manifest_snapshot['role_image_artifacts'] ?? null;
+
+        if (! is_array($artifacts)) {
+            return null;
+        }
+
+        $artifact = $artifacts['orbit-websocket'] ?? null;
+
+        if (! is_array($artifact)) {
+            return null;
+        }
+
+        $url = $artifact['url'] ?? null;
+        $sha256 = $artifact['sha256'] ?? null;
+
+        if (! is_string($url) || trim($url) === '' || ! is_string($sha256) || trim($sha256) === '') {
+            return null;
+        }
+
+        return [
+            'url' => trim($url),
+            'sha256' => trim($sha256),
+        ];
     }
 
     private function waitForGatewayHealth(GatewayImageReference $targetImage): void
