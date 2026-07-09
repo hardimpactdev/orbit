@@ -122,11 +122,24 @@ final readonly class WorkspaceSetupTargetResolver
         }
 
         $app = $selection->app;
-        $instance =
+        $explicitInstance =
             $selection->instance ?? $this->placement->matchingOrbitInstanceForPath(
                 $app,
                 $path,
             ) ?? $this->callerNodeInstanceForPath($app, $callerNode, $path);
+
+        if ($name === null) {
+            $resolved = $this->probeAdapters($path, [$app]);
+
+            if ($resolved !== null) {
+                [$adapter, $resolution] = $resolved;
+                $this->assertAdapterMatchesExplicitInput($resolution, null, $appName);
+
+                return $this->resolveAdapterWorkspace($adapter, $resolution, $explicitInstance);
+            }
+        }
+
+        $instance = $explicitInstance;
         $workspaceName = $name ?? basename($path);
         $existing = $this->firstWorkspaceMatch($app, $workspaceName, $instance);
 
@@ -423,8 +436,11 @@ final readonly class WorkspaceSetupTargetResolver
     /**
      * @return array{Workspace, App, Node, bool}
      */
-    private function resolveAdapterWorkspace(string $adapter, WorkspacePathResolution $resolution): array
-    {
+    private function resolveAdapterWorkspace(
+        string $adapter,
+        WorkspacePathResolution $resolution,
+        ?AppInstance $explicitInstance = null,
+    ): array {
         $app = $this->resolveApp($resolution->appSlug);
 
         if (! $app instanceof App) {
@@ -433,7 +449,7 @@ final readonly class WorkspaceSetupTargetResolver
             ]);
         }
 
-        $instance = $this->placement->matchingOrbitInstanceForPath($app, $resolution->path);
+        $instance = $explicitInstance ?? $this->placement->matchingOrbitInstanceForPath($app, $resolution->path);
         $workspace = Workspace::query()
             ->with(['app.node', 'app.instances', 'appInstance'])
             ->where('app_id', $app->id)

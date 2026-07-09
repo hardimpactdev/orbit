@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `name` | `[name]` | When local workspace context cannot resolve it. | Local workspace context when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
+| `name` | `[name]` | When local workspace context and Agent IDE adapter resolution cannot resolve it. | Local workspace context or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug or app-instance selector such as `happie.nmbp`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--node-transport` | `text` | Optional. | `auto` | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
@@ -42,6 +42,12 @@ the parent app path, including external agent worktree directories.
 1. **Resolve Workspace Identity**: Resolve `[name]` and parent `app` in this
    order:
    - Explicit `[name]` positional + explicit `--app`.
+   - **Explicit `--path` adapter lookup:** when `[name]` is missing and
+     `--path` plus `--app` are supplied, Orbit first asks the selected app's
+     effective Agent IDE adapter to resolve the absolute path. A successful
+     match supplies the workspace name, absolute path, and adapter workspace
+     id. If `--app` is an app-instance selector such as `happie.nmbp`, the
+     adopted workspace is bound to that app instance.
    - **CWD path-ownership lookup (gateway-authoritative):** when `[name]`
      is missing, Orbit asks the gateway to resolve the caller's absolute
      current directory against registered app and workspace paths for the
@@ -70,9 +76,9 @@ the parent app path, including external agent worktree directories.
        defaults (`.orbit/config` marker for `--app`) and interactive
        prompts. Non-interactive mode without an adapter resolution fails
        fast with `validation_failed`.
-   - **Agent-IDE adapter probe** (after the CWD lookup, when `[name]` is
-     still missing and the lookup outcome was `inside_app` or
-     `unregistered`):
+   - **Agent-IDE adapter probe** (after an explicit `--path` lookup or after
+     the CWD lookup, when `[name]` is still missing and the lookup outcome was
+     `inside_app` or `unregistered`):
      - The CLI gathers the **effective adapters** to probe:
        - On `inside_app`, only the parent app's effective adapter.
        - On `unregistered`, every adapter currently effective for any app
@@ -118,7 +124,8 @@ the parent app path, including external agent worktree directories.
      including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
-   - Adoption is based on explicit command input and gateway path policy only.
+   - Adoption is based on explicit command input, Agent IDE adapter path
+     resolution when `[name]` is omitted, and gateway path policy only.
      `workspace:setup` does not inspect project files such as `composer.json`,
      `package.json`, or `.php-version` to infer workspace identity, app
      ownership, or PHP version. Project-file adoption hints belong only to
@@ -273,7 +280,7 @@ all documented command failures exit with the standard command failure status
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path and parent-app-root rejection before side effects. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path, adapter identity for app+path setup without a positional name, and parent-app-root rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, agent-push dispatch, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |

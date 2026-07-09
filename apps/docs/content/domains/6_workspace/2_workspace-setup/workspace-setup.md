@@ -27,6 +27,9 @@ orbit workspace:setup feature-a --app=my-app
 # Target a concrete app instance with dot notation
 orbit workspace:setup recipes --app=happie.nmbp --path=/Users/nckrtl/.codex/worktrees/a59f/happie
 
+# Let the app's Agent IDE adapter resolve the workspace identity for a path
+orbit workspace:setup --app=happie.nmbp --path=/Users/nckrtl/.codex/worktrees/a59f/happie
+
 # Adopt an existing path as a workspace
 orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/feature-a
 
@@ -40,7 +43,7 @@ orbit workspace:setup feature-a --app=my-app --node-transport=transitional-ssh-f
 ## Arguments and options
 
 - `name`: The workspace identity slug. Required unless local workspace context
-  can resolve it; can be prompted in interactive mode.
+  or an Agent IDE adapter can resolve it; can be prompted in interactive mode.
 - `--app=<app>`: The parent app slug or app-instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
   Defaults to the existing workspace's parent app, the local app context, or
@@ -91,11 +94,13 @@ adapters expose a `workspace_path_resolution` capability. PolyScope is one.
 An adapter with this capability answers a single question: which managed
 workspace does this absolute path belong to?
 
-Orbit consults the probe when `[name]` and `--app` are both missing and the
-gateway lookup returned `inside_app` or `unregistered`. A successful probe
-fills in the workspace name and parent app. The adapter also returns its
-own id for the workspace, which Orbit stores. Adoption then proceeds as
-usual (`result.action=adopted`).
+Orbit consults the probe when `[name]` is missing and either the gateway lookup
+returned `inside_app`/`unregistered` or an explicit `--path` was supplied for an
+app with an effective adapter. A successful probe fills in the workspace name
+and parent app. The adapter also returns its own id for the workspace, which
+Orbit stores. Adoption then proceeds as usual (`result.action=adopted`). When
+`--app` is a dotted app-instance selector, the adapter-provided workspace is
+bound to that selected app instance.
 
 See
 [`agent-ide-concepts.md`](../../15_agent-ide/agent-ide-concepts.md#adapter-model)
@@ -116,12 +121,12 @@ Probe outcomes:
 The following steps describe what the command does during a successful run.
 
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
-  or interactive prompts.
+  Agent IDE adapter path resolution, or interactive prompts.
 - **Idempotent Set-Up Or Adoption**: Sets up a workspace path created by
   `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.
-  Adoption is based on the explicit `[name]`, `--app`, and `--path` inputs;
-  `workspace:setup` does not inspect project files to discover workspace
-  identity.
+  Adoption is based on explicit command input and, when `[name]` is omitted,
+  Agent IDE adapter path resolution; `workspace:setup` does not inspect project
+  files to discover workspace identity.
 - **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.
