@@ -156,7 +156,9 @@ authorization decision.
    - Applies workspace-specific runtime artifacts (runtime container, environment).
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
-   - Reads configured setup step definitions for the parent app.
+   - Reads configured setup step definitions for the workspace's selected app
+     instance, falling back to legacy app-level rows only when no
+     instance-scoped rows exist.
    - Executes steps sequentially in the workspace directory on the node through typed `internal:workspace-setup-step` over agent-push on agent-capable nodes.
    - Setup environment values travel only in the token-bound stdin payload, not in transport metadata or activity summaries.
    - Steps receive the lifecycle environment defined in the

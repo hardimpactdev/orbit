@@ -91,7 +91,7 @@ final readonly class WorkspaceStepListController implements Loggable
         return response()->json([
             'success' => [
                 'data' => [
-                    'steps' => $payload->forApp($app, $phaseEnum),
+                    'steps' => $payload->forApp($app, $phaseEnum, $selection->instance),
                 ],
             ],
         ]);

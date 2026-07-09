@@ -25,18 +25,31 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--app` | `text` | No local context resolves to a parent app. | Cwd-inferred parent app | Existing parent app slug or app-instance selector authorized for this caller. Dot notation such as `happie.nmbp` selects one concrete app instance for authorization/path resolution while storing the step on the parent app. |
+| `--app` | `text` | Unless the shared workspace selector chain resolves to a concrete app instance. | Resolved through the shared workspace selector chain when omitted. | Dotted app-instance selectors such as `happie.nmbp` are the explicit safe write path. Bare parent app slugs are rejected with `error.meta.reason=app_instance_required`. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing setup step belonging to the same app and `phase=setup`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 
+## State Model
+
+Gateway-owned workspace step policy stores rows in `workspace_steps`:
+
+- Instance-scoped rows keyed by `(app_instance_id, phase, sort_order)` hold
+  the writable policy for `workspace-setup-step:add` and
+  `workspace-teardown-step:add`.
+- Legacy app-level rows keyed only by `(app_id, phase, sort_order)` with
+  `app_instance_id=null` remain read-only compatibility fallback for list and
+  lifecycle execution when no instance rows exist for the selected app instance.
+  They are not mutable through add or remove.
+
 ## Input Resolution
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve Parent App**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
-     app-instance selector such as `happie.nmbp`.
+   - Explicit `--app=<app>`, where `<app>` must be a dotted app-instance
+     selector such as `happie.nmbp` for gateway writes. Bare parent app
+     slugs are rejected with `error.meta.reason=app_instance_required`.
    - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `app:register` and any workspace-installed marker) that names the owning
      app slug.
@@ -68,13 +81,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Setup Step Addition Rules
 
 `workspace-setup-step:add` writes a single setup step record owned by the gateway
-for an app's workspace lifecycle. The step is *not* executed during this
-command; it is applied by `workspace:new` and `workspace:setup` at
+for one app instance's workspace lifecycle. The step is *not* executed during
+this command; it is applied by `workspace:new` and `workspace:setup` at
 `phase=setup_steps`.
 
-1. **Registry Write**: Creates one new record in the gateway workspace setup
-   step policy with the resolved `(app, phase=setup, command, timeout_seconds)`
-   tuple. The new record receives a freshly assigned numeric `id`.
+1. **Registry Write**: Creates one new instance-scoped record in the gateway
+   workspace setup step policy with the resolved
+   `(app_instance, phase=setup, command, timeout_seconds)` tuple. The new
+   record receives a freshly assigned numeric `id`.
 2. **Phase Assignment**: Phase is automatically `setup`. There is no
    per-record override; teardown steps are owned by
    [`workspace-teardown-step:add`](../../11_workspace-teardown-step-add/workspace-teardown-step-add.md).
@@ -116,6 +130,9 @@ command; it is applied by `workspace:new` and `workspace:setup` at
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
+- **App Instance Required**: Bare app slug or path-only resolution without a
+  concrete app instance (`error.code=validation_failed`,
+  `error.meta.field=app`, `error.meta.reason=app_instance_required`).
 - **App Not Found**: Resolved app slug does not exist in gateway configuration
   (`error.code=workspace.app_not_found`, `error.meta.app`).
 - **Invalid Position**: Both `--before` and `--after` supplied

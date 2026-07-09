@@ -18,6 +18,7 @@ final readonly class AddWorkspaceStep
         int $timeoutSeconds = WorkspaceStep::DEFAULT_TIMEOUT_SECONDS,
         ?int $beforeStepId = null,
         ?int $afterStepId = null,
+        ?int $appInstanceId = null,
     ): WorkspaceStep {
         return DB::transaction(function () use (
             $appId,
@@ -26,10 +27,16 @@ final readonly class AddWorkspaceStep
             $timeoutSeconds,
             $beforeStepId,
             $afterStepId,
+            $appInstanceId,
         ): WorkspaceStep {
             $phaseSteps = WorkspaceStep::query()
                 ->where('app_id', $appId)
-                ->where('phase', $phase);
+                ->where('phase', $phase)
+                ->when(
+                    $appInstanceId === null,
+                    fn ($query) => $query->whereNull('app_instance_id'),
+                    fn ($query) => $query->where('app_instance_id', $appInstanceId),
+                );
 
             if ($beforeStepId !== null) {
                 $anchor = (clone $phaseSteps)->find($beforeStepId);
@@ -55,6 +62,7 @@ final readonly class AddWorkspaceStep
 
             return WorkspaceStep::query()->create([
                 'app_id' => $appId,
+                'app_instance_id' => $appInstanceId,
                 'phase' => $phase,
                 'sort_order' => $sortOrder,
                 'command' => $command,

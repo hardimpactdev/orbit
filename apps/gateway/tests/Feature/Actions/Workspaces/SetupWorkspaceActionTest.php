@@ -834,6 +834,47 @@ it('runs setup steps when configured', function (): void {
     expect($run->status)->toBe('completed');
 });
 
+it('runs instance-specific setup steps for workspaces bound to an app instance', function (): void {
+    $app = App::query()->with('node')->first();
+    $instance = AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $app->node_id,
+            path: $app->path,
+            domain: 'demo.nmbp',
+        ),
+    ]);
+    $workspace = Workspace::create([
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
+    ]);
+
+    WorkspaceStep::create([
+        'app_id' => $app->id,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'legacy step',
+        'timeout_seconds' => 60,
+    ]);
+    WorkspaceStep::create([
+        'app_id' => $app->id,
+        'app_instance_id' => $instance->id,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'instance step',
+        'timeout_seconds' => 60,
+    ]);
+
+    $result = app(SetupWorkspace::class)->handle($app, $workspace, $app->node);
+
+    expect($result['setup_steps']['status'])->toBe('completed')->and($result['setup_steps']['count'])->toBe(1);
+});
+
 it('reports progress while setup steps are running', function (): void {
     $workspace = Workspace::create([
         'app_id' => 1,

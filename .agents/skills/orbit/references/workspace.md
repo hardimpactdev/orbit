@@ -50,7 +50,9 @@ The parent app root itself is not a valid workspace path.
 Use `--stream-json` for JSONL setup progress when an agent needs incremental
 frames; use `--json` for the final result envelope only.
 
-Workspace setup runs the steps configured for the parent app via `workspace-setup-step:add`.
+Workspace setup runs the steps configured for the workspace's app instance via
+`workspace-setup-step:add --app=<app.instance>`. Legacy app-level rows are
+compatibility fallback only when no instance-scoped rows exist.
 Setup steps receive `APP_URL`, `VITE_APP_URL`, `VITE_VALET_HOST`,
 `VITE_DEV_SERVER_KEY`, and `VITE_DEV_SERVER_CERT` for the workspace URL.
 
@@ -86,12 +88,14 @@ orbit workspace:log [<run>] [--json]
 
 ## Setup-step pipeline
 
-App-scoped, ordered list of shell commands that run during `workspace:setup`.
+App-instance-scoped, ordered list of shell commands that run during
+`workspace:setup`. `add` writes require a dotted selector such as
+`myapp.nmbp`; bare app slugs are rejected.
 
 ### `orbit workspace-setup-step:add`
 
 ```bash
-orbit workspace-setup-step:add --command='<shell>' [--app=<name>]
+orbit workspace-setup-step:add --command='<shell>' --app=<app.instance>
                                [--before=<step-id>] [--after=<step-id>]
                                [--timeout=600] [--json]
 ```
@@ -101,39 +105,46 @@ Without `--before` / `--after`, the step is appended.
 ### `orbit workspace-setup-step:list`
 
 ```bash
-orbit workspace-setup-step:list [--app=<name>] [--json]
+orbit workspace-setup-step:list [--app=<app|app.instance>] [--json]
 ```
+
+Dotted selectors list instance-scoped steps; bare app slugs list legacy
+app-level fallback rows only.
 
 ### `orbit workspace-setup-step:remove`
 
 ```bash
-orbit workspace-setup-step:remove --step=<id> [--app=<name>] [--force] [--json]
+orbit workspace-setup-step:remove --step=<id> --app=<app.instance> [--force] [--json]
 ```
+
+Removes require a dotted app-instance selector and only delete
+instance-owned rows.
 
 ## Teardown-step pipeline
 
-App-scoped, ordered list of commands that run during `workspace:remove`. Mirrors the setup pipeline.
+App-instance-scoped ordered commands that run during `workspace:remove`.
+Mirrors the setup pipeline.
 
 ```bash
-orbit workspace-teardown-step:add --command='<shell>' [--app=<name>]
+orbit workspace-teardown-step:add --command='<shell>' --app=<app.instance>
                                   [--before=<step-id>] [--after=<step-id>]
                                   [--timeout=600] [--json]
-orbit workspace-teardown-step:list [--app=<name>] [--json]
-orbit workspace-teardown-step:remove --step=<id> [--app=<name>] [--force] [--json]
+orbit workspace-teardown-step:list [--app=<app|app.instance>] [--json]
+orbit workspace-teardown-step:remove --step=<id> --app=<app.instance> [--force] [--json]
 ```
 
 ## Examples
 
 ```bash
-# Define a typical Laravel setup pipeline once for the app
-orbit workspace-setup-step:add --app=myapp --command='composer install'
-orbit workspace-setup-step:add --app=myapp --command='npm ci'
-orbit workspace-setup-step:add --app=myapp --command='cp .env.example .env'
-orbit workspace-setup-step:add --app=myapp --command='php artisan key:generate'
-orbit workspace-setup-step:add --app=myapp --command='php artisan migrate --seed'
+# Define a typical Laravel setup pipeline once per app instance
+orbit workspace-setup-step:add --app=myapp.nmbp --command='composer install'
+orbit workspace-setup-step:add --app=myapp.nmbp --command='npm ci'
+orbit workspace-setup-step:add --app=myapp.nmbp --command='cp .env.example .env'
+orbit workspace-setup-step:add --app=myapp.nmbp --command='php artisan key:generate'
+orbit workspace-setup-step:add --app=myapp.nmbp --command='php artisan migrate --seed'
 
 # Spin up a workspace for a feature branch
-orbit workspace:new feature-x --app=myapp --base=main
-orbit workspace:setup feature-x --app=myapp
+orbit workspace:new feature-x --app=myapp.nmbp --base=main
+orbit workspace:setup feature-x --app=myapp.nmbp
 # Served at feature-x.myapp.beast
 ```

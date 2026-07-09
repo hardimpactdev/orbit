@@ -11,23 +11,23 @@ orbit workspace-setup-step:add --command="composer install" [--app=<app>] [--bef
 ## Description
 
 The `workspace-setup-step:add` command registers a shell command that runs
-whenever Orbit creates or sets up a workspace for the app. These steps are
-used for app-specific preparation such as installing dependencies, copying
-environment files, or running project setup commands.
+whenever Orbit creates or sets up a workspace for one app instance. These
+steps are used for instance-specific preparation such as installing
+dependencies, copying environment files, or running project setup commands.
 
-Steps are stored as gateway-owned workspace policy and are executed in the
-workspace path on the owning node.
+Steps are stored as gateway-owned app-instance workspace policy and are
+executed in the workspace path on the owning node. Writes require a dotted
+app-instance selector such as `hauser.nmbp`; legacy app-level rows remain
+read-only compatibility fallback for list and setup execution only.
 
 ## Arguments
 
 - `--command=<command>`: The shell command to execute. Required.
-- `--app=<app>`: The parent app slug. When omitted, Orbit infers the app
-  using the same precedence chain as
-  [`workspace:new`](../1_workspace-new/workspace-new.md): explicit flag →
-  `.orbit/config` marker on the caller filesystem → gateway path-ownership
-  lookup keyed on `(caller node identity, absolute cwd)` → interactive
-  prompt or non-interactive failure. Project files such as `composer.json`,
-  `package.json`, and `.php-version` are never inspected.
+- `--app=<app>`: The app-instance selector such as `hauser.nmbp`. Bare parent
+  app slugs are rejected for writes. When omitted, Orbit attempts the same
+  precedence chain as [`workspace:new`](../1_workspace-new/workspace-new.md),
+  but the resolved selector must name a concrete app instance before the
+  gateway accepts the write.
 - `--before=<id>`: Insert the new step before the step with the given ID.
 - `--after=<id>`: Insert the new step after the step with the given ID.
 - `--timeout=<seconds>`: Step timeout in seconds. Strict positive integer

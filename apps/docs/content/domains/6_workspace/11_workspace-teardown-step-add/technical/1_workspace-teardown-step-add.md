@@ -31,7 +31,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
 | `--command` | `text` | Always. | n/a | Non-empty shell command. |
-| `--app` | `text` | No local context resolves to a parent app. | Cwd-inferred parent app | Existing parent app slug or app-instance selector authorized for this caller. Dot notation such as `happie.nmbp` selects one concrete app instance for authorization/path resolution while storing the step on the parent app. |
+| `--app` | `text` | Unless the shared workspace selector chain resolves to a concrete app instance. | Resolved through the shared workspace selector chain when omitted. | Dotted app-instance selectors such as `happie.nmbp` are the explicit safe write path. Bare parent app slugs are rejected with `error.meta.reason=app_instance_required`. |
 | `--before` | `integer` | Optional. Mutually exclusive with `--after`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app and `phase=teardown`. |
 | `--after` | `integer` | Optional. Mutually exclusive with `--before`. | n/a | Positive integer. Must reference an existing teardown step belonging to the same app and `phase=teardown`. |
 | `--timeout` | `integer` | Optional. | `600` | Strict positive integer (`>= 1`). `0` is rejected before side effects with `error.code=validation_failed`, `error.meta.field=timeout`. |
@@ -41,8 +41,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. **Resolve Command**: Resolve `--command` from flag or interactive prompt.
 2. **Resolve Parent App**: Mirror the `workspace:new` precedence chain:
-   - Explicit `--app=<app>`, where `<app>` may be a parent app slug or
-     app-instance selector such as `happie.nmbp`.
+   - Explicit `--app=<app>`, where `<app>` must be a dotted app-instance
+     selector such as `happie.nmbp` for gateway writes. Bare parent app
+     slugs are rejected with `error.meta.reason=app_instance_required`.
    - `.orbit/config` marker on the caller filesystem (installed by `app:new` /
      `app:register` and any workspace-installed marker) that names the owning
      app slug.

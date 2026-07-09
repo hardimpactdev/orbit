@@ -27,6 +27,7 @@ use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspaceRuntimeImageUnavailableException;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
+use App\Services\Workspaces\WorkspaceStepPolicyService;
 use RuntimeException;
 use Throwable;
 
@@ -44,6 +45,7 @@ final readonly class SetupWorkspace
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private LaravelViteDevServerEnvironment $vite,
         private WorkspacePlacement $placement,
+        private WorkspaceStepPolicyService $stepPolicy,
     ) {}
 
     /**
@@ -218,11 +220,13 @@ final readonly class SetupWorkspace
      */
     public function runSetupSteps(Workspace $workspace, App $app, Node $node, ?callable $onStepProgress = null): array
     {
-        $steps = WorkspaceStep::query()
-            ->where('app_id', $app->id)
-            ->where('phase', WorkspaceLifecyclePhase::Setup)
-            ->orderBy('sort_order')
-            ->get();
+        $workspace->loadMissing('appInstance');
+
+        $steps = $this->stepPolicy->stepsFor(
+            $app,
+            WorkspaceLifecyclePhase::Setup,
+            $workspace->appInstance,
+        );
 
         if ($steps->isEmpty()) {
             return [
@@ -380,12 +384,12 @@ final readonly class SetupWorkspace
     }
 
     /**
-     * @param  list<WorkspaceStep>  $steps
+     * @param  array<int, WorkspaceStep>  $steps
      * @return list<WorkspaceStep>
      */
     private function renderSteps(array $steps, string $workspaceName): array
     {
-        return array_map(function (WorkspaceStep $step) use ($workspaceName): WorkspaceStep {
+        return array_values(array_map(function (WorkspaceStep $step) use ($workspaceName): WorkspaceStep {
             $rendered = clone $step;
             $rendered->command = str_replace(
                 ['__ORBIT_WORKSPACE_NAME__'],
@@ -394,11 +398,11 @@ final readonly class SetupWorkspace
             );
 
             return $rendered;
-        }, $steps);
+        }, $steps));
     }
 
     /**
-     * @param  list<WorkspaceStep>  $steps
+     * @param  array<int, WorkspaceStep>  $steps
      */
     private function computeStepSetHash(array $steps): string
     {

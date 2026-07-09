@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
+use App\Services\Workspaces\WorkspaceStepPolicyService;
 use RuntimeException;
 use Throwable;
 
@@ -48,12 +49,16 @@ final class SetupWorkspaceProgressPlan
 
     private ?ProgressReporter $reporter = null;
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private readonly SetupWorkspace $setupWorkspace,
         private readonly Workspace $workspace,
         private readonly App $app,
         private readonly Node $node,
         private readonly bool $isAdoption,
+        private readonly WorkspaceStepPolicyService $stepPolicy,
     ) {
         $this->wasAlreadyActive = $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active;
     }
@@ -352,10 +357,13 @@ final class SetupWorkspaceProgressPlan
 
     private function hasSetupSteps(): bool
     {
-        return WorkspaceStep::query()
-            ->where('app_id', $this->app->id)
-            ->where('phase', WorkspaceLifecyclePhase::Setup)
-            ->exists();
+        $this->workspace->loadMissing('appInstance');
+
+        return $this->stepPolicy->hasStepsFor(
+            $this->app,
+            WorkspaceLifecyclePhase::Setup,
+            $this->workspace->appInstance,
+        );
     }
 
     private function hasProcesses(): bool

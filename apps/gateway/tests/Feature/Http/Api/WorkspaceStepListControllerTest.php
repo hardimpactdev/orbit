@@ -45,7 +45,7 @@ function grantWorkspaceStepListAccess(Node $caller, Node $appNode): void
 }
 
 describe('WorkspaceStepListController', function (): void {
-    it('resolves app-instance selectors for app-level step policy on the selected node', function (): void {
+    it('lists instance-specific steps for dotted selectors and falls back to legacy app-level rows', function (): void {
         $caller = createWorkspaceStepListCallerNode();
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
@@ -68,7 +68,7 @@ describe('WorkspaceStepListController', function (): void {
         WorkspaceStep::factory()->create([
             'app_id' => $app->id,
             'phase' => WorkspaceLifecyclePhase::Setup,
-            'command' => 'composer install',
+            'command' => 'legacy composer install',
         ]);
 
         $response = $this->call(
@@ -83,7 +83,55 @@ describe('WorkspaceStepListController', function (): void {
         $response
             ->assertOk()
             ->assertJsonPath('success.data.steps.0.app', 'happie')
-            ->assertJsonPath('success.data.steps.0.command', 'composer install');
+            ->assertJsonPath('success.data.steps.0.command', 'legacy composer install');
+    });
+
+    it('prefers instance-specific steps over legacy app-level fallback rows', function (): void {
+        $caller = createWorkspaceStepListCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepListAccess($caller, $localNode);
+        $app = App::factory()->create([
+            'name' => 'happie',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/happie',
+        ]);
+        $instance = AppInstance::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $localNode->id,
+                path: '/Users/nckrtl/apps/happie',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'phase' => WorkspaceLifecyclePhase::Setup,
+            'command' => 'legacy composer install',
+        ]);
+        WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'phase' => WorkspaceLifecyclePhase::Setup,
+            'command' => 'instance composer install',
+        ]);
+
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/steps/setup?app=happie.nmbp',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonCount(1, 'success.data.steps')
+            ->assertJsonPath('success.data.steps.0.command', 'instance composer install')
+            ->assertJsonPath('success.data.steps.0.app_instance', 'nmbp');
     });
 
     it('returns visible setup steps sorted by order', function (): void {

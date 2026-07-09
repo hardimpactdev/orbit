@@ -12,23 +12,27 @@ use App\Models\App;
 use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
-use App\Models\WorkspaceStep;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
+use App\Services\Workspaces\WorkspaceStepPolicyService;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final readonly class RemoveWorkspace
 {
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private RemoteShell $remoteShell,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
         private ExplicitRemoteShellFallback $transport,
         private WorkspacePlacement $placement,
+        private WorkspaceStepPolicyService $stepPolicy,
     ) {}
 
     /**
@@ -59,11 +63,14 @@ final readonly class RemoveWorkspace
             ->pluck('id')
             ->all();
         $processCleanupScripts = $this->processCleanupScripts($workspace, $app);
-        $teardownSteps = WorkspaceStep::query()
-            ->where('app_id', $workspace->app_id)
-            ->where('phase', WorkspaceLifecyclePhase::Teardown)
-            ->orderBy('sort_order')
-            ->get();
+        $workspace->loadMissing(['appInstance', 'app']);
+        assert($workspace->app instanceof App, 'Workspace removal requires a parent app.');
+
+        $teardownSteps = $this->stepPolicy->stepsFor(
+            $workspace->app,
+            WorkspaceLifecyclePhase::Teardown,
+            $workspace->appInstance,
+        );
         $node = $this->placement->nodeForWorkspace($workspace);
 
         DB::transaction(function () use ($workspace, $proxyRouteIds): void {
@@ -148,11 +155,11 @@ final readonly class RemoveWorkspace
                         ? app(AppCommandRouter::class)->routeLifecycleForNodePath(
                             $app,
                             $node,
-                            (string) $teardownStep->command,
+                            $teardownStep->command,
                             $workspace->path,
                             $this->teardownEnvironment($workspace),
                         )
-                        : (string) $teardownStep->command;
+                        : $teardownStep->command;
 
                     $teardownResult = $this->remoteShell->run($node, $command, [
                         'cwd' => $workspace->path,

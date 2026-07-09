@@ -31,20 +31,93 @@ function createWorkspaceStepStoreCallerNode(array $overrides = [], ?string $role
     };
 }
 
-function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode): void
+function grantWorkspaceStepStoreAccess(Node $caller, Node $appNode, array $permissions = ['workspace:write']): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
-        'permissions' => json_encode(['workspace:write'], JSON_THROW_ON_ERROR),
+        'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
 }
 
+function createWorkspaceStepStoreInstance(App $app, Node $node, string $instanceName): AppInstance
+{
+    return AppInstance::factory()->create([
+        'app_id' => $app->id,
+        'name' => $instanceName,
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $node->id,
+            path: $app->path,
+            domain: "{$app->name}.{$instanceName}",
+        ),
+    ]);
+}
+
 describe('WorkspaceStepStoreController', function (): void {
-    it('creates app-level step policy through an app-instance selector on the selected node', function (): void {
+    it('stores instance-specific setup steps for dotted selectors without exposing them to sibling instances', function (): void {
+        $caller = createWorkspaceStepStoreCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $nmbpNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        $developmentNode = createTestAppHostNode(['name' => 'dev-host', 'tld' => 'dev']);
+        grantWorkspaceStepStoreAccess($caller, $nmbpNode);
+        grantWorkspaceStepStoreAccess($caller, $developmentNode, ['workspace:write', 'workspace:read']);
+        $app = App::factory()->create([
+            'name' => 'hauser',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/hauser',
+        ]);
+        $nmbpInstance = createWorkspaceStepStoreInstance($app, $nmbpNode, 'nmbp');
+        createWorkspaceStepStoreInstance($app, $developmentNode, 'development');
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'app' => 'hauser.nmbp',
+                'command' => 'composer install',
+                'timeout' => 600,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.result.action', 'added')
+            ->assertJsonPath('success.data.step.app', 'hauser')
+            ->assertJsonPath('success.data.step.app_instance', 'nmbp');
+
+        $stored = WorkspaceStep::query()->sole();
+
+        expect($stored->app_instance_id)
+            ->toBe($nmbpInstance->id)
+            ->and(WorkspaceStep::query()->where('app_id', $app->id)->whereNull('app_instance_id')->count())
+            ->toBe(0);
+
+        $developmentList = $this->call(
+            'GET',
+            '/api/workspaces/steps/setup?app=hauser.development',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP],
+        );
+
+        $developmentList
+            ->assertOk()
+            ->assertJsonPath('success.data.steps', []);
+    });
+
+    it('stores instance-specific policy through an app-instance selector on the selected node', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
         $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
@@ -54,16 +127,7 @@ describe('WorkspaceStepStoreController', function (): void {
             'node_id' => $canonicalNode->id,
             'path' => '/home/nckrtl/apps/happie',
         ]);
-        AppInstance::factory()->create([
-            'app_id' => $app->id,
-            'name' => 'nmbp',
-            'driver' => AppInstanceDriver::Orbit,
-            'driver_config' => new OrbitAppInstanceDriverConfigData(
-                node_id: $localNode->id,
-                path: '/Users/nckrtl/apps/happie',
-                domain: 'happie.nmbp',
-            ),
-        ]);
+        $instance = createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
 
         $response = $this->call(
             'POST',
@@ -87,10 +151,10 @@ describe('WorkspaceStepStoreController', function (): void {
             ->assertJsonPath('success.data.result.action', 'added')
             ->assertJsonPath('success.data.step.app', 'happie');
 
-        expect(WorkspaceStep::query()->where('app_id', $app->id)->count())->toBe(1);
+        expect(WorkspaceStep::query()->sole()->app_instance_id)->toBe($instance->id);
     });
 
-    it('creates a workspace step for authorized callers', function (): void {
+    it('rejects app-only selectors for workspace step writes', function (): void {
         $caller = createWorkspaceStepStoreCallerNode();
         $node = createTestAppHostNode();
         grantWorkspaceStepStoreAccess($caller, $node);
@@ -114,11 +178,12 @@ describe('WorkspaceStepStoreController', function (): void {
         );
 
         $response
-            ->assertOk()
-            ->assertJsonPath('success.data.result.action', 'added')
-            ->assertJsonPath('success.data.step.app', 'docs')
-            ->assertJsonPath('success.data.step.phase', 'setup')
-            ->assertJsonPath('success.data.step.order', 1);
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'app')
+            ->assertJsonPath('error.meta.reason', 'app_instance_required');
+
+        expect(WorkspaceStep::query()->count())->toBe(0);
     });
 
     it('rejects callers without workspace step write permission', function (): void {
@@ -146,11 +211,22 @@ describe('WorkspaceStepStoreController', function (): void {
             ->assertJsonPath('error.meta.missing_permission', 'workspace:write');
     });
 
-    it('validates bad timeout and unknown anchors', function (): void {
+    it('validates bad timeout and unknown anchors for dotted selectors', function (): void {
         $caller = createWorkspaceStepStoreCallerNode(role: 'gateway');
-        $node = createTestAppHostNode();
-        $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
-        WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown]);
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepStoreAccess($caller, $localNode);
+        $app = App::factory()->create([
+            'name' => 'docs',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/docs',
+        ]);
+        $instance = createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
+        WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'app_instance_id' => $instance->id,
+            'phase' => WorkspaceLifecyclePhase::Teardown,
+        ]);
 
         $timeout = $this->call(
             'POST',
@@ -162,7 +238,7 @@ describe('WorkspaceStepStoreController', function (): void {
                 'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
                 'CONTENT_TYPE' => 'application/json',
             ],
-            json_encode(['app' => 'docs', 'command' => 'composer install', 'timeout' => 0], JSON_THROW_ON_ERROR),
+            json_encode(['app' => 'docs.nmbp', 'command' => 'composer install', 'timeout' => 0], JSON_THROW_ON_ERROR),
         );
         $anchor = $this->call(
             'POST',
@@ -174,12 +250,56 @@ describe('WorkspaceStepStoreController', function (): void {
                 'REMOTE_ADDR' => $caller->wireguard_address,
                 'CONTENT_TYPE' => 'application/json',
             ],
-            json_encode(['app' => 'docs', 'command' => 'composer install', 'before' => 999], JSON_THROW_ON_ERROR),
+            json_encode(['app' => 'docs.nmbp', 'command' => 'composer install', 'before' => 999], JSON_THROW_ON_ERROR),
         );
 
         $timeout->assertStatus(400)
             ->assertJsonPath('error.meta.field', 'timeout');
         $anchor->assertNotFound()
             ->assertJsonPath('error.code', 'workspace.step_not_found');
+    });
+
+    it('rejects legacy app-level rows as anchors for instance-specific setup step adds', function (): void {
+        $caller = createWorkspaceStepStoreCallerNode();
+        $canonicalNode = createTestAppHostNode(['name' => 'beast', 'tld' => 'test']);
+        $localNode = createTestAppHostNode(['name' => 'NMBP', 'tld' => 'nmbp']);
+        grantWorkspaceStepStoreAccess($caller, $localNode);
+        $app = App::factory()->create([
+            'name' => 'hauser',
+            'node_id' => $canonicalNode->id,
+            'path' => '/home/nckrtl/apps/hauser',
+        ]);
+        createWorkspaceStepStoreInstance($app, $localNode, 'nmbp');
+        $legacy = WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'phase' => WorkspaceLifecyclePhase::Setup,
+            'command' => 'legacy composer install',
+        ]);
+
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'app' => 'hauser.nmbp',
+                'command' => 'composer install',
+                'before' => $legacy->id,
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $response
+            ->assertNotFound()
+            ->assertJsonPath('error.code', 'workspace.step_not_found');
+
+        expect(WorkspaceStep::query()->count())
+            ->toBe(1)
+            ->and(WorkspaceStep::query()->sole()->app_instance_id)
+            ->toBeNull();
     });
 });

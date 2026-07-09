@@ -172,6 +172,68 @@ describe('workspace step mutation commands', function (): void {
             ->not->toContain('"error"');
     });
 
+    it('renders app-instance-required gateway failures for bare app selectors', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'validation_failed',
+            'Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
+            ['field' => 'app', 'reason' => 'app_instance_required'],
+        ), 400);
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
+            '--app' => 'docs',
+            '--command' => 'composer install',
+        ]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('dotted selector such as hauser.nmbp')
+            ->and($output)
+            ->not->toContain('"error"');
+    });
+
+    it('renders step-not-found gateway failures when legacy rows are used as anchors for instance adds', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'workspace.step_not_found',
+            "Referenced insertion step '7' not found for app 'hauser' in phase 'setup'.",
+            ['id' => 7, 'app' => 'hauser', 'phase' => 'setup'],
+        ), 404);
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
+            '--app' => 'hauser.nmbp',
+            '--command' => 'composer install',
+            '--before' => '7',
+        ]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("Referenced insertion step '7' not found")
+            ->and($output)
+            ->not->toContain('"error"');
+    });
+
+    it('renders app-instance-required gateway failures for bare app selectors on remove', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'validation_failed',
+            'Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
+            ['field' => 'app', 'reason' => 'app_instance_required'],
+        ), 400);
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:remove', [
+            '--step' => '12',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('dotted selector such as hauser.nmbp')
+            ->and($output)
+            ->not->toContain('"error"');
+    });
+
     it('rejects conflicting insertion anchors before contacting the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
