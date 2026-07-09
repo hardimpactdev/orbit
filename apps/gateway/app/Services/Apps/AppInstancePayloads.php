@@ -6,7 +6,7 @@ namespace App\Services\Apps;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\AppInstance;
-use App\Models\AppRuntimeMount;
+use App\Models\AppInstanceRuntimeMount;
 use App\Services\Php\PhpRuntimeCatalog;
 use InvalidArgumentException;
 
@@ -22,7 +22,7 @@ final readonly class AppInstancePayloads
      */
     public function instance(AppInstance $instance): array
     {
-        $instance->loadMissing(['app.node', 'app.runtimeMounts']);
+        $instance->loadMissing(['app.node', 'runtimeMounts']);
 
         return [
             'app' => $instance->app->name,
@@ -69,9 +69,9 @@ final readonly class AppInstancePayloads
             'php_version' => $app->php_version,
             'frankenphp_image' => $image,
             'mode' => $app->worker_enabled ? 'worker' : 'classic',
-            'configured_mounts' => $app
+            'configured_mounts' => $instance
                 ->runtimeMounts
-                ->map(fn (AppRuntimeMount $mount): array => [
+                ->map(fn (AppInstanceRuntimeMount $mount): array => [
                     'source' => $mount->source,
                     'target' => $mount->target,
                     'read_only' => $mount->read_only,

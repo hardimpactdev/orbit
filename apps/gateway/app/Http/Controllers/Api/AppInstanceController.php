@@ -42,7 +42,7 @@ final class AppInstanceController implements Loggable
             return $this->appNotFound($app);
         }
 
-        $instances = $targetApp->instances()->with(['app.node', 'app.runtimeMounts'])->get();
+        $instances = $targetApp->instances()->with(['app.node', 'runtimeMounts'])->get();
 
         return $this->success([
             'app' => $targetApp->name,
@@ -504,7 +504,7 @@ final class AppInstanceController implements Loggable
 
         $targetInstance = $targetApp
             ->instances()
-            ->with(['app.node', 'app.runtimeMounts'])
+            ->with(['app.node', 'runtimeMounts'])
             ->where('name', $instance)
             ->first();
 
