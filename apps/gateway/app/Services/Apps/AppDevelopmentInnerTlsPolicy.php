@@ -30,6 +30,14 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function appliesToApp(App $app): bool
     {
+        $app->loadMissing('node.roleAssignments');
+        $node = $app->node;
+
+        return $node instanceof Node && $this->appliesToAppOnNode($app, $node);
+    }
+
+    public function appliesToAppOnNode(App $app, Node $node): bool
+    {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
         }
@@ -42,9 +50,9 @@ final readonly class AppDevelopmentInnerTlsPolicy
             return false;
         }
 
-        $app->loadMissing('node.roleAssignments');
+        $node->loadMissing('roleAssignments');
 
-        return $app->node?->hasActiveRole(NodeRoleName::AppDevelopment->value) === true;
+        return $node->hasActiveRole(NodeRoleName::AppDevelopment->value);
     }
 
     public function appliesToWorkspace(Workspace $workspace): bool

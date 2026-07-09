@@ -1330,7 +1330,7 @@ final readonly class ProxyRouteProbe
         }
 
         try {
-            $route->loadMissing(['app.node', 'workspace.app.node', 'node']);
+            $route->loadMissing(['app.node', 'app.instances', 'workspace.app.node', 'node']);
             $expected = $route->replicate();
             $expected->setRelations($route->getRelations());
 
@@ -1358,10 +1358,26 @@ final readonly class ProxyRouteProbe
 
         $config = is_array($route->config) ? $route->config : [];
 
-        if (! array_key_exists('runtime_upstream', $config) || ! is_string($config['runtime_upstream'])) {
-            return null;
+        try {
+            $route->loadMissing(['app.node', 'app.instances', 'workspace.app.node', 'node']);
+            $expected = $route->replicate();
+            $expected->setRelations($route->getRelations());
+            $this->renderer()->renderManagedPhpRuntimeIntent($expected);
+
+            $expectedConfig = is_array($expected->config) ? $expected->config : [];
+            $expectedUpstream = $expectedConfig['runtime_upstream'] ?? null;
+
+            if (is_string($expectedUpstream) && $expectedUpstream !== '') {
+                return $expectedUpstream;
+            }
+        } catch (Throwable) {
+            $upstream = $config['runtime_upstream'] ?? null;
+
+            return is_string($upstream) && $upstream !== '' ? $upstream : null;
         }
 
-        return $config['runtime_upstream'] !== '' ? $config['runtime_upstream'] : null;
+        $upstream = $config['runtime_upstream'] ?? null;
+
+        return is_string($upstream) && $upstream !== '' ? $upstream : null;
     }
 }

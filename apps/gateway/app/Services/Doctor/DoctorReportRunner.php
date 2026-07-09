@@ -20,6 +20,7 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
@@ -1168,15 +1169,17 @@ final readonly class DoctorReportRunner
 
         if (in_array('app', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $apps = App::query()->with('node')->where('node_id', $node->id)->get();
-            $appCheckTotal = $apps->count() + 2;
+            $apps = App::query()->with(['node', 'instances'])->where('node_id', $node->id)->get();
+            $appInstances = $this->appInstancesForNode($node);
+            $appCheckTotal = $apps->count() + $appInstances->count() + 2;
 
             $this->runFamilyCheckPlan($onFamilyProgress, 'app', $appCheckTotal, function (callable $advance) use (
                 $apps,
+                $appInstances,
                 $node,
                 &$issues,
             ): void {
-                $this->probeAppFamily($node, $apps, $issues, $advance);
+                $this->probeAppFamily($node, $apps, $appInstances, $issues, $advance);
             });
 
             $this->reportFamilyProgress(
@@ -1557,10 +1560,16 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  Collection<int, App>  $apps
+     * @param  Collection<int, AppInstance>  $appInstances
      * @param  list<array<string, mixed>>  $issues
      */
-    private function probeAppFamily(Node $node, Collection $apps, array &$issues, callable $advance): void
-    {
+    private function probeAppFamily(
+        Node $node,
+        Collection $apps,
+        Collection $appInstances,
+        array &$issues,
+        callable $advance,
+    ): void {
         foreach ($apps as $app) {
             $snapshot = $this->appsProbe->introspect($app);
 
@@ -1579,6 +1588,22 @@ final readonly class DoctorReportRunner
             $advance();
         }
 
+        foreach ($appInstances as $instance) {
+            $app = $instance->app;
+
+            $snapshot = $this->appsProbe->introspectInstance($app, $instance);
+
+            foreach ($this->appsProbe->diffInstance($app, $instance, $snapshot) as $entry) {
+                $issues[] = $this->appIssuePayload($entry, $app);
+            }
+
+            foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
+                $issues[] = $this->appIssuePayload($entry, $app);
+            }
+
+            $advance();
+        }
+
         $containerProbe = $this->appsProbe->introspectNode($node);
         $containerSnapshot = $containerProbe->containers;
         $activePhpAppSlugs = App::query()
@@ -1586,6 +1611,15 @@ final readonly class DoctorReportRunner
             ->where('runtime', AppRuntimeKind::Php->value)
             ->pluck('name')
             ->all();
+        $activePhpAppSlugs = [
+            ...$activePhpAppSlugs,
+            ...$appInstances
+                ->map(fn (AppInstance $instance): string => app(AppRuntimeContainerRenderer::class)->instanceSlug(
+                    $instance->app,
+                    $instance,
+                ))
+                ->all(),
+        ];
 
         if ($containerProbe->status === NodeRuntimeContainersProbeStatus::Error) {
             $issues[] = $this->annotateIssue([
@@ -1661,6 +1695,26 @@ final readonly class DoctorReportRunner
         }
 
         $advance();
+    }
+
+    /**
+     * @return Collection<int, AppInstance>
+     */
+    private function appInstancesForNode(Node $node): Collection
+    {
+        /** @var Collection<int, AppInstance> $instances */
+        $instances = AppInstance::query()
+            ->with(['app.node', 'app.instances'])
+            ->get()
+            ->filter(
+                fn (AppInstance $instance): bool => (
+                    $instance->app->runtimeKind() === AppRuntimeKind::Php
+                    && $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
+                ),
+            )
+            ->values();
+
+        return $instances;
     }
 
     /**
@@ -3088,6 +3142,32 @@ final readonly class DoctorReportRunner
             return $this->handleAppConfigExtraAction($node, $appName);
         }
 
+        $appInstanceName = is_string($detail['app_instance'] ?? null) ? $detail['app_instance'] : null;
+
+        if ($appInstanceName !== null) {
+            $app = App::query()
+                ->with(['node', 'instances'])
+                ->where('name', $appName)
+                ->first();
+            $instance = $app instanceof App
+                ? $app->instances->firstWhere('name', $appInstanceName)
+                : null;
+
+            if (
+                $app instanceof App
+                && $instance instanceof AppInstance
+                && $this->workspacePlacement->nodeForInstance($instance)?->id === $node->id
+            ) {
+                return $this->handleAppInstanceAction(
+                    $app,
+                    $instance,
+                    $this->driftEntryFromStoredParts('app', $key, $detail),
+                );
+            }
+
+            return null;
+        }
+
         $app = App::query()
             ->with('node')
             ->where('node_id', $node->id)
@@ -3099,6 +3179,33 @@ final readonly class DoctorReportRunner
         }
 
         return $this->handleAppAction($app, $this->driftEntryFromStoredParts('app', $key, $detail));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function handleAppInstanceAction(App $app, AppInstance $instance, DriftEntry $entry): ?array
+    {
+        try {
+            return $this->appsFixer->fixInstance($app, $instance, $entry);
+        } catch (\Throwable $e) {
+            $node = $this->workspacePlacement->nodeForInstance($instance);
+
+            return [
+                'family' => $entry->family,
+                'node' => $node?->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$entry->key}.",
+                'details' => [
+                    'app' => $app->name,
+                    'app_instance' => $instance->name,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
     }
 
     /**

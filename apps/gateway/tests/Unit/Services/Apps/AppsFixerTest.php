@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Services\Apps\AppRuntimeContainer;
@@ -195,6 +198,61 @@ it('re-applies a missing FrankenPHP runtime container via the manager', function
                     ),
                 ),
         )
+        ->toBeTrue();
+});
+
+it('re-applies a missing app instance FrankenPHP runtime container via the manager', function (): void {
+    $beast = appsFixerNode();
+    $nmbp = createTestAppHostNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+    $app = App::factory()->for($beast, 'node')->create([
+        'name' => 'hauser',
+        'path' => '/home/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $nmbp->id,
+            node: 'nmbp',
+            path: '/Users/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.nmbp',
+        ),
+    ]);
+
+    $shell = new AppsFixerRecordingRemoteShell(
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    $result = buildAppsFixer($shell)->fixInstance($app, $instance, new DriftEntry(
+        family: 'app',
+        key: 'app.runtime_container_missing',
+        kind: DriftKind::Missing,
+        summary: 'missing',
+    ));
+
+    expect($result)
+        ->toMatchArray([
+            'family' => 'app',
+            'node' => 'nmbp',
+            'key' => 'app.runtime_container_missing',
+            'status' => 'completed',
+            'details' => [
+                'app' => 'hauser',
+                'app_instance' => 'nmbp',
+                'target' => 'hauser.nmbp',
+                'container' => 'orbit-app-hauser-nmbp',
+            ],
+        ])
+        ->and(collect($shell->scripts)
+            ->contains(fn (string $script): bool => str_contains($script, 'orbit-app-hauser-nmbp')))
         ->toBeTrue();
 });
 

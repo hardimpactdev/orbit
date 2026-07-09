@@ -7,6 +7,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecycleStatus;
@@ -900,6 +901,78 @@ describe('DoctorReportRunner app family extra container detection', function ():
             ->not->toContain('app.php_version_unavailable')->and(collect($report['issues'])->pluck('key')->all())
             ->not->toContain('app.runtime_image_probe_failed')->and(collect($report['issues'])->pluck('key')->all())
             ->not->toContain('app.runtime_container_missing');
+    });
+
+    it('restores mismatched app instance runtime containers on the selected instance node', function (): void {
+        $beast = createDoctorRunnerAppHostNode(['name' => 'beast']);
+        $nmbp = createDoctorRunnerAppHostNode([
+            'name' => 'nmbp',
+            'platform' => 'darwin',
+            'user' => 'nckrtl',
+            'tld' => 'nmbp',
+        ]);
+        $app = App::factory()->for($beast, 'node')->create([
+            'name' => 'hauser',
+            'path' => '/home/nckrtl/apps/hauser',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'runtime' => AppRuntimeKind::Php,
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $nmbp->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/hauser',
+                document_root: 'public',
+                domain: 'hauser.nmbp',
+            ),
+        ]);
+        $staleContainer = json_encode([
+            'State' => ['Running' => true, 'Status' => 'running'],
+            'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => 'stale']],
+        ], JSON_THROW_ON_ERROR);
+
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "hauser.nmbp\t1\t1\t1\t1\t1\t0\t1\t0\t0\t1\t1\t1\t0\n",
+                stderr: '',
+                durationMs: 1,
+            ),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit-container-scan:absent\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:absent\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: $staleContainer, stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($nmbp, mode: 'restore', families: ['app']);
+
+        $action = collect($report['actions'])->firstWhere('key', 'app.runtime_container_mismatch');
+
+        expect($action)
+            ->not
+            ->toBeNull()
+            ->toMatchArray([
+                'family' => 'app',
+                'node' => 'nmbp',
+                'key' => 'app.runtime_container_mismatch',
+                'status' => 'completed',
+                'details' => [
+                    'app' => 'hauser',
+                    'app_instance' => 'nmbp',
+                    'target' => 'hauser.nmbp',
+                    'container' => 'orbit-app-hauser-nmbp',
+                ],
+            ])
+            ->and(collect($shell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "'orbit-app-hauser-nmbp'")))
+            ->toBeTrue();
     });
 
     it(

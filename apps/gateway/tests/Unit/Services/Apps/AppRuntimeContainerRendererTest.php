@@ -197,6 +197,61 @@ it('prefers matching app instance runtime mounts over legacy app mounts for app 
         ]);
 });
 
+it('renders concrete app instance runtime containers with instance identity and node config', function (): void {
+    $beast = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
+    $nmbp = createTestAppHostNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+    $app = makeRuntimeRendererApp($beast, [
+        'name' => 'hauser',
+        'path' => '/home/nckrtl/apps/hauser',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $instance = AppInstance::factory()->for($app)->create([
+        'name' => 'nmbp',
+        'driver' => AppInstanceDriver::Orbit,
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $nmbp->id,
+            node: 'nmbp',
+            path: '/Users/nckrtl/apps/hauser',
+            document_root: 'public',
+            domain: 'hauser.nmbp',
+        ),
+    ]);
+    $instance
+        ->runtimeMounts()
+        ->create([
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ]);
+
+    $container = rendererForTest()->renderForInstance($app, $instance);
+
+    expect($container->name())
+        ->toBe('orbit-app-hauser-nmbp')
+        ->and($container->appSlug())
+        ->toBe('hauser-nmbp')
+        ->and($container->labels()['orbit.app'])
+        ->toBe('hauser-nmbp')
+        ->and($container->environment()['SERVER_NAME'])
+        ->toBe(':8080')
+        ->and($container->mounts())
+        ->toContain([
+            'source' => '/Users/nckrtl/apps/hauser',
+            'target' => '/app',
+            'read_only' => false,
+        ])
+        ->and($container->mounts())
+        ->toContain([
+            'source' => '/Users/nckrtl/projects',
+            'target' => '/projects',
+            'read_only' => true,
+        ])
+        ->and(rendererForTest()->phpIniHostPathForInstance($app, $instance))
+        ->toBe('/Users/nckrtl/.config/orbit/apps/hauser-nmbp.ini');
+});
+
 it('falls back to legacy app runtime mounts when the matching instance has none', function (): void {
     $node = createTestAppHostNode(['name' => 'beast', 'platform' => 'ubuntu_24-04', 'user' => 'nckrtl']);
     $app = makeRuntimeRendererApp($node, [

@@ -33,6 +33,10 @@ These rules govern ownership, route kinds, and the boundaries of the proxy comma
   inventory; no dedicated metrics filter is exposed in this slice.
 - App, workspace, gateway, and tool-owned routes are visible through proxy
   commands but edited through their owning domain commands.
+- App-owned primary routes may target the logical app or a concrete app
+  instance. When the route hostname resolves to an app instance domain such as
+  `happie.nmbp`, proxy rendering uses that instance's runtime backend and
+  inner-TLS server name while the route owner remains `app`.
 - App WebSocket routes are visible through proxy commands but edited through
   app WebSocket binding commands. Public WebSocket hosts are `ingress` routes
   that forward to `router`; they must not route directly to websocket role
@@ -205,7 +209,7 @@ The remaining fields describe placement, backend target, TLS, and status.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `node` | string | Serving node where proxy artifacts are expected. |
-| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. |
+| `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `app_instance`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
 | `redirect_code` | integer \| null | HTTP redirect status code for redirect routes. |
 | `tls` | object | Orbit-managed TLS state expected for the route. |

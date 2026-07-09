@@ -24,7 +24,9 @@ The terms below define the core identity vocabulary for the app family.
   environment, and domain selectors.
 - **Default app instance:** Compatibility Orbit instance created for existing
   and newly registered apps from the app's current node/path/root fields.
-  App-level command families use those fields until they become instance-aware.
+  App-level command families use those fields until they become instance-aware;
+  proxy route rendering already targets a concrete app instance when an
+  app-owned primary route hostname resolves to that instance.
 - **App identity slug:** Lowercase identity slug used as the app's globally
   unique gateway registry key. Maximum 40 characters.
 - **App name argument:** Positional `[name]` argument used by commands that

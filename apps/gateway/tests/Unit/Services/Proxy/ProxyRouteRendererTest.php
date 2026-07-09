@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -973,6 +976,71 @@ describe('ProxyRouteRenderer', function (): void {
             ->and($content)
             ->not->toContain('php_fastcgi')->and($content)
             ->not->toContain('file_server');
+    });
+
+    it('renders canonical app instance primary routes to the concrete app instance runtime target', function (): void {
+        $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'happie',
+            'domain' => 'happie.test',
+            'path' => '/Users/nckrtl/apps/happie',
+            'document_root' => 'public',
+            'runtime_config' => ['proxy_transport' => 'https'],
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'happie.nmbp',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/Users/nckrtl/apps/happie/public',
+                    'runtime_upstream' => 'https://orbit-app-happie:8443',
+                    'runtime_upstream_tls' => [
+                        'trusted_by_gateway_ca' => true,
+                        'ca_path' => '/etc/orbit/ca/root.crt',
+                        'server_name' => 'happie.test',
+                    ],
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt',
+                        'key_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.key',
+                    ],
+                ],
+            ]);
+
+        $content = new ProxyRouteRenderer()->renderManagedPhpRuntimeIntent($route);
+
+        expect($content)
+            ->toContain('happie.nmbp {')
+            ->and($content)
+            ->toContain('reverse_proxy https://orbit-app-happie-nmbp:8443')
+            ->and($content)
+            ->toContain('tls_server_name happie.nmbp')
+            ->and($content)
+            ->not->toContain('reverse_proxy https://orbit-app-happie:8443')
+            ->not->toContain('tls_server_name happie.test')->and($route->config['target'])->toBe([
+                'type' => 'app_instance',
+                'value' => 'happie.nmbp',
+            ])->and($route->config['app_instance'])->toMatchArray([
+                'name' => 'nmbp',
+                'selector' => 'happie.nmbp',
+                'domain' => 'happie.nmbp',
+            ])->and($route->config['runtime_upstream'])->toBe('https://orbit-app-happie-nmbp:8443')->and(
+                $route->config['runtime_upstream_tls']['server_name'],
+            )->toBe('happie.nmbp');
     });
 
     it('renders workspace PHP routes as reverse_proxy to the FrankenPHP runtime container', function (): void {

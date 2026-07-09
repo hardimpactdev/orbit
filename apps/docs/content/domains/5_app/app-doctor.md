@@ -22,9 +22,10 @@ The app family owns these facts:
   instance database targets;
 - app source location: the managed app path exists on the owning node and
   the configured document root exists inside that path;
-- app runtime artifacts: app FrankenPHP runtime configuration, production app
-  user and ownership policy for production apps, managed app runtime
-  configuration, and runtime readiness for the configured PHP image;
+- app runtime artifacts: app and Orbit app-instance FrankenPHP runtime
+  configuration, production app user and ownership policy for production apps,
+  managed app runtime configuration, and runtime readiness for the configured
+  PHP image;
 - production app runtime security: app user isolation that applies only in
   production, filesystem permissions, release mount boundaries, and runtime
   container isolation,
@@ -60,8 +61,8 @@ The apps probe reads gateway app records and checks these layers:
 4. **Document root:** the configured document root exists inside the app path
    and is not outside the app path.
 5. **PHP runtime:** the configured PHP image can serve the app runtime on the
-   owning node, and the app FrankenPHP runtime endpoint matches gateway app
-   configuration.
+   owning node, and each FrankenPHP endpoint for an app or Orbit app instance
+   matches gateway app configuration.
 6. **Runtime artifacts:** managed app runtime configuration and filesystem
    ownership match gateway app configuration and the production policy that
    applies when the owning node carries `app-prod`.
@@ -73,9 +74,15 @@ The apps probe reads gateway app records and checks these layers:
    role satisfy the app-owned security posture. These findings use
    `app.security.*` keys and do not depend on workspaces.
 9. **App agent IDE default:** a configured agent IDE default set at the app level must point at a supported adapter.
-10. **Stale app artifacts:** App runtime containers or runtime artifacts owned by Orbit whose
-   encoded app identity is absent from active app records are reported as
-   orphaned app drift.
+10. **App-instance runtime targets:** Orbit app instances whose driver
+   configuration places them on the selected node are probed as concrete runtime
+   targets. A selector such as `hauser.nmbp` renders container
+   `orbit-app-hauser-nmbp`, managed config
+   `~/.config/orbit/apps/hauser-nmbp.ini`, and any instance-scoped runtime
+   mounts before comparing node reality.
+11. **Stale app artifacts:** App runtime containers or runtime artifacts owned
+   by Orbit whose encoded app identity is absent from active app records or
+   active Orbit app-instance records are reported as orphaned app drift.
 
 The apps probe may mention related family drift only as a handoff. It must not
 duplicate proxy route, workspace, process, schedule, tool, firewall, or node
@@ -94,10 +101,10 @@ Each code below corresponds to a specific layer in the apps probe.
 | `app.root_missing` | The configured document root does not exist inside the app path. |
 | `app.root_outside_path` | The configured document root resolves outside the app path. |
 | `app.php_version_unavailable` | The app's configured PHP version cannot serve the app runtime on the owning node. |
-| `app.runtime_container_missing` | The app's FrankenPHP runtime container or endpoint is absent. |
-| `app.runtime_container_mismatch` | The app's FrankenPHP runtime container or endpoint differs from gateway app configuration. |
-| `app.runtime_config_missing` | Managed app runtime configuration required by Orbit is absent. |
-| `app.runtime_config_mismatch` | Managed app runtime configuration exists but differs from gateway app configuration. |
+| `app.runtime_container_missing` | The app or Orbit app instance's FrankenPHP runtime container or endpoint is absent. App-instance drift details include `app_instance`, `target`, and the concrete expected container. |
+| `app.runtime_container_mismatch` | The app or Orbit app instance's FrankenPHP runtime container or endpoint differs from gateway app configuration. App-instance drift details include `app_instance`, `target`, and the concrete expected container. |
+| `app.runtime_config_missing` | Managed app or app-instance runtime configuration required by Orbit is absent. |
+| `app.runtime_config_mismatch` | Managed app or app-instance runtime configuration exists but differs from gateway app configuration. |
 | `app.runtime_container_extra` | An Orbit-owned app runtime container exists on a node with an app role without matching active app configuration. |
 | `app.runtime_config_extra` | An Orbit-owned app runtime artifact exists on a node with an app role without matching active app configuration. |
 | `app.runtime_config_probe_failed` | The managed runtime configuration directory could not be reliably scanned for orphan artifacts. Reported once per node so stale `app.runtime_config_extra` is not hidden. |
@@ -122,10 +129,10 @@ The table below shows what `doctor --restore` does for each fixable code.
 
 | Code | `doctor --restore` behavior |
 | --- | --- |
-| `app.runtime_container_missing` | Recreate or restart the app runtime container from gateway app configuration and the selected PHP image. |
-| `app.runtime_container_mismatch` | Recreate the app runtime container to match gateway app configuration. |
-| `app.runtime_config_missing` | Reinstall managed app runtime configuration from gateway app configuration. |
-| `app.runtime_config_mismatch` | Rewrite managed app runtime configuration to match gateway app configuration. |
+| `app.runtime_container_missing` | Recreate or restart the app or app-instance runtime container from gateway app configuration and the selected PHP image. For app-instance targets, restore renders the concrete instance container, for example `orbit-app-hauser-nmbp`. |
+| `app.runtime_container_mismatch` | Recreate the app or app-instance runtime container to match gateway app configuration. |
+| `app.runtime_config_missing` | Reinstall managed app or app-instance runtime configuration from gateway app configuration. |
+| `app.runtime_config_mismatch` | Rewrite managed app or app-instance runtime configuration to match gateway app configuration. |
 | `app.runtime_container_extra` | Remove the stale Orbit-owned app runtime container when its encoded identity is absent from active app configuration. |
 | `app.runtime_config_extra` | Remove the stale Orbit-owned app runtime artifact when its encoded identity is absent from active app configuration. |
 | `app.runtime_config_probe_failed` | Re-probe the directory. The drift clears if the underlying issue resolves; otherwise the action records a failed status with the error. |
@@ -186,13 +193,15 @@ Required test files:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway doctor API coverage for app family scope, app drift reporting, and related family behavior. |
-| `apps/gateway/tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior (see breakdown below). |
+| `apps/gateway/tests/Unit/Services/Apps/AppsProbeTest.php` | In-memory app probe diff behavior, including app-instance runtime target drift (see breakdown below). |
+| `apps/gateway/tests/Unit/Services/Apps/AppsFixerTest.php` | App runtime restore actions for app and app-instance containers and managed runtime config. |
+| `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | App-family runner coverage for node-scoped app-instance runtime restore. |
 
 No current E2E test is mapped for app-family doctor coverage.
 
 `AppsProbeTest` covers registry configuration, owning node eligibility, source
 path, document root, PHP runtime, runtime container configuration, runtime
-configuration, production user policy, and production health. It also covers
-deployment pipeline configuration, latest deployment status, agent IDE
-defaults, stale artifacts, and exclusion of
+configuration, the configuration for app-instance runtime targets, production
+user policy, and production health. It also covers deployment pipeline configuration,
+latest deployment status, agent IDE defaults, stale artifacts, and exclusion of
 proxy/workspace/process/schedule/node/tool/firewall drift.

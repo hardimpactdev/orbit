@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
@@ -890,6 +893,86 @@ describe('proxy backend and TLS reality', function (): void {
             ->toContain('reverse_proxy http://orbit-app-docs:8080')
             ->and($issue)
             ->toBeNull();
+    });
+
+    it('reports route mismatch when a canonical app instance route still targets the bare app runtime', function (): void {
+        $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'happie',
+            'domain' => 'happie.test',
+            'path' => '/Users/nckrtl/apps/happie',
+            'document_root' => 'public',
+            'runtime_config' => ['proxy_transport' => 'https'],
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'happie.nmbp',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/Users/nckrtl/apps/happie/public',
+                    'runtime_upstream' => 'https://orbit-app-happie:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort,
+                    'runtime_upstream_tls' => [
+                        'trusted_by_gateway_ca' => true,
+                        'ca_path' => AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath,
+                        'server_name' => 'happie.test',
+                    ],
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt',
+                        'key_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.key',
+                    ],
+                ],
+            ]);
+        $renderer = new ProxyRouteRenderer;
+        $staleCaddy = $renderer->render($route);
+        $staleHash = hash('sha256', $staleCaddy);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        $route->forceFill(['source_hash' => $staleHash])->save();
+        $route = $route->fresh(['app.instances', 'node']);
+
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
+            'happie.nmbp' => [
+                'route_exists' => true,
+                'route_hash' => $staleHash,
+                'cert_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt',
+                'key_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+            ],
+        ]));
+
+        $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
+        $expectedHash = $renderer->managedPhpRuntimeIntentSourceHash($route);
+        $expectedCaddy = $renderer->renderManagedPhpRuntimeIntent($route);
+
+        expect($staleCaddy)
+            ->toContain('reverse_proxy https://orbit-app-happie:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
+            ->toContain('tls_server_name happie.test')
+            ->and($issue?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['expected_hash'] ?? null)
+            ->toBe($expectedHash)
+            ->and($issue?->detail['observed_hash'] ?? null)
+            ->toBe($staleHash)
+            ->and($expectedHash)
+            ->not
+            ->toBe($staleHash)
+            ->and($expectedCaddy)
+            ->toContain('reverse_proxy https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort)
+            ->toContain('tls_server_name happie.nmbp');
     });
 
     it(

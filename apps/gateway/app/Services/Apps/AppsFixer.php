@@ -9,8 +9,10 @@ use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
+use App\Services\Workspaces\WorkspacePlacement;
 use RuntimeException;
 
 final readonly class AppsFixer
@@ -23,6 +25,7 @@ final readonly class AppsFixer
         private SiteCertificateInstaller $siteCertificateInstaller,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
         private ?RemoteAppSecurityRepair $securityRepair = null,
+        private WorkspacePlacement $placement = new WorkspacePlacement,
     ) {}
 
     /**
@@ -48,6 +51,34 @@ final readonly class AppsFixer
                 $entry,
             ),
             'app.security.system_user', 'app.security.fs_permissions' => $this->reapplyAppSecurity($app, $node, $entry),
+            default => null,
+        };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function fixInstance(App $app, AppInstance $instance, DriftEntry $entry): ?array
+    {
+        $node = $this->placement->nodeForInstance($instance);
+
+        if (! $node instanceof Node) {
+            return null;
+        }
+
+        return match ($entry->key) {
+            'app.runtime_container_missing', 'app.runtime_container_mismatch' => $this->reapplyRuntimeContainer(
+                $app,
+                $node,
+                $entry,
+                $instance,
+            ),
+            'app.runtime_config_missing', 'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig(
+                $app,
+                $node,
+                $entry,
+                $instance,
+            ),
             default => null,
         };
     }
@@ -117,15 +148,26 @@ final readonly class AppsFixer
     /**
      * @return array<string, mixed>|null
      */
-    private function reapplyRuntimeContainer(App $app, Node $node, DriftEntry $entry): ?array
-    {
+    private function reapplyRuntimeContainer(
+        App $app,
+        Node $node,
+        DriftEntry $entry,
+        ?AppInstance $instance = null,
+    ): ?array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return null;
         }
 
-        $this->ensureFrankenPhpRuntimeProcess->forApp($app);
-        $this->ensureRuntimeTlsMaterial($app, $node);
-        $container = $this->appRuntimeContainerRenderer->render($app);
+        if ($instance instanceof AppInstance) {
+            $runtimeApp = $this->appRuntimeContainerRenderer->runtimeAppForInstance($app, $instance);
+            $this->ensureRuntimeTlsMaterial($runtimeApp, $node);
+            $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
+        } else {
+            $this->ensureFrankenPhpRuntimeProcess->forApp($app);
+            $this->ensureRuntimeTlsMaterial($app, $node);
+            $container = $this->appRuntimeContainerRenderer->render($app);
+        }
+
         $this->appRuntimeContainerManager->apply($node, $container);
 
         return [
@@ -135,10 +177,20 @@ final readonly class AppsFixer
             'key' => $entry->key,
             'mode' => 'fix',
             'status' => 'completed',
-            'summary' => "Re-applied app runtime container for {$app->name}.",
+            'summary' => $instance instanceof AppInstance
+                ? "Re-applied app instance runtime container for {$app->name}.{$instance->name}."
+                : "Re-applied app runtime container for {$app->name}.",
             'details' => [
                 'app' => $app->name,
                 'container' => $container->name(),
+                ...(
+                    $instance instanceof AppInstance
+                        ? [
+                            'app_instance' => $instance->name,
+                            'target' => $this->appRuntimeContainerRenderer->targetName($app, $instance),
+                        ]
+                        : []
+                ),
             ],
         ];
     }
@@ -158,14 +210,25 @@ final readonly class AppsFixer
     /**
      * @return array<string, mixed>|null
      */
-    private function reapplyRuntimeConfig(App $app, Node $node, DriftEntry $entry): ?array
-    {
+    private function reapplyRuntimeConfig(
+        App $app,
+        Node $node,
+        DriftEntry $entry,
+        ?AppInstance $instance = null,
+    ): ?array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return null;
         }
 
-        $this->ensureFrankenPhpRuntimeProcess->forApp($app);
-        $container = $this->appRuntimeContainerRenderer->render($app);
+        if ($instance instanceof AppInstance) {
+            $container = $this->appRuntimeContainerRenderer->renderForInstance($app, $instance);
+            $path = $this->appRuntimeContainerRenderer->phpIniHostPathForInstance($app, $instance);
+        } else {
+            $this->ensureFrankenPhpRuntimeProcess->forApp($app);
+            $container = $this->appRuntimeContainerRenderer->render($app);
+            $path = $this->appRuntimeContainerManager->runtimeConfigPath($node, $app->name);
+        }
+
         $this->appRuntimeContainerManager->writeRuntimeConfigFile($node, $container);
 
         return [
@@ -175,10 +238,20 @@ final readonly class AppsFixer
             'key' => $entry->key,
             'mode' => 'fix',
             'status' => 'completed',
-            'summary' => "Re-applied managed runtime config for {$app->name}.",
+            'summary' => $instance instanceof AppInstance
+                ? "Re-applied managed runtime config for {$app->name}.{$instance->name}."
+                : "Re-applied managed runtime config for {$app->name}.",
             'details' => [
                 'app' => $app->name,
-                'path' => $this->appRuntimeContainerManager->runtimeConfigPath($node, $app->name),
+                'path' => $path,
+                ...(
+                    $instance instanceof AppInstance
+                        ? [
+                            'app_instance' => $instance->name,
+                            'target' => $this->appRuntimeContainerRenderer->targetName($app, $instance),
+                        ]
+                        : []
+                ),
             ],
         ];
     }

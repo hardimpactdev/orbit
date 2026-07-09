@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Apps;
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\DriftKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppsProbe;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
@@ -96,6 +99,46 @@ describe('docker-first probe', function (): void {
             );
         });
     });
+
+    it('passes app instance runtime inputs as a concrete target payload', function (): void {
+        $beast = appsProbeAgentNode(['name' => 'beast', 'wireguard_address' => '10.6.0.62']);
+        $nmbp = appsProbeAgentNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+        $app = App::factory()
+            ->for($beast, 'node')
+            ->create([
+                'name' => 'hauser',
+                'path' => '/home/nckrtl/apps/hauser',
+                'document_root' => 'public',
+                'php_version' => '8.5',
+            ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $nmbp->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/hauser',
+                document_root: 'public',
+                domain: 'hauser.nmbp',
+            ),
+        ]);
+        fake_apps_introspect_probe(apps_introspect_snapshot('hauser.nmbp'));
+
+        new AppsProbe()->introspectInstance($app, $instance);
+
+        Http::assertSent(function (Request $request): bool {
+            $payload = json_decode((string) $request['input'], associative: true, flags: JSON_THROW_ON_ERROR);
+
+            return (
+                $request->url() === 'http://10.6.0.63:9477/v1/commands'
+                && $request['argv'][0] === 'internal:app-introspect:probe'
+                && $payload['name'] === 'hauser.nmbp'
+                && $payload['path'] === '/Users/nckrtl/apps/hauser'
+                && $payload['runtime_container_name'] === 'orbit-app-hauser-nmbp'
+                && $payload['runtime_config_path'] === '/Users/nckrtl/.config/orbit/apps/hauser-nmbp.ini'
+            );
+        });
+    });
 });
 
 describe('source path and document root reality', function (): void {
@@ -142,6 +185,44 @@ describe('source path and document root reality', function (): void {
 
         expect(issue($drift, 'app.path_missing')?->kind)->toBe(DriftKind::Missing);
         expect(issue($drift, 'app.root_missing'))->toBeNull();
+    });
+
+    it('detects mismatched app instance runtime containers with instance-scoped detail', function (): void {
+        $node = appNode(['name' => 'nmbp', 'platform' => 'darwin', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+        $app = App::factory()->create([
+            'name' => 'hauser',
+            'node_id' => $node->id,
+            'path' => '/Users/nckrtl/apps/hauser',
+            'document_root' => 'public',
+        ]);
+        $instance = AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/hauser',
+                document_root: 'public',
+                domain: 'hauser.nmbp',
+            ),
+        ]);
+
+        $drift = $this->probe->diffInstance($app, $instance, new ProbeSnapshot([
+            'hauser.nmbp' => convergedRuntimeSnapshot(['container_spec_matches' => false]),
+        ]));
+
+        $issue = issue($drift, 'app.runtime_container_mismatch');
+
+        expect($issue)
+            ->not
+            ->toBeNull()
+            ->and($issue?->detail)
+            ->toMatchArray([
+                'app' => 'hauser',
+                'app_instance' => 'nmbp',
+                'target' => 'hauser.nmbp',
+                'expected' => 'orbit-app-hauser-nmbp',
+            ]);
     });
 
     it('detects missing document roots after the source path exists', function (): void {

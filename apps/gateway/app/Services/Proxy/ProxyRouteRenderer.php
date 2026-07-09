@@ -6,6 +6,7 @@ namespace App\Services\Proxy;
 
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -18,6 +19,8 @@ final readonly class ProxyRouteRenderer
 {
     public function __construct(
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+        private AppProxyRouteTargetResolver $appRouteTargets = new AppProxyRouteTargetResolver,
+        private AppProxyRouteRuntimeTargets $appRouteRuntimeTargets = new AppProxyRouteRuntimeTargets,
     ) {}
 
     private const string WebSocketStreamCloseDelay = '5m';
@@ -83,7 +86,7 @@ final readonly class ProxyRouteRenderer
             return;
         }
 
-        $route->loadMissing('app.node', 'workspace');
+        $route->loadMissing('app.node', 'app.instances', 'workspace');
 
         if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
             $this->normalizeWorkspacePhpRuntimeConfig($route);
@@ -140,9 +143,23 @@ final readonly class ProxyRouteRenderer
         }
 
         $config = is_array($route->config) ? $route->config : [];
-        $config['runtime_upstream'] = 'http://orbit-app-'.$app->name.':'.AppRuntimeContainerRenderer::InternalPort;
+        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $node = $this->appRouteTargets->nodeForRoute($route, $instance);
+        $routeDomain = $instance instanceof AppInstance
+            ? $this->appRouteTargets->routeDomain($route, $app, $instance)
+            : $this->innerTlsPolicy->appRouteDomain($app);
 
-        if (! $this->innerTlsPolicy->appliesToApp($app)) {
+        if ($instance instanceof AppInstance) {
+            $config['target'] = [
+                'type' => 'app_instance',
+                'value' => $this->appRouteTargets->selector($app, $instance),
+            ];
+            $config['app_instance'] = $this->appRouteRuntimeTargets->appInstanceConfig($app, $instance, $routeDomain);
+        }
+
+        $config['runtime_upstream'] = $this->appRouteRuntimeTargets->httpRuntimeUpstream($app, $instance);
+
+        if (! $node instanceof Node || ! $this->innerTlsPolicy->appliesToAppOnNode($app, $node)) {
             unset($config['runtime_upstream_tls']);
             $config['php_socket'] = null;
             $route->config = $config;
@@ -150,16 +167,10 @@ final readonly class ProxyRouteRenderer
             return;
         }
 
-        $node = $route->node ?? $app->node;
-
-        if (! $node instanceof Node) {
-            return;
-        }
-
-        $config['runtime_upstream'] = 'https://orbit-app-'.$app->name.':'.AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        $config['runtime_upstream'] = $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);
         $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
             $node,
-            $this->innerTlsPolicy->appRouteDomain($app),
+            $routeDomain,
         );
         $config['php_socket'] = null;
         $route->config = $config;
@@ -828,11 +839,20 @@ final readonly class ProxyRouteRenderer
             return "http://orbit-ws-{$slug}-{$route->workspace?->name}";
         }
 
-        if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
-            return "https://orbit-app-{$slug}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        $instance = $this->appRouteTargets->appInstanceForRoute($route);
+        $node = $this->appRouteTargets->nodeForRoute($route, $instance);
+
+        if (
+            $route->app instanceof App
+            && $node instanceof Node
+            && $this->innerTlsPolicy->appliesToAppOnNode($route->app, $node)
+        ) {
+            return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($route->app, $instance);
         }
 
-        return "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
+        return $route->app instanceof App
+            ? $this->appRouteRuntimeTargets->httpRuntimeUpstream($route->app, $instance)
+            : "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
     }
 
     private function runtimeUpstreamForRoute(ProxyRoute $route, mixed $current): ?string
@@ -857,8 +877,15 @@ final readonly class ProxyRouteRenderer
                 return $this->deriveRuntimeUpstreamIfMissing($route, $current);
             }
 
-            if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
-                return "https://orbit-app-{$route->app?->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+            $app = $route->app;
+
+            if ($app instanceof App) {
+                $instance = $this->appRouteTargets->appInstanceForRoute($route);
+                $node = $this->appRouteTargets->nodeForRoute($route, $instance);
+
+                if ($node instanceof Node && $this->innerTlsPolicy->appliesToAppOnNode($app, $node)) {
+                    return $this->appRouteRuntimeTargets->httpsRuntimeUpstream($app, $instance);
+                }
             }
         }
 
@@ -921,12 +948,21 @@ final readonly class ProxyRouteRenderer
 
         $app = $route->app;
 
-        if ($app instanceof App && $this->innerTlsPolicy->appliesToApp($app)) {
-            $node = $route->node;
+        if ($app instanceof App) {
+            $instance = $this->appRouteTargets->appInstanceForRoute($route);
+            $node = $this->appRouteTargets->nodeForRoute($route, $instance);
+
+            if (! $node instanceof Node || ! $this->innerTlsPolicy->appliesToAppOnNode($app, $node)) {
+                return null;
+            }
+
+            $domain = $instance instanceof AppInstance
+                ? $this->appRouteTargets->routeDomain($route, $app, $instance)
+                : $this->innerTlsPolicy->appRouteDomain($app);
 
             return $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
                 $node,
-                $this->innerTlsPolicy->appRouteDomain($app),
+                $domain,
             );
         }
 

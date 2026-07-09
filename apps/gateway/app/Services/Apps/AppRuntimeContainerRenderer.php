@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Php\PhpRuntimePolicy;
@@ -16,6 +18,7 @@ use RuntimeException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:too-many-methods
  */
 final readonly class AppRuntimeContainerRenderer
 {
@@ -49,6 +52,33 @@ final readonly class AppRuntimeContainerRenderer
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
     {
+        $sourcePath = rtrim($app->path, '/');
+        $app->loadMissing('instances');
+
+        return $this->renderTarget(
+            app: $app,
+            instance: $this->placement->matchingOrbitInstanceForPath($app, $sourcePath),
+            runtimeSlug: $app->name,
+            preloadPath: $preloadPath,
+        );
+    }
+
+    public function renderForInstance(App $app, AppInstance $instance, ?string $preloadPath = null): AppRuntimeContainer
+    {
+        return $this->renderTarget(
+            app: $this->runtimeAppForInstance($app, $instance),
+            instance: $instance,
+            runtimeSlug: $this->instanceSlug($app, $instance),
+            preloadPath: $preloadPath,
+        );
+    }
+
+    private function renderTarget(
+        App $app,
+        ?AppInstance $instance,
+        string $runtimeSlug,
+        ?string $preloadPath = null,
+    ): AppRuntimeContainer {
         $runtime = $app->runtimeKind();
 
         if ($runtime !== AppRuntimeKind::Php) {
@@ -78,7 +108,7 @@ final readonly class AppRuntimeContainerRenderer
                 'read_only' => false,
             ],
             [
-                'source' => $this->phpIniHostPath($app),
+                'source' => $this->phpIniHostPathForSlug($app, $runtimeSlug),
                 'target' => AppRuntimeContainer::PhpIniMountTarget,
                 'read_only' => true,
             ],
@@ -88,8 +118,7 @@ final readonly class AppRuntimeContainerRenderer
             $mounts[] = $packagesMount;
         }
 
-        $app->loadMissing(['instances', 'runtimeMounts']);
-        $instance = $this->placement->matchingOrbitInstanceForPath($app, $sourcePath);
+        $app->loadMissing(['runtimeMounts']);
 
         foreach ($this->appRuntimeMounts->mountsForRuntime($app, $instance) as $mount) {
             $mounts[] = $mount;
@@ -111,11 +140,11 @@ final readonly class AppRuntimeContainerRenderer
         $mounts = array_merge($mounts, $this->runtimeClientTrust->mountsForApp($app));
 
         return new AppRuntimeContainer(
-            name: $this->containerName($app),
+            name: $this->containerNameForSlug($runtimeSlug),
             image: $policy->image,
             network: $this->names->network(),
             restartPolicy: 'unless-stopped',
-            appSlug: $app->name,
+            appSlug: $runtimeSlug,
             runtimeUser: $this->appRuntimeUser->containerUserForApp($app),
             environment: array_merge(
                 $this->environmentFor($app),
@@ -123,8 +152,8 @@ final readonly class AppRuntimeContainerRenderer
             ),
             mounts: $mounts,
             networkAliases: [
-                $this->containerName($app),
-                "app-{$app->name}",
+                $this->containerNameForSlug($runtimeSlug),
+                "app-{$runtimeSlug}",
             ],
             phpIni: array_merge(
                 $policy->phpIni,
@@ -135,10 +164,28 @@ final readonly class AppRuntimeContainerRenderer
 
     public function containerName(App $app): string
     {
-        return "orbit-app-{$app->name}";
+        return $this->containerNameForSlug($app->name);
+    }
+
+    public function containerNameForInstance(App $app, AppInstance $instance): string
+    {
+        return $this->containerNameForSlug($this->instanceSlug($app, $instance));
     }
 
     public function phpIniHostPath(App $app): string
+    {
+        return $this->phpIniHostPathForSlug($app, $app->name);
+    }
+
+    public function phpIniHostPathForInstance(App $app, AppInstance $instance): string
+    {
+        return $this->phpIniHostPathForSlug(
+            $this->runtimeAppForInstance($app, $instance),
+            $this->instanceSlug($app, $instance),
+        );
+    }
+
+    private function phpIniHostPathForSlug(App $app, string $runtimeSlug): string
     {
         $app->loadMissing('node');
 
@@ -146,7 +193,7 @@ final readonly class AppRuntimeContainerRenderer
             throw new RuntimeException("App '{$app->name}' has no owning node; cannot render runtime config path.");
         }
 
-        return $this->nodeHostPaths->appRuntimeConfigPath($app->node, $app->name);
+        return $this->nodeHostPaths->appRuntimeConfigPath($app->node, $runtimeSlug);
     }
 
     public function upstreamUrl(App $app): string
@@ -156,6 +203,49 @@ final readonly class AppRuntimeContainerRenderer
         }
 
         return 'http://'.$this->containerName($app).':'.self::InternalPort;
+    }
+
+    public function targetName(App $app, ?AppInstance $instance = null): string
+    {
+        return $instance instanceof AppInstance ? "{$app->name}.{$instance->name}" : $app->name;
+    }
+
+    public function instanceSlug(App $app, AppInstance $instance): string
+    {
+        return "{$app->name}-{$instance->name}";
+    }
+
+    private function containerNameForSlug(string $runtimeSlug): string
+    {
+        return "orbit-app-{$runtimeSlug}";
+    }
+
+    public function runtimeAppForInstance(App $app, AppInstance $instance): App
+    {
+        $runtimeApp = clone $app;
+        $node = $this->placement->nodeForInstance($instance);
+
+        if ($node instanceof Node) {
+            $runtimeApp->node_id = $node->id;
+            $runtimeApp->setRelation('node', $node);
+        }
+
+        $config = $instance->driver_config;
+
+        if ($config instanceof OrbitAppInstanceDriverConfigData) {
+            $runtimeApp->forceFill(array_filter([
+                'path' => $this->filledInstanceValue($config->path),
+                'document_root' => $this->filledInstanceValue($config->document_root),
+                'domain' => $this->filledInstanceValue($config->domain),
+            ]));
+        }
+
+        return $runtimeApp;
+    }
+
+    private function filledInstanceValue(?string $value): ?string
+    {
+        return is_string($value) && trim($value) !== '' ? $value : null;
     }
 
     /**

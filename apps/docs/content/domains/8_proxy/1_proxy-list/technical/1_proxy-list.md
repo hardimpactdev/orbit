@@ -37,6 +37,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Applies `--node` as a serving-node filter.
 - Does not synchronously SSH to nodes, probe proxy reality, or verify TLS
   material.
+- App-owned primary routes report a concrete app instance target when the route
+  hostname resolves to an app instance domain. In that case, `owner.name` and
+  `target.value` use the dotted app instance selector, and `target.type` is
+  `app_instance`.
 
 ### Filter Rules
 

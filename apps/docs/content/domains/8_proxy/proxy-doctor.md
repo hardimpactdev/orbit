@@ -51,7 +51,9 @@ The proxy probe reads gateway proxy route configuration and checks these layers:
    routing priority. For app/workspace routes, this includes the browser
    ingress baseline: document-root policy, PHP runtime target, security
    headers, sensitive path blocking, profiling timing markers, and immutable
-   cache headers for versioned build assets.
+   cache headers for versioned build assets. App primary routes whose hostnames
+   resolve to app instances must target that concrete app instance runtime and
+   inner-TLS server name.
 8. **TLS material:** the TLS material that Orbit manages exists and matches the
    route's policy. For DNS hostname routes, this includes the app-role
    compatibility material used by Laravel Vite TLS detection. Internal IP-only
@@ -100,7 +102,7 @@ Use `doctor --restore` to trigger the repair action listed for each code.
 | `proxy.caddy_container_missing` | Reconcile the `orbit-caddy` container on the serving node from its managed spec, then re-render the mounted Caddy config. |
 | `proxy.caddy_container_down` | Start the existing `orbit-caddy` container so mounted route artifacts are served again. |
 | `proxy.route_missing` | Recreate the backend route from gateway configuration when the node is reachable and eligible. |
-| `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. |
+| `proxy.route_mismatch` | Replace the backend route with the gateway-configured route when the route can be identified safely. For app primary routes that resolve to an app instance, restore also persists the concrete app-instance target, runtime upstream, and inner-TLS server name before writing the backend route. |
 | `proxy.websocket.router_route_missing` | Re-sync the private `websocket.orbit` service route from gateway WebSocket route intent. |
 | `proxy.websocket.public_route_missing` | Re-sync public app-websocket ingress routes from the owning app WebSocket binding. |
 | `proxy.websocket.router_route_orphaned` | Remove the orphaned `websocket.orbit` service route row and its rendered artifacts. |

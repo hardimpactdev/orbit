@@ -11,6 +11,7 @@ use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
 use App\Enums\Apps\NodeRuntimeContainersProbeStatus;
 use App\Enums\DriftKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -52,13 +53,39 @@ final readonly class AppsProbe
         );
     }
 
+    public function introspectInstance(App $app, AppInstance $instance): ProbeSnapshot
+    {
+        $runtimeApp = $this->appRuntimeContainerRenderer()->runtimeAppForInstance($app, $instance);
+        $runtimeApp->loadMissing('node');
+
+        if (! $runtimeApp->node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
+        return $this->snapshotFromProbe(
+            snapshot: $this->introspectProbe()->snapshot(
+                $runtimeApp->node,
+                $this->introspectionPayload($app, $instance),
+            ),
+            fallbackName: $this->appRuntimeContainerRenderer()->targetName($app, $instance),
+        );
+    }
+
     /**
      * @return array<string, string>
      */
-    private function introspectionPayload(App $app): array
+    private function introspectionPayload(App $app, ?AppInstance $instance = null): array
     {
-        $isPhpApp = $app->runtimeKind() === AppRuntimeKind::Php;
-        $containerName = $isPhpApp ? $this->appRuntimeContainerRenderer()->containerName($app) : '';
+        $renderer = $this->appRuntimeContainerRenderer();
+        $runtimeApp = $instance instanceof AppInstance ? $renderer->runtimeAppForInstance($app, $instance) : $app;
+        $isPhpApp = $runtimeApp->runtimeKind() === AppRuntimeKind::Php;
+        $containerName = '';
+
+        if ($isPhpApp) {
+            $containerName = $instance instanceof AppInstance
+                ? $renderer->containerNameForInstance($app, $instance)
+                : $renderer->containerName($runtimeApp);
+        }
         $expectedSpecHash = '';
         $expectedRuntimeConfigHash = '';
         $runtimeConfigPath = '';
@@ -66,10 +93,14 @@ final readonly class AppsProbe
 
         if ($isPhpApp) {
             try {
-                $renderedContainer = $this->appRuntimeContainerRenderer()->render($app);
+                $renderedContainer = $instance instanceof AppInstance
+                    ? $renderer->renderForInstance($app, $instance)
+                    : $renderer->render($runtimeApp);
                 $expectedSpecHash = $renderedContainer->specHash();
                 $expectedRuntimeConfigHash = hash('sha256', $renderedContainer->phpIniContent());
-                $runtimeConfigPath = $this->appRuntimeContainerRenderer()->phpIniHostPath($app);
+                $runtimeConfigPath = $instance instanceof AppInstance
+                    ? $renderer->phpIniHostPathForInstance($app, $instance)
+                    : $renderer->phpIniHostPath($runtimeApp);
                 $expectedImage = $renderedContainer->image();
             } catch (\Throwable) {
                 $expectedSpecHash = '';
@@ -80,11 +111,11 @@ final readonly class AppsProbe
         }
 
         return [
-            'name' => $app->name,
-            'path' => rtrim($app->path, '/'),
-            'document_root' => $app->document_root,
-            'runtime_kind' => $app->runtimeKind()->value,
-            'runtime_user' => $this->appRuntimeUser()->forApp($app),
+            'name' => $renderer->targetName($app, $instance),
+            'path' => rtrim($runtimeApp->path, '/'),
+            'document_root' => $runtimeApp->document_root,
+            'runtime_kind' => $runtimeApp->runtimeKind()->value,
+            'runtime_user' => $this->appRuntimeUser()->forApp($runtimeApp),
             'runtime_container_name' => $containerName,
             'expected_spec_hash' => $expectedSpecHash,
             'runtime_config_path' => $runtimeConfigPath,
@@ -340,6 +371,30 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
+    public function diffInstance(App $app, AppInstance $instance, ProbeSnapshot $snapshot): array
+    {
+        $runtimeApp = $this->appRuntimeContainerRenderer()->runtimeAppForInstance($app, $instance);
+        $targetName = $this->appRuntimeContainerRenderer()->targetName($app, $instance);
+
+        $drift = [];
+        $drift = array_merge($drift, $this->checkSourcePath($runtimeApp, $snapshot, $targetName, $app, $instance));
+        $drift = array_merge($drift, $this->checkDocumentRoot($runtimeApp, $snapshot, $targetName, $app, $instance));
+        $drift = array_merge($drift, $this->checkPhpRuntime($runtimeApp, $snapshot, $targetName, $app, $instance));
+        $drift = array_merge($drift, $this->checkRuntimeContainer(
+            $runtimeApp,
+            $snapshot,
+            $targetName,
+            $app,
+            $instance,
+        ));
+        $drift = array_merge($drift, $this->checkRuntimeConfig($runtimeApp, $snapshot, $targetName, $app, $instance));
+
+        return $drift;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
     private function checkRecordCompleteness(App $app): array
     {
         if (
@@ -372,13 +427,20 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkRuntimeContainer(App $app, ProbeSnapshot $snapshot): array
-    {
+    private function checkRuntimeContainer(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?App $canonicalApp = null,
+        ?AppInstance $instance = null,
+    ): array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 
-        $observed = $snapshot->get($app->name);
+        $targetName ??= $app->name;
+        $canonicalApp ??= $app;
+        $observed = $snapshot->get($targetName);
 
         if (
             $observed === null
@@ -412,10 +474,10 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.runtime_container_missing',
                     kind: DriftKind::Missing,
-                    summary: "App {$app->name} FrankenPHP runtime container is missing on the owning app node.",
-                    detail: [
-                        'expected' => $this->appRuntimeContainerRenderer()->containerName($app),
-                    ],
+                    summary: "App {$targetName} FrankenPHP runtime container is missing on the owning app node.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
+                        'expected' => $this->containerNameForTarget($canonicalApp, $app, $instance),
+                    ]),
                 ),
             ];
         }
@@ -426,10 +488,10 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.runtime_container_mismatch',
                     kind: DriftKind::Divergent,
-                    summary: "App {$app->name} FrankenPHP runtime container differs from gateway app configuration.",
-                    detail: [
-                        'expected' => $this->appRuntimeContainerRenderer()->containerName($app),
-                    ],
+                    summary: "App {$targetName} FrankenPHP runtime container differs from gateway app configuration.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
+                        'expected' => $this->containerNameForTarget($canonicalApp, $app, $instance),
+                    ]),
                 ),
             ];
         }
@@ -444,11 +506,11 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.runtime_container_missing',
                     kind: DriftKind::Missing,
-                    summary: "App {$app->name} FrankenPHP runtime container is stopped; runtime endpoint is absent.",
-                    detail: [
-                        'expected' => $this->appRuntimeContainerRenderer()->containerName($app),
+                    summary: "App {$targetName} FrankenPHP runtime container is stopped; runtime endpoint is absent.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
+                        'expected' => $this->containerNameForTarget($canonicalApp, $app, $instance),
                         'reason' => 'container_stopped',
-                    ],
+                    ]),
                 ),
             ];
         }
@@ -459,19 +521,28 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkRuntimeConfig(App $app, ProbeSnapshot $snapshot): array
-    {
+    private function checkRuntimeConfig(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?App $canonicalApp = null,
+        ?AppInstance $instance = null,
+    ): array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 
-        $observed = $snapshot->get($app->name);
+        $targetName ??= $app->name;
+        $canonicalApp ??= $app;
+        $observed = $snapshot->get($targetName);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {
             return [];
         }
 
-        $expectedPath = $this->appRuntimeContainerRenderer()->phpIniHostPath($app);
+        $expectedPath = $instance instanceof AppInstance
+            ? $this->appRuntimeContainerRenderer()->phpIniHostPathForInstance($canonicalApp, $instance)
+            : $this->appRuntimeContainerRenderer()->phpIniHostPath($app);
 
         if (($observed['runtime_config_exists'] ?? null) === false) {
             return [
@@ -479,11 +550,10 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.runtime_config_missing',
                     kind: DriftKind::Missing,
-                    summary: "App {$app->name} managed runtime configuration is missing on the owning app node.",
-                    detail: [
-                        'app' => $app->name,
+                    summary: "App {$targetName} managed runtime configuration is missing on the owning app node.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'expected' => $expectedPath,
-                    ],
+                    ]),
                 ),
             ];
         }
@@ -494,11 +564,10 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.runtime_config_mismatch',
                     kind: DriftKind::Divergent,
-                    summary: "App {$app->name} managed runtime configuration differs from gateway app configuration.",
-                    detail: [
-                        'app' => $app->name,
+                    summary: "App {$targetName} managed runtime configuration differs from gateway app configuration.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'expected' => $expectedPath,
-                    ],
+                    ]),
                 ),
             ];
         }
@@ -509,8 +578,13 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkPhpRuntime(App $app, ProbeSnapshot $snapshot): array
-    {
+    private function checkPhpRuntime(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?App $canonicalApp = null,
+        ?AppInstance $instance = null,
+    ): array {
         if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
@@ -529,7 +603,9 @@ final readonly class AppsProbe
             ];
         }
 
-        $observed = $snapshot->get($app->name);
+        $targetName ??= $app->name;
+        $canonicalApp ??= $app;
+        $observed = $snapshot->get($targetName);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {
             return [];
@@ -570,11 +646,11 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.php_version_unavailable',
                     kind: DriftKind::Missing,
-                    summary: "FrankenPHP runtime image for PHP {$app->php_version} is not available on the owning app node for app {$app->name}.",
-                    detail: [
+                    summary: "FrankenPHP runtime image for PHP {$app->php_version} is not available on the owning app node for app {$targetName}.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'php_version' => $app->php_version,
                         'expected_image' => $expectedImage,
-                    ],
+                    ]),
                 ),
             ];
         }
@@ -589,6 +665,36 @@ final readonly class AppsProbe
         } catch (\Throwable) {
             return '';
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     * @return array<string, mixed>
+     */
+    private function targetDetail(App $app, ?AppInstance $instance, array $detail = []): array
+    {
+        $target = [
+            'app' => $app->name,
+        ];
+
+        if ($instance instanceof AppInstance) {
+            $target['app_instance'] = $instance->name;
+            $target['target'] = $this->appRuntimeContainerRenderer()->targetName($app, $instance);
+        }
+
+        return [
+            ...$target,
+            ...$detail,
+        ];
+    }
+
+    private function containerNameForTarget(App $canonicalApp, App $runtimeApp, ?AppInstance $instance): string
+    {
+        if ($instance instanceof AppInstance) {
+            return $this->appRuntimeContainerRenderer()->containerNameForInstance($canonicalApp, $instance);
+        }
+
+        return $this->appRuntimeContainerRenderer()->containerName($runtimeApp);
     }
 
     /**
@@ -697,9 +803,16 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkSourcePath(App $app, ProbeSnapshot $snapshot): array
-    {
-        $observed = $snapshot->get($app->name);
+    private function checkSourcePath(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?App $canonicalApp = null,
+        ?AppInstance $instance = null,
+    ): array {
+        $targetName ??= $app->name;
+        $canonicalApp ??= $app;
+        $observed = $snapshot->get($targetName);
 
         if ($observed === null) {
             return [];
@@ -711,10 +824,10 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.path_missing',
                     kind: DriftKind::Missing,
-                    summary: "App {$app->name} path is missing on the owning app node.",
-                    detail: [
+                    summary: "App {$targetName} path is missing on the owning app node.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'expected' => $app->path,
-                    ],
+                    ]),
                 ),
             ];
         }
@@ -725,8 +838,16 @@ final readonly class AppsProbe
     /**
      * @return list<DriftEntry>
      */
-    private function checkDocumentRoot(App $app, ProbeSnapshot $snapshot): array
-    {
+    private function checkDocumentRoot(
+        App $app,
+        ProbeSnapshot $snapshot,
+        ?string $targetName = null,
+        ?App $canonicalApp = null,
+        ?AppInstance $instance = null,
+    ): array {
+        $targetName ??= $app->name;
+        $canonicalApp ??= $app;
+
         if ($app->path === '' || $app->document_root === '') {
             return [];
         }
@@ -737,16 +858,16 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.root_outside_path',
                     kind: DriftKind::Divergent,
-                    summary: "App {$app->name} document root resolves outside the app path.",
-                    detail: [
+                    summary: "App {$targetName} document root resolves outside the app path.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'path' => $app->path,
                         'document_root' => $app->document_root,
-                    ],
+                    ]),
                 ),
             ];
         }
 
-        $observed = $snapshot->get($app->name);
+        $observed = $snapshot->get($targetName);
 
         if ($observed === null || ($observed['path_exists'] ?? null) === false) {
             return [];
@@ -758,11 +879,11 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.root_outside_path',
                     kind: DriftKind::Divergent,
-                    summary: "App {$app->name} document root resolves outside the app path.",
-                    detail: [
+                    summary: "App {$targetName} document root resolves outside the app path.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'path' => $app->path,
                         'document_root' => $app->document_root,
-                    ],
+                    ]),
                 ),
             ];
         }
@@ -773,10 +894,10 @@ final readonly class AppsProbe
                     family: $this->key(),
                     key: 'app.root_missing',
                     kind: DriftKind::Missing,
-                    summary: "App {$app->name} document root is missing on the owning app node.",
-                    detail: [
+                    summary: "App {$targetName} document root is missing on the owning app node.",
+                    detail: $this->targetDetail($canonicalApp, $instance, [
                         'expected' => $app->documentRootPath(),
-                    ],
+                    ]),
                 ),
             ];
         }

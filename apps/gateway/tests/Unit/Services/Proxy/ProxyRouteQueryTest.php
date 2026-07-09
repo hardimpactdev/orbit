@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
@@ -84,6 +87,56 @@ describe('ProxyRouteQuery', function (): void {
                 'owner' => ['type' => 'custom', 'name' => null],
                 'target' => ['type' => 'redirect', 'value' => 'https://docs.test'],
                 'redirect_code' => 302,
+            ]);
+    });
+
+    it('reports canonical app instance primary route owner and target selectors', function (): void {
+        $node = Node::factory()
+            ->appDev(['tld' => 'nmbp'])
+            ->create([
+                'name' => 'nmbp',
+                'tld' => 'nmbp',
+            ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'happie',
+            'domain' => 'happie.test',
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+
+        ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'app_id' => $app->id,
+            'domain' => 'happie.nmbp',
+            'owner_type' => 'app',
+            'kind' => 'app',
+            'config' => [
+                'document_root' => '/Users/nckrtl/apps/happie/public',
+                'runtime_upstream' => 'https://orbit-app-happie:8443',
+                'runtime_upstream_tls' => [
+                    'trusted_by_gateway_ca' => true,
+                    'ca_path' => '/etc/orbit/ca/root.crt',
+                    'server_name' => 'happie.test',
+                ],
+            ],
+        ]);
+
+        $route = app(ProxyRouteQuery::class)->list(filter: 'app')['routes'][0];
+
+        expect($route)
+            ->toMatchArray([
+                'domain' => 'happie.nmbp',
+                'owner' => ['type' => 'app', 'name' => 'happie.nmbp'],
+                'target' => ['type' => 'app_instance', 'value' => 'happie.nmbp'],
             ]);
     });
 

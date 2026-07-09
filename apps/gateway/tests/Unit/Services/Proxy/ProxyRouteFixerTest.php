@@ -3,10 +3,13 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\DriftKind;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
@@ -785,6 +788,89 @@ describe('ProxyRouteFixer', function (): void {
                 'sha256',
                 $caddySite,
             ))->and($route->refresh()->source_hash)->toBe(new ProxyRouteRenderer()->sourceHash($route));
+    });
+
+    it('re-applies canonical app instance routes from concrete app instance intent', function (): void {
+        $node = createTestAppHostNode(['name' => 'nmbp', 'user' => 'nckrtl', 'tld' => 'nmbp']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'happie',
+            'domain' => 'happie.test',
+            'path' => '/Users/nckrtl/apps/happie',
+            'document_root' => 'public',
+            'runtime_config' => ['proxy_transport' => 'https'],
+        ]);
+        AppInstance::factory()->for($app)->create([
+            'name' => 'nmbp',
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => new OrbitAppInstanceDriverConfigData(
+                node_id: $node->id,
+                node: 'nmbp',
+                path: '/Users/nckrtl/apps/happie',
+                document_root: 'public',
+                domain: 'happie.nmbp',
+            ),
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'happie.nmbp',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'source_hash' => str_repeat('0', 64),
+                'config' => [
+                    'document_root' => '/Users/nckrtl/apps/happie/public',
+                    'runtime_upstream' => 'https://orbit-app-happie:8443',
+                    'runtime_upstream_tls' => [
+                        'trusted_by_gateway_ca' => true,
+                        'ca_path' => '/etc/orbit/ca/root.crt',
+                        'server_name' => 'happie.test',
+                    ],
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.crt',
+                        'key_path' => '/Users/nckrtl/.config/orbit/certs/happie.nmbp.key',
+                    ],
+                ],
+            ]);
+        $shell = new ProxyFixerRecordingRemoteShell;
+
+        $action = new ProxyRouteFixer(
+            $shell,
+            new ProxyRouteRenderer,
+            new ProxyFixerFakeCa,
+            new SiteCertificateInstallerFake,
+        )->fix($route, new DriftEntry(
+            family: 'proxy',
+            key: 'proxy.route_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'mismatch',
+        ));
+        $siteScript = proxyFixerSiteScript($shell, path: '/etc/caddy/sites/happie.nmbp.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
+        $config = $route->refresh()->config;
+
+        expect($action)
+            ->toMatchArray([
+                'family' => 'proxy',
+                'node' => 'nmbp',
+                'key' => 'proxy.route_mismatch',
+                'status' => 'completed',
+            ])
+            ->and($caddySite)
+            ->toContain('reverse_proxy https://orbit-app-happie-nmbp:8443')
+            ->toContain('tls_server_name happie.nmbp')
+            ->not->toContain('reverse_proxy https://orbit-app-happie:8443')
+            ->not->toContain('tls_server_name happie.test')->and($config['target'])->toBe([
+                'type' => 'app_instance',
+                'value' => 'happie.nmbp',
+            ])->and($config['app_instance'])->toMatchArray([
+                'name' => 'nmbp',
+                'selector' => 'happie.nmbp',
+                'domain' => 'happie.nmbp',
+            ])->and($config['runtime_upstream'])->toBe(
+                'https://orbit-app-happie-nmbp:8443',
+            )->and($route->source_hash)->toBe(hash('sha256', $caddySite));
     });
 
     it('repairs app route TLS through the site certificate installer', function (): void {
