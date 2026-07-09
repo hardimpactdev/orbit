@@ -9,12 +9,45 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+/**
+ * @mago-expect lint:halstead
+ */
 describe('internal process Docker container command', function (): void {
     beforeEach(function (): void {
         configure_process_docker_container_operation_token_guard();
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));
+        $path = getenv('PATH');
+        $this->originalPath = is_string($path) ? $path : null;
+        $home = getenv('HOME');
+        $this->originalHome = is_string($home) ? $home : null;
+        $this->originalServerHome = $_SERVER['HOME'] ?? null;
+        $this->originalEnvHome = $_ENV['HOME'] ?? null;
+        $dockerHost = getenv('DOCKER_HOST');
+        $this->originalDockerHost = is_string($dockerHost) ? $dockerHost : null;
+    });
+
+    afterEach(function (): void {
+        $this->originalPath === null ? putenv('PATH') : putenv("PATH={$this->originalPath}");
+        process_docker_container_restore_home(
+            $this->originalHome,
+            $this->originalServerHome,
+            $this->originalEnvHome,
+        );
+        $this->originalDockerHost === null ? putenv('DOCKER_HOST') : putenv("DOCKER_HOST={$this->originalDockerHost}");
+
+        $fakeHomes = glob(sys_get_temp_dir().'/orbit-process-docker-home-*');
+
+        foreach ($fakeHomes === false ? [] : $fakeHomes as $dir) {
+            delete_process_docker_container_path($dir);
+        }
+
+        $fakeBins = glob(sys_get_temp_dir().'/orbit-process-docker-bin-*');
+
+        foreach ($fakeBins === false ? [] : $fakeBins as $dir) {
+            delete_process_docker_container_path($dir);
+        }
     });
 
     it('rejects a missing operation token before reading stdin', function (): void {
@@ -107,6 +140,41 @@ describe('internal process Docker container command', function (): void {
                 ['field' => 'spec'],
             ));
     })->with(['ensure-network', 'probe']);
+
+    it('treats an existing Docker network as converged through the local OrbStack socket', function (): void {
+        $home = process_docker_container_fake_home();
+        $socket = process_docker_container_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        $bin = install_process_docker_container_fake_docker_bin(requiredDockerHost: "unix://{$socket}");
+
+        [$exitCode, $output] = run_internal_process_docker_container_command(
+            [
+                '--operation-token' => process_docker_container_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'action' => 'ensure-network',
+                'spec' => process_docker_container_spec_payload(),
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data'] ?? null)
+            ->toBe([
+                'action' => 'ensure-network',
+                'network' => 'orbit-network',
+                'changed' => false,
+            ])
+            ->and($calls)
+            ->toContain("DOCKER_HOST=unix://{$socket} docker network inspect orbit-network")
+            ->toContain(
+                "DOCKER_HOST=unix://{$socket} docker network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network",
+            )
+            ->not->toContain('/var/run/docker.sock');
+    });
 });
 
 function configure_process_docker_container_operation_token_guard(): void
@@ -139,6 +207,107 @@ function process_docker_container_signed_operation_token(
 function process_docker_container_operation_secret(): string
 {
     return implode('-', ['gateway', 'secret']);
+}
+
+function process_docker_container_fake_home(): string
+{
+    $home = sys_get_temp_dir().'/orbit-process-docker-home-'.bin2hex(random_bytes(8));
+    mkdir($home);
+    putenv("HOME={$home}");
+    $_SERVER['HOME'] = $home;
+    $_ENV['HOME'] = $home;
+
+    return $home;
+}
+
+function process_docker_container_fake_orbstack_socket(string $home): string
+{
+    $runDirectory = "{$home}/.orbstack/run";
+    mkdir($runDirectory, recursive: true);
+    $socket = "{$runDirectory}/docker.sock";
+    touch($socket);
+
+    return $socket;
+}
+
+function install_process_docker_container_fake_docker_bin(string $requiredDockerHost): string
+{
+    $dir = sys_get_temp_dir().'/orbit-process-docker-bin-'.bin2hex(random_bytes(8));
+    mkdir($dir);
+    $encodedRequiredDockerHost = var_export($requiredDockerHost, return: true);
+
+    file_put_contents("{$dir}/docker", <<<PHP_WRAP
+        #!/usr/bin/env php
+        <?php
+        \$requiredDockerHost = {$encodedRequiredDockerHost};
+        \$dockerHost = getenv('DOCKER_HOST') ?: '';
+        file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
+        if (\$requiredDockerHost !== '' && \$dockerHost !== \$requiredDockerHost) {
+            fwrite(STDERR, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'inspect') {
+            fwrite(STDERR, 'network not found');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'create') {
+            fwrite(STDERR, 'Error response from daemon: network with name orbit-network already exists');
+            exit(1);
+        }
+        exit(0);
+        PHP_WRAP);
+    chmod(filename: "{$dir}/docker", permissions: 0o755);
+
+    $path = getenv('PATH');
+    putenv('PATH='.$dir.($path === false ? '' : ":{$path}"));
+
+    return $dir;
+}
+
+function process_docker_container_restore_home(?string $home, ?string $serverHome, ?string $envHome): void
+{
+    $home === null ? putenv('HOME') : putenv("HOME={$home}");
+
+    if ($serverHome === null) {
+        unset($_SERVER['HOME']);
+    }
+
+    if ($serverHome !== null) {
+        $_SERVER['HOME'] = $serverHome;
+    }
+
+    if ($envHome === null) {
+        unset($_ENV['HOME']);
+    }
+
+    if ($envHome !== null) {
+        $_ENV['HOME'] = $envHome;
+    }
+}
+
+function delete_process_docker_container_path(string $path): void
+{
+    if (! is_dir($path)) {
+        if (file_exists($path) || is_link($path)) {
+            unlink($path);
+        }
+
+        return;
+    }
+
+    $entries = scandir($path);
+
+    foreach ($entries === false ? [] : $entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        delete_process_docker_container_path("{$path}/{$entry}");
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
 }
 
 /**

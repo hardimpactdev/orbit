@@ -8,6 +8,9 @@ use Orbit\Core\Security\OperationTokenSigner;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 describe('internal caddy config command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance(\App\Services\Executor\OperationTokenGuard::class);
@@ -16,10 +19,22 @@ describe('internal caddy config command', function (): void {
         ]));
         $originalPath = getenv('PATH');
         $this->originalPath = $originalPath === false ? '' : $originalPath;
+        $home = getenv('HOME');
+        $this->originalHome = is_string($home) ? $home : null;
+        $this->originalServerHome = $_SERVER['HOME'] ?? null;
+        $this->originalEnvHome = $_ENV['HOME'] ?? null;
+        $dockerHost = getenv('DOCKER_HOST');
+        $this->originalDockerHost = is_string($dockerHost) ? $dockerHost : null;
     });
 
     afterEach(function (): void {
         putenv("PATH={$this->originalPath}");
+        caddy_config_restore_home(
+            $this->originalHome,
+            $this->originalServerHome,
+            $this->originalEnvHome,
+        );
+        $this->originalDockerHost === null ? putenv('DOCKER_HOST') : putenv("DOCKER_HOST={$this->originalDockerHost}");
         putenv('ORBIT_CADDY_CONFIG_MISSING_DIRS');
         putenv('ORBIT_CADDY_CONFIG_MISSING_FILES');
         putenv('ORBIT_CADDY_CONFIG_READ_GLOBAL');
@@ -35,6 +50,12 @@ describe('internal caddy config command', function (): void {
 
         foreach ($fakeBinPaths as $dir) {
             delete_caddy_config_fake_bin($dir);
+        }
+
+        $fakeHomes = glob(sys_get_temp_dir().'/orbit-caddy-config-home-*');
+
+        foreach ($fakeHomes === false ? [] : $fakeHomes as $dir) {
+            delete_caddy_config_directory($dir);
         }
     });
 
@@ -165,6 +186,61 @@ describe('internal caddy config command', function (): void {
             );
     });
 
+    it('uses the local OrbStack socket when resolving Caddy bind mounts and reloading', function (): void {
+        $home = caddy_config_fake_home();
+        $socket = caddy_config_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        $bin = install_caddy_config_fake_bin(requiredDockerHost: "unix://{$socket}");
+        caddy_config_fake_container_inspect($bin, [
+            'Mounts' => [
+                [
+                    'Source' => "{$home}/.config/orbit/agent/caddy/sites",
+                    'Destination' => '/etc/caddy/sites',
+                ],
+                [
+                    'Source' => "{$home}/.config/orbit",
+                    'Destination' => '/etc/orbit',
+                ],
+            ],
+        ]);
+
+        [$writeExitCode, $writeOutput] = run_internal_caddy_config_command(
+            [
+                'action' => 'write-site',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.write-site'),
+                '--json' => true,
+            ],
+            json_encode([
+                'domain' => 'smoke-happie.happie.nmbp',
+                'content' => "smoke-happie.happie.nmbp {\n  reverse_proxy http://host.docker.internal:6767\n}\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+        [$reloadExitCode] = run_internal_caddy_config_command(
+            [
+                'action' => 'reload',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.reload'),
+                '--json' => true,
+            ],
+            json_encode(['container' => 'orbit-caddy'], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($writeOutput, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($writeExitCode)
+            ->toBe(0)
+            ->and($reloadExitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['path'] ?? null)
+            ->toBe("{$home}/.config/orbit/agent/caddy/sites/smoke-happie.happie.nmbp.caddy")
+            ->and($calls)
+            ->toContain("DOCKER_HOST=unix://{$socket} docker container inspect --format {{json .}} orbit-caddy")
+            ->toContain("DOCKER_HOST=unix://{$socket} docker exec orbit-caddy caddy reload")
+            ->toContain("tee {$home}/.config/orbit/agent/caddy/sites/smoke-happie.happie.nmbp.caddy")
+            ->not->toContain('tee /etc/caddy/sites/smoke-happie.happie.nmbp.caddy')
+            ->not->toContain('/var/run/docker.sock');
+    });
+
     it('removes site configs, orbit tls material, and reloads caddy', function (): void {
         $bin = install_caddy_config_fake_bin();
 
@@ -256,6 +332,37 @@ describe('internal caddy config command', function (): void {
             ->toContain("--mount type=bind,source={$runPhpSource},target=/run/php")
             ->toContain('caddy:2-alpine')
             ->toContain('docker start orbit-caddy');
+    });
+
+    it('treats an existing Docker network as converged while applying the Caddy container', function (): void {
+        $bin = install_caddy_config_fake_bin(networkAlreadyExists: true);
+        $expectedHash = str_repeat(string: 'f', times: 64);
+
+        [$exitCode, $output] = run_internal_caddy_config_command(
+            [
+                'action' => 'apply-container',
+                '--operation-token' => caddy_config_signed_operation_token(id: 'caddy-config.apply-container'),
+                '--json' => true,
+            ],
+            json_encode([
+                'container' => caddy_config_container_spec($expectedHash),
+                'global_config' => "import /etc/caddy/sites/*.caddy\n",
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+        $calls = file_get_contents("{$bin}/calls.log");
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['container'] ?? null)
+            ->toBe('orbit-caddy')
+            ->and($calls)
+            ->toContain('docker network inspect orbit-network')
+            ->toContain(
+                'docker network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network',
+            )
+            ->toContain('docker run -d --pull never --name orbit-caddy');
     });
 
     it('writes the global Caddyfile through the declared container bind source', function (): void {
@@ -519,10 +626,12 @@ function run_internal_caddy_config_command(array $parameters = [], string $stdin
     return [$exitCode, trim($output->fetch())];
 }
 
-function install_caddy_config_fake_bin(): string
+function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool $networkAlreadyExists = false): string
 {
     $dir = sys_get_temp_dir().'/orbit-caddy-config-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
+    $encodedRequiredDockerHost = var_export($requiredDockerHost ?? '', return: true);
+    $encodedNetworkAlreadyExists = var_export($networkAlreadyExists, return: true);
 
     file_put_contents("{$dir}/sudo", <<<'PHP_WRAP'
         #!/usr/bin/env php
@@ -571,14 +680,29 @@ function install_caddy_config_fake_bin(): string
             PHP_WRAP);
         chmod(filename: "{$dir}/{$command}", permissions: 0o755);
     }
-    file_put_contents("{$dir}/docker", <<<'PHP_WRAP'
+    file_put_contents("{$dir}/docker", <<<PHP_WRAP
         #!/usr/bin/env php
         <?php
-        file_put_contents(__DIR__.'/calls.log', 'docker '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-        if (($argv[1] ?? null) === 'container' && ($argv[2] ?? null) === 'inspect') {
-            $inspectPath = __DIR__.'/container-inspect.json';
-            if (is_file($inspectPath)) {
-                echo file_get_contents($inspectPath);
+        \$requiredDockerHost = {$encodedRequiredDockerHost};
+        \$networkAlreadyExists = {$encodedNetworkAlreadyExists};
+        \$dockerHost = getenv('DOCKER_HOST') ?: '';
+        file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
+        if (\$requiredDockerHost !== '' && \$dockerHost !== \$requiredDockerHost) {
+            fwrite(STDERR, 'failed to connect to the docker API at unix:///var/run/docker.sock');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'inspect' && \$networkAlreadyExists) {
+            fwrite(STDERR, 'network not found');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'create' && \$networkAlreadyExists) {
+            fwrite(STDERR, 'Error response from daemon: network with name orbit-network already exists');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'container' && (\$argv[2] ?? null) === 'inspect') {
+            \$inspectPath = __DIR__.'/container-inspect.json';
+            if (is_file(\$inspectPath)) {
+                echo file_get_contents(\$inspectPath);
             }
         }
         exit(0);
@@ -598,6 +722,48 @@ function install_caddy_config_fake_bin(): string
 function caddy_config_fake_container_inspect(string $bin, array $inspection): void
 {
     file_put_contents("{$bin}/container-inspect.json", json_encode($inspection, JSON_THROW_ON_ERROR));
+}
+
+function caddy_config_fake_home(): string
+{
+    $home = sys_get_temp_dir().'/orbit-caddy-config-home-'.bin2hex(random_bytes(8));
+    mkdir($home);
+    putenv("HOME={$home}");
+    $_SERVER['HOME'] = $home;
+    $_ENV['HOME'] = $home;
+
+    return $home;
+}
+
+function caddy_config_fake_orbstack_socket(string $home): string
+{
+    $runDirectory = "{$home}/.orbstack/run";
+    mkdir($runDirectory, recursive: true);
+    $socket = "{$runDirectory}/docker.sock";
+    touch($socket);
+
+    return $socket;
+}
+
+function caddy_config_restore_home(?string $home, ?string $serverHome, ?string $envHome): void
+{
+    $home === null ? putenv('HOME') : putenv("HOME={$home}");
+
+    if ($serverHome === null) {
+        unset($_SERVER['HOME']);
+    }
+
+    if ($serverHome !== null) {
+        $_SERVER['HOME'] = $serverHome;
+    }
+
+    if ($envHome === null) {
+        unset($_ENV['HOME']);
+    }
+
+    if ($envHome !== null) {
+        $_ENV['HOME'] = $envHome;
+    }
 }
 
 function delete_caddy_config_fake_bin(string $path): void
@@ -677,4 +843,27 @@ function delete_caddy_config_file(string $path): void
     }
 
     unlink($path);
+}
+
+function delete_caddy_config_directory(string $path): void
+{
+    if (! is_dir($path)) {
+        delete_caddy_config_file($path);
+
+        return;
+    }
+
+    $entries = scandir($path);
+
+    foreach ($entries === false ? [] : $entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        delete_caddy_config_directory("{$path}/{$entry}");
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Services\Docker\LocalDockerCommandContext;
 use Symfony\Component\Process\Process;
 
 /**
@@ -16,6 +17,10 @@ final readonly class LocalAppRuntimeAction
     private const string RUNTIME_CONFIG_BASENAME_PATTERN = '#^[A-Za-z0-9][A-Za-z0-9_.-]*\.ini$#';
 
     private const string USER_PATH_PATTERN = '#^/(?:home|Users)/(?<user>(?!\.{1,2}(?:/|$))[A-Za-z0-9._-]+)/(?<path>(?!\.{1,2}$)(?!\.{1,2}/)(?!.*(?:^|/)\.\.(?:/|$)).+)$#';
+
+    public function __construct(
+        private LocalDockerCommandContext $docker,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -191,6 +196,10 @@ final readonly class LocalAppRuntimeAction
         ]);
 
         if ($create->isSuccessful()) {
+            return;
+        }
+
+        if ($this->docker->networkAlreadyExists($create->getErrorOutput().' '.$create->getOutput(), $network)) {
             return;
         }
 
@@ -936,7 +945,7 @@ final readonly class LocalAppRuntimeAction
      */
     private function runProcess(array $command, ?string $input = null): Process
     {
-        $process = new Process($command);
+        $process = new Process($command, null, $this->docker->environmentFor($command));
         $process->setTimeout(120);
 
         if ($input !== null) {

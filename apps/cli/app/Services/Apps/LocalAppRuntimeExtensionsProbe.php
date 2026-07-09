@@ -4,17 +4,23 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Services\Docker\LocalDockerCommandContext;
 use Symfony\Component\Process\Process;
 
 final readonly class LocalAppRuntimeExtensionsProbe
 {
+    public function __construct(
+        private LocalDockerCommandContext $docker,
+    ) {}
+
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
     public function probe(mixed $container): array
     {
         $container = $this->container($container);
-        $process = new Process(['docker', 'exec', $container, 'php', '-m']);
+        $command = ['docker', 'exec', $container, 'php', '-m'];
+        $process = new Process($command, null, $this->docker->environmentFor($command));
         $process->setTimeout(30);
         $process->run();
 

@@ -9,6 +9,9 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+/**
+ * @mago-expect lint:cyclomatic-complexity
+ */
 describe('internal app runtime command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
@@ -19,6 +22,10 @@ describe('internal app runtime command', function (): void {
         $this->originalHome = is_string($home) ? $home : null;
         $this->originalServerHome = $_SERVER['HOME'] ?? null;
         $this->originalEnvHome = $_ENV['HOME'] ?? null;
+        $path = getenv('PATH');
+        $this->originalPath = is_string($path) ? $path : null;
+        $dockerHost = getenv('DOCKER_HOST');
+        $this->originalDockerHost = is_string($dockerHost) ? $dockerHost : null;
     });
 
     afterEach(function (): void {
@@ -27,11 +34,19 @@ describe('internal app runtime command', function (): void {
             $this->originalServerHome,
             $this->originalEnvHome,
         );
+        $this->originalPath === null ? putenv('PATH') : putenv("PATH={$this->originalPath}");
+        $this->originalDockerHost === null ? putenv('DOCKER_HOST') : putenv("DOCKER_HOST={$this->originalDockerHost}");
 
         $homeDirectories = glob(sys_get_temp_dir().'/orbit-app-runtime-home-*');
 
         foreach ($homeDirectories === false ? [] : $homeDirectories as $dir) {
             delete_app_runtime_command_home($dir);
+        }
+
+        $binDirectories = glob(sys_get_temp_dir().'/orbit-app-runtime-bin-*');
+
+        foreach ($binDirectories === false ? [] : $binDirectories as $dir) {
+            delete_app_runtime_fake_docker_bin($dir);
         }
     });
 
@@ -322,6 +337,60 @@ describe('internal app runtime command', function (): void {
             delete_app_runtime_command_home($mountDirectory);
         }
     });
+
+    it('applies runtime containers through the local OrbStack socket and treats an existing network as converged', function (): void {
+        $home = app_runtime_command_home();
+        $socket = app_runtime_command_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        $bin = install_app_runtime_fake_docker_bin(requiredDockerHost: "unix://{$socket}", networkAlreadyExists: true);
+
+        try {
+            [$exitCode, $output] = run_internal_app_runtime_command(
+                'container:apply',
+                [
+                    '--operation-token' => app_runtime_signed_operation_token(),
+                    '--json' => true,
+                ],
+                stdin: json_encode([
+                    'spec' => app_runtime_container_spec_payload($home),
+                    'runtime_config' => [
+                        'path' => "{$home}/.config/orbit/apps/happie-smoke.ini",
+                        'content_base64' => base64_encode("memory_limit=512M\n"),
+                        'directories' => [
+                            [
+                                'path' => "{$home}/.config/orbit/apps",
+                                'mode' => '0755',
+                                'owner' => null,
+                                'group' => null,
+                            ],
+                        ],
+                        'trust_pool' => null,
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            );
+
+            $calls = file_get_contents("{$bin}/calls.log");
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR)['success']['data'] ?? null)
+                ->toMatchArray([
+                    'action' => 'container:apply',
+                    'container' => 'orbit-ws-happie-smoke',
+                    'outcome' => 'created',
+                    'changed' => true,
+                ])
+                ->and($calls)
+                ->toContain("DOCKER_HOST=unix://{$socket} docker network inspect orbit-network")
+                ->toContain(
+                    "DOCKER_HOST=unix://{$socket} docker network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network",
+                )
+                ->toContain("DOCKER_HOST=unix://{$socket} docker run -d --pull never --name orbit-ws-happie-smoke")
+                ->not->toContain('/var/run/docker.sock');
+        } finally {
+            delete_app_runtime_fake_docker_bin($bin);
+        }
+    });
 });
 
 function app_runtime_signed_operation_token(
@@ -383,6 +452,96 @@ function app_runtime_command_home(): string
     $_ENV['HOME'] = $home;
 
     return $home;
+}
+
+function app_runtime_command_fake_orbstack_socket(string $home): string
+{
+    $runDirectory = "{$home}/.orbstack/run";
+    mkdir($runDirectory, recursive: true);
+    $socket = "{$runDirectory}/docker.sock";
+    touch($socket);
+
+    return $socket;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function app_runtime_container_spec_payload(string $home): array
+{
+    return [
+        'kind' => 'workspace',
+        'name' => 'orbit-ws-happie-smoke',
+        'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        'network' => 'orbit-network',
+        'restart_policy' => 'unless-stopped',
+        'app_slug' => 'happie',
+        'workspace_slug' => 'smoke',
+        'runtime_user' => null,
+        'docker_user' => null,
+        'environment' => [
+            'APP_ENV' => 'local',
+        ],
+        'mounts' => [
+            [
+                'source' => "{$home}/apps/happie",
+                'target' => '/app',
+                'read_only' => false,
+            ],
+            [
+                'source' => "{$home}/.config/orbit/apps/happie-smoke.ini",
+                'target' => '/usr/local/etc/php/conf.d/orbit-runtime.ini',
+                'read_only' => true,
+            ],
+        ],
+        'network_aliases' => ['smoke.happie.nmbp'],
+        'expected_hash' => str_repeat('b', times: 64),
+    ];
+}
+
+function install_app_runtime_fake_docker_bin(string $requiredDockerHost, bool $networkAlreadyExists): string
+{
+    $dir = sys_get_temp_dir().'/orbit-app-runtime-bin-'.bin2hex(random_bytes(8));
+    mkdir($dir);
+    $encodedRequiredDockerHost = var_export($requiredDockerHost, return: true);
+    $encodedNetworkAlreadyExists = var_export($networkAlreadyExists, return: true);
+
+    file_put_contents("{$dir}/docker", <<<PHP_WRAP
+        #!/usr/bin/env php
+        <?php
+        \$requiredDockerHost = {$encodedRequiredDockerHost};
+        \$networkAlreadyExists = {$encodedNetworkAlreadyExists};
+        \$dockerHost = getenv('DOCKER_HOST') ?: '';
+        file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
+        if (\$requiredDockerHost !== '' && \$dockerHost !== \$requiredDockerHost) {
+            fwrite(STDERR, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'inspect') {
+            fwrite(STDERR, 'network not found');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'create' && \$networkAlreadyExists) {
+            fwrite(STDERR, 'Error response from daemon: network with name orbit-network already exists');
+            exit(1);
+        }
+        if ((\$argv[1] ?? null) === 'container' && (\$argv[2] ?? null) === 'inspect') {
+            fwrite(STDERR, 'Error: No such container');
+            exit(1);
+        }
+        exit(0);
+        PHP_WRAP);
+    chmod(filename: "{$dir}/docker", permissions: 0o755);
+
+    $path = getenv('PATH');
+    putenv('PATH='.$dir.($path === false ? '' : ":{$path}"));
+
+    return $dir;
+}
+
+function delete_app_runtime_fake_docker_bin(string $path): void
+{
+    delete_app_runtime_command_home($path);
 }
 
 function app_runtime_command_restore_home(?string $home, ?string $serverHome, ?string $envHome): void

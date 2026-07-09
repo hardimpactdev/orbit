@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use App\Services\Docker\LocalDockerCommandContext;
 use Symfony\Component\Process\Process;
 
 final readonly class LocalAppRuntimeContainersProbe
 {
+    public function __construct(
+        private LocalDockerCommandContext $docker,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
     public function probe(): array
     {
-        $dockerCheck = new Process(['docker', '--version']);
-        $dockerCheck->setTimeout(10);
-        $dockerCheck->run();
+        $dockerCheck = $this->runDocker(['docker', '--version'], timeout: 10);
 
         if (! $dockerCheck->isSuccessful()) {
             return [
@@ -26,7 +29,7 @@ final readonly class LocalAppRuntimeContainersProbe
             ];
         }
 
-        $scan = new Process([
+        $scan = $this->runDocker([
             'docker',
             'container',
             'ls',
@@ -37,9 +40,7 @@ final readonly class LocalAppRuntimeContainersProbe
             'label=orbit.container.kind=app-runtime',
             '--format',
             '{{.Names}}\t{{.Label "orbit.app"}}',
-        ]);
-        $scan->setTimeout(20);
-        $scan->run();
+        ], timeout: 20);
 
         if (! $scan->isSuccessful()) {
             $error = trim($scan->getErrorOutput());
@@ -108,5 +109,17 @@ final readonly class LocalAppRuntimeContainersProbe
         }
 
         return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function runDocker(array $command, int $timeout): Process
+    {
+        $process = new Process($command, null, $this->docker->environmentFor($command));
+        $process->setTimeout($timeout);
+        $process->run();
+
+        return $process;
     }
 }

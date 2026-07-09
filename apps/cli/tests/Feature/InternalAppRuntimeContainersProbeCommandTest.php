@@ -15,13 +15,34 @@ describe('internal app runtime containers probe command', function (): void {
             'allowed' => true,
         ]));
         $this->originalPath = getenv('PATH') ?: '';
+        $home = getenv('HOME');
+        $this->originalHome = is_string($home) ? $home : null;
+        $this->originalServerHome = $_SERVER['HOME'] ?? null;
+        $this->originalEnvHome = $_ENV['HOME'] ?? null;
+        $dockerHost = getenv('DOCKER_HOST');
+        $this->originalDockerHost = is_string($dockerHost) ? $dockerHost : null;
+        $dockerContext = getenv('DOCKER_CONTEXT');
+        $this->originalDockerContext = is_string($dockerContext) ? $dockerContext : null;
     });
 
     afterEach(function (): void {
         putenv("PATH={$this->originalPath}");
+        restore_runtime_containers_probe_home(
+            $this->originalHome,
+            $this->originalServerHome,
+            $this->originalEnvHome,
+        );
+        $this->originalDockerHost === null ? putenv('DOCKER_HOST') : putenv("DOCKER_HOST={$this->originalDockerHost}");
+        $this->originalDockerContext === null
+            ? putenv('DOCKER_CONTEXT')
+            : putenv("DOCKER_CONTEXT={$this->originalDockerContext}");
 
         foreach (glob(sys_get_temp_dir().'/orbit-runtime-containers-docker-*') ?: [] as $dir) {
             delete_runtime_containers_fake_docker($dir);
+        }
+
+        foreach (glob(sys_get_temp_dir().'/orbit-runtime-containers-home-*') ?: [] as $dir) {
+            delete_runtime_containers_probe_path($dir);
         }
     });
 
@@ -86,6 +107,40 @@ describe('internal app runtime containers probe command', function (): void {
             ]));
     });
 
+    it('uses the local OrbStack socket when probing runtime containers', function (): void {
+        $home = runtime_containers_probe_fake_home();
+        $socket = runtime_containers_probe_fake_orbstack_socket($home);
+        putenv('DOCKER_HOST');
+        putenv('DOCKER_CONTEXT');
+        $bin = install_runtime_containers_fake_docker(
+            scanOutput: "orbit-app-happie\thappie\n",
+            requiredDockerHost: "unix://{$socket}",
+        );
+
+        [$exitCode, $output] = run_internal_app_runtime_containers_probe_command([
+            '--operation-token' => app_runtime_containers_probe_signed_operation_token(),
+            '--json' => true,
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::success([
+                'status' => 'present',
+                'containers' => [
+                    [
+                        'container_name' => 'orbit-app-happie',
+                        'app_slug' => 'happie',
+                    ],
+                ],
+                'error' => '',
+                'stdout' => "orbit-container-scan:present\norbit-app-happie\thappie\n",
+            ]))
+            ->and(file_get_contents("{$bin}/calls.log"))
+            ->toContain("DOCKER_HOST=unix://{$socket} docker --version")
+            ->toContain("DOCKER_HOST=unix://{$socket} docker container ls --all");
+    });
+
     it('reports docker scan failures as error sentinels', function (): void {
         install_runtime_containers_fake_docker(scanExit: 1, scanError: 'Cannot connect to the Docker daemon');
 
@@ -145,17 +200,26 @@ function install_runtime_containers_fake_docker(
     int $scanExit = 0,
     string $scanOutput = '',
     string $scanError = '',
-): void {
+    string $requiredDockerHost = '',
+): string {
     $dir = sys_get_temp_dir().'/orbit-runtime-containers-docker-'.bin2hex(random_bytes(8));
     mkdir($dir);
-    $scanOutput = var_export($scanOutput, true);
-    $scanError = var_export($scanError, true);
+    $scanOutput = var_export($scanOutput, return: true);
+    $scanError = var_export($scanError, return: true);
+    $requiredDockerHost = var_export($requiredDockerHost, return: true);
 
     $script = <<<PHP
         #!/usr/bin/env php
         <?php
 
         \$args = array_slice(\$argv, 1);
+        \$dockerHost = getenv('DOCKER_HOST') ?: '';
+        file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', \$args).PHP_EOL, FILE_APPEND);
+
+        if ({$requiredDockerHost} !== '' && \$dockerHost !== {$requiredDockerHost}) {
+            fwrite(STDERR, 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock');
+            exit(1);
+        }
 
         if (\$args === ['--version']) {
             exit({$versionExit});
@@ -178,11 +242,85 @@ function install_runtime_containers_fake_docker(
 
     file_put_contents("{$dir}/docker", $script);
     chmod("{$dir}/docker", 0o755);
-    putenv("PATH={$dir}:".(getenv('PATH') ?: ''));
+    $path = getenv('PATH');
+    putenv("PATH={$dir}:".($path === false ? '' : $path));
+
+    return $dir;
 }
 
 function delete_runtime_containers_fake_docker(string $path): void
 {
-    @unlink("{$path}/docker");
-    @rmdir($path);
+    delete_runtime_containers_probe_path("{$path}/docker");
+    delete_runtime_containers_probe_path("{$path}/calls.log");
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
+}
+
+function runtime_containers_probe_fake_home(): string
+{
+    $home = sys_get_temp_dir().'/orbit-runtime-containers-home-'.bin2hex(random_bytes(8));
+    mkdir($home);
+    putenv("HOME={$home}");
+    $_SERVER['HOME'] = $home;
+    $_ENV['HOME'] = $home;
+
+    return $home;
+}
+
+function runtime_containers_probe_fake_orbstack_socket(string $home): string
+{
+    $runDirectory = "{$home}/.orbstack/run";
+    mkdir($runDirectory, recursive: true);
+    $socket = "{$runDirectory}/docker.sock";
+    touch($socket);
+
+    return $socket;
+}
+
+function restore_runtime_containers_probe_home(?string $home, ?string $serverHome, ?string $envHome): void
+{
+    $home === null ? putenv('HOME') : putenv("HOME={$home}");
+
+    if ($serverHome === null) {
+        unset($_SERVER['HOME']);
+    }
+
+    if ($serverHome !== null) {
+        $_SERVER['HOME'] = $serverHome;
+    }
+
+    if ($envHome === null) {
+        unset($_ENV['HOME']);
+    }
+
+    if ($envHome !== null) {
+        $_ENV['HOME'] = $envHome;
+    }
+}
+
+function delete_runtime_containers_probe_path(string $path): void
+{
+    if (! is_dir($path)) {
+        if (file_exists($path) || is_link($path)) {
+            unlink($path);
+        }
+
+        return;
+    }
+
+    $entries = scandir($path);
+
+    foreach ($entries === false ? [] : $entries as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        delete_runtime_containers_probe_path("{$path}/{$entry}");
+    }
+
+    if (is_dir($path)) {
+        rmdir($path);
+    }
 }

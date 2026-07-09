@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Caddy;
 
+use App\Services\Docker\LocalDockerCommandContext;
 use Symfony\Component\Process\Exception\ProcessStartFailedException;
 use Symfony\Component\Process\Process;
 
@@ -31,6 +32,10 @@ final readonly class LocalCaddyConfigAction
     private const string DEFAULT_CONTAINER = 'orbit-caddy';
 
     private const string SPEC_HASH_LABEL = 'orbit.caddy.spec_hash';
+
+    public function __construct(
+        private LocalDockerCommandContext $docker,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -598,7 +603,7 @@ final readonly class LocalCaddyConfigAction
             return;
         }
 
-        $this->mustRun([
+        $create = $this->runProcess([
             'docker',
             'network',
             'create',
@@ -607,7 +612,20 @@ final readonly class LocalCaddyConfigAction
             '--label',
             'orbit.network.kind=runtime',
             $network,
-        ], 'caddy_container.network_failed');
+        ]);
+
+        if ($create['exit_code'] === 0 || $this->docker->networkAlreadyExists($create['output'], $network)) {
+            return;
+        }
+
+        throw new LocalCaddyConfigFailure(
+            errorCode: 'caddy_container.network_failed',
+            message: 'Caddy config command failed.',
+            meta: [
+                'exit_code' => $create['exit_code'],
+                'output' => $create['output'],
+            ],
+        );
     }
 
     /**
@@ -1114,7 +1132,7 @@ final readonly class LocalCaddyConfigAction
     private function runProcess(array $command, ?string $input = null): array
     {
         try {
-            $process = new Process($command);
+            $process = new Process($command, null, $this->docker->environmentFor($command));
             $process->setTimeout(30);
 
             if ($input !== null) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
+use App\Services\Docker\LocalDockerCommandContext;
 use Symfony\Component\Process\Process;
 
 /**
@@ -14,6 +15,10 @@ use Symfony\Component\Process\Process;
 final readonly class LocalDockerContainerAction
 {
     private const array ACTIONS = ['apply', 'ensure-network', 'probe', 'remove', 'restart', 'start', 'stop'];
+
+    public function __construct(
+        private LocalDockerCommandContext $docker,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $payload
@@ -163,6 +168,10 @@ final readonly class LocalDockerContainerAction
 
         if ($create->isSuccessful()) {
             return true;
+        }
+
+        if ($this->docker->networkAlreadyExists($create->getErrorOutput().' '.$create->getOutput(), $spec->network)) {
+            return false;
         }
 
         throw $this->applyFailure('create network', $spec, $create, false);
@@ -393,7 +402,7 @@ final readonly class LocalDockerContainerAction
      */
     private function runProcess(array $command): Process
     {
-        $process = new Process($command);
+        $process = new Process($command, null, $this->docker->environmentFor($command));
         $process->setTimeout(120);
         $process->run();
 
