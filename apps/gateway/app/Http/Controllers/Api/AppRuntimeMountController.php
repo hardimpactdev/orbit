@@ -70,9 +70,6 @@ final class AppRuntimeMountController implements Loggable
     }
 
     #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
-    /**
-     * @mago-expect lint:halstead
-     */
     public function store(string $app, Request $request, AppRuntimeMountService $mounts): JsonResponse
     {
         $this->currentAction = 'add';
@@ -104,24 +101,13 @@ final class AppRuntimeMountController implements Loggable
 
         $targetInstance = $resolved['instance'];
 
+        if (! $targetInstance instanceof AppInstance) {
+            return $this->appInstanceRequired();
+        }
+
         try {
-            if ($targetInstance instanceof AppInstance) {
-                $result = $mounts->addToInstance(
-                    instance: $targetInstance,
-                    source: $source,
-                    target: $target,
-                    readOnly: $this->readOnly($request),
-                );
-
-                return $this->success([
-                    ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
-                    'mount' => $mounts->instanceMountPayload($result['mount']),
-                    'action' => $result['action'],
-                ]);
-            }
-
-            $result = $mounts->add(
-                app: $targetApp,
+            $result = $mounts->addToInstance(
+                instance: $targetInstance,
                 source: $source,
                 target: $target,
                 readOnly: $this->readOnly($request),
@@ -131,16 +117,13 @@ final class AppRuntimeMountController implements Loggable
         }
 
         return $this->success([
-            ...$this->appMountsPayload($targetApp, $result['mounts'], $mounts),
-            'mount' => $mounts->mountPayload($result['mount']),
+            ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
+            'mount' => $mounts->instanceMountPayload($result['mount']),
             'action' => $result['action'],
         ]);
     }
 
     #[RequiresPermission('app:mount', servingNode: ServingNode::AppOwning)]
-    /**
-     * @mago-expect lint:halstead
-     */
     public function destroy(string $app, Request $request, AppRuntimeMountService $mounts): JsonResponse
     {
         $this->currentAction = 'remove';
@@ -167,37 +150,34 @@ final class AppRuntimeMountController implements Loggable
 
         $targetInstance = $resolved['instance'];
 
+        if (! $targetInstance instanceof AppInstance) {
+            return $this->appInstanceRequired();
+        }
+
         try {
-            if ($targetInstance instanceof AppInstance) {
-                $result = $mounts->removeFromInstance($targetInstance, $target);
-
-                $payload = [
-                    ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
-                    'action' => $result['action'],
-                ];
-
-                if ($result['mount'] instanceof AppInstanceRuntimeMount) {
-                    $payload['mount'] = $mounts->instanceMountPayload($result['mount']);
-                }
-
-                return $this->success($payload);
-            }
-
-            $result = $mounts->remove($targetApp, $target);
+            $result = $mounts->removeFromInstance($targetInstance, $target);
         } catch (AppRuntimeMountValidationException $exception) {
             return $this->validationFailed($exception->getMessage(), $exception->meta);
         }
 
         $payload = [
-            ...$this->appMountsPayload($targetApp, $result['mounts'], $mounts),
+            ...$this->instanceMountsPayload($targetApp, $targetInstance, $result['mounts'], $mounts),
             'action' => $result['action'],
         ];
 
-        if ($result['mount'] instanceof AppRuntimeMount) {
-            $payload['mount'] = $mounts->mountPayload($result['mount']);
+        if ($result['mount'] instanceof AppInstanceRuntimeMount) {
+            $payload['mount'] = $mounts->instanceMountPayload($result['mount']);
         }
 
         return $this->success($payload);
+    }
+
+    private function appInstanceRequired(): JsonResponse
+    {
+        return $this->validationFailed(
+            'Runtime mounts can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
+            ['field' => 'app', 'reason' => 'app_instance_required'],
+        );
     }
 
     private function readOnly(Request $request): bool

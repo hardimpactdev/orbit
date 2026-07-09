@@ -633,15 +633,15 @@ describe('app write commands', function (): void {
     })->with([
         'missing action' => [[], 'action'],
         'missing app' => [['action' => 'add'], 'app'],
-        'missing source' => [['action' => 'add', 'app' => 'docs'], 'source'],
+        'missing source' => [['action' => 'add', 'app' => 'docs.local'], 'source'],
         'missing target for add' => [
-            ['action' => 'add', 'app' => 'docs', 'source' => '/home/orbit/packages'],
+            ['action' => 'add', 'app' => 'docs.local', 'source' => '/home/orbit/packages'],
             'target',
         ],
-        'missing target for remove' => [['action' => 'remove', 'app' => 'docs'], 'target'],
+        'missing target for remove' => [['action' => 'remove', 'app' => 'docs.local'], 'target'],
     ]);
 
-    it('forwards app:mount list add and remove to their gateway endpoints', function (): void {
+    it('forwards app:mount list to the gateway endpoint for compatibility app-level reads', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'app' => ['name' => 'docs'],
             'mounts' => [[
@@ -665,66 +665,39 @@ describe('app write commands', function (): void {
         );
 
         expect($listExitCode)->toBe(0);
-
-        fakeGateway(fakeSuccessEnvelope([
-            'app' => ['name' => 'docs'],
-            'mount' => [
-                'source' => '/home/orbit/packages',
-                'target' => '/home/orbit/packages',
-                'read_only' => false,
-            ],
-            'mounts' => [],
-            'action' => 'created',
-            'inherited_by_workspaces' => true,
-        ]));
-
-        [$addExitCode] = runCommand($this, 'app:mount', [
-            'action' => 'add',
-            'app' => 'docs',
-            'source' => '/home/orbit/packages',
-            'target' => '/home/orbit/packages',
-            '--read-write' => true,
-            '--json' => true,
-        ]);
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'POST'
-                && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
-                && $request->data() === [
-                    'source' => '/home/orbit/packages',
-                    'target' => '/home/orbit/packages',
-                    'read_only' => false,
-                ]
-            ),
-        );
-
-        expect($addExitCode)->toBe(0);
-
-        fakeGateway(fakeSuccessEnvelope([
-            'app' => ['name' => 'docs'],
-            'mounts' => [],
-            'action' => 'removed',
-            'inherited_by_workspaces' => true,
-        ]));
-
-        [$removeExitCode] = runCommand($this, 'app:mount', [
-            'action' => 'remove',
-            'app' => 'docs',
-            'target' => '/home/orbit/packages',
-            '--json' => true,
-        ]);
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'DELETE'
-                && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
-                && $request->data() === ['target' => '/home/orbit/packages']
-            ),
-        );
-
-        expect($removeExitCode)->toBe(0);
     });
+
+    it('rejects app:mount add and remove without an app instance selector before gateway IO', function (string $action): void {
+        Http::fake();
+
+        $arguments = [
+            'action' => $action,
+            'app' => 'docs',
+            '--json' => true,
+        ];
+
+        if ($action === 'add') {
+            $arguments['source'] = '/home/orbit/packages';
+            $arguments['target'] = '/home/orbit/packages';
+        }
+
+        $arguments['target'] ??= '/home/orbit/packages';
+
+        [$exitCode, $output] = runCommand($this, 'app:mount', $arguments);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('app_instance_required');
+    })->with(['add', 'remove']);
 
     it('forwards dotted app instance selectors unchanged to the app:mount gateway endpoints', function (): void {
         fakeGateway(fakeSuccessEnvelope([
@@ -765,6 +738,35 @@ describe('app write commands', function (): void {
         );
 
         expect($exitCode)->toBe(0);
+
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => ['name' => 'hauser'],
+            'target' => [
+                'type' => 'app_instance',
+                'app' => 'hauser',
+                'instance' => 'nmbp',
+            ],
+            'mounts' => [],
+            'action' => 'removed',
+            'inherited_by_workspaces' => true,
+        ]));
+
+        [$removeExitCode] = runCommand($this, command: 'app:mount', params: [
+            'action' => 'remove',
+            'app' => 'hauser.nmbp',
+            'target' => '/projects',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/apps/hauser.nmbp/mounts'
+                && $request->data() === ['target' => '/projects']
+            ),
+        );
+
+        expect($removeExitCode)->toBe(0);
     });
 });
 

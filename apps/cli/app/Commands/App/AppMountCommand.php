@@ -42,15 +42,11 @@ final class AppMountCommand extends AppGatewayCommand
             return $this->failValidation('app', 'App is required.');
         }
 
-        if ($action === 'list') {
-            return $this->listMounts($selector);
-        }
-
-        if ($action === 'add') {
-            return $this->addMount($selector);
-        }
-
-        return $this->removeMount($selector);
+        return match ($action) {
+            'list' => $this->listMounts($selector),
+            'add' => $this->addMount($selector),
+            'remove' => $this->removeMount($selector),
+        };
     }
 
     private function listMounts(string $selector): int
@@ -66,6 +62,10 @@ final class AppMountCommand extends AppGatewayCommand
 
     private function addMount(string $selector): int
     {
+        if (! $this->hasInstanceSelector($selector)) {
+            return $this->appInstanceRequired();
+        }
+
         $source = $this->stringArgument('source');
         $target = $this->stringArgument('target');
 
@@ -100,6 +100,10 @@ final class AppMountCommand extends AppGatewayCommand
 
     private function removeMount(string $selector): int
     {
+        if (! $this->hasInstanceSelector($selector)) {
+            return $this->appInstanceRequired();
+        }
+
         $target = $this->stringArgument('target') ?? $this->stringArgument('source');
 
         if ($target === null) {
@@ -115,5 +119,19 @@ final class AppMountCommand extends AppGatewayCommand
         }
 
         return $this->renderSuccess($response);
+    }
+
+    private function hasInstanceSelector(string $selector): bool
+    {
+        return substr_count(haystack: $selector, needle: '.') === 1;
+    }
+
+    private function appInstanceRequired(): int
+    {
+        return $this->renderFailure(
+            'validation_failed',
+            'Runtime mounts can only be changed on app instances. Use a dotted app instance selector such as hauser.nmbp.',
+            ['field' => 'app', 'reason' => 'app_instance_required'],
+        );
     }
 }

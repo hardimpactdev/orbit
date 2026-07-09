@@ -12,9 +12,9 @@ paths — for example, `hauser.development` on Linux may mount
 `/home/nckrtl/projects` while `hauser.nmbp` on macOS mounts
 `/Users/nckrtl/projects` at the same container target.
 
-Bare-app selectors (`hauser` without an instance suffix) still read and
-write app-level mounts for compatibility only. New mount intent should use dotted
-instance selectors such as `hauser.nmbp`.
+Bare-app selectors (`hauser` without an instance suffix) can list existing
+app-level mounts for compatibility, but they cannot add or remove mounts. New
+mount intent must use dotted instance selectors such as `hauser.nmbp`.
 
 ## Usage
 
@@ -37,8 +37,9 @@ orbit app:mount remove hauser.nmbp /projects --json
 
 - `action`: one of `list`, `add`, `remove`. Required.
 - `app`: app name, hostname, or dotted instance selector such as `hauser.nmbp`.
-  Required. Bare app names resolve compatibility app-level mounts. Dotted selectors
-  resolve the named instance under the app.
+  Required. Bare app names are valid only for compatibility `list` reads.
+  `add` and `remove` require a dotted selector that resolves the named instance
+  under the app.
 - `source`: host source path. Required for `add`. Must live under the resolved
   instance node's home directory.
 - `target`: container target path. Required for `add` and `remove`.
@@ -53,12 +54,13 @@ Run `app:mount` to manage instance-scoped additional runtime mount intent.
 `app:mount list` reads the configured mounts for the resolved target without
 changing gateway state.
 
-`app:mount add` validates the source and target against the selected instance's
-node and home boundary, then creates or updates the mount for the target path.
+`app:mount add` requires an app instance selector, validates the source and
+target against the selected instance's node and home boundary, then creates or
+updates the mount for the target path.
 Adding the same target again updates the stored source or read/write mode.
 
-`app:mount remove` deletes the configured mount for the target path on the
-resolved instance.
+`app:mount remove` requires an app instance selector and deletes the configured
+mount for the target path on the resolved instance.
 
 Configured mounts are rendered after Orbit's built-in runtime mounts. App and
 workspace runtime containers prefer selected-instance mounts when present and
@@ -112,6 +114,7 @@ payload shape is documented in the
 - The CLI caller can reach the Orbit gateway.
 - The caller has `app:read` on the app's owning node for `list`.
 - The caller has `app:mount` on the app's owning node for `add` and `remove`.
+- `add` and `remove` use a dotted app instance selector such as `hauser.nmbp`.
 
 ## Related Commands
 

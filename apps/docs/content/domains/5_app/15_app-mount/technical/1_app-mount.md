@@ -11,7 +11,8 @@
 - The authenticated peer has `app:read` on the app's owning node for `list`.
 - The authenticated peer has `app:mount` on the app's owning node for `add`
   and `remove`.
-- The target app or app instance exists in gateway configuration.
+- The target app or app instance exists in gateway configuration. `add` and
+  `remove` require a target app instance.
 
 ## Signature
 
@@ -27,7 +28,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `action` | `{action}` | Always. | Never. | None. | Must be one of `list`, `add`, `remove`. |
-| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record or dotted app instance selector such as `hauser.nmbp`. Bare app names resolve compatibility app-level mounts. |
+| `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record or dotted app instance selector such as `hauser.nmbp`. Bare app names are valid only for compatibility `list` reads; `add` and `remove` require a dotted app instance selector. |
 | `source` | `[source]` | `action=add`. | `action=list`. | None. | Must be an absolute safe source under the resolved target node's home. |
 | `target` | `[target]` | `action=add` and `action=remove`. | `action=list`. | None. | Must be an absolute container path and must not collide with reserved runtime targets. |
 | `read_only` | `--read-only` / `--read-write` | Optional for `action=add`. | `action=list`, `action=remove`. | `true`. | `--read-only` and `--read-write` are mutually exclusive. |
@@ -42,7 +43,7 @@ argument `source`.
 Gateway-owned configuration stores configurable runtime mounts in two tables:
 
 - `app_instance_runtime_mounts` for instance-scoped mount intent.
-- `app_runtime_mounts` for compatibility app-level mount intent.
+- `app_runtime_mounts` for read-only compatibility app-level mount data.
 
 Each row belongs to one app instance or one app and contains:
 
@@ -53,8 +54,8 @@ Each row belongs to one app instance or one app and contains:
 | `read_only` | boolean | Whether Docker renders the bind mount read-only. |
 
 The unique key is `(app_instance_id, target)` for instance mounts and
-`(app_id, target)` for compatibility app-level mounts. Adding a mount for an existing target
-updates that target's source and read/write mode.
+`(app_id, target)` for compatibility app-level rows. Adding a mount for an
+existing instance target updates that target's source and read/write mode.
 
 ## API Surface
 
@@ -64,8 +65,8 @@ app selectors and dotted instance selectors such as `hauser.nmbp`:
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
 | `GET` | `/api/apps/{app}/mounts` | `app:read` | Maps to `list`. |
-| `POST` | `/api/apps/{app}/mounts` | `app:mount` | Maps to `add`. |
-| `DELETE` | `/api/apps/{app}/mounts` | `app:mount` | Maps to `remove`. |
+| `POST` | `/api/apps/{app}/mounts` | `app:mount` | Maps to `add`; `{app}` must resolve to an app instance. |
+| `DELETE` | `/api/apps/{app}/mounts` | `app:mount` | Maps to `remove`; `{app}` must resolve to an app instance. |
 
 HTTP status codes: `200` for success, `404` for `app.not_found`, `422` for
 validation failures, and `403` for permission denials.
@@ -84,8 +85,9 @@ validation failures, and `403` for permission denials.
 1. **Dotted instance selectors.** Selectors containing one dot, such as
    `hauser.nmbp`, resolve the named app instance. Writes and reads target
    `app_instance_runtime_mounts`.
-2. **Bare app selectors.** Selectors without an instance suffix resolve compatibility
-   app-level mounts in `app_runtime_mounts` for compatibility only.
+2. **Bare app selectors.** Selectors without an instance suffix resolve
+   compatibility app-level mounts in `app_runtime_mounts` for `list` only.
+   `add` and `remove` fail with `error.meta.reason=app_instance_required`.
 3. **Name precedence.** App and instance resolution follow the shared app
    selector rules used elsewhere in the app command surface.
 
@@ -127,6 +129,7 @@ failures below.
 | --- | --- | --- |
 | Validation failed (action) | `action` is missing or not one of `list`, `add`, `remove`. | Failure |
 | Validation failed (app) | `app` is missing in non-interactive mode. | Failure |
+| App instance required | `add` or `remove` resolves to a bare app instead of an app instance. | Failure with `error.meta.reason=app_instance_required`. |
 | Validation failed (source) | `add` is missing `source`, or `source` is not an allowed absolute host path. | Failure |
 | Validation failed (target) | `add` or `remove` is missing `target`, or `target` is not an allowed absolute target path. | Failure |
 | App not found | No app record or app instance matches the selector. | Failure |
