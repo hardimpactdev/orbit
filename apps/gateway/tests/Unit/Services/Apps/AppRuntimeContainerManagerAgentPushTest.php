@@ -154,6 +154,41 @@ it('applies workspace runtime containers through the agent-push local executor',
     );
 });
 
+it('passes the macOS node home to workspace runtime container agent-push actions', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_agent_response('created')),
+    ]);
+    $node = app_runtime_manager_macos_node();
+    $container = app_runtime_manager_macos_workspace_container();
+
+    new WorkspaceRuntimeContainerManager(
+        new AppRuntimeManagerUnusedTransport,
+        new DockerCommandBuilder,
+        app_runtime_manager_ca(),
+        localExecutor: app_runtime_manager_executor(),
+    )->apply($node, $container);
+
+    Http::assertSent(
+        fn (Request $request): bool => app_runtime_manager_request_matches(
+            $request,
+            [
+                'operation_id' => 'workspace-runtime-container-apply',
+                'kind' => 'workspace',
+                'container_name' => 'orbit-ws-happie-smoke',
+                'expected_hash' => $container->specHash(),
+                'config_path' => '/Users/nckrtl/.config/orbit/workspaces/happie-smoke.ini',
+                'workspace_slug' => 'smoke',
+                'environment' => [
+                    'HOME' => '/Users/nckrtl',
+                    'ORBIT_CONFIG_PATH' => '/Users/nckrtl/.config/orbit/config.json',
+                    'APP_KEY' => app_runtime_manager_operation_secret(),
+                ],
+            ],
+        ),
+    );
+});
+
 it('uses the resolved local executor for agent-capable workspace runtime nodes', function (): void {
     config()->set('app.key', app_runtime_manager_operation_secret());
     Http::preventStrayRequests();
@@ -202,6 +237,30 @@ function app_runtime_manager_node(): Node
     return $node;
 }
 
+function app_runtime_manager_macos_node(): Node
+{
+    $node = Node::factory()->create([
+        'name' => 'NMBP',
+        'platform' => 'macos_26-5-1',
+        'user' => 'nckrtl',
+        'orbit_path' => '/Users/nckrtl/orbit',
+        'wireguard_address' => '10.44.0.80',
+        'orbit_agent_capable' => true,
+    ]);
+
+    if (! $node instanceof Node) {
+        throw new RuntimeException('Node factory did not return a node.');
+    }
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->getKey(),
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
+
+    return $node;
+}
+
 /**
  * @param  array{
  *     operation_id: string,
@@ -209,7 +268,8 @@ function app_runtime_manager_node(): Node
  *     container_name: string,
  *     expected_hash: string,
  *     config_path: string,
- *     workspace_slug?: string
+ *     workspace_slug?: string,
+ *     environment?: array<string, string>
  * }  $expected
  */
 function app_runtime_manager_request_matches(Request $request, array $expected): bool
@@ -233,11 +293,36 @@ function app_runtime_manager_request_matches(Request $request, array $expected):
         ($runtimeConfig['path'] ?? null) === $expected['config_path'],
     ];
 
-    if (array_key_exists('workspace_slug', $expected)) {
-        $checks[] = ($spec['workspace_slug'] ?? null) === $expected['workspace_slug'];
-    }
+    $checks[] = app_runtime_manager_environment_matches($payload, $expected);
+    $checks[] = app_runtime_manager_workspace_slug_matches($spec, $expected);
 
     return ! in_array(needle: false, haystack: $checks, strict: true);
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @param  array{environment?: array<string, string>}  $expected
+ */
+function app_runtime_manager_environment_matches(array $payload, array $expected): bool
+{
+    if (! array_key_exists('environment', $expected)) {
+        return true;
+    }
+
+    return ($payload['environment'] ?? null) === $expected['environment'];
+}
+
+/**
+ * @param  array<string, mixed>  $spec
+ * @param  array{workspace_slug?: string}  $expected
+ */
+function app_runtime_manager_workspace_slug_matches(array $spec, array $expected): bool
+{
+    if (! array_key_exists('workspace_slug', $expected)) {
+        return true;
+    }
+
+    return ($spec['workspace_slug'] ?? null) === $expected['workspace_slug'];
 }
 
 /**
@@ -374,6 +459,37 @@ function app_runtime_manager_workspace_container(): WorkspaceRuntimeContainer
     );
 }
 
+function app_runtime_manager_macos_workspace_container(): WorkspaceRuntimeContainer
+{
+    return new WorkspaceRuntimeContainer(
+        name: 'orbit-ws-happie-smoke',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: 'happie',
+        workspaceSlug: 'smoke',
+        environment: [
+            'APP_ENV' => 'local',
+        ],
+        mounts: [
+            [
+                'source' => '/Users/nckrtl/apps/happie/.worktrees/smoke',
+                'target' => WorkspaceRuntimeContainer::SourceTarget,
+                'read_only' => false,
+            ],
+            [
+                'source' => '/Users/nckrtl/.config/orbit/workspaces/happie-smoke.ini',
+                'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
+                'read_only' => true,
+            ],
+        ],
+        networkAliases: ['happie-smoke'],
+        phpIni: [
+            'memory_limit' => '512M',
+        ],
+    );
+}
+
 function app_runtime_manager_ca(): OrbitCaService
 {
     return new readonly class extends OrbitCaService {
@@ -437,9 +553,6 @@ function app_runtime_manager_operation_secret(): string
     return implode('-', ['gateway', 'secret']);
 }
 
-/**
- * @mago-expect lint:file-name
- */
 final class AppRuntimeManagerUnusedTransport implements RemoteExecutor
 {
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
@@ -454,7 +567,7 @@ final class AppRuntimeManagerUnusedTransport implements RemoteExecutor
 }
 
 /**
- * @mago-expect lint:file-name
+ * @mago-expect lint:single-class-per-file
  */
 final class AppRuntimeManagerRecordingTransport implements RemoteExecutor
 {

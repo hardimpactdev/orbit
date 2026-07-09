@@ -17,6 +17,7 @@ use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -28,8 +29,6 @@ use Throwable;
 
 final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternalCommands
 {
-    private const string LOCAL_EXECUTOR_HOME = '/home/orbit';
-
     private const string OPERATION_ID_METADATA_KEY = 'ORBIT_OPERATION_ID';
 
     private const int OUTPUT_SUMMARY_BYTES = 4_096;
@@ -166,7 +165,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                         dispatch: $dispatch,
                         transportOptions: $transportOptions,
                     ),
-                    options: $this->transportDispatchOptions($transportOptions),
+                    options: $this->transportDispatchOptions($node, $transportOptions),
                 )
                 : $this->runAgentPush(
                     node: $node,
@@ -509,7 +508,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             options: $commandOptions,
             operationToken: OperationTokenCommandContext::OPERATION_TOKEN_SENTINEL,
         );
-        $environment = $this->localExecutorEnvironment($transportOptions);
+        $environment = $this->localExecutorEnvironment($node, $transportOptions);
 
         $operationToken = $this->operationTokens
             ->mint(
@@ -1225,7 +1224,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             );
         }
 
-        $environment = $this->localExecutorEnvironment($transportOptions);
+        $environment = $this->localExecutorEnvironment($node, $transportOptions);
 
         if (array_key_exists('APP_KEY', $environment)) {
             throw new RuntimeException(
@@ -1487,9 +1486,9 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     force_remote_host?: bool,
      * }
      */
-    private function transportDispatchOptions(array $transportOptions): array
+    private function transportDispatchOptions(Node $node, array $transportOptions): array
     {
-        $environment = $this->localExecutorEnvironment($transportOptions);
+        $environment = $this->localExecutorEnvironment($node, $transportOptions);
 
         unset(
             $transportOptions['redact_stdout'],
@@ -1526,10 +1525,10 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      * @param  array<string, mixed>  $transportOptions
      * @return array<string, string>
      */
-    private function localExecutorEnvironment(array $transportOptions): array
+    private function localExecutorEnvironment(Node $node, array $transportOptions): array
     {
         $environment = $this->transportEnvironment($transportOptions);
-        $home = $environment['HOME'] ?? self::LOCAL_EXECUTOR_HOME;
+        $home = $environment['HOME'] ?? $this->defaultLocalExecutorHome($node);
 
         $environment['HOME'] = $home;
         $environment['ORBIT_CONFIG_PATH'] ??= "{$home}/.config/orbit/config.json";
@@ -1541,6 +1540,11 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         }
 
         return $environment;
+    }
+
+    private function defaultLocalExecutorHome(Node $node): string
+    {
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user);
     }
 
     /**
@@ -1576,7 +1580,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             argv: $dispatch['argv'],
             input: $this->input($transportOptions),
             cwd: $this->cwd($transportOptions),
-            environment: $this->localExecutorEnvironment($transportOptions),
+            environment: $this->localExecutorEnvironment($node, $transportOptions),
             timeoutSeconds: $this->timeoutSeconds($transportOptions),
         );
         $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
@@ -1609,7 +1613,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             argv: $dispatch['argv'],
             input: $this->input($transportOptions),
             cwd: $this->cwd($transportOptions),
-            environment: $this->localExecutorEnvironment($transportOptions),
+            environment: $this->localExecutorEnvironment($node, $transportOptions),
             timeoutSeconds: $this->streamTimeoutSeconds($transportOptions),
             stream: true,
         );
