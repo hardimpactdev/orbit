@@ -19,6 +19,7 @@ enum InternalCommand: string
     case AppRuntimeContainersProbe = 'internal:app-runtime-containers:probe';
     case AppRuntimeExtensionsProbe = 'internal:app-runtime-extensions:probe';
     case AppSecurityRepair = 'internal:app-security:repair';
+    case AppSetupStep = 'internal:app-setup-step';
     case AppSourceCreate = 'internal:app-source:create';
     case AppSourcePathProbe = 'internal:app-source-path:probe';
     case AppWorkerReadinessProbe = 'internal:app-worker-readiness:probe';

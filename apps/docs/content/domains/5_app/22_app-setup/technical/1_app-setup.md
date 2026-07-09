@@ -38,8 +38,9 @@ This command follows the shared
 4. Returns the latest completed run when its step-set hash matches.
 5. Creates a setup run when execution is needed.
 6. Routes setup commands through the app user's host tool path, including the app host PHP toolchain for PHP commands.
-7. Stops at the first failed setup step.
-8. Stores per-step result status and captured output.
+7. Dispatches each routed setup command through typed `internal:app-setup-step` over agent-push on agent-capable nodes. Setup environment values travel only in the token-bound stdin payload, not in transport metadata or activity summaries.
+8. Stops at the first failed setup step.
+9. Stores per-step result status and captured output.
 
 ### Setup Step Environment
 
@@ -91,4 +92,5 @@ runs. App runtime drift remains owned by [`doctor --family=app`](../../app-docto
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppSetupCommandTest.php` | CLI request shape, stream mode, validation, and rendering. |
 | `apps/gateway/tests/Feature/Http/Api/AppSetupControllerTest.php` | API setup execution, idempotent skip, and authorization. |
-| `apps/gateway/tests/Unit/Services/Apps/AppSetupStepRunnerTest.php` | Step routing, output capture, failure stop, and run status. |
+| `apps/gateway/tests/Unit/Services/Apps/AppSetupStepRunnerTest.php` | Step routing, agent-push dispatch, output capture, failure stop, and run status. |
+| `apps/cli/tests/Feature/InternalAppSetupStepCommandTest.php` | Token rejection, payload validation, success/failure output capture, timeout handling, and forbidden env keys. |

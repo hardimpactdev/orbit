@@ -80,6 +80,7 @@ use App\Commands\Internal\AppRuntimeConfigsProbeCommand;
 use App\Commands\Internal\AppRuntimeContainersProbeCommand;
 use App\Commands\Internal\AppRuntimeExtensionsProbeCommand;
 use App\Commands\Internal\AppSecurityRepairCommand;
+use App\Commands\Internal\AppSetupStepCommand;
 use App\Commands\Internal\AppSourceCreateCommand;
 use App\Commands\Internal\AppSourcePathProbeCommand;
 use App\Commands\Internal\AppWorkerReadinessProbeCommand;
@@ -434,6 +435,7 @@ return [
         WireGuardSelfRouteCommand::class,
         WorkspaceAdapterLookupCommand::class,
         WorkspaceAdapterUpdateCommand::class,
+        AppSetupStepCommand::class,
         WorkspaceSetupStepCommand::class,
         WorkspaceSourceCreateCommand::class,
     ],

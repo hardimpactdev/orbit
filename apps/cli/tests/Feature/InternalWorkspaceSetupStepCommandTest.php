@@ -59,6 +59,33 @@ describe('internal workspace setup step command', function (): void {
             ->toBe("happie:{$resolvedCwd}");
     });
 
+    it('rejects forbidden setup environment keys', function (string $key): void {
+        [$exitCode, $output] = run_internal_workspace_setup_step_command(
+            [
+                '--operation-token' => workspace_setup_step_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'command' => 'echo ok',
+                'cwd' => '/tmp',
+                'timeout' => 60,
+                'environment' => [
+                    $key => 'secret',
+                ],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'] ?? null)
+            ->toBe('validation_failed');
+    })->with([
+        'app key' => ['APP_KEY'],
+        'agent push authorized command' => ['ORBIT_AGENT_PUSH_AUTHORIZED_COMMAND'],
+    ]);
+
     it('captures non-zero setup command exits as successful internal responses', function (): void {
         [$exitCode, $output] = run_internal_workspace_setup_step_command(
             [

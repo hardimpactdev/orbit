@@ -49,6 +49,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
         InternalCommand::AppSourceCreate->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::AppSourcePathProbe->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::AppSecurityRepair->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
+        InternalCommand::AppSetupStep->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::AppWorkerReadinessProbe->value => [NodeRoleName::AppDevelopment, NodeRoleName::AppProduction],
         InternalCommand::CaddyConfig->value => [
             NodeRoleName::Gateway,

@@ -397,7 +397,8 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Actions/Workspaces/RemoveWorkspace.php:73,87,106` | `RemoteHostExecutor` | Removes process units, runs teardown commands, and removes host worktree paths. |
 | `apps/gateway/app/Actions/Workspaces/SetupWorkspace.php:330,342` | `RemoteHostExecutor` | Installs host process artifacts and starts process runtime units. |
 | `apps/gateway/app/Services/AgentIde/CoreAgentIdeWorkspacePathResolver.php:36,70` | `RemoteLocalExecutor` | Current OpenCode/Polyscope lookup scripts use host Python/SQLite; adapter state lookup must move into token-gated local executor logic. |
-| `apps/gateway/app/Services/Apps/AppRuntimeContainerManager.php:386` | `RemoteHostExecutor` | Creates, inspects, removes, and starts app runtime containers through Docker. |
+| `apps/gateway/app/Services/Apps/AppRuntimeContainerManager.php` | `RemoteLocalExecutor` / `RemoteHostExecutor` | Normal path dispatches typed `internal:app-runtime-container` actions over agent-push; explicit transitional SSH fallback remains for operator recovery when agent-push is unavailable. |
+| `apps/gateway/app/Services/Apps/AppSetupStepRunner.php` | `RemoteLocalExecutor` / `RemoteHostExecutor` | Normal path dispatches routed setup commands through typed `internal:app-setup-step` over agent-push with token-bound stdin payloads; explicit transitional SSH fallback remains for recovery. |
 | `apps/gateway/app/Services/Apps/AppsFixer.php:170` | `RemoteHostExecutor` | Repairs app host/runtime artifacts from gateway intent. |
 | `apps/gateway/app/Services/Apps/AppsProbe.php:81,316,456` | `RemoteHostExecutor` | Uses POSIX/Docker host probes for app paths, runtime configs, and runtime containers. |
 | `apps/gateway/app/Services/Apps/AppWorkerReadiness.php:63` | `RemoteHostExecutor` | Checks app worker/readiness artifacts on the host/runtime boundary. |
@@ -450,8 +451,8 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php:19,74,91` | `RemoteHostExecutor` | Checks and renames the workspace Git branch in the host workspace path. |
 | `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceBranchAligner.php:19,96,99` | `RemoteLocalExecutor` | Mutates Polyscope SQLite adapter state; the current Python/SQLite helper must move to token-gated local executor logic. |
 | `apps/gateway/app/Services/Workspaces/PolyscopeWorkspaceDriver.php:143` | `RemoteLocalExecutor` | Current Polyscope config lookup uses host Python/SQLite; adapter state lookup must move into token-gated local executor logic. |
-| `apps/gateway/app/Services/Workspaces/WorkspaceRuntimeContainerManager.php:354` | `RemoteHostExecutor` | Creates, inspects, removes, and starts workspace runtime containers through Docker. |
-| `apps/gateway/app/Services/Workspaces/WorkspaceSetupStepRunner.php:53` | `RemoteHostExecutor` / `RemoteLocalExecutor` | Dispatches setup steps through the selected app user's host tool PATH against the workspace source path; PHP apps include the versioned host PHP toolchain and managed user tools such as `vp`. |
+| `apps/gateway/app/Services/Workspaces/WorkspaceRuntimeContainerManager.php` | `RemoteLocalExecutor` / `RemoteHostExecutor` | Normal path dispatches typed `internal:app-runtime-container` workspace actions over agent-push; explicit transitional SSH fallback remains for operator recovery when agent-push is unavailable. |
+| `apps/gateway/app/Services/Workspaces/WorkspaceSetupStepRunner.php` | `RemoteLocalExecutor` / `RemoteHostExecutor` | Normal path dispatches routed setup commands through typed `internal:workspace-setup-step` over agent-push with token-bound stdin payloads; explicit transitional SSH fallback remains for recovery. |
 | `apps/gateway/app/Services/Workspaces/WorkspacesProbe.php:102` | `RemoteHostExecutor` | Probes workspace host path, user, and filesystem state; current host PHP helper must be rewritten as host-substrate shell. |
 | `apps/gateway/app/Services/Workspaces/WorktreeWorkspaceDriver.php:23` | `RemoteHostExecutor` | Creates host git worktrees. |
 

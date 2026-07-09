@@ -157,7 +157,8 @@ authorization decision.
    - Hands proxy backend artifact convergence to the `proxy` family.
 4. **Setup Steps** (`phase=setup_steps`):
    - Reads configured setup step definitions for the parent app.
-   - Executes steps sequentially in the workspace directory on the node.
+   - Executes steps sequentially in the workspace directory on the node through typed `internal:workspace-setup-step` over agent-push on agent-capable nodes.
+   - Setup environment values travel only in the token-bound stdin payload, not in transport metadata or activity summaries.
    - Steps receive the lifecycle environment defined in the
      [Workspaces README](../../README.md#lifecycle-step-environment).
 5. **Processes** (`phase=processes`):
@@ -273,7 +274,8 @@ all documented command failures exit with the standard command failure status
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path and parent-app-root rejection before side effects. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
 | `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |
-| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, agent-push dispatch, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
+| `apps/cli/tests/Feature/InternalWorkspaceSetupStepCommandTest.php` | Token rejection, payload validation, success/failure output capture, and forbidden env keys. |
 | `apps/e2e/tests/Feature/Commands/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
 
 Role-specific behavior and test mapping live in:

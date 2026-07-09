@@ -1427,6 +1427,7 @@
             },
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/App/AppSetupCommandTest.php",
+                "apps/cli/tests/Feature/InternalAppSetupStepCommandTest.php",
                 "apps/gateway/tests/Feature/Http/Api/AppSetupControllerTest.php",
                 "apps/gateway/tests/Unit/Services/Apps/AppSetupStepRunnerTest.php"
             ],
@@ -1437,6 +1438,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/App/AppSetupCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppSetupCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalAppSetupStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalAppSetupStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalAppSetupStepCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppSetupControllerTest.php",
@@ -13898,6 +13906,7 @@
             "linked_test_files": [
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php",
+                "apps/cli/tests/Feature/InternalWorkspaceSetupStepCommandTest.php",
                 "apps/e2e/tests/Feature/Commands/WorkspaceSetupTest.php",
                 "apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php",
                 "apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php",
@@ -13917,6 +13926,13 @@
                     "runner": "bin/orbit-cli-pest",
                     "runner_test_path": "tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php",
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php"
+                },
+                {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalWorkspaceSetupStepCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalWorkspaceSetupStepCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalWorkspaceSetupStepCommandTest.php"
                 },
                 {
                     "repo_test_path": "apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php",

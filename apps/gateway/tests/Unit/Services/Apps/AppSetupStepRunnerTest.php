@@ -8,10 +8,20 @@ use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
 use App\Models\Node;
+use App\Services\ActivityLogCorrelation;
+use App\Services\ActivityLogger;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppSetupStepRunner;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Operations\OperationRunRecorder;
+use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Security\OperationTokenSigner;
+use Tests\Fakes\WorkspaceSetupStepRunnerExecutorTransport;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -163,7 +173,7 @@ it('fails fast on the first failed setup step and records output', function (): 
         ->toContain('boom');
 });
 
-it('requires explicit transitional ssh fallback before running app setup commands', function (): void {
+it('requires a local executor or explicit transitional ssh fallback before running app setup commands', function (): void {
     $app = createAppSetupRunnerTestApp();
     $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
     $shell = new AppSetupStepRunnerTestShell;
@@ -187,5 +197,267 @@ it('requires explicit transitional ssh fallback before running app setup command
         ->and($runStep?->exit_code)
         ->toBe(1)
         ->and($runStep?->output)
-        ->toContain('requires explicit --node-transport=transitional-ssh-fallback');
+        ->toContain('requires an Orbit Agent capable node or explicit --node-transport=transitional-ssh-fallback');
+});
+
+function app_setup_step_runner_local_executor(
+    WorkspaceSetupStepRunnerExecutorTransport $transport,
+): RemoteLocalExecutor {
+    return new RemoteLocalExecutor(
+        transport: $transport,
+        commands: new LocalExecutorCommandBuilder,
+        operationTokens: new OperationTokenFactory(
+            signer: new OperationTokenSigner,
+            secret: app_setup_step_runner_signing_key(),
+            ttlSeconds: 120,
+            clock: static fn (): int => 1_798_105_200,
+        ),
+        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
+        operationRuns: app(OperationRunRecorder::class),
+        applicationKey: app_setup_step_runner_signing_key(),
+        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
+    );
+}
+
+function app_setup_step_runner_signing_key(): string
+{
+    return hash('sha256', AppSetupStepRunner::class);
+}
+
+it('runs setup steps through the local executor by default for agent capable nodes', function (): void {
+    $app = createAppSetupRunnerTestApp();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+        ]);
+    $app->setRelation('node', $node);
+    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $shell = new AppSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success([
+            'exit_code' => 0,
+            'stdout' => "installed\n",
+            'stderr' => '',
+            'duration_ms' => 12,
+        ]), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 14,
+    ));
+
+    $runner = new AppSetupStepRunner(
+        remoteShell: $shell,
+        commandRouter: app(AppCommandRouter::class),
+        localExecutor: app_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
+    ];
+
+    $result = $runner->run($run, $steps, $app, $node, ['ORBIT_APP' => 'docs']);
+
+    $runStep = $run->runSteps()->first();
+
+    expect($result)
+        ->toBeTrue()
+        ->and($shell->runs)
+        ->toBeEmpty()
+        ->and($transport->runs)
+        ->toHaveCount(1)
+        ->and($transport->runs[0]['script'])
+        ->toContain('internal:app-setup-step')
+        ->and($transport->runs[0]['script'])
+        ->toContain('--operation-token=')
+        ->and($runStep?->exit_code)
+        ->toBe(0)
+        ->and($runStep?->output)
+        ->toBe("installed\n");
+});
+
+it('routes php setup commands before dispatching through the local executor', function (): void {
+    $app = createAppSetupRunnerTestApp();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+            'user' => 'orbit',
+        ]);
+    $app->setRelation('node', $node);
+    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $shell = new AppSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success([
+            'exit_code' => 0,
+            'stdout' => "installed\n",
+            'stderr' => '',
+            'duration_ms' => 12,
+        ]), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 14,
+    ));
+
+    $runner = new AppSetupStepRunner(
+        remoteShell: $shell,
+        commandRouter: app(AppCommandRouter::class),
+        localExecutor: app_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'composer install', 'sort_order' => 1]),
+    ];
+
+    $result = $runner->run($run, $steps, $app, $node, ['ORBIT_APP' => 'docs']);
+
+    $payload = json_decode(
+        (string) $transport->runs[0]['options']['input'],
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($result)
+        ->toBeTrue()
+        ->and($payload['command'])
+        ->toContain("'sudo'")
+        ->toContain('/opt/orbit/php/')
+        ->toContain('/home/orbit/.local/bin')
+        ->toContain('/home/orbit/.vite-plus/bin')
+        ->toContain('composer install')
+        ->and($payload['cwd'])
+        ->toBe('/home/orbit/apps/docs');
+});
+
+it('fails fast on a non-zero local executor setup step and records output', function (): void {
+    $app = createAppSetupRunnerTestApp();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+            'user' => 'orbit',
+        ]);
+    $app->setRelation('node', $node);
+    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $shell = new AppSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => 7,
+                'stdout' => 'failed',
+                'stderr' => 'boom',
+                'duration_ms' => 12,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 14,
+        ),
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => 0,
+                'stdout' => 'skipped',
+                'stderr' => '',
+                'duration_ms' => 12,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 14,
+        ),
+    );
+
+    $runner = new AppSetupStepRunner(
+        remoteShell: $shell,
+        commandRouter: app(AppCommandRouter::class),
+        localExecutor: app_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'exit 7', 'sort_order' => 1]),
+        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'echo skipped', 'sort_order' => 2]),
+    ];
+
+    $result = $runner->run($run, $steps, $app, $node, []);
+
+    $run->refresh();
+    $runStep = $run->runSteps()->first();
+
+    expect($result)
+        ->toBeFalse()
+        ->and($shell->runs)
+        ->toBeEmpty()
+        ->and($transport->runs)
+        ->toHaveCount(1)
+        ->and($run->status)
+        ->toBe('failed')
+        ->and($runStep?->exit_code)
+        ->toBe(7)
+        ->and($runStep?->output)
+        ->toContain('failed')
+        ->and($runStep?->output)
+        ->toContain('boom');
+});
+
+it('does not place setup environment values in transport metadata for agent-push dispatch', function (): void {
+    $app = createAppSetupRunnerTestApp();
+    $node = Node::factory()
+        ->appDev()
+        ->orbitAgentCapable()
+        ->create([
+            'name' => 'agent-node',
+            'host' => 'agent-node',
+        ]);
+    $app->setRelation('node', $node);
+    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
+    $shell = new AppSetupStepRunnerTestShell;
+    $transport = new WorkspaceSetupStepRunnerExecutorTransport(new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode(JsonEnvelope::success([
+            'exit_code' => 0,
+            'stdout' => "ok\n",
+            'stderr' => '',
+            'duration_ms' => 12,
+        ]), JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 14,
+    ));
+
+    $runner = new AppSetupStepRunner(
+        remoteShell: $shell,
+        commandRouter: app(AppCommandRouter::class),
+        localExecutor: app_setup_step_runner_local_executor($transport),
+    );
+
+    $steps = [
+        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
+    ];
+
+    $environment = [
+        'ORBIT_APP' => 'docs',
+        'VITE_APP_URL' => 'https://docs.test',
+    ];
+
+    $runner->run($run, $steps, $app, $node, $environment);
+
+    $metadata = $transport->runs[0]['options']['metadata'] ?? [];
+    $payload = json_decode(
+        (string) ($transport->runs[0]['options']['input'] ?? ''),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($metadata)
+        ->toBe(['ORBIT_OPERATION_ID' => 'app-setup-step'])
+        ->and($payload['environment']['VITE_APP_URL'] ?? null)
+        ->toBe('https://docs.test')
+        ->and($transport->runs[0]['script'])
+        ->toContain('--operation-token=')
+        ->and($transport->runs[0]['script'])
+        ->not->toContain('https://docs.test')->and($transport->runs[0]['script'])
+        ->not->toContain(app_setup_step_runner_signing_key());
 });
