@@ -190,7 +190,7 @@ describe('database connection api', function (): void {
         expect($response->getContent())
             ->not->toContain('never-print-me')->and($shell->script)
             ->not->toContain('never-print-me')->and($shell->script)->toContain(
-                '/usr/local/bin/orbit internal:database-query-local',
+                '/home/orbit/.local/bin/orbit\' internal:database-query-local',
             )->and($shell->options)->toHaveKey('input');
     });
 

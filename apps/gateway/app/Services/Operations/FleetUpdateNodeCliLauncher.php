@@ -14,11 +14,7 @@ final class FleetUpdateNodeCliLauncher
 {
     public static function binPath(Node $node): string
     {
-        if (NodeHostPaths::isMacosPlatform($node->platform)) {
-            return NodeHostPaths::homeDirectoryFor($node->platform, $node->user).'/.local/bin/orbit';
-        }
-
-        return '/usr/local/bin/orbit';
+        return NodeHostPaths::homeDirectoryFor($node->platform, $node->user).'/.local/bin/orbit';
     }
 
     public static function shouldVerifyRoleImages(Node $node): bool

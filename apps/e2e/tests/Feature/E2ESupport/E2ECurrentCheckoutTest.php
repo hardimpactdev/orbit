@@ -48,6 +48,19 @@ it('keeps explicit source-mounted docker checkout paths', function (): void {
     expect($method->invoke(null, $instance, 'orbit', true))->toBe('/home/orbit/orbit');
 });
 
+it('prepares owner-local launchers for source-mounted retained topology checkouts', function (): void {
+    $method = new ReflectionMethod(E2ECurrentCheckout::class, 'ownerLocalLauncherActivationCommand');
+
+    $command = $method->invoke(null, '/home/orbit/orbit-run', 'orbit');
+
+    expect($command)
+        ->toContain('/home/orbit/.local/bin')
+        ->toContain('/home/orbit/.local/bin/orbit')
+        ->toContain('/home/orbit/.config/orbit/install.json')
+        ->toContain('/home/orbit/orbit-run/bin/orbit')
+        ->toContain('{"bin_path":"\/home\/orbit\/.local\/bin\/orbit"}');
+});
+
 it('passes Docker gateway state environment through the current checkout wrapper', function (): void {
     $script = E2ECurrentCheckout::orbitWrapperScript('/home/orbit/orbit-current', dockerRuntime: true);
 

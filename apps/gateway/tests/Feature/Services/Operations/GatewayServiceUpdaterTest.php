@@ -151,6 +151,12 @@ it('updates gateway and scheduler services to the plan image after target image 
         ->toBeTrue()
         ->and($localExecutor->calls[0]['options']['cwd'] ?? null)
         ->toBe('/home/orbit')
+        ->and($localExecutor->calls[0]['options']['environment'] ?? null)
+        ->toBe([
+            'HOME' => '/home/orbit',
+            'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+            'ORBIT_INSTALL_METADATA_PATH' => '/home/orbit/.config/orbit/install.json',
+        ])
         ->and($localExecutor->calls[0]['options']['bind_application_key'] ?? null)
         ->toBeFalse()
         ->and($localExecutor->calls[0]['options']['bind_input'] ?? null)
@@ -170,16 +176,16 @@ it('updates gateway and scheduler services to the plan image after target image 
             'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
             'sha256' => str_repeat('c', times: 64),
             'install_root' => '/home/orbit/orbit',
-            'bin_path' => '/usr/local/bin/orbit',
+            'bin_path' => '/home/orbit/.local/bin/orbit',
             'shared_binary_path' => null,
             'agent_artifact' => [
                 'artifact_url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-agent-linux-x64',
                 'sha256' => str_repeat('d', times: 64),
-                'bin_path' => '/usr/local/bin/orbit-agent',
+                'bin_path' => '/home/orbit/.local/bin/orbit-agent',
             ],
             'agent_service' => [
                 'unit_name' => 'orbit-agent',
-                'exec_start' => '/usr/local/bin/orbit-agent',
+                'exec_start' => '/home/orbit/.local/bin/orbit-agent',
                 'config_path' => "{$this->configRoot}/agent.toml",
                 'http_bind' => '10.6.0.2:9477',
                 'user' => 'orbit',

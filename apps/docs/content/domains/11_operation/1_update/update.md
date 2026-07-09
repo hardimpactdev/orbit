@@ -5,8 +5,8 @@
 Update the local Orbit installation on the machine where the command is invoked.
 
 This command is the local update path. In production artifact installs it
-updates the native Orbit CLI binary. In source-dev Docker and Incus
-development/E2E topologies it keeps
+updates the configured owner user's native Orbit CLI binary and user-local
+launcher. In source-dev Docker and Incus development/E2E topologies it keeps
 `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit` and updates by
 changing the mounted source. It does not update the gateway service, other
 nodes, or repair fleet drift. Gateway service replacement belongs to
@@ -48,9 +48,10 @@ orbit update --json
    Fleet updates can use the same release manifest to select an Orbit Agent
    artifact for an agent-capable Linux node. `orbit update` itself still updates
    only the current host CLI installation.
-4. Keep the host `orbit` launcher pointed at the correct local entry point
-   (updated binary artifact in production, mounted source entry point in
-   source-mounted lanes).
+4. Keep the configured owner-user `orbit` launcher pointed at the correct local
+   entry point (updated binary artifact in production, mounted source entry
+   point in source-mounted lanes). Production self-update does not discover or
+   rewrite protected legacy launchers such as `/usr/local/bin/orbit`.
 5. Run `orbit doctor` in verify mode for the local node and report the issue
    count without failing an otherwise completed binary update.
 6. Report the local update result.
@@ -84,7 +85,7 @@ metadata.
 - Production artifact installs require a reachable release source (GitHub
   Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
   artifact scenarios) plus permission to write the binary and update the
-  user-local host launcher link.
+  owner-user local host launcher link.
 - Source-mounted Docker/Incus development and E2E lanes require access to the
   mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.

@@ -40,16 +40,22 @@ Each term below has a precise meaning in the node command family.
 - **Gateway-coupled infrastructure role:** Separate role assignment that is
   coupled to the `gateway` role in v1, so bootstrap assigns it together with
   `gateway` and normal `node role:*` commands cannot manage it independently.
-- **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
-  only resolves the repo root and execs the CLI source entrypoint.
-  Production installs still use the native Orbit CLI binary artifact.
+- **Orbit launcher:** Host `orbit` wrapper installed in the configured Orbit
+  owner user's path. It only resolves the repo root and execs the CLI source
+  entrypoint. Production installs still use the native Orbit CLI binary
+  artifact, linked at `$HOME/.local/bin/orbit` for the owner user by default.
 
-  When a managed production node exposes a system-wide launcher such as
-  `/usr/local/bin/orbit`, that launcher resolves to a shared root-owned
-  executable under `/usr/local/lib/orbit/`. It must not point at a binary inside
-  a private runtime user's home directory. Unprivileged role runtimes such as
-  the `agent` user must be able to execute `orbit --version --local` without
-  gaining access to `/home/orbit`.
+  Each node has one configured Orbit owner user. That user owns the CLI
+  launcher, Orbit Agent binary, Orbit config, install metadata, and self-update
+  flow under `$HOME/.local/bin/` and `$HOME/.config/orbit/`. Unprivileged role
+  users such as the `agent` user are consumer users: provisioning exposes a
+  local shim such as `/home/agent/.local/bin/orbit` that executes
+  `/home/orbit/.local/bin/orbit` with `ORBIT_CONFIG_PATH` and
+  `ORBIT_INSTALL_METADATA_PATH` bound to the owner user's files. Consumer shims
+  can read the owner config required to run commands but do not own or update
+  the owner config or install metadata. Stale protected launchers such as
+  `/usr/local/bin/orbit` may be reported or explicitly adopted, but normal
+  update flows do not mutate them implicitly.
 
   Source-mounted Docker and Incus topologies are development and E2E lanes;
   there, `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`,

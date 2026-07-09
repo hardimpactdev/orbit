@@ -1135,6 +1135,7 @@ it('shares one 600 second timeout budget across split install phases', function 
         480,
         300,
         150,
+        60,
     ]);
 });
 

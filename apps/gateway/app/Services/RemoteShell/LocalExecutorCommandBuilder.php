@@ -512,11 +512,7 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             return trim($configuredBinary);
         }
 
-        if (NodeHostPaths::isMacosPlatform($targetNode->platform)) {
-            return NodeHostPaths::homeDirectoryFor($targetNode->platform, $targetNode->user).'/.local/bin/orbit';
-        }
-
-        return self::ORBIT_BINARY;
+        return NodeHostPaths::homeDirectoryFor($targetNode->platform, $targetNode->user).'/.local/bin/orbit';
     }
 
     private function ensureCommandNameIsValid(string $commandName): void

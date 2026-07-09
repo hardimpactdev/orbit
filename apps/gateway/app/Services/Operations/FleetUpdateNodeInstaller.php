@@ -8,7 +8,6 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\Nodes\NodeHostPaths;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
@@ -19,7 +18,6 @@ final readonly class FleetUpdateNodeInstaller
         private RunsInternalCommands $localExecutor,
         private OperationRunRecorder $operationRuns,
         private FleetUpdateInstallResultInspector $installResults,
-        private FleetUpdateLegacyMacosCliPayload $legacyMacosCliPayload,
     ) {}
 
     /**
@@ -48,26 +46,6 @@ final readonly class FleetUpdateNodeInstaller
         }
 
         if ($this->installResults->shouldRetryAgentInstallAfterCliSelfUpdate($result, $transportOptions['input'])) {
-            if (NodeHostPaths::isMacosPlatform($node->platform)) {
-                $this->operationRuns->appendStep(
-                    $operationRun->id,
-                    $eventKey,
-                    'running',
-                    'Refreshing legacy macOS Orbit CLI path',
-                );
-
-                $legacyTransportOptions = $this->legacyMacosCliPayload->transportOptionsFor($transportOptions);
-                $bridgeResult = $this->runCliInstallAllowingAgentRestartDisconnect(
-                    $node,
-                    $this->legacyMacosCliPayload->commandOptionsFor($commandOptions, $legacyTransportOptions),
-                    $legacyTransportOptions,
-                );
-
-                if (! $bridgeResult instanceof RemoteShellResult) {
-                    return null;
-                }
-            }
-
             $this->operationRuns->appendStep(
                 $operationRun->id,
                 $eventKey,

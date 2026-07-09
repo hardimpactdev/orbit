@@ -381,7 +381,7 @@ final class E2ECurrentCheckout
                     $hostLauncher,
                     sourceMountedCheckout: true,
                 );
-                self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
+                self::activateCurrentCheckout($instance, $user, $remotePath, $executorNodeIdentity, $hostLauncher);
                 $afterInstall?->__invoke($remotePath, true);
 
                 return $remotePath;
@@ -409,7 +409,7 @@ final class E2ECurrentCheckout
                 sourceMountedCheckout: true,
                 checkoutAlreadyPresent: true,
             );
-            self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
+            self::activateCurrentCheckout($instance, $user, $remotePath, $executorNodeIdentity, $hostLauncher);
             $afterInstall?->__invoke($remotePath, true);
 
             return $remotePath;
@@ -435,7 +435,7 @@ final class E2ECurrentCheckout
         try {
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
             self::runInstallPhases($instance, $user, $keyPair, $remotePath, $seedFrom, $timer, $hostLauncher);
-            self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
+            self::activateCurrentCheckout($instance, $user, $remotePath, $executorNodeIdentity, $hostLauncher);
             $afterInstall?->__invoke($remotePath, false);
 
             return $remotePath;
@@ -619,7 +619,7 @@ final class E2ECurrentCheckout
             self::runTimed($timer, 'checkout.copy', fn (): null => self::copyArchive($tarball, $instance));
 
             self::runInstallPhases($instance, $user, $keyPair, $basePath, $seedFrom, $timer, $hostLauncher);
-            self::activateCurrentCheckout($instance, $basePath, $executorNodeIdentity, $hostLauncher);
+            self::activateCurrentCheckout($instance, $user, $basePath, $executorNodeIdentity, $hostLauncher);
             $afterBaseInstall?->__invoke($basePath, false);
 
             self::$cachedBasePaths[$cacheKey] = $basePath;
@@ -643,7 +643,7 @@ final class E2ECurrentCheckout
             $cloneCheckout();
         }
 
-        self::activateCurrentCheckout($instance, $remotePath, $executorNodeIdentity, $hostLauncher);
+        self::activateCurrentCheckout($instance, $user, $remotePath, $executorNodeIdentity, $hostLauncher);
         $afterInstall?->__invoke($remotePath, false);
 
         return $remotePath;
@@ -651,10 +651,18 @@ final class E2ECurrentCheckout
 
     private static function activateCurrentCheckout(
         E2EInstance $instance,
+        string $user,
         string $remotePath,
         ?string $executorNodeIdentity = null,
         bool $hostLauncher = false,
     ): void {
+        E2ECommand::exec(
+            $instance,
+            self::ownerLocalLauncherActivationCommand($remotePath, $user),
+            'Could not prepare the source-mounted owner-user launcher.',
+            timeoutSeconds: 60,
+        );
+
         if ($hostLauncher) {
             E2ECommand::exec(
                 $instance,
@@ -1551,6 +1559,32 @@ final class E2ECurrentCheckout
         return null;
     }
 
+    private static function ownerLocalLauncherActivationCommand(string $remotePath, string $user): string
+    {
+        $home = "/home/{$user}";
+        $binPath = "{$home}/.local/bin/orbit";
+        $installMetadataPath = self::OrbitConfigRoot.'/install.json';
+
+        return implode(' && ', [
+            'sudo install -d -m 0755 -o '
+                .escapeshellarg($user)
+                .' -g '
+                .escapeshellarg($user)
+                .' '
+                .escapeshellarg("{$home}/.local/bin"),
+            'sudo install -d -m 0700 -o orbit -g orbit '.escapeshellarg(self::OrbitConfigRoot),
+            'sudo ln -sfn '.escapeshellarg("{$remotePath}/bin/orbit").' '.escapeshellarg($binPath),
+            'sudo chown -h '.escapeshellarg("{$user}:{$user}").' '.escapeshellarg($binPath),
+            'printf %s '
+                .escapeshellarg(json_encode(['bin_path' => $binPath], JSON_THROW_ON_ERROR))
+                .' | sudo tee '
+                .escapeshellarg($installMetadataPath)
+                .' >/dev/null',
+            'sudo chown orbit:orbit '.escapeshellarg($installMetadataPath),
+            'sudo chmod 0644 '.escapeshellarg($installMetadataPath),
+        ]);
+    }
+
     private static function hostLauncherActivationCommand(string $remotePath): string
     {
         return implode(' && ', [
@@ -1785,9 +1819,11 @@ final class E2ECurrentCheckout
             './apps/gateway/storage/pail',
             './apps/gateway/tests/E2E/.docker-feature-tests/*',
             './apps/gateway/tests/E2E/.incus-feature-tests/*',
+            './apps/agent/target',
             './apps/gateway/vendor',
             './apps/cli/vendor',
             './apps/docs/vendor',
+            './apps/macos/target',
         ];
     }
 

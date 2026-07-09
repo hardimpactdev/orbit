@@ -59,11 +59,18 @@ describe('internal agent acl ensure command', function (): void {
                 'installed_acl' => false,
                 'directory_acl_exit_code' => 0,
                 'binary_acl_exit_code' => 0,
+                'agent_binary_acl_exit_code' => 0,
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('setfacl --version')
-            ->toContain('sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin')
-            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary')
+            ->toContain(
+                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
+            )
+            ->toContain(
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+            )
+            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit')
+            ->not->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit-agent')
             ->not->toContain('apt-get update');
     });
 
@@ -86,8 +93,14 @@ describe('internal agent acl ensure command', function (): void {
             ->toContain('setfacl --version')
             ->toContain('sudo apt-get update')
             ->toContain('sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y acl')
-            ->toContain('sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin')
-            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary');
+            ->toContain(
+                'sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin /home/orbit/.config /home/orbit/.config/orbit /home/orbit/.local /home/orbit/.local/bin',
+            )
+            ->toContain(
+                'sudo setfacl -m u:agent:r-- /home/orbit/.config/orbit/config.json /home/orbit/.config/orbit/install.json',
+            )
+            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit')
+            ->not->toContain('sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit-agent');
     });
 });
 

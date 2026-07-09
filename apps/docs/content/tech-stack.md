@@ -152,12 +152,15 @@ CLI binary plus production images and validate the actual release artifacts.
 Production installs record local CLI install metadata at
 `$HOME/.config/orbit/install.json` by default, or `ORBIT_INSTALL_METADATA_PATH`
 when set, after the linked binary verifies. The production host launcher is
-`$HOME/.local/bin/orbit` by default, or `ORBIT_BIN_PATH` when set. Managed
-production nodes that expose `/usr/local/bin/orbit` publish the binary through
-a shared root-owned executable under `/usr/local/lib/orbit/` so unprivileged
-role users do not need traversal access to the installing user's home. `orbit
-version` reads that metadata to render the installed timestamp and falls back
-to the binary mtime for older installs.
+`$HOME/.local/bin/orbit` by default, or `ORBIT_BIN_PATH` when set. The same
+owner-user local model installs Orbit Agent at `$HOME/.local/bin/orbit-agent`
+and records update metadata in `$HOME/.config/orbit/install.json`. Extra Unix
+users such as the `agent` role user are consumer users, not second Orbit owners;
+they use managed shims that execute the owner user's CLI with
+`ORBIT_CONFIG_PATH` and `ORBIT_INSTALL_METADATA_PATH` bound to the owner config
+read-only. Stale protected launchers such as `/usr/local/bin/orbit` can be
+reported or explicitly adopted by deployment/doctor flows, but normal `update`
+and `update:all` flows do not mutate them implicitly.
 Host PHP is not an app/workspace runtime fallback and must not replace
 FrankenPHP app/workspace containers.
 
@@ -728,13 +731,12 @@ PHP, Composer, Git, or a source checkout. `app-dev` and `app-prod` production
 nodes install host PHP and Composer for app-source workflows; the Laravel
 installer installs on `app-dev` only. Production artifact installs link the
 host `orbit` launcher at `$HOME/.local/bin/orbit` by default; set
-`ORBIT_BIN_PATH` or pass `--bin` to choose another path. When that path is a
-system launcher under `/usr/local/bin/`, Orbit links it to a shared executable
-under `/usr/local/lib/orbit/` instead of to a private home-directory install
-root. In source-dev Docker and Incus topologies, `/usr/local/bin/orbit` points
-directly at `<source>/apps/cli/orbit`, the current checkout is mounted or
-copied into the topology, and mutable node-local Orbit state lives under
-`~/.config/orbit`.
+`ORBIT_BIN_PATH` or pass `--bin` to choose another path during explicit install
+or adoption. Normal `update` and `update:all` flows refresh the owner-user
+local launcher and do not mutate protected system launchers implicitly. In
+source-dev Docker and Incus topologies, `/usr/local/bin/orbit` points directly
+at `<source>/apps/cli/orbit`, the current checkout is mounted or copied into
+the topology, and mutable node-local Orbit state lives under `~/.config/orbit`.
 Internal executor commands verify operation tokens through the gateway API, and
 nodes do not store executor token signing material. The
 installer creates the local SQLite database where appropriate, enables SQLite

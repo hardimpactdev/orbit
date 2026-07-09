@@ -64,6 +64,9 @@ describe('internal agent user ensure command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('id -u agent')
             ->toContain('sudo -n passwd -l agent')
+            ->toContain('sudo -n install -d -m 0755 /home/agent/.local/bin')
+            ->toContain('sudo -n install -m 0755')
+            ->toContain('/home/agent/.local/bin/orbit')
             ->not->toContain('useradd');
     });
 
@@ -87,7 +90,9 @@ describe('internal agent user ensure command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('id -u agent')
             ->toContain('sudo -n useradd --create-home --shell /bin/bash agent')
-            ->toContain('sudo -n passwd -l agent');
+            ->toContain('sudo -n passwd -l agent')
+            ->toContain('sudo -n install -d -m 0755 /home/agent/.local/bin')
+            ->toContain('/home/agent/.local/bin/orbit');
     });
 });
 

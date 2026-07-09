@@ -32,9 +32,9 @@ use JsonException;
  * }
  * ```
  *
- * Owner model (D8): the file is owned by the invoking OS user. On nodes that means the `orbit`
- * system user; on developer Macs that means the operator's user. Multi-user nodes sharing one
- * Orbit install are out of scope.
+ * Owner model (D8): the file is owned by the Orbit owner OS user. On nodes that means the
+ * `orbit` system user; on developer Macs that means the operator's user. Consumer users may read
+ * the owner config through a read-only ACL, but writes still require owner-user control.
  *
  * Precedence (D13): env vars override JSON values. The precedence chain lives inside
  * `GatewayApiServiceProvider`'s binding closure for `GatewayApiClient`, not inside
@@ -93,7 +93,7 @@ final readonly class OrbitConfigStore
             throw new OrbitConfigStoreException("Config file is not readable: {$path}", 'config_unreadable');
         }
 
-        $this->assertOwnerAndPermissions($path);
+        $this->assertOwnerAndPermissions($path, forWrite: false);
 
         $contents = file_get_contents($path);
 
@@ -168,7 +168,7 @@ final readonly class OrbitConfigStore
         @chmod($directory, self::DIRECTORY_MODE);
 
         if (is_file($path)) {
-            $this->assertOwnerAndPermissions($path);
+            $this->assertOwnerAndPermissions($path, forWrite: true);
         }
 
         $config['schema_version'] = self::CURRENT_SCHEMA_VERSION;
@@ -438,7 +438,7 @@ final readonly class OrbitConfigStore
         ];
     }
 
-    private function assertOwnerAndPermissions(string $path): void
+    private function assertOwnerAndPermissions(string $path, bool $forWrite): void
     {
         $stat = @stat($path);
 
@@ -449,20 +449,23 @@ final readonly class OrbitConfigStore
         $ownerUid = $stat['uid'] ?? null;
         $processUid = function_exists('posix_geteuid') ? posix_geteuid() : null;
 
+        $mode = $stat['mode'] ?? null;
+        $perms = is_int($mode) ? $mode & 0o777 : null;
+
         if ($processUid !== null && $ownerUid !== null && $ownerUid !== $processUid) {
+            if (! $forWrite && ! is_writable($path) && ($perms === null || ($perms & 0o022) === 0)) {
+                return;
+            }
+
             throw new OrbitConfigStoreException(
                 "Config file {$path} is owned by another user (refusing for safety).",
                 'config_insecure_permissions',
             );
         }
 
-        $mode = $stat['mode'] ?? null;
-
         if (! is_int($mode)) {
             return;
         }
-
-        $perms = $mode & 0o777;
 
         if (($perms & 0o077) !== 0) {
             // Owner matches; silently tighten permissions.

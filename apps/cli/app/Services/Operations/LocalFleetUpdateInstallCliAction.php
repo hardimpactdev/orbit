@@ -174,7 +174,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             }
 
             restart_agent_service_if_present() {
-                agent_bin_path="${ORBIT_AGENT_BIN_PATH:-/usr/local/bin/orbit-agent}"
+                agent_bin_path="${ORBIT_AGENT_BIN_PATH:-$HOME/.local/bin/orbit-agent}"
                 systemctl_bin="$(find_command systemctl || true)"
 
                 if [ -n "$systemctl_bin" ]; then
@@ -479,7 +479,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             "$bin_path" --version --local
 
             if [ -n "${ORBIT_AGENT_ARTIFACT_URL:-}" ]; then
-                agent_bin_path="${ORBIT_AGENT_BIN_PATH:-/usr/local/bin/orbit-agent}"
+                agent_bin_path="${ORBIT_AGENT_BIN_PATH:-$HOME/.local/bin/orbit-agent}"
 
                 echo download_agent
                 download_artifact "$ORBIT_AGENT_ARTIFACT_URL" "$tmp/orbit-agent"

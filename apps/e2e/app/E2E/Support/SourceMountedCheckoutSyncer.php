@@ -308,6 +308,8 @@ final readonly class SourceMountedCheckoutSyncer
             './apps/gateway/storage/pail',
             './apps/gateway/tests/E2E/.docker-feature-tests',
             './apps/gateway/tests/E2E/.incus-feature-tests',
+            './apps/agent/target',
+            './apps/macos/target',
         ];
 
         $directories = [

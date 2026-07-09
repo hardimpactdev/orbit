@@ -49,10 +49,27 @@ final readonly class LocalAgentAclEnsure
             '/home/orbit',
             '/home/orbit/orbit',
             '/home/orbit/orbit/bin',
+            '/home/orbit/.config',
+            '/home/orbit/.config/orbit',
+            '/home/orbit/.local',
+            '/home/orbit/.local/bin',
         ], timeout: 30);
 
         if (! $directoryAcl->isSuccessful()) {
             throw new RuntimeException('Could not apply Orbit agent directory ACLs.');
+        }
+
+        $configAcl = $this->run([
+            'sudo',
+            'setfacl',
+            '-m',
+            'u:agent:r--',
+            '/home/orbit/.config/orbit/config.json',
+            '/home/orbit/.config/orbit/install.json',
+        ], timeout: 30);
+
+        if (! $configAcl->isSuccessful()) {
+            throw new RuntimeException('Could not apply Orbit agent config ACL.');
         }
 
         $binaryAcl = $this->run([
@@ -60,17 +77,29 @@ final readonly class LocalAgentAclEnsure
             'setfacl',
             '-m',
             'u:agent:r-x',
-            '/home/orbit/orbit/bin/orbit-binary',
+            '/home/orbit/.local/bin/orbit',
         ], timeout: 30);
 
         if (! $binaryAcl->isSuccessful()) {
             throw new RuntimeException('Could not apply Orbit agent binary ACL.');
         }
 
+        $agentBinaryAcl = $this->run([
+            'sh',
+            '-lc',
+            'if [ -e /home/orbit/.local/bin/orbit-agent ]; then exec sudo setfacl -m u:agent:r-x /home/orbit/.local/bin/orbit-agent; fi',
+        ], timeout: 30);
+
+        if (! $agentBinaryAcl->isSuccessful()) {
+            throw new RuntimeException('Could not apply Orbit agent binary ACL.');
+        }
+
         return [
             'installed_acl' => $installedAcl,
             'directory_acl_exit_code' => $directoryAcl->getExitCode(),
+            'config_acl_exit_code' => $configAcl->getExitCode(),
             'binary_acl_exit_code' => $binaryAcl->getExitCode(),
+            'agent_binary_acl_exit_code' => $agentBinaryAcl->getExitCode(),
         ];
     }
 

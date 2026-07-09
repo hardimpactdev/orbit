@@ -169,11 +169,16 @@ class GatewayServiceUpdater
             'payload-sha256' => $payloadSha256,
         ];
 
-        /** @var array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, force_remote_host: true, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
+        /** @var array{timeout: int, cwd: string, input: string, environment: array<string, string>, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, force_remote_host: true, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
             'cwd' => '/home/orbit',
             'input' => $installPayload,
+            'environment' => [
+                'HOME' => '/home/orbit',
+                'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+                'ORBIT_INSTALL_METADATA_PATH' => '/home/orbit/.config/orbit/install.json',
+            ],
             'metadata' => [
                 'ORBIT_OPERATION_ID' => $operationRun->id,
             ],
@@ -218,7 +223,7 @@ class GatewayServiceUpdater
 
     /**
      * @param  array{payload-file: string, payload-sha256: string}  $commandOptions
-     * @param  array{timeout: int, cwd: string, input: string, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, force_remote_host: true, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}}  $transportOptions
+     * @param  array{timeout: int, cwd: string, input: string, environment: array<string, string>, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, force_remote_host: true, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}}  $transportOptions
      */
     private function runCliInstall(Node $gatewayNode, array $commandOptions, array $transportOptions): RemoteShellResult
     {

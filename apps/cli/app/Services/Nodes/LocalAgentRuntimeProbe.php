@@ -10,9 +10,13 @@ final readonly class LocalAgentRuntimeProbe
 {
     private const string AGENT_USER = 'agent';
 
-    private const string ORBIT_BINARY = '/usr/local/bin/orbit';
+    private const string ORBIT_BINARY = '/home/agent/.local/bin/orbit';
 
-    private const string ORBIT_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+    private const string ORBIT_CONFIG_PATH = '/home/orbit/.config/orbit/config.json';
+
+    private const string ORBIT_INSTALL_METADATA_PATH = '/home/orbit/.config/orbit/install.json';
+
+    private const string ORBIT_PATH = '/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
 
     /**
      * @return array<string, mixed>
@@ -38,6 +42,8 @@ final readonly class LocalAgentRuntimeProbe
             '-H',
             '/usr/bin/env',
             'PATH='.self::ORBIT_PATH,
+            'ORBIT_CONFIG_PATH='.self::ORBIT_CONFIG_PATH,
+            'ORBIT_INSTALL_METADATA_PATH='.self::ORBIT_INSTALL_METADATA_PATH,
             self::ORBIT_BINARY,
             '--version',
             '--local',

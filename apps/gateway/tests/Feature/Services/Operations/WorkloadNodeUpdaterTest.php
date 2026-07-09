@@ -135,7 +135,10 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and($shell->updatedNodes())
         ->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
         ->and($shell->calls[0]['options']['metadata'])
-        ->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->toBe([
+            'ORBIT_OPERATION_ID' => $run->id,
+            'ORBIT_BIN_PATH' => '/home/orbit/.local/bin/orbit',
+        ])
         ->and($shell->calls[0]['command_options']['payload-file'] ?? null)
         ->toBe("/tmp/orbit-fleet-update-install-{$run->id}-agent-1.json")
         ->and($shell->calls[0]['command_options']['payload-sha256'] ?? null)
@@ -148,6 +151,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toBe([
             'HOME' => '/home/orbit',
             'ORBIT_CONFIG_PATH' => '/home/orbit/.config/orbit/config.json',
+            'ORBIT_INSTALL_METADATA_PATH' => '/home/orbit/.config/orbit/install.json',
         ])
         ->and($shell->calls[0]['options']['bind_application_key'] ?? null)
         ->toBeFalse()
@@ -181,7 +185,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
             'sha256' => str_repeat('e', times: 64),
             'install_root' => '/home/orbit/orbit',
-            'bin_path' => '/usr/local/bin/orbit',
+            'bin_path' => '/home/orbit/.local/bin/orbit',
             'shared_binary_path' => null,
             'role_images' => ['caddy:2.9-alpine'],
         ])
@@ -249,7 +253,7 @@ it('installs and records agent artifacts for agent-capable workload nodes', func
         ->toBe([
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/linux-amd64?token=fake",
             'sha256' => str_repeat('9', times: 64),
-            'bin_path' => '/usr/local/bin/orbit-agent',
+            'bin_path' => '/home/orbit/.local/bin/orbit-agent',
         ])
         ->and($node->fresh()->installed_agent)
         ->toBeInstanceOf(InstalledAgentArtifact::class)
@@ -319,7 +323,7 @@ it('installs macos agent artifacts into the user local agent binary path', funct
         ->toBe('https://artifacts.orbit/candidates/build/orbit-agent-macos-arm64');
 });
 
-it('retries agent artifact installs after an old cli installer ignores the agent payload', function (): void {
+it('retries agent artifact installs without refreshing legacy macos system launchers', function (): void {
     $oldInstallerResult = new RemoteShellResult(
         exitCode: 0,
         stdout: json_encode([
@@ -373,8 +377,9 @@ it('retries agent artifact installs after an old cli installer ignores the agent
     expect($results[0]['status'])
         ->toBe('completed')
         ->and($shell->updateScriptCallsFor('mini'))
-        ->toBe(3)
+        ->toBe(2)
         ->and(workloadUpdaterStepMessages($run))
+        ->not
         ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
         ->and(workloadUpdaterStepMessages($run))
         ->toContain(['workload.mini', 'running', 'Installing Orbit Agent artifact'])
@@ -449,12 +454,13 @@ it('records agent artifact installs when the retry disconnects during agent rest
         ->and($shell->updateScriptCallsFor('mini'))
         ->toBe(2)
         ->and(workloadUpdaterStepMessages($run))
+        ->not
         ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
         ->and($node->fresh()->installed_agent?->sha256)
         ->toBe(str_repeat('7', times: 64));
 });
 
-it('bridges stale macos agents that still resolve the legacy system orbit binary first', function (): void {
+it('does not bridge stale macos agents by mutating legacy system orbit launchers', function (): void {
     $oldInstallerResult = new RemoteShellResult(
         exitCode: 0,
         stdout: json_encode([
@@ -511,19 +517,20 @@ it('bridges stale macos agents that still resolve the legacy system orbit binary
     $payloads = workload_updater_install_payloads($shell, node: 'mini');
 
     expect($results[0]['status'])
-        ->toBe('completed')
+        ->toBe('failed')
+        ->and($results[0]['output'] ?? null)
+        ->toBe('Orbit Agent artifact install was not confirmed.')
         ->and($shell->updateScriptCallsFor('mini'))
-        ->toBe(3)
+        ->toBe(2)
         ->and($payloads[0]['bin_path'])
         ->toBe('/Users/nckrtl/.local/bin/orbit')
         ->and($payloads[1]['bin_path'])
-        ->toBe('/usr/local/bin/orbit')
-        ->and($payloads[2]['bin_path'])
         ->toBe('/Users/nckrtl/.local/bin/orbit')
         ->and(workloadUpdaterStepMessages($run))
+        ->not
         ->toContain(['workload.mini', 'running', 'Refreshing legacy macOS Orbit CLI path'])
-        ->and($node->fresh()->installed_agent?->sha256)
-        ->toBe(str_repeat('7', times: 64));
+        ->and($node->fresh()->installed_agent)
+        ->toBeNull();
 });
 
 it('skips agent artifacts for nodes that are not agent capable', function (): void {

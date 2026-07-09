@@ -64,7 +64,7 @@ describe('internal agent runtime probe command', function (): void {
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('id -u agent')
             ->toContain(
-                'sudo -n -u agent -H /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version --local',
+                'sudo -n -u agent -H /usr/bin/env PATH=/home/agent/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json /home/agent/.local/bin/orbit --version --local',
             );
     });
 });

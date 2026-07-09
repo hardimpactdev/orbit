@@ -159,6 +159,7 @@ final readonly class WorkloadNodeUpdater
             'environment' => [
                 'HOME' => $nodeHome,
                 'ORBIT_CONFIG_PATH' => "{$nodeHome}/.config/orbit/config.json",
+                'ORBIT_INSTALL_METADATA_PATH' => "{$nodeHome}/.config/orbit/install.json",
             ],
             'metadata' => $this->remoteShellMetadata($operationRun, $node),
             'transport' => NodeTransportPreference::TransitionalSshFallback,
@@ -260,9 +261,7 @@ final readonly class WorkloadNodeUpdater
             'artifact_url' => $artifact['url'],
             'sha256' => $artifact['sha256'],
             'install_root' => $installRoot,
-            'bin_path' => NodeHostPaths::isMacosPlatform($node->platform)
-                ? $this->hostPaths->homeDirectory($node).'/.local/bin/orbit'
-                : '/usr/local/bin/orbit',
+            'bin_path' => FleetUpdateNodeCliLauncher::binPath($node),
             'shared_binary_path' => null,
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'role_images' => $this->requiredRoleImages($plan, $node),
@@ -351,9 +350,7 @@ final readonly class WorkloadNodeUpdater
             'ORBIT_OPERATION_ID' => $operationRun->id,
         ];
 
-        if (NodeHostPaths::isMacosPlatform($node->platform)) {
-            $metadata['ORBIT_BIN_PATH'] = $this->hostPaths->homeDirectory($node).'/.local/bin/orbit';
-        }
+        $metadata['ORBIT_BIN_PATH'] = FleetUpdateNodeCliLauncher::binPath($node);
 
         return $metadata;
     }

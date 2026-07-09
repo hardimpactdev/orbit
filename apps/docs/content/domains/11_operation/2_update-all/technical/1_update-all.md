@@ -249,29 +249,30 @@ The expected target shape per calling context:
   the update still records the node as completed with an unknown doctor issue
   count. Operators run the normal post-update fleet doctor for release gating.
 - Production workload updates install the binary into the node user's Orbit
-  install root. macOS workload nodes use the node user's
-  `$HOME/.local/bin/orbit` launcher so self-managed app-dev machines do not
-  need privileged `/usr/local/bin` writes during fleet updates. When the host
-  launcher is system-wide under `/usr/local/bin/`, the remote update also
-  publishes the binary to a shared root-owned executable path under
-  `/usr/local/lib/orbit/` and links the system launcher there. This lets
-  unprivileged role users execute the CLI without traversing the node user's
-  home directory. The remote update may use non-interactive `sudo -n` only for
-  the shared copy and symlink replacement; it must fail rather than prompt.
+  install root and relink the configured owner user's
+  `$HOME/.local/bin/orbit` launcher. Managed Linux nodes usually use the
+  `orbit` owner user, while self-managed macOS nodes use the configured local
+  owner user such as `nckrtl`. Normal workload update flows do not write or
+  refresh protected launchers such as `/usr/local/bin/orbit`; stale protected
+  launchers are drift for doctor/deployment adoption, not implicit update
+  side effects.
 - Production workload updates verify the downloaded binary hash before install
   and verify the installed binary hash after relinking the launcher. The gateway
   writes `installed_cli` for that node only after the remote replacement command
   exits successfully.
 - When an Orbit Agent artifact is selected, the remote update verifies the
-  installed `orbit-agent` hash and restarts a managed `orbit-agent` service when
-  one is present. If no systemd or launchd service is present but an unmanaged
-  listener is running from the installed binary path, the update replaces that
-  listener with the new binary and preserves the configured Agent endpoint.
-- The remote update reconciles a shadowing launcher: when `orbit` resolves
-  through the node's `PATH` to a launcher other than the relinked one and that
-  launcher points at a different binary, it relinks that launcher to the new
-  binary too. Best-effort: an unwritable earlier path is left unchanged and the
-  node update continues.
+  installed owner-user local `orbit-agent` hash and restarts a managed
+  `orbit-agent` service when one is present. If no systemd or launchd service is
+  present but an unmanaged listener is running from the installed binary path,
+  the update replaces that listener with the new binary and preserves the
+  configured Agent endpoint.
+- Agent-role nodes may expose an `agent` Unix user for tools. That user is a
+  consumer user, not a second Orbit owner. Provisioning converges a shim such as
+  `/home/agent/.local/bin/orbit` that executes the owner user's CLI with
+  `ORBIT_CONFIG_PATH=/home/orbit/.config/orbit/config.json` and
+  `ORBIT_INSTALL_METADATA_PATH=/home/orbit/.config/orbit/install.json`. The
+  agent user needs read/execute access to run commands, but normal update flows
+  must not update owner config or install metadata as that consumer user.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts, Orbit Agent artifacts, and required role image
   metadata.

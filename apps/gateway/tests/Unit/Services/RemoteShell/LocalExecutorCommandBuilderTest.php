@@ -189,8 +189,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             )
             ->and($workloadCommand)
             ->toBe(
-                '/usr/local/bin/orbit'
-                ." internal:wg-easy:state 'state:list-users' --operation-token='{$operationToken}' --json",
+                escapeshellarg('/home/orbit/.local/bin/orbit')
+                    ." internal:wg-easy:state 'state:list-users' --operation-token='{$operationToken}' --json",
             );
     });
 
@@ -226,7 +226,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         );
 
         expect($command)->toBe(implode(' ', [
-            '/usr/local/bin/orbit',
+            escapeshellarg('/home/orbit/.local/bin/orbit'),
             'internal:workspace-adapter:lookup',
             escapeshellarg('two words'),
             escapeshellarg("quote'arg"),
@@ -256,7 +256,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         );
 
         expect($command)->toBe(implode(' ', [
-            '/usr/local/bin/orbit',
+            escapeshellarg('/home/orbit/.local/bin/orbit'),
             'internal:wg-easy:state',
             escapeshellarg('state:update-user'),
             '--user-id='.escapeshellarg('42'),
@@ -295,7 +295,7 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         );
 
         expect($auditLine)->toBe(implode(' ', [
-            '/usr/local/bin/orbit',
+            escapeshellarg('/home/orbit/.local/bin/orbit'),
             'internal:workspace-adapter:lookup',
             '--state-path='.escapeshellarg('/home/orbit/.polyscope/polyscope.db'),
             '--operation-token=<redacted>',

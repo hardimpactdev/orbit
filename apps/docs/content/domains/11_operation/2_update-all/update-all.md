@@ -66,7 +66,8 @@ orbit update:all --stream-json
    rest of the run.
 4. When outdated installations exist, the runner updates the gateway first as
    the fleet version ceiling, then fans out to the caller-local CLI and selected
-   workload nodes. Production installs update the native CLI binary artifact;
+   workload nodes. Production workload installs update the configured owner
+   user's native CLI binary artifact and `$HOME/.local/bin/orbit` launcher;
    source-dev topologies keep `/usr/local/bin/orbit` pointed at
    `<source>/apps/cli/orbit`.
    The same immutable update plan selects both the CLI artifact and Orbit Agent
@@ -132,14 +133,17 @@ the exact shape of both modes.
 - The gateway can launch a one-shot runner from the target `orbit-gateway`
   image with the Docker socket and gateway config root mounted.
 - Each selected workload installation has a writable Orbit install root and a
-  host `orbit` launcher or an equivalent Orbit CLI entry point local to the node.
+  writable owner-user local `orbit` launcher or an equivalent Orbit CLI entry
+  point local to the node.
 - The gateway requires access to the release or candidate CLI and Orbit Agent
   artifact sources referenced by the resolved manifest. Workload targets
   download binaries from the gateway's per-operation artifact endpoint, not
   directly from GitHub or the candidate source. Targets also need permission to
-  write the binary, update the user-local launcher link, and restart an existing
+  write the owner user's binary, update the owner-user local launcher link,
+  update the owner-user local `orbit-agent` binary, and restart an existing
   managed or unmanaged `orbit-agent` listener when the Agent artifact is
-  present.
+  present. Agent-role consumer users run through managed shims that bind the
+  owner config read-only; they are not separate update targets.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.

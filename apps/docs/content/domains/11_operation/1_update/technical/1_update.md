@@ -11,7 +11,7 @@
 - Production artifact installs require a reachable release source (GitHub
   Releases by default, or the `ORBIT_BINARY_URL` override for offline and E2E
   artifact scenarios) plus permission to write the binary and update the
-  user-local host launcher link.
+  owner-user local host launcher link.
 - Source-mounted Docker/Incus development and E2E lanes require access to the
   mounted checkout and keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.
@@ -63,17 +63,15 @@ fields and does not prompt.
 - For production installs, download to `<install-root>/bin/orbit-binary`
   where `<install-root>` is `ORBIT_INSTALL_PATH` when set, or `$HOME/orbit`
   by default.
-- After a production download, relink the host `orbit` launcher. User-local
-  launchers point at `<install-root>/bin/orbit-binary`, where `<install-root>`
-  is `ORBIT_INSTALL_PATH` when set or `$HOME/orbit` by default. System
-  launchers under `/usr/local/bin/` first publish the binary to a shared
-  root-owned executable path under `/usr/local/lib/orbit/`, then point the
-  launcher there so unprivileged role users can execute the CLI even when the
-  node user's home directory is private.
+- After a production download, relink the configured owner-user `orbit`
+  launcher. The default launcher is `$HOME/.local/bin/orbit`; it points at the
+  versioned binary under `<install-root>/bin/`, where `<install-root>` is
+  `ORBIT_INSTALL_PATH` when set or `$HOME/orbit` by default.
 - Relink only the configured host launcher path. `update` must not rewrite
   unrelated `orbit` executables or symlinks discovered elsewhere in `PATH`.
-  Operators who have stale duplicate launchers must remove or relink them
-  explicitly.
+  Operators who have stale duplicate or protected legacy launchers such as
+  `/usr/local/bin/orbit` must remove, relink, or adopt them explicitly through a
+  deployment/doctor path; normal `update` does not mutate them implicitly.
 - Verify the resolved local Orbit entry point responds to `--version`.
   Production artifact installs verify the updated binary; source-mounted
   Docker/Incus development and E2E lanes verify the resolved
