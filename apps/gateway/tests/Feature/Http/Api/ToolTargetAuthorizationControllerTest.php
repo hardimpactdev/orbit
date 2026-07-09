@@ -37,6 +37,10 @@ function grantToolTargetAuthAccess(Node $caller, Node $appNode, array $permissio
 }
 
 describe('tool API target authorization', function (): void {
+    beforeEach(function (): void {
+        bind_tool_script_dispatcher_to_remote_shell();
+    });
+
     it('rejects hidden target selectors before tool side effects', function (
         string $method,
         string $uri,

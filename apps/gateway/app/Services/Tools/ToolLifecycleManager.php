@@ -4,16 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Contracts\RemoteShell;
 use App\Models\Node;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 
 final readonly class ToolLifecycleManager
 {
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
-        private RemoteShell $remoteShell,
+        private ToolScriptDispatcher $toolScriptDispatcher,
     ) {}
 
     /**
@@ -62,16 +60,16 @@ final readonly class ToolLifecycleManager
             return ToolRegistryFailure::unsupportedAction($tool, $action);
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
+        $result = $this->toolScriptDispatcher->runForRegistry(
+            node: $targetNode,
+            tool: $tool,
+            action: $action,
+            script: $script,
+        );
 
-        if (! $transport->allowed()) {
-            return ToolRegistryFailure::nodeTransportRequired(
-                $transport->message("tool:{$action}"),
-                $transport->meta(),
-            );
+        if ($result instanceof ToolRegistryFailure) {
+            return $result;
         }
-
-        $result = $this->remoteShell->run($targetNode, $script, ['throw' => false]);
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(

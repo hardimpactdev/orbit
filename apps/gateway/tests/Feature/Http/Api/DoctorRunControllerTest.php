@@ -665,6 +665,7 @@ describe('DoctorRunController', function (): void {
                 "/usr/bin/caddy\t2.9.0\tstopped\n",
             ],
         ));
+        bind_tool_script_dispatcher_to_remote_shell();
 
         $response = $this->call(
             'POST',

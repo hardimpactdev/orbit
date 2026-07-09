@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_tool_script_dispatcher_to_remote_shell();
+});
+
 const TOOL_UPDATE_API_CALLER_WG_IP = '10.6.0.93';
 
 function tool_update_api_server_headers(array $overrides = []): array
@@ -93,7 +97,7 @@ it('updates host capability expected versions without service instance fields', 
         ->toHaveCount(1);
 });
 
-it('requires explicit transitional ssh fallback before running tool update scripts', function (): void {
+it('requires agent-push transport before running tool update scripts', function (): void {
     $caller = createToolUpdateApiCallerNode();
     $node = Node::factory()->create(['name' => 'app-update-api-1', 'status' => 'active']);
     assignToolUpdateApiRole($node, 'app-dev');
@@ -105,6 +109,7 @@ it('requires explicit transitional ssh fallback before running tool update scrip
     ]);
     $shell = new ToolUpdateApiRecordingShell;
     app()->instance(RemoteShell::class, $shell);
+    bind_unavailable_tool_script_dispatcher();
 
     $response = $this->call(
         'POST',
@@ -121,7 +126,7 @@ it('requires explicit transitional ssh fallback before running tool update scrip
     $response
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'node_transport_required')
-        ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+        ->assertJsonPath('error.meta.required', 'agent-push');
 
     expect($shell->scripts)->toBe([]);
 });

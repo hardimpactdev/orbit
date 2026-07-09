@@ -436,12 +436,14 @@ inherit the lane of the production code they exercise.
 | `apps/gateway/app/Services/Security/SshdHardenedInstaller.php:14` | `RemoteHostExecutor` | Writes SSH daemon host config and reloads SSH. |
 | `apps/gateway/app/Services/Security/SysctlBaselineInstaller.php:14` | `RemoteHostExecutor` | Writes host sysctl baseline and applies kernel settings. |
 | `apps/gateway/app/Services/Security/UnattendedUpgradesInstaller.php:15` | `RemoteHostExecutor` | Installs and configures host unattended-upgrades packages. |
-| `apps/gateway/app/Services/Tools/ToolInstaller.php:80,97` | `RemoteHostExecutor` | Runs catalog install and credential scripts on the host/tool substrate. |
-| `apps/gateway/app/Services/Tools/ToolReconfigurer.php:68` | `RemoteHostExecutor` | Runs catalog reconfiguration scripts on the host/tool substrate. |
-| `apps/gateway/app/Services/Tools/ToolRemover.php:48` | `RemoteHostExecutor` | Runs catalog removal scripts on the host/tool substrate. |
-| `apps/gateway/app/Services/Tools/ToolsFixer.php:58,286,309,310` | `RemoteHostExecutor` | Repairs tool config, credentials, containers, and host agent user state. |
+| `apps/gateway/app/Services/Tools/ToolScriptDispatcher.php` | `RemoteLocalExecutor` | Dispatches catalog install, update, remove, reconfigure, lifecycle, and credential scripts through the typed `internal:tool:run-script` command over agent-push with operation-token-bound JSON stdin. |
+| `apps/gateway/app/Services/Tools/ToolInstaller.php` | `RemoteLocalExecutor` | Runs catalog install and credential scripts through `ToolScriptDispatcher`; GitHub token staging remains on `internal:secret-file`. |
+| `apps/gateway/app/Services/Tools/ToolLifecycleManager.php` | `RemoteLocalExecutor` | Runs catalog lifecycle scripts through `ToolScriptDispatcher`. |
+| `apps/gateway/app/Services/Tools/ToolReconfigurer.php` | `RemoteLocalExecutor` | Runs catalog reconfiguration scripts through `ToolScriptDispatcher`. |
+| `apps/gateway/app/Services/Tools/ToolRemover.php` | `RemoteLocalExecutor` | Runs catalog removal scripts through `ToolScriptDispatcher`. |
+| `apps/gateway/app/Services/Tools/ToolsFixer.php` | `RemoteLocalExecutor` / `RemoteHostExecutor` | Repairs catalog install/update/credential drift through `ToolScriptDispatcher`; managed-file, Caddy container, and agent-user repairs still use typed internal commands or host substrate where declared. |
 | `apps/gateway/app/Services/Tools/ToolsProbe.php:129,181,850` | `RemoteHostExecutor` | Probes tool binaries, Docker images, containers, and agent user state; current host PHP helper at `:129` must be rewritten as host-substrate shell. |
-| `apps/gateway/app/Services/Tools/ToolUpdater.php:63,172` | `RemoteHostExecutor` | Runs catalog update scripts on the host/tool substrate. |
+| `apps/gateway/app/Services/Tools/ToolUpdater.php` | `RemoteLocalExecutor` | Runs catalog update scripts through `ToolScriptDispatcher`; GitHub token staging remains on `internal:secret-file`. |
 | `apps/gateway/app/Services/Updates/UnattendedUpgradesDriver.php:51,94,105` | `RemoteHostExecutor` | Probes, installs, and runs host unattended-upgrades. |
 | `apps/gateway/app/Services/Workspaces/EnsureWorkspaceProxyRoute.php:79,115,145,162,174` | `RemoteHostExecutor` | Writes and reads Caddy route artifacts for workspace routes. |
 | `apps/gateway/app/Services/Workspaces/OpenCodeWorkspaceDriver.php:109` | `RemoteHostExecutor` | Aligns host git branches for OpenCode workspaces. |

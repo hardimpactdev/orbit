@@ -3792,6 +3792,15 @@ function doctorRunnerNodeForAgentRequest(Request $request): Node
 
 function doctorRunnerAgentPushScript(Request $request): string
 {
+    if (doctorRunnerAgentPushCommandName($request) === 'internal:tool:run-script') {
+        $input = doctorRunnerAgentPushInput($request);
+        $script = $input['script'] ?? null;
+
+        if (is_string($script)) {
+            return $script;
+        }
+    }
+
     /** @var mixed $argv */
     $argv = $request['argv'] ?? [];
 
@@ -3999,6 +4008,15 @@ function doctorRunnerInternalCommandSuccessData(string $commandName, array $inpu
             'sshd_listen' => true,
             'sysctl' => true,
             'home_perms' => true,
+        ];
+    }
+
+    if ($commandName === 'internal:tool:run-script') {
+        return [
+            'exit_code' => $result->exitCode,
+            'stdout' => $result->stdout,
+            'stderr' => $result->stderr,
+            'duration_ms' => $result->durationMs,
         ];
     }
 

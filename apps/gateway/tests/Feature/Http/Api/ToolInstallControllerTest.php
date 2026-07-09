@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_tool_script_dispatcher_to_remote_shell();
+});
+
 const TOOL_INSTALL_API_CALLER_WG_IP = '10.6.0.98';
 
 function tool_install_api_server_headers(array $overrides = []): array
@@ -100,7 +104,7 @@ describe('ToolInstallController', function (): void {
             ->toHaveCount(1);
     });
 
-    it('requires explicit transitional ssh fallback before installing host capabilities', function (): void {
+    it('requires agent-push transport before installing host capabilities', function (): void {
         $caller = createToolInstallApiCallerNode();
         assignToolInstallApiRole($caller, 'gateway');
         $node = Node::factory()->create([
@@ -110,6 +114,7 @@ describe('ToolInstallController', function (): void {
         assignToolInstallApiRole($node, 'app-dev');
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
+        bind_unavailable_tool_script_dispatcher();
 
         $response = $this->call(
             'POST',
@@ -126,7 +131,7 @@ describe('ToolInstallController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node_transport_required')
-            ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+            ->assertJsonPath('error.meta.required', 'agent-push');
 
         expect(NodeTool::query()->where('node_id', $node->id)->where('name', 'php-cli')->exists())
             ->toBeFalse()

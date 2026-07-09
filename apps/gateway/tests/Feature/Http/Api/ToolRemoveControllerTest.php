@@ -13,6 +13,10 @@ use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_tool_script_dispatcher_to_remote_shell();
+});
+
 const TOOL_REMOVE_API_CALLER_WG_IP = '10.6.0.97';
 
 function tool_remove_api_server_headers(array $overrides = []): array
@@ -93,7 +97,7 @@ describe('ToolRemoveController', function (): void {
             ->toBe('app-remove-api-1');
     });
 
-    it('requires explicit transitional ssh fallback before running remove scripts', function (): void {
+    it('requires agent-push transport before running remove scripts', function (): void {
         $caller = createToolRemoveApiCallerNode();
         $node = createTestAppHostNode(['name' => 'app-remove-api-1', 'status' => 'active']);
         grantToolRemoveApiAccess($caller, $node);
@@ -104,6 +108,7 @@ describe('ToolRemoveController', function (): void {
         ]);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
+        bind_unavailable_tool_script_dispatcher();
 
         $response = test()->call(
             'DELETE',
@@ -121,7 +126,7 @@ describe('ToolRemoveController', function (): void {
         $response
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node_transport_required')
-            ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+            ->assertJsonPath('error.meta.required', 'agent-push');
 
         expect(NodeTool::find($tool->id))
             ->not

@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    bind_tool_script_dispatcher_to_remote_shell();
+});
+
 const TOOL_LIFECYCLE_API_CALLER_WG_IP = '10.6.0.94';
 
 function tool_lifecycle_api_server_headers(array $overrides = []): array
@@ -96,7 +100,7 @@ it('dispatches orbstack lifecycle scripts through the remote shell', function (s
     'restart',
 ]);
 
-it('requires explicit transitional ssh fallback before running lifecycle scripts', function (): void {
+it('requires agent-push transport before running lifecycle scripts', function (): void {
     $caller = createToolLifecycleApiCallerNode();
     $node = Node::factory()->create([
         'name' => 'mac-1',
@@ -111,6 +115,7 @@ it('requires explicit transitional ssh fallback before running lifecycle scripts
     ]);
     $shell = new ToolLifecycleApiRecordingShell;
     app()->instance(RemoteShell::class, $shell);
+    bind_unavailable_tool_script_dispatcher();
 
     $response = $this->call(
         'POST',
@@ -124,7 +129,7 @@ it('requires explicit transitional ssh fallback before running lifecycle scripts
     $response
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'node_transport_required')
-        ->assertJsonPath('error.meta.required', 'transitional-ssh-fallback');
+        ->assertJsonPath('error.meta.required', 'agent-push');
 
     expect($shell->scripts)->toBe([]);
 });

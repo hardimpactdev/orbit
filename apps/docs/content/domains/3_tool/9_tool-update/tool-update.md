@@ -34,9 +34,9 @@ orbit tool:update caddy --node=beast --node-transport=transitional-ssh-fallback 
   supported version is used.
 - `--node`: Target node. Defaults to local `node:default` when configured.
 - `--node-transport`: Node execution transport preference. Defaults to `auto`.
-  Use `transitional-ssh-fallback` only when the selected tool update path still
-  requires transitional SSH execution. The preference is honored for normal
-  output, `--json`, and `--stream-json`.
+  Catalog update scripts dispatch through the typed `internal:tool:run-script`
+  command over agent-push. The preference is honored for normal output,
+  `--json`, and `--stream-json`.
 - `--app`: Resolve the target node from an app.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive

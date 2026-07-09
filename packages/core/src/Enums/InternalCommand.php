@@ -45,6 +45,7 @@ enum InternalCommand: string
     case S3RuntimeProbe = 'internal:s3-runtime:probe';
     case ScheduleRun = 'internal:schedule:run';
     case SecretFile = 'internal:secret-file';
+    case ToolRunScript = 'internal:tool:run-script';
     case SiteCertificateInstall = 'internal:site-certificate:install';
     case SoloUpstreamRequest = 'internal:solo-upstream-request';
     case UnattendedUpgradesApply = 'internal:unattended-upgrades:apply';

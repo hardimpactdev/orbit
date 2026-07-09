@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Contracts\RemoteShell;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-
 final readonly class ToolRemover
 {
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
-        private RemoteShell $remoteShell,
+        private ToolScriptDispatcher $toolScriptDispatcher,
         private StaleToolIntentRemover $staleIntentRemover,
     ) {}
 
@@ -53,16 +50,16 @@ final readonly class ToolRemover
             return ToolRegistryFailure::unsupportedAction($tool, 'remove');
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
+        $result = $this->toolScriptDispatcher->runForRegistry(
+            node: $model->node,
+            tool: $tool,
+            action: 'remove',
+            script: $script,
+        );
 
-        if (! $transport->allowed()) {
-            return ToolRegistryFailure::nodeTransportRequired(
-                $transport->message('tool:remove'),
-                $transport->meta(),
-            );
+        if ($result instanceof ToolRegistryFailure) {
+            return $result;
         }
-
-        $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(

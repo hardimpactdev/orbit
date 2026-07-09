@@ -620,7 +620,8 @@ The Orbit Scheduler is a long-running PHP loop in the one-replica
 scheduler daemon on non-gateway nodes; the gateway dispatches schedule
 execution to other nodes through the signed `internal:schedule:run`
 local-executor command over agent-push when a schedule's target is not the
-gateway itself.
+gateway itself. Catalog tool scripts use the same agent-push local-executor
+pattern through the signed `internal:tool:run-script` command.
 
 The daemon runs an internal loop that aligns to wall-clock minute boundaries, performs one evaluation tick, and sleeps until the next boundary:
 

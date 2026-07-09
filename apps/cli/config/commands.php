@@ -107,6 +107,7 @@ use App\Commands\Internal\ScheduleRunCommand as InternalScheduleRunCommand;
 use App\Commands\Internal\SecretFileCommand;
 use App\Commands\Internal\SiteCertificateInstallCommand;
 use App\Commands\Internal\SoloUpstreamRequestCommand;
+use App\Commands\Internal\ToolRunScriptCommand;
 use App\Commands\Internal\UnattendedUpgradesApplyCommand;
 use App\Commands\Internal\UnattendedUpgradesProbeCommand;
 use App\Commands\Internal\VerifyExecutorCommand;
@@ -421,6 +422,7 @@ return [
         RuntimeBackendProbeCommand::class,
         S3RuntimeProbeCommand::class,
         InternalScheduleRunCommand::class,
+        ToolRunScriptCommand::class,
         SecretFileCommand::class,
         SiteCertificateInstallCommand::class,
         SoloUpstreamRequestCommand::class,
