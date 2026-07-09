@@ -571,6 +571,54 @@ describe('internal fleet update install cli launcher isolation', function (): vo
         $_SERVER['PATH'] = $path;
     });
 
+    it('refreshes explicit legacy Orbit launcher paths from the install payload', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $sha256 = fleet_update_install_cli_sha256($artifactPath);
+        $legacyLauncherPath = "{$workspace}/legacy-bin/orbit";
+
+        mkdir(dirname($legacyLauncherPath), recursive: true);
+        file_put_contents(
+            filename: $legacyLauncherPath,
+            data: "#!/usr/bin/env sh\necho 'Orbit 0.0.1'\n",
+        );
+        chmod(filename: $legacyLauncherPath, permissions: 0o755);
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => $sha256,
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'legacy_bin_paths' => [$legacyLauncherPath],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+        $data = fleet_update_install_cli_success_data($output);
+        $resolvedLegacyLauncherPath = realpath($legacyLauncherPath);
+
+        expect($exitCode)
+            ->toBe(0, $output)
+            ->and($data['legacy_bin_paths'] ?? null)
+            ->toBe([$legacyLauncherPath])
+            ->and($data['stdout'] ?? '')
+            ->toContain('link_legacy_cli')
+            ->toContain('verify_legacy_cli')
+            ->and(is_link($legacyLauncherPath))
+            ->toBeTrue()
+            ->and(fleet_update_install_cli_sha256(
+                $resolvedLegacyLauncherPath !== false ? $resolvedLegacyLauncherPath : $legacyLauncherPath,
+            ))
+            ->toBe($sha256)
+            ->and(shell_exec(escapeshellarg($legacyLauncherPath).' --version --local'))
+            ->toBe("Orbit 9.9.9\n");
+    });
+
     it('does not relink a path-resolved orbit launcher outside the payload paths', function (): void {
         $workspace = make_fleet_update_install_cli_workspace();
         $artifactPath = "{$workspace}/artifact/orbit";

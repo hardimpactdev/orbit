@@ -187,6 +187,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             'install_root' => '/home/orbit/orbit',
             'bin_path' => '/home/orbit/.local/bin/orbit',
             'shared_binary_path' => null,
+            'legacy_bin_paths' => ['/usr/local/bin/orbit'],
             'role_images' => ['caddy:2.9-alpine'],
         ])
         ->and(workload_updater_install_payload($shell, node: 'app-dev-1'))
@@ -823,6 +824,7 @@ it('does not send role images to macos workload cli installers', function (): vo
             'install_root' => '/Users/nckrtl/orbit',
             'bin_path' => '/Users/nckrtl/.local/bin/orbit',
             'shared_binary_path' => null,
+            'legacy_bin_paths' => [],
             'role_images' => [],
         ]);
 });
@@ -932,6 +934,8 @@ it('updates macos workload nodes with darwin arm64 CLI artifacts and portable ch
         ->toBe("http://gateway.test/api/update/artifacts/{$run->id}/cli/darwin-arm64?token=fake")
         ->and(workload_updater_install_payload($shell, node: 'NMBP')['bin_path'])
         ->toBe('/Users/nckrtl/.local/bin/orbit')
+        ->and(workload_updater_install_payload($shell, node: 'NMBP')['legacy_bin_paths'])
+        ->toBe([])
         ->and($shell->calls[0]['options']['metadata'])
         ->toBe([
             'ORBIT_OPERATION_ID' => $run->id,
@@ -1273,7 +1277,7 @@ it('fails the update operation when a workload node lease is already held', func
         ->firstOrFail();
 
     expect($shell->updatedNodes())
-        ->toBe([])
+        ->toBeEmpty()
         ->and($run->refresh()->status)
         ->toBe(OperationStatus::Failed)
         ->and($run->error)

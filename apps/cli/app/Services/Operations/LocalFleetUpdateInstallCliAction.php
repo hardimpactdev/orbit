@@ -31,6 +31,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             'ORBIT_INSTALL_PATH' => $installPayload->installRoot,
             'ORBIT_BIN_PATH' => $installPayload->binPath,
             'ORBIT_SHARED_BINARY_PATH' => $installPayload->sharedBinaryPath ?? '',
+            'ORBIT_LEGACY_BIN_PATHS_JSON' => json_encode($installPayload->legacyBinPaths, JSON_THROW_ON_ERROR),
             'ORBIT_AGENT_ARTIFACT_URL' => $agentArtifact->artifactUrl ?? '',
             'ORBIT_AGENT_SHA256' => strtolower($agentArtifact->sha256 ?? ''),
             'ORBIT_AGENT_BIN_PATH' => $agentArtifact->binPath ?? '',
@@ -57,6 +58,7 @@ final readonly class LocalFleetUpdateInstallCliAction
             'installed' => true,
             'bin_path' => $installPayload->binPath,
             'install_root' => $installPayload->installRoot,
+            'legacy_bin_paths' => $installPayload->legacyBinPaths,
             'agent_bin_path' => $installPayload->agentArtifact?->binPath,
             'agent_installed' => $installPayload->agentArtifact instanceof LocalFleetUpdateInstallAgentPayload,
             'role_images' => $installPayload->roleImages,
@@ -171,6 +173,10 @@ final readonly class LocalFleetUpdateInstallCliAction
                     echo "download_retry attempt=$attempt"
                     sleep "$retry_delay"
                 done
+            }
+
+            legacy_bin_paths() {
+                php -r '$paths = json_decode(getenv("ORBIT_LEGACY_BIN_PATHS_JSON") ?: "[]", true, 512, JSON_THROW_ON_ERROR); foreach ($paths as $path) { echo $path, "\n"; }'
             }
 
             restart_agent_service_if_present() {
@@ -471,12 +477,41 @@ final readonly class LocalFleetUpdateInstallCliAction
 
             link_binary "$link_target" "$bin_path"
 
+            legacy_bin_paths_json="${ORBIT_LEGACY_BIN_PATHS_JSON:-[]}"
+            if [ "$legacy_bin_paths_json" != "[]" ]; then
+                echo link_legacy_cli
+                legacy_bin_paths | while IFS= read -r legacy_bin_path; do
+                    [ -n "$legacy_bin_path" ] || continue
+
+                    if [ "$legacy_bin_path" = "$bin_path" ]; then
+                        continue
+                    fi
+
+                    link_binary "$link_target" "$legacy_bin_path"
+                done
+            fi
+
             echo verify_cli
             check_sha256 "$ORBIT_CLI_SHA256" "$install_root/bin/orbit-binary-$sha_prefix"
             check_sha256 "$ORBIT_CLI_SHA256" "$link_target"
             resolved_binary="$(readlink -f "$bin_path" 2>/dev/null || printf %s "$bin_path")"
             check_sha256 "$ORBIT_CLI_SHA256" "$resolved_binary"
             "$bin_path" --version --local
+
+            if [ "$legacy_bin_paths_json" != "[]" ]; then
+                echo verify_legacy_cli
+                legacy_bin_paths | while IFS= read -r legacy_bin_path; do
+                    [ -n "$legacy_bin_path" ] || continue
+
+                    if [ "$legacy_bin_path" = "$bin_path" ]; then
+                        continue
+                    fi
+
+                    resolved_legacy_binary="$(readlink -f "$legacy_bin_path" 2>/dev/null || printf %s "$legacy_bin_path")"
+                    check_sha256 "$ORBIT_CLI_SHA256" "$resolved_legacy_binary"
+                    "$legacy_bin_path" --version --local
+                done
+            fi
 
             if [ -n "${ORBIT_AGENT_ARTIFACT_URL:-}" ]; then
                 agent_bin_path="${ORBIT_AGENT_BIN_PATH:-$HOME/.local/bin/orbit-agent}"

@@ -16,6 +16,11 @@ final class LocalFleetUpdateInstallCliPayload
 
     public ?string $sharedBinaryPath;
 
+    /**
+     * @var list<string>
+     */
+    public array $legacyBinPaths;
+
     public ?LocalFleetUpdateInstallAgentPayload $agentArtifact;
 
     public ?LocalFleetUpdateInstallAgentServicePayload $agentService;
@@ -31,6 +36,7 @@ final class LocalFleetUpdateInstallCliPayload
         $this->installRoot = '';
         $this->binPath = '';
         $this->sharedBinaryPath = null;
+        $this->legacyBinPaths = [];
         $this->agentArtifact = null;
         $this->agentService = null;
     }
@@ -58,6 +64,7 @@ final class LocalFleetUpdateInstallCliPayload
             $payload['shared_binary_path'] ?? null,
             'shared_binary_path',
         );
+        $typedPayload->legacyBinPaths = self::legacyBinPaths($payload['legacy_bin_paths'] ?? []);
         $typedPayload->agentArtifact = LocalFleetUpdateInstallAgentPayload::fromPayload(
             $payload['agent_artifact'] ?? null,
         );
@@ -66,6 +73,18 @@ final class LocalFleetUpdateInstallCliPayload
         );
 
         return $typedPayload;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function legacyBinPaths(mixed $value): array
+    {
+        return LocalFleetUpdateInstallCliPayloadField::absolutePathList(
+            $value,
+            'legacy_bin_paths',
+            basename: 'orbit',
+        );
     }
 
     /**

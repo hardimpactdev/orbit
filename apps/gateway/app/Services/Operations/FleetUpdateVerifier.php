@@ -83,24 +83,26 @@ class FleetUpdateVerifier
     private function verifyWorkloadCli(OperationRun $operationRun): null
     {
         foreach ($this->targets->workloadNodes() as $node) {
-            $result = $this->localExecutor()->runInternal(
-                node: $node,
-                commandName: 'internal:fleet-update:verify',
-                arguments: ['cli'],
-                transportOptions: [
-                    'cwd' => $node->orbit_path,
-                    'input' => json_encode([
-                        'bin_path' => FleetUpdateNodeCliLauncher::binPath($node),
-                    ], JSON_THROW_ON_ERROR),
-                    'timeout' => 30,
-                    'metadata' => [
-                        'ORBIT_OPERATION_ID' => $operationRun->id,
+            foreach (FleetUpdateNodeCliLauncher::binPathsToVerify($node) as $binPath) {
+                $result = $this->localExecutor()->runInternal(
+                    node: $node,
+                    commandName: 'internal:fleet-update:verify',
+                    arguments: ['cli'],
+                    transportOptions: [
+                        'cwd' => $node->orbit_path,
+                        'input' => json_encode([
+                            'bin_path' => $binPath,
+                        ], JSON_THROW_ON_ERROR),
+                        'timeout' => 30,
+                        'metadata' => [
+                            'ORBIT_OPERATION_ID' => $operationRun->id,
+                        ],
                     ],
-                ],
-            );
+                );
 
-            if (! $result->successful()) {
-                throw new FleetUpdateVerificationFailed('cli_verification_failed', 'CLI verification failed.');
+                if (! $result->successful()) {
+                    throw new FleetUpdateVerificationFailed('cli_verification_failed', 'CLI verification failed.');
+                }
             }
         }
 

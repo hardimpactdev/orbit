@@ -12,6 +12,7 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDatabaseConnectionTarget;
 use App\Models\AppInstanceEnvVariable;
+use App\Models\AppInstanceRuntimeMount;
 use App\Models\AppRuntimeMount;
 use App\Models\AppSetupStep;
 use App\Models\DatabaseConnectionTarget;
@@ -137,12 +138,89 @@ function seed_happie_nmbp_repair_fixture(): array
     );
 }
 
+function seed_happie_canonical_legacy_repair_fixture(): array
+{
+    $beast = Node::factory()->appDev(['tld' => 'beast'])->create(['name' => 'Beast']);
+    $nmbp = Node::factory()->appDev(['tld' => 'nmbp'])->create(['name' => 'NMBP']);
+
+    $happie = App::factory()->for($beast, 'node')->create([
+        'name' => 'happie',
+        'path' => '/Users/nckrtl/apps/happie-beast',
+        'domain' => null,
+        'environment' => 'development',
+    ]);
+
+    $happieDevelopmentInstance = AppInstance::factory()->for($happie)->create([
+        'name' => 'development',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $beast->id,
+            node: 'Beast',
+            path: '/Users/nckrtl/apps/happie-beast',
+            document_root: 'public',
+            domain: 'happie.beast',
+        ),
+    ]);
+
+    $happieNmbpInstance = AppInstance::factory()->for($happie)->create([
+        'name' => 'nmbp',
+        'driver_config' => new OrbitAppInstanceDriverConfigData(
+            node_id: $nmbp->id,
+            node: 'NMBP',
+            path: '/Users/nckrtl/apps/happie',
+            document_root: 'public',
+            domain: 'happie.nmbp',
+        ),
+    ]);
+
+    WorkspaceStep::factory()->create([
+        'app_id' => $happie->id,
+        'app_instance_id' => null,
+        'phase' => WorkspaceLifecyclePhase::Setup,
+        'sort_order' => 1,
+        'command' => 'composer install',
+    ]);
+
+    AppRuntimeMount::query()->create([
+        'app_id' => $happie->id,
+        'source' => '/Users/nckrtl/apps/happie/storage',
+        'target' => '/app/storage',
+        'read_only' => false,
+    ]);
+
+    return compact('beast', 'nmbp', 'happie', 'happieDevelopmentInstance', 'happieNmbpInstance');
+}
+
+function expect_happie_nmbp_workspace_steps_to_be_instance_scoped(App $happie, AppInstance $instance): void
+{
+    expect(WorkspaceStep::query()->where('app_id', $happie->id)->where('app_instance_id', $instance->id)->count())
+        ->toBe(1)
+        ->and(WorkspaceStep::query()->where('app_id', $happie->id)->whereNull('app_instance_id')->exists())
+        ->toBeFalse();
+}
+
+function expect_happie_nmbp_runtime_mounts_to_be_instance_scoped(App $happie, AppInstance $instance): void
+{
+    expect(AppRuntimeMount::query()->where('app_id', $happie->id)->where('target', '/app/storage')->exists())
+        ->toBeFalse()
+        ->and(
+            AppInstanceRuntimeMount::query()
+                ->where('app_instance_id', $instance->id)
+                ->where('source', '/Users/nckrtl/apps/happie/storage')
+                ->where('target', '/app/storage')
+                ->where('read_only', false)
+                ->exists(),
+        )
+        ->toBeTrue();
+}
+
+/**
+ * @mago-expect lint:halstead
+ */
 describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
     it('refuses to mutate registry state without --execute', function (): void {
         seed_happie_nmbp_repair_fixture();
 
-        $this->artisan('orbit:internal:repair-happie-nmbp-instance')
-            ->assertSuccessful();
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance')->assertSuccessful();
 
         expect(App::query()->where('name', 'happie-nmbp')->exists())->toBeTrue();
     });
@@ -150,15 +228,11 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
     it('consolidates the known happie-nmbp workaround into a canonical happie NMBP instance', function (): void {
         seed_happie_nmbp_repair_fixture();
 
-        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])
-            ->assertSuccessful();
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertSuccessful();
 
         $happie = App::query()->where('name', 'happie')->firstOrFail();
         $workspace = Workspace::query()->where('name', 'recipe')->firstOrFail();
-        $instance = AppInstance::query()
-            ->where('app_id', $happie->id)
-            ->where('name', 'nmbp')
-            ->first();
+        $instance = AppInstance::query()->where('app_id', $happie->id)->where('name', 'nmbp')->first();
 
         expect(App::query()->where('name', 'happie-nmbp')->exists())
             ->toBeFalse()
@@ -182,13 +256,11 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
             ->toBe($happie->id)
             ->and(Process::query()->where('name', 'vite')->firstOrFail()->owner_id)
             ->toBe($workspace->id)
-            ->and(WorkspaceStep::query()->where('app_id', $happie->id)->count())
-            ->toBe(1)
+            ->and($workspace->app_instance_id)
+            ->toBe($instance->id)
             ->and(AppSetupStep::query()->where('app_id', $happie->id)->count())
             ->toBe(1)
             ->and(DatabaseConnectionTarget::query()->where('app_id', $happie->id)->where('env_prefix', 'DB')->exists())
-            ->toBeTrue()
-            ->and(AppRuntimeMount::query()->where('app_id', $happie->id)->where('target', '/app/storage')->exists())
             ->toBeTrue()
             ->and(
                 AppInstanceEnvVariable::query()
@@ -210,6 +282,36 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
             ->toBeFalse();
 
         expect($workspace->url())->toBe('https://recipe.happie.nmbp');
+        expect_happie_nmbp_workspace_steps_to_be_instance_scoped($happie, $instance);
+        expect_happie_nmbp_runtime_mounts_to_be_instance_scoped($happie, $instance);
+    });
+
+    it('repairs canonical happie legacy setup rows after the workaround app has already been removed', function (): void {
+        $fixture = seed_happie_canonical_legacy_repair_fixture();
+
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertSuccessful();
+
+        expect(App::query()->where('name', 'happie-nmbp')->exists())
+            ->toBeFalse()
+            ->and(
+                WorkspaceStep::query()
+                    ->where('app_id', $fixture['happie']->id)
+                    ->where('app_instance_id', $fixture['happieNmbpInstance']->id)
+                    ->where('phase', WorkspaceLifecyclePhase::Setup)
+                    ->pluck('command')
+                    ->all(),
+            )
+            ->toBe(['composer install'])
+            ->and(
+                WorkspaceStep::query()
+                    ->where('app_id', $fixture['happie']->id)
+                    ->where('app_instance_id', $fixture['happieDevelopmentInstance']->id)
+                    ->exists(),
+            )
+            ->toBeFalse();
+
+        expect_happie_nmbp_workspace_steps_to_be_instance_scoped($fixture['happie'], $fixture['happieNmbpInstance']);
+        expect_happie_nmbp_runtime_mounts_to_be_instance_scoped($fixture['happie'], $fixture['happieNmbpInstance']);
     });
 
     it('refuses when canonical happie already owns a conflicting workspace name', function (): void {
@@ -220,8 +322,7 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
             'name' => 'recipe',
         ]);
 
-        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])
-            ->assertFailed();
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertFailed();
 
         expect(App::query()->where('name', 'happie-nmbp')->exists())->toBeTrue();
     });
@@ -229,17 +330,15 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
     it('moves a workaround-owned proxy route that already has the canonical domain', function (): void {
         seed_happie_nmbp_repair_fixture();
 
-        ProxyRoute::query()
-            ->where('domain', 'recipe.happie-nmbp.nmbp')
-            ->update(['domain' => 'recipe.happie.nmbp']);
+        ProxyRoute::query()->where('domain', 'recipe.happie-nmbp.nmbp')->update(['domain' => 'recipe.happie.nmbp']);
 
-        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])
-            ->assertSuccessful();
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertSuccessful();
 
         $happie = App::query()->where('name', 'happie')->firstOrFail();
 
-        expect(ProxyRoute::query()->where('domain', 'recipe.happie.nmbp')->where('app_id', $happie->id)->exists())
-            ->toBeTrue();
+        expect(
+            ProxyRoute::query()->where('domain', 'recipe.happie.nmbp')->where('app_id', $happie->id)->exists(),
+        )->toBeTrue();
     });
 
     it('refuses when another app already owns the repaired proxy route domain', function (): void {
@@ -254,8 +353,7 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
             'kind' => 'app',
         ]);
 
-        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])
-            ->assertFailed();
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertFailed();
 
         expect(App::query()->where('name', 'happie-nmbp')->exists())->toBeTrue();
     });
@@ -274,8 +372,26 @@ describe('orbit:internal:repair-happie-nmbp-instance', function (): void {
             'secret' => false,
         ]);
 
-        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])
-            ->assertFailed();
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertFailed();
+
+        expect(App::query()->where('name', 'happie-nmbp')->exists())->toBeTrue();
+    });
+
+    it('refuses when the canonical NMBP instance already owns a conflicting runtime mount target', function (): void {
+        $fixture = seed_happie_nmbp_repair_fixture();
+
+        $canonicalInstance = AppInstance::factory()->for($fixture['happie'])->create([
+            'name' => 'nmbp',
+        ]);
+
+        AppInstanceRuntimeMount::query()->create([
+            'app_instance_id' => $canonicalInstance->id,
+            'source' => '/Users/nckrtl/apps/happie/shared-storage',
+            'target' => '/app/storage',
+            'read_only' => false,
+        ]);
+
+        $this->artisan('orbit:internal:repair-happie-nmbp-instance', ['--execute' => true])->assertFailed();
 
         expect(App::query()->where('name', 'happie-nmbp')->exists())->toBeTrue();
     });

@@ -245,6 +245,7 @@ final readonly class WorkloadNodeUpdater
      *     install_root: string,
      *     bin_path: string,
      *     shared_binary_path: string|null,
+     *     legacy_bin_paths: list<string>,
      *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
      *     role_images: list<string>,
      * }
@@ -263,6 +264,7 @@ final readonly class WorkloadNodeUpdater
             'install_root' => $installRoot,
             'bin_path' => FleetUpdateNodeCliLauncher::binPath($node),
             'shared_binary_path' => null,
+            'legacy_bin_paths' => FleetUpdateNodeCliLauncher::legacyBinPaths($node),
             'agent_artifact' => $this->agentArtifactPayload($operationRun, $plan, $node),
             'role_images' => $this->requiredRoleImages($plan, $node),
         ];

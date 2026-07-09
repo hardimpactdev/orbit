@@ -128,7 +128,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     $requests = fleet_verifier_agent_requests();
 
     expect($requests)
-        ->toHaveCount(7)
+        ->toHaveCount(11)
         ->and($requests[0]['node'])
         ->toBe('10.44.0.11')
         ->and($requests[0]['argv'])
@@ -138,24 +138,30 @@ it('verifies gateway scheduler workload CLI and required role images', function 
         ])
         ->and($requests[0]['input'])
         ->toBe(json_encode(['bin_path' => '/home/orbit/.local/bin/orbit'], JSON_THROW_ON_ERROR))
+        ->and($requests[1]['input'])
+        ->toBe(json_encode(['bin_path' => '/usr/local/bin/orbit'], JSON_THROW_ON_ERROR))
         ->and($requests[0]['operation_id'])
         ->toBe($run->id)
         ->and(array_column($requests, 'node'))
         ->toBe([
             '10.44.0.11',
+            '10.44.0.11',
+            '10.44.0.12',
             '10.44.0.12',
             '10.44.0.13',
+            '10.44.0.13',
+            '10.44.0.14',
             '10.44.0.14',
             '10.44.0.11',
             '10.44.0.12',
             '10.44.0.14',
         ])
-        ->and($requests[4]['argv'])
+        ->and($requests[8]['argv'])
         ->toMatchArray([
             'internal:fleet-update:verify',
             'role-images',
         ])
-        ->and($requests[4]['input'])
+        ->and($requests[8]['input'])
         ->toBe(json_encode(['images' => ['caddy:2-alpine']], JSON_THROW_ON_ERROR));
 });
 

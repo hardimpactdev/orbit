@@ -13,6 +13,7 @@ use App\Models\AppDependencyAuditSummary;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDatabaseConnectionTarget;
 use App\Models\AppInstanceEnvVariable;
+use App\Models\AppInstanceRuntimeMount;
 use App\Models\AppRuntimeMount;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupStep;
@@ -27,11 +28,13 @@ use App\Models\Schedule;
 use App\Models\Workspace;
 use App\Models\WorkspaceStep;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
+ * @mago-expect lint:kan-defect
  * @mago-expect lint:too-many-methods
  */
 final class RepairHappieNmbpInstance
@@ -76,9 +79,19 @@ final class RepairHappieNmbpInstance
         $actions = $this->plannedActions($context);
 
         DB::transaction(function () use ($context): void {
-            $canonicalInstance = $this->ensureNmbpInstance($context);
-            $this->reassignDependents($context, $canonicalInstance);
-            $context['workaroundApp']->delete();
+            if ($context['workaroundApp'] instanceof App) {
+                $canonicalInstance = $this->ensureNmbpInstance($context);
+                $this->reassignDependents($context, $canonicalInstance);
+                $context['workaroundApp']->delete();
+
+                return;
+            }
+
+            if (! $context['canonicalInstance'] instanceof AppInstance) {
+                throw new RuntimeException('Canonical app instance "'.self::INSTANCE_NAME.'" is missing.');
+            }
+
+            $this->reassignCanonicalLegacyDependents($context['canonicalApp'], $context['canonicalInstance']);
         });
 
         return [
@@ -90,8 +103,9 @@ final class RepairHappieNmbpInstance
     /**
      * @return array{
      *     canonicalApp: App,
-     *     workaroundApp: App,
-     *     targetNode: Node,
+     *     workaroundApp: App|null,
+     *     targetNode: Node|null,
+     *     canonicalInstance: AppInstance|null,
      * }
      */
     private function resolveContext(): array
@@ -102,33 +116,47 @@ final class RepairHappieNmbpInstance
             throw new RuntimeException('Canonical app "'.self::CANONICAL_APP_NAME.'" is missing.');
         }
 
-        $workaroundApp = App::query()
-            ->with('node')
-            ->where('name', self::WORKAROUND_APP_NAME)
-            ->first();
+        $workaroundApp = App::query()->with('node')->where('name', self::WORKAROUND_APP_NAME)->first();
 
         if (! $workaroundApp instanceof App) {
-            throw new RuntimeException('Workaround app "'.self::WORKAROUND_APP_NAME.'" is missing.');
+            $canonicalInstance = AppInstance::query()
+                ->where('app_id', $canonicalApp->id)
+                ->where('name', self::INSTANCE_NAME)
+                ->first();
+
+            if (! $canonicalInstance instanceof AppInstance) {
+                throw new RuntimeException(
+                    'Workaround app "'
+                    .self::WORKAROUND_APP_NAME
+                    .'" is missing and canonical app instance "'
+                    .self::INSTANCE_NAME
+                    .'" is missing.',
+                );
+            }
+
+            $this->assertNoCanonicalLegacyWorkspaceStepConflict($canonicalApp, $canonicalInstance);
+            $this->assertNoCanonicalLegacyRuntimeMountConflict($canonicalApp, $canonicalInstance);
+
+            return [
+                'canonicalApp' => $canonicalApp,
+                'workaroundApp' => null,
+                'targetNode' => null,
+                'canonicalInstance' => $canonicalInstance,
+            ];
         }
 
         $targetNode = $workaroundApp->node;
 
         if (! $targetNode instanceof Node || $targetNode->name !== self::TARGET_NODE_NAME) {
-            throw new RuntimeException(
-                'Workaround app must be owned by node "'.self::TARGET_NODE_NAME.'".',
-            );
+            throw new RuntimeException('Workaround app must be owned by node "'.self::TARGET_NODE_NAME.'".');
         }
 
         if ($workaroundApp->path !== self::TARGET_PATH) {
-            throw new RuntimeException(
-                'Workaround app path must be "'.self::TARGET_PATH.'".',
-            );
+            throw new RuntimeException('Workaround app path must be "'.self::TARGET_PATH.'".');
         }
 
         if ($workaroundApp->domain !== self::TARGET_DOMAIN) {
-            throw new RuntimeException(
-                'Workaround app domain must be "'.self::TARGET_DOMAIN.'".',
-            );
+            throw new RuntimeException('Workaround app domain must be "'.self::TARGET_DOMAIN.'".');
         }
 
         $this->assertNoConflicts($canonicalApp, $workaroundApp);
@@ -137,6 +165,7 @@ final class RepairHappieNmbpInstance
             'canonicalApp' => $canonicalApp,
             'workaroundApp' => $workaroundApp,
             'targetNode' => $targetNode,
+            'canonicalInstance' => null,
         ];
     }
 
@@ -158,9 +187,7 @@ final class RepairHappieNmbpInstance
                 ->exists();
 
             if ($conflictingProcessExists) {
-                throw new RuntimeException(
-                    'Canonical app already owns a conflicting process.',
-                );
+                throw new RuntimeException('Canonical app already owns a conflicting process.');
             }
         }
 
@@ -172,9 +199,7 @@ final class RepairHappieNmbpInstance
 
         if ($targetDomains !== []) {
             if (count($targetDomains) !== count(array_unique($targetDomains))) {
-                throw new RuntimeException(
-                    'Workaround app proxy routes would map to duplicate canonical domains.',
-                );
+                throw new RuntimeException('Workaround app proxy routes would map to duplicate canonical domains.');
             }
 
             $conflictingDomainExists = ProxyRoute::query()
@@ -183,9 +208,7 @@ final class RepairHappieNmbpInstance
                 ->exists();
 
             if ($conflictingDomainExists) {
-                throw new RuntimeException(
-                    'Canonical app already owns a conflicting proxy route.',
-                );
+                throw new RuntimeException('Canonical app already owns a conflicting proxy route.');
             }
         }
 
@@ -210,6 +233,7 @@ final class RepairHappieNmbpInstance
             'target',
             'runtime mount',
         );
+        $this->assertNoCanonicalInstanceRuntimeMountConflict($canonicalApp, $workaroundApp);
         $this->assertNoAppScopedValueConflict(
             $canonicalApp,
             $workaroundApp,
@@ -262,10 +286,7 @@ final class RepairHappieNmbpInstance
         string $column,
         string $description,
     ): void {
-        $workaroundValues = $modelClass::query()
-            ->where('app_id', $workaroundApp->id)
-            ->pluck($column)
-            ->all();
+        $workaroundValues = $modelClass::query()->where('app_id', $workaroundApp->id)->pluck($column)->all();
 
         if ($workaroundValues === []) {
             return;
@@ -277,9 +298,77 @@ final class RepairHappieNmbpInstance
             ->exists();
 
         if ($conflictExists) {
-            throw new RuntimeException(
-                'Canonical app already owns a conflicting '.$description.'.',
-            );
+            throw new RuntimeException('Canonical app already owns a conflicting '.$description.'.');
+        }
+    }
+
+    private function assertNoCanonicalInstanceRuntimeMountConflict(App $canonicalApp, App $workaroundApp): void
+    {
+        $workaroundTargets = AppRuntimeMount::query()->where('app_id', $workaroundApp->id)->pluck('target')->all();
+
+        if ($workaroundTargets === []) {
+            return;
+        }
+
+        $canonicalInstance = AppInstance::query()
+            ->where('app_id', $canonicalApp->id)
+            ->where('name', self::INSTANCE_NAME)
+            ->first();
+
+        if (! $canonicalInstance instanceof AppInstance) {
+            return;
+        }
+
+        $conflictExists = AppInstanceRuntimeMount::query()
+            ->where('app_instance_id', $canonicalInstance->id)
+            ->whereIn('target', $workaroundTargets)
+            ->exists();
+
+        if ($conflictExists) {
+            throw new RuntimeException('Canonical app instance already owns a conflicting runtime mount.');
+        }
+    }
+
+    private function assertNoCanonicalLegacyWorkspaceStepConflict(
+        App $canonicalApp,
+        AppInstance $canonicalInstance,
+    ): void {
+        $conflictExists = WorkspaceStep::query()
+            ->where('app_id', $canonicalApp->id)
+            ->where('app_instance_id', $canonicalInstance->id)
+            ->whereExists(static function (QueryBuilder $query) use ($canonicalApp): void {
+                $query
+                    ->selectRaw('1')
+                    ->from('workspace_steps as legacy_steps')
+                    ->where('legacy_steps.app_id', $canonicalApp->id)
+                    ->whereNull('legacy_steps.app_instance_id')
+                    ->whereColumn('legacy_steps.phase', 'workspace_steps.phase')
+                    ->whereColumn('legacy_steps.sort_order', 'workspace_steps.sort_order');
+            })
+            ->exists();
+
+        if ($conflictExists) {
+            throw new RuntimeException('Canonical app instance already owns a conflicting workspace step.');
+        }
+    }
+
+    private function assertNoCanonicalLegacyRuntimeMountConflict(
+        App $canonicalApp,
+        AppInstance $canonicalInstance,
+    ): void {
+        $legacyTargets = AppRuntimeMount::query()->where('app_id', $canonicalApp->id)->pluck('target')->all();
+
+        if ($legacyTargets === []) {
+            return;
+        }
+
+        $conflictExists = AppInstanceRuntimeMount::query()
+            ->where('app_instance_id', $canonicalInstance->id)
+            ->whereIn('target', $legacyTargets)
+            ->exists();
+
+        if ($conflictExists) {
+            throw new RuntimeException('Canonical app instance already owns a conflicting runtime mount.');
         }
     }
 
@@ -292,22 +381,16 @@ final class RepairHappieNmbpInstance
         string $modelClass,
         string $description,
     ): void {
-        $workaroundExists = $modelClass::query()
-            ->where('app_id', $workaroundApp->id)
-            ->exists();
+        $workaroundExists = $modelClass::query()->where('app_id', $workaroundApp->id)->exists();
 
         if (! $workaroundExists) {
             return;
         }
 
-        $canonicalExists = $modelClass::query()
-            ->where('app_id', $canonicalApp->id)
-            ->exists();
+        $canonicalExists = $modelClass::query()->where('app_id', $canonicalApp->id)->exists();
 
         if ($canonicalExists) {
-            throw new RuntimeException(
-                'Canonical app already owns '.$description.'.',
-            );
+            throw new RuntimeException('Canonical app already owns '.$description.'.');
         }
     }
 
@@ -321,10 +404,7 @@ final class RepairHappieNmbpInstance
         string $column,
         string $description,
     ): void {
-        $workaroundInstanceIds = AppInstance::query()
-            ->where('app_id', $workaroundApp->id)
-            ->pluck('id')
-            ->all();
+        $workaroundInstanceIds = AppInstance::query()->where('app_id', $workaroundApp->id)->pluck('id')->all();
 
         if ($workaroundInstanceIds === []) {
             return;
@@ -354,23 +434,45 @@ final class RepairHappieNmbpInstance
             ->exists();
 
         if ($conflictExists) {
-            throw new RuntimeException(
-                'Canonical app instance already owns a conflicting '.$description.'.',
-            );
+            throw new RuntimeException('Canonical app instance already owns a conflicting '.$description.'.');
         }
     }
 
     /**
      * @param  array{
      *     canonicalApp: App,
-     *     workaroundApp: App,
-     *     targetNode: Node,
+     *     workaroundApp: App|null,
+     *     targetNode: Node|null,
+     *     canonicalInstance: AppInstance|null,
      * }  $context
      * @return list<string>
      */
     private function plannedActions(array $context): array
     {
         $workaroundApp = $context['workaroundApp'];
+
+        if (! $workaroundApp instanceof App) {
+            $legacyStepCount = WorkspaceStep::query()
+                ->where('app_id', $context['canonicalApp']->id)
+                ->whereNull('app_instance_id')
+                ->count();
+            $legacyRuntimeMountCount = AppRuntimeMount::query()->where('app_id', $context['canonicalApp']->id)->count();
+
+            return [
+                'reuse existing app instance "'.self::INSTANCE_NAME.'" on canonical "'.self::CANONICAL_APP_NAME.'"',
+                'reassign '
+                    .$legacyStepCount
+                    .' canonical app-level workspace step record(s) to "'
+                    .self::INSTANCE_NAME
+                    .'" instance',
+                'migrate '
+                    .$legacyRuntimeMountCount
+                    .' canonical app-level runtime mount record(s) to "'
+                    .self::INSTANCE_NAME
+                    .'" instance',
+            ];
+        }
+
         $workspaceCount = Workspace::query()->where('app_id', $workaroundApp->id)->count();
         $proxyRouteCount = ProxyRoute::query()->where('app_id', $workaroundApp->id)->count();
 
@@ -386,12 +488,17 @@ final class RepairHappieNmbpInstance
     /**
      * @param  array{
      *     canonicalApp: App,
-     *     workaroundApp: App,
-     *     targetNode: Node,
+     *     workaroundApp: App|null,
+     *     targetNode: Node|null,
+     *     canonicalInstance: AppInstance|null,
      * }  $context
      */
     private function ensureNmbpInstance(array $context): AppInstance
     {
+        if (! $context['targetNode'] instanceof Node || ! $context['workaroundApp'] instanceof App) {
+            throw new RuntimeException('Workaround app context is required to create the canonical app instance.');
+        }
+
         $driverConfig = new OrbitAppInstanceDriverConfigData(
             node_id: $context['targetNode']->id,
             node: self::TARGET_NODE_NAME,
@@ -400,28 +507,30 @@ final class RepairHappieNmbpInstance
             domain: self::TARGET_DOMAIN,
         );
 
-        return AppInstance::query()->updateOrCreate(
-            [
-                'app_id' => $context['canonicalApp']->id,
-                'name' => self::INSTANCE_NAME,
-            ],
-            [
-                'driver' => AppInstanceDriver::Orbit,
-                'driver_config' => $driverConfig,
-                'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
-            ],
-        );
+        return AppInstance::query()->updateOrCreate([
+            'app_id' => $context['canonicalApp']->id,
+            'name' => self::INSTANCE_NAME,
+        ], [
+            'driver' => AppInstanceDriver::Orbit,
+            'driver_config' => $driverConfig,
+            'runtime_requirements' => new AppInstanceRuntimeRequirementsData,
+        ]);
     }
 
     /**
      * @param  array{
      *     canonicalApp: App,
-     *     workaroundApp: App,
-     *     targetNode: Node,
+     *     workaroundApp: App|null,
+     *     targetNode: Node|null,
+     *     canonicalInstance: AppInstance|null,
      * }  $context
      */
     private function reassignDependents(array $context, AppInstance $canonicalInstance): void
     {
+        if (! $context['workaroundApp'] instanceof App) {
+            throw new RuntimeException('Workaround app context is required to reassign dependents.');
+        }
+
         $canonicalAppId = $context['canonicalApp']->id;
         $workaroundAppId = $context['workaroundApp']->id;
 
@@ -434,31 +543,34 @@ final class RepairHappieNmbpInstance
 
         WorkspaceStep::query()
             ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+            ->update([
+                'app_id' => $canonicalAppId,
+                'app_instance_id' => $canonicalInstance->id,
+            ]);
 
-        AppSetupStep::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        AppSetupStep::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
-        AppSetupRun::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        AppSetupRun::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
-        DatabaseConnectionTarget::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        DatabaseConnectionTarget::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
         AppRuntimeMount::query()
             ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+            ->get()
+            ->each(static function (AppRuntimeMount $mount) use ($canonicalInstance): void {
+                AppInstanceRuntimeMount::query()->create([
+                    'app_instance_id' => $canonicalInstance->id,
+                    'source' => $mount->source,
+                    'target' => $mount->target,
+                    'read_only' => $mount->read_only,
+                ]);
 
-        DeployStep::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+                $mount->delete();
+            });
 
-        DeploymentRun::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        DeployStep::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
+
+        DeploymentRun::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
         Schedule::query()
             ->where('app_id', $workaroundAppId)
@@ -467,17 +579,11 @@ final class RepairHappieNmbpInstance
                 'target_name' => self::CANONICAL_APP_NAME,
             ]);
 
-        AppAnalyticsBinding::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        AppAnalyticsBinding::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
-        AppWebSocketBinding::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        AppWebSocketBinding::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
-        AppDependencyAuditSummary::query()
-            ->where('app_id', $workaroundAppId)
-            ->update(['app_id' => $canonicalAppId]);
+        AppDependencyAuditSummary::query()->where('app_id', $workaroundAppId)->update(['app_id' => $canonicalAppId]);
 
         Process::query()
             ->where('owner_type', App::class)
@@ -494,10 +600,7 @@ final class RepairHappieNmbpInstance
                 ])->save();
             });
 
-        $workaroundInstanceIds = AppInstance::query()
-            ->where('app_id', $workaroundAppId)
-            ->pluck('id')
-            ->all();
+        $workaroundInstanceIds = AppInstance::query()->where('app_id', $workaroundAppId)->pluck('id')->all();
 
         AppInstanceEnvVariable::query()
             ->whereIn('app_instance_id', $workaroundInstanceIds)
@@ -508,12 +611,30 @@ final class RepairHappieNmbpInstance
             ->update(['app_instance_id' => $canonicalInstance->id]);
     }
 
+    private function reassignCanonicalLegacyDependents(App $canonicalApp, AppInstance $canonicalInstance): void
+    {
+        WorkspaceStep::query()
+            ->where('app_id', $canonicalApp->id)
+            ->whereNull('app_instance_id')
+            ->update(['app_instance_id' => $canonicalInstance->id]);
+
+        AppRuntimeMount::query()
+            ->where('app_id', $canonicalApp->id)
+            ->get()
+            ->each(static function (AppRuntimeMount $mount) use ($canonicalInstance): void {
+                AppInstanceRuntimeMount::query()->create([
+                    'app_instance_id' => $canonicalInstance->id,
+                    'source' => $mount->source,
+                    'target' => $mount->target,
+                    'read_only' => $mount->read_only,
+                ]);
+
+                $mount->delete();
+            });
+    }
+
     private function repairedProxyDomain(string $domain): string
     {
-        return str_replace(
-            '.'.self::WORKAROUND_APP_NAME.'.',
-            '.'.self::CANONICAL_APP_NAME.'.',
-            $domain,
-        );
+        return str_replace('.'.self::WORKAROUND_APP_NAME.'.', '.'.self::CANONICAL_APP_NAME.'.', $domain);
     }
 }
