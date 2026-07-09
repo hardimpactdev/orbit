@@ -9,21 +9,30 @@ use App\Models\App;
 use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
 const APP_INSTANCE_CALLER_WG_IP = '10.6.0.98';
 
-function createAppInstanceCaller(array $overrides = []): Node
+/**
+ * @param  array<string, mixed>  $overrides
+ */
+function create_app_instance_caller(array $overrides = []): Node
 {
-    return Node::factory()->create(array_merge([
+    $attributes = array_replace([
         'name' => 'caller',
         'host' => APP_INSTANCE_CALLER_WG_IP,
         'wireguard_address' => APP_INSTANCE_CALLER_WG_IP,
-    ], $overrides));
+    ], $overrides);
+
+    /** @var Node $caller */
+    $caller = Node::factory()->create($attributes);
+
+    return $caller;
 }
 
-function grantAppInstanceReadAccess(Node $caller, Node $appNode): void
+function grant_app_instance_read_access(Node $caller, Node $appNode): void
 {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
@@ -35,12 +44,31 @@ function grantAppInstanceReadAccess(Node $caller, Node $appNode): void
     ]);
 }
 
+function get_app_instance_json(string $uri): TestResponse
+{
+    /** @var TestResponse $response */
+    $response = test()->call(
+        'GET',
+        $uri,
+        [],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'application/json',
+            'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP,
+        ],
+    );
+
+    return $response;
+}
+
 describe('AppInstanceController', function (): void {
     it('reports configured mounts from each app instance instead of legacy app-level mounts', function (): void {
-        $caller = createAppInstanceCaller();
+        $caller = create_app_instance_caller();
         $appNode = createTestAppHostNode(['name' => 'NMBP', 'platform' => 'macos_14', 'user' => 'nckrtl']);
-        grantAppInstanceReadAccess($caller, $appNode);
+        grant_app_instance_read_access($caller, $appNode);
 
+        /** @var App $app */
         $app = App::factory()->for($appNode, 'node')->create([
             'name' => 'hauser',
             'path' => '/Users/nckrtl/apps/hauser',
@@ -81,21 +109,14 @@ describe('AppInstanceController', function (): void {
             'read_only' => true,
         ]);
 
-        $list = $this->call(
-            'GET',
-            '/api/apps/hauser/instances',
-            [],
-            [],
-            [],
-            [
-                'HTTP_ACCEPT' => 'application/json',
-                'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP,
-            ],
-        );
+        $list = get_app_instance_json('/api/apps/hauser/instances');
 
         $list->assertOk();
 
-        $instances = collect($list->json('success.data.instances'))->keyBy('name');
+        /** @var list<array<string, mixed>> $payload */
+        $payload = $list->json('success.data.instances');
+
+        $instances = collect($payload)->keyBy('name')->all();
 
         expect(data_get($instances, 'nmbp.runtime.configured_mounts.0.source'))
             ->toBe('/Users/nckrtl/projects')
@@ -106,18 +127,7 @@ describe('AppInstanceController', function (): void {
             ->and(data_get($instances, 'development.runtime.configured_mounts'))
             ->toBe([]);
 
-        $this
-            ->call(
-                'GET',
-                '/api/apps/hauser/instances/nmbp',
-                [],
-                [],
-                [],
-                [
-                    'HTTP_ACCEPT' => 'application/json',
-                    'REMOTE_ADDR' => APP_INSTANCE_CALLER_WG_IP,
-                ],
-            )
+        get_app_instance_json('/api/apps/hauser/instances/nmbp')
             ->assertOk()
             ->assertJsonPath('success.data.instance.runtime.configured_mounts.0.source', '/Users/nckrtl/projects')
             ->assertJsonPath('success.data.instance.runtime.configured_mounts.0.target', '/projects');

@@ -297,6 +297,7 @@ final readonly class ProcessOwnerContextResolver
             app: $app,
             workspace: null,
             owner: $app,
+            appInstance: $instance,
         );
     }
 

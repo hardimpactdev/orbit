@@ -6,6 +6,7 @@ namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
@@ -22,14 +23,17 @@ final readonly class ProcessOwnerContext
         public ?App $app,
         public ?Workspace $workspace,
         public Model $owner,
+        public ?AppInstance $appInstance = null,
     ) {}
 
     public function runtimeApp(): App
     {
         if ($this->app instanceof App) {
-            $this->app->setRelation('node', $this->node);
+            $app = ProcessRuntimeApp::make($this->app, $this->node, $this->appInstance);
 
-            return $this->app;
+            $app->setRelation('node', $this->node);
+
+            return $app;
         }
 
         $home = new NodeHostPaths()->homeDirectory($this->node);
