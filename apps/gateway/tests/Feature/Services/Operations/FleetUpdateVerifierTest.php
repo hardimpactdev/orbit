@@ -527,6 +527,7 @@ function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
             output: "{$gatewayImage}\n",
         ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        fleet_verifier_gateway_migration_command($gatewayImage) => Process::result(),
         "docker service update --detach=true --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
             Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
@@ -565,10 +566,37 @@ function fleet_verifier_gateway_stack_deploy_command(): string
 
 function fakeFleetVerifierGatewayMigrations(): void
 {
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
+    Artisan::shouldReceive('call')->never();
+}
+
+function fleet_verifier_gateway_migration_command(string $gatewayImage): string
+{
+    $configRoot = config(key: 'orbit.paths.config_root');
+
+    if (! is_string($configRoot) || trim($configRoot) === '') {
+        throw new RuntimeException('Test config root is not configured.');
+    }
+
+    $configRoot = rtrim($configRoot, characters: '/');
+
+    return implode(' ', [
+        'docker run',
+        '--rm',
+        '--network '.escapeshellarg('orbit-network'),
+        '--mount '.escapeshellarg("type=bind,source={$configRoot},target={$configRoot}"),
+        '--env '.escapeshellarg('APP_ENV=production'),
+        '--env '.escapeshellarg('APP_DEBUG=false'),
+        '--env '.escapeshellarg('DB_BUSY_TIMEOUT=5000'),
+        '--env '.escapeshellarg('DB_JOURNAL_MODE=wal'),
+        '--env '.escapeshellarg('DB_SYNCHRONOUS=NORMAL'),
+        '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
+        escapeshellarg($gatewayImage),
+        escapeshellarg('php'),
+        escapeshellarg('artisan'),
+        escapeshellarg('migrate'),
+        escapeshellarg('--force'),
+        escapeshellarg('--no-interaction'),
+    ]);
 }
 
 /**

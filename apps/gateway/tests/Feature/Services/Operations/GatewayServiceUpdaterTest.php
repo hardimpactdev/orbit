@@ -42,7 +42,7 @@ afterEach(function (): void {
     }
 });
 
-it('updates gateway and scheduler services to the plan image after in-process migrations and gateway health', function (): void {
+it('updates gateway and scheduler services to the plan image after target image migrations and gateway health', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gateway_service_updater_plan_with_reverb_artifact($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
@@ -58,15 +58,6 @@ it('updates gateway and scheduler services to the plan image after in-process mi
             'orbit_path' => '/home/orbit/orbit',
             'orbit_agent_capable' => false,
         ]);
-
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturnUsing(function () use (&$operations): int {
-            $operations[] = 'artisan:migrate';
-
-            return 0;
-        });
 
     Process::fake(function ($process) use (&$operations, $plan, $previousImage) {
         $command = (string) $process->command;
@@ -92,7 +83,7 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->toBe([
             "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
             "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
-            'artisan:migrate',
+            gateway_service_updater_migration_command($plan),
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
             "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
             "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'",
@@ -103,8 +94,11 @@ it('updates gateway and scheduler services to the plan image after in-process mi
             "docker service ls --filter 'name=orbit_orbit-scheduler' --format '{{.Replicas}}'",
             "docker service ls --filter 'name=orbit_orbit-operations-reverb' --format '{{.Replicas}}'",
         ])
-        ->and(array_filter($operations, fn (string $operation): bool => str_starts_with($operation, 'docker run')))
-        ->toBe([]);
+        ->and(array_values(array_filter(
+            $operations,
+            fn (string $operation): bool => str_starts_with($operation, 'docker run'),
+        )))
+        ->toBe([gateway_service_updater_migration_command($plan)]);
 
     Process::assertRan(function ($process): bool {
         if ((string) $process->command !== 'bash -s') {
@@ -221,6 +215,60 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->not->toContain('bearer_token');
 });
 
+it('runs gateway migrations through the target gateway image before replacing the gateway service', function (): void {
+    $run = gatewayServiceUpdaterRun();
+    $plan = gatewayServiceUpdaterPlan($run);
+    $previousImage = gatewayServiceUpdaterPreviousImage();
+    $operations = [];
+    app()->instance(RunsInternalCommands::class, gateway_service_updater_fake_local_executor());
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'wireguard_address' => '10.6.0.2',
+            'platform' => 'debian_12',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
+
+    Artisan::shouldReceive('call')->never();
+
+    Process::fake(function ($process) use (&$operations, $plan, $previousImage) {
+        $command = (string) $process->command;
+        $operations[] = $command;
+
+        $result = gateway_service_updater_common_process_result($command, $plan, $previousImage);
+
+        if ($result !== null) {
+            return $result;
+        }
+
+        return match ($command) {
+            gateway_service_updater_migration_command($plan) => Process::result(output: "migrated\n"),
+            "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+                output: "completed\n",
+            ),
+            default => throw new RuntimeException("Unexpected process command [{$command}]."),
+        };
+    });
+
+    app(GatewayServiceUpdater::class)->update($run, $plan);
+
+    $migrationIndex = array_search(gateway_service_updater_migration_command($plan), $operations, true);
+    $gatewayUpdateIndex = array_search(
+        "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
+        $operations,
+        true,
+    );
+
+    expect($migrationIndex)
+        ->not->toBeFalse()->and($gatewayUpdateIndex)
+        ->not->toBeFalse()->and($migrationIndex)->toBeLessThan($gatewayUpdateIndex)->and(
+            $operations[$migrationIndex],
+        )->toContain("'{$plan->gateway_image}'")->toContain("'migrate'")->toContain("'--force'")->toContain(
+            "'--no-interaction'",
+        );
+});
+
 it('retries gateway host CLI install when the previous launcher exits during self update', function (): void {
     $run = gatewayServiceUpdaterRun();
     $plan = gatewayServiceUpdaterPlan($run);
@@ -237,11 +285,6 @@ it('retries gateway host CLI install when the previous launcher exits during sel
             'platform' => 'debian_12',
             'orbit_path' => '/home/orbit/orbit',
         ]);
-
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
 
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
@@ -299,11 +342,6 @@ it('restarts the gateway host agent service after host cli install reports no un
             'orbit_path' => '/home/orbit/orbit',
             'user' => 'orbit',
         ]);
-
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
 
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
@@ -398,11 +436,6 @@ it('records gateway host CLI install when the gateway agent transport disconnect
             'orbit_path' => '/home/orbit/orbit',
         ]);
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
-
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
@@ -448,11 +481,6 @@ it('fails gateway host CLI install when the transport failure is not an agent re
             'orbit_path' => '/home/orbit/orbit',
         ]);
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
-
     Process::fake(function ($process) use ($plan, $previousImage) {
         $command = (string) $process->command;
 
@@ -486,16 +514,15 @@ it('restores the scheduler previous image and replica when gateway migrations fa
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andThrow(new RuntimeException('migration failed'));
-
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$previousImage}\n",
         ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        gateway_service_updater_migration_command($plan) => Process::result(
+            exitCode: 1,
+            errorOutput: "migration failed\n",
+        ),
         "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" =>
             Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
@@ -525,11 +552,6 @@ it('waits for a detached gateway service update to complete before starting the 
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $gatewayStates = ['updating', 'completed'];
     $gatewayStateChecks = 0;
-
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
 
     Process::fake(function ($process) use (&$gatewayStates, &$gatewayStateChecks, $plan, $previousImage) {
         $command = (string) $process->command;
@@ -579,15 +601,6 @@ it('treats a same-image gateway service update with no Docker update status as h
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturnUsing(function () use (&$operations): int {
-            $operations[] = 'artisan:migrate';
-
-            return 0;
-        });
-
     Process::fake(function ($process) use (&$operations, $plan, $previousImage) {
         $command = (string) $process->command;
         $operations[] = $command;
@@ -617,7 +630,7 @@ it('treats a same-image gateway service update with no Docker update status as h
     expect($operations)->toBe([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'",
-        'artisan:migrate',
+        gateway_service_updater_migration_command($plan),
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'",
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'",
@@ -640,16 +653,12 @@ it('restores the scheduler previous image and replica when the updated gateway f
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andReturn(0);
-
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$previousImage}\n",
         ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        gateway_service_updater_migration_command($plan) => Process::result(),
         "docker service update --detach=true --image '{$plan->gateway_image}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
             Process::result(),
         "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
@@ -678,16 +687,15 @@ it('records a recovery failed event when the scheduler cannot be scaled back to 
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->with('migrate', ['--force' => true, '--no-interaction' => true])
-        ->andThrow(new RuntimeException('migration failed'));
-
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
             output: "{$previousImage}\n",
         ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
+        gateway_service_updater_migration_command($plan) => Process::result(
+            exitCode: 1,
+            errorOutput: "migration failed\n",
+        ),
         "docker service update --detach=true --image '{$previousImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" =>
             Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(
@@ -810,11 +818,45 @@ function gateway_service_updater_stack_deploy_command(): string
     );
 }
 
+function gateway_service_updater_migration_command(OperationUpdatePlan $plan): string
+{
+    $configRoot = config('orbit.paths.config_root');
+
+    if (! is_string($configRoot) || trim($configRoot) === '') {
+        throw new RuntimeException('Test config root is not configured.');
+    }
+
+    $configRoot = rtrim($configRoot, '/');
+
+    return implode(' ', [
+        'docker run',
+        '--rm',
+        '--network '.escapeshellarg('orbit-network'),
+        '--mount '.escapeshellarg("type=bind,source={$configRoot},target={$configRoot}"),
+        '--env '.escapeshellarg('APP_ENV=production'),
+        '--env '.escapeshellarg('APP_DEBUG=false'),
+        '--env '.escapeshellarg('DB_BUSY_TIMEOUT=5000'),
+        '--env '.escapeshellarg('DB_JOURNAL_MODE=wal'),
+        '--env '.escapeshellarg('DB_SYNCHRONOUS=NORMAL'),
+        '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
+        escapeshellarg($plan->gateway_image),
+        escapeshellarg('php'),
+        escapeshellarg('artisan'),
+        escapeshellarg('migrate'),
+        escapeshellarg('--force'),
+        escapeshellarg('--no-interaction'),
+    ]);
+}
+
 function gateway_service_updater_common_process_result(
     string $command,
     OperationUpdatePlan $plan,
     string $previousImage,
 ): mixed {
+    if ($command === gateway_service_updater_migration_command($plan)) {
+        return Process::result();
+    }
+
     return match ($command) {
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'"
             => Process::result(output: "{$previousImage}\n"),

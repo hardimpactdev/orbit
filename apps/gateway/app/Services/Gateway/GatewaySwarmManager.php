@@ -188,6 +188,33 @@ final readonly class GatewaySwarmManager
         );
     }
 
+    public function runGatewayMigrations(GatewayImageReference $image): void
+    {
+        $configRoot = $this->configRoot();
+
+        $this->run(
+            implode(' ', [
+                'docker run',
+                '--rm',
+                '--network '.escapeshellarg(GatewaySwarmStackRenderer::Network),
+                '--mount '.escapeshellarg("type=bind,source={$configRoot},target={$configRoot}"),
+                '--env '.escapeshellarg('APP_ENV=production'),
+                '--env '.escapeshellarg('APP_DEBUG=false'),
+                '--env '.escapeshellarg('DB_BUSY_TIMEOUT=5000'),
+                '--env '.escapeshellarg('DB_JOURNAL_MODE=wal'),
+                '--env '.escapeshellarg('DB_SYNCHRONOUS=NORMAL'),
+                '--env '.escapeshellarg("ORBIT_CONFIG_ROOT={$configRoot}"),
+                escapeshellarg($image->canonical()),
+                escapeshellarg('php'),
+                escapeshellarg('artisan'),
+                escapeshellarg('migrate'),
+                escapeshellarg('--force'),
+                escapeshellarg('--no-interaction'),
+            ]),
+            'run gateway migrations',
+        );
+    }
+
     public function serviceImage(string $service): ?string
     {
         $service = $this->normalizeName($service, 'service');

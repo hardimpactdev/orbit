@@ -20,7 +20,6 @@ use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Sleep;
 use RuntimeException;
 use Throwable;
@@ -69,7 +68,7 @@ class GatewayServiceUpdater
                 'migrations',
                 'Running gateway migrations',
                 'Gateway migrations completed',
-                fn (): null => $this->runMigrations(),
+                fn (): null => $this->runMigrations($targetImage),
             );
             $this->runStep(
                 $operationRun,
@@ -404,13 +403,9 @@ class GatewayServiceUpdater
         ])->save();
     }
 
-    private function runMigrations(): null
+    private function runMigrations(GatewayImageReference $targetImage): null
     {
-        $exitCode = Artisan::call('migrate', ['--force' => true, '--no-interaction' => true]);
-
-        if ($exitCode !== 0) {
-            throw new RuntimeException("Gateway migrations failed with exit code {$exitCode}.");
-        }
+        $this->swarm()->runGatewayMigrations($targetImage);
 
         return null;
     }
