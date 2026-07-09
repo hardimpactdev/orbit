@@ -24,7 +24,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Primitive | Required when | Default | Validation |
 | --- | --- | --- | --- | --- |
-| `name` | `[name]` | When local workspace context and Agent IDE adapter resolution cannot resolve it. | Local workspace context or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
+| `name` | `[name]` | When local workspace context, Codex metadata for an explicit `--path`, and Agent IDE adapter resolution cannot resolve it. | Local workspace context, Codex metadata for an explicit `--path`, or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug or app-instance selector such as `happie.nmbp`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--node-transport` | `text` | Optional. | `auto` | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
@@ -42,6 +42,17 @@ the parent app path, including external agent worktree directories.
 1. **Resolve Workspace Identity**: Resolve `[name]` and parent `app` in this
    order:
    - Explicit `[name]` positional + explicit `--app`.
+   - **Explicit `--path` Codex metadata:** when `[name]` is missing and
+     `--path` is a Codex-managed Git worktree at
+     `~/.codex/worktrees/<key>/<repo>`, the local CLI reads the worktree's
+     `.git` pointer and structured metadata files without shell execution. A
+     synced `codex-synced-branch.json` value of `refs/heads/<branch>` resolves
+     to that branch's normalized workspace slug. When no synced branch is
+     available, a valid `codex-thread.json` resolves to `codex-<key>`. The
+     resulting slug is deterministic, valid, and at most 63 characters.
+     Explicit `[name]` takes precedence; paths lacking valid Codex metadata
+     continue to the gateway lookup and adapter flow. Codex is not an Agent IDE
+     adapter.
    - **Explicit `--path` adapter lookup:** when `[name]` is missing and
      `--path` plus `--app` are supplied, Orbit first asks the selected app's
      effective Agent IDE adapter to resolve the absolute path. A successful
@@ -124,11 +135,14 @@ the parent app path, including external agent worktree directories.
      including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
-   - Adoption is based on explicit command input, Agent IDE adapter path
-     resolution when `[name]` is omitted, and gateway path policy only.
+   - Adoption is based on explicit command input, local Codex Git-worktree
+     metadata for an explicit `--path`, Agent IDE adapter path resolution when
+     `[name]` is omitted, and gateway path policy only.
      `workspace:setup` does not inspect project files such as `composer.json`,
      `package.json`, or `.php-version` to infer workspace identity, app
-     ownership, or PHP version. Project-file adoption hints belong only to
+     ownership, or PHP version. The narrowly scoped Codex Git-worktree
+     metadata read above is local tool metadata, not project-file inspection.
+     Project-file adoption hints belong only to
      `doctor --family=workspace --adopt` as documented in the Workspaces
      README.
 
@@ -187,10 +201,11 @@ re-renders artifacts and verifies command-owned application. The outcome layer r
 - `set_up` — first-time setup of a workspace path that is already in gateway
   configuration (typically just created by `workspace:new`).
 - `adopted` — first-time setup where the path existed on the node but was
-  unmanaged. Identity may come from explicit input or from an agent-IDE
-  adapter probe (for example, a PolyScope worktree the adapter manages but
-  Orbit did not yet know about). The durable `workspace.adopted` boolean is
-  set to `true` for this run; subsequent re-runs report
+  unmanaged. Identity may come from explicit input, local Codex Git-worktree
+  metadata for an explicit `--path`, or an agent-IDE adapter probe (for
+  example, a PolyScope worktree the adapter manages but Orbit did not yet know
+  about). The durable `workspace.adopted` boolean is set to `true` for this
+  run; subsequent re-runs report
   `result.action=converged` with `workspace.adopted=true` preserved. When
   the adapter resolved identity, the workspace row records `agent_ide` and
   `agent_ide_workspace_id` from the adapter descriptor.

@@ -27,7 +27,7 @@ orbit workspace:setup feature-a --app=my-app
 # Target a concrete app instance with dot notation
 orbit workspace:setup recipes --app=happie.nmbp --path=/Users/nckrtl/.codex/worktrees/a59f/happie
 
-# Let the app's Agent IDE adapter resolve the workspace identity for a path
+# Let local Codex worktree metadata resolve the workspace identity for a path
 orbit workspace:setup --app=happie.nmbp --path=/Users/nckrtl/.codex/worktrees/a59f/happie
 
 # Adopt an existing path as a workspace
@@ -42,8 +42,9 @@ orbit workspace:setup feature-a --app=my-app --node-transport=transitional-ssh-f
 
 ## Arguments and options
 
-- `name`: The workspace identity slug. Required unless local workspace context
-  or an Agent IDE adapter can resolve it; can be prompted in interactive mode.
+- `name`: The workspace identity slug. Required unless local workspace context,
+  structured Codex Git-worktree metadata for an explicit `--path`, or an Agent
+  IDE adapter can resolve it; can be prompted in interactive mode.
 - `--app=<app>`: The parent app slug or app-instance selector. Use dot
   notation such as `happie.nmbp` to target the `nmbp` instance of `happie`.
   Defaults to the existing workspace's parent app, the local app context, or
@@ -87,6 +88,18 @@ on (caller node identity, absolute CWD) returns one of:
   adapter. Otherwise the command falls through to explicit input (`[name]`,
   `--app`, `--path`) or interactive prompts.
 
+### Local Codex worktree metadata
+
+When `[name]` is omitted and `--path` names a Codex-managed Git worktree at
+`~/.codex/worktrees/<key>/<repo>`, the local CLI reads that worktree's Git
+metadata without executing a shell command. A synced
+`codex-synced-branch.json` `refs/heads/<branch>` value becomes the normalized
+workspace slug. Otherwise, a valid `codex-thread.json` identifies the worktree
+and the CLI uses `codex-<key>`. The result is deterministic, valid, and at most
+63 characters. Explicit `[name]` always wins, and paths without valid Codex
+metadata follow the existing local-context and Agent IDE adapter flow. Codex is
+not an Agent IDE adapter.
+
 ### Agent-IDE adapter probe
 
 `workspace:setup` registers adapter-managed worktrees on first run. Some
@@ -121,12 +134,15 @@ Probe outcomes:
 The following steps describe what the command does during a successful run.
 
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
-  Agent IDE adapter path resolution, or interactive prompts.
+  Codex Git-worktree metadata for an explicit `--path`, Agent IDE adapter path
+  resolution, or interactive prompts.
 - **Idempotent Set-Up Or Adoption**: Sets up a workspace path created by
   `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.
   Adoption is based on explicit command input and, when `[name]` is omitted,
-  Agent IDE adapter path resolution; `workspace:setup` does not inspect project
-  files to discover workspace identity.
+  local Codex Git-worktree metadata for an explicit `--path` or Agent IDE
+  adapter path resolution;
+  `workspace:setup` does not inspect project files to discover workspace
+  identity.
 - **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.

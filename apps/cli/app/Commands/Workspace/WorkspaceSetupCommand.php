@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Workspace;
 
 use App\Commands\Concerns\StreamsGatewayProgress;
+use App\Services\Workspaces\CodexWorktreeNameResolver;
 use Orbit\Core\Progress\ProgressEventType;
 
 final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
@@ -31,10 +32,16 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
+        $name = $this->stringArgument('name');
+
+        if ($name === null && $path !== null) {
+            $name = app(CodexWorktreeNameResolver::class)->resolve($path);
+        }
+
         return $this->streamProgress(
             '/api/workspaces/setup',
             [
-                'name' => $this->stringArgument('name'),
+                'name' => $name,
                 'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
                 'path' => $path,
                 'caller_cwd' => $this->hostCwd(),
