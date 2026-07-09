@@ -104,6 +104,114 @@ describe('workspace write commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('derives the workspace name from synced Codex worktree branch metadata', function (): void {
+        $path = createCodexWorktreeMetadata(
+            key: '194238',
+            repository: 'happie',
+            metadata: [
+                'codex-synced-branch.json' => [
+                    'branch' => 'refs/heads/codex/auto-env-happie-194238',
+                ],
+            ],
+        );
+
+        try {
+            fakeGatewayProgressStream("event: complete\ndata: {\"exit_code\":0}\n\n");
+
+            [$exitCode] = runCommand($this, 'workspace:setup', [
+                '--app' => 'happie.nmbp',
+                '--path' => $path,
+                '--json' => true,
+            ]);
+        } finally {
+            removeCodexWorktreeMetadata($path);
+        }
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
+                'name' => 'codex-auto-env-happie-194238',
+                'app' => 'happie.nmbp',
+                'path' => $path,
+                'caller_cwd' => getcwd(),
+            ],
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('derives the workspace name from the Codex worktree key when only thread metadata exists', function (): void {
+        $path = createCodexWorktreeMetadata(
+            key: '09dd',
+            repository: 'happie',
+            metadata: [
+                'codex-thread.json' => [
+                    'version' => 1,
+                    'ownerThreadId' => '019f4821-eced-7562-ac39-8315438ab0ee',
+                ],
+            ],
+        );
+
+        try {
+            fakeGatewayProgressStream("event: complete\ndata: {\"exit_code\":0}\n\n");
+
+            [$exitCode] = runCommand($this, 'workspace:setup', [
+                '--app' => 'happie.nmbp',
+                '--path' => $path,
+                '--json' => true,
+            ]);
+        } finally {
+            removeCodexWorktreeMetadata($path);
+        }
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
+                'name' => 'codex-09dd',
+                'app' => 'happie.nmbp',
+                'path' => $path,
+                'caller_cwd' => getcwd(),
+            ],
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('limits thread-derived Codex workspace names to a deterministic slug', function (): void {
+        $key = str_repeat('a', 80);
+        $path = createCodexWorktreeMetadata(
+            key: $key,
+            repository: 'happie',
+            metadata: [
+                'codex-thread.json' => [
+                    'version' => 1,
+                    'ownerThreadId' => '019f4821-eced-7562-ac39-8315438ab0ee',
+                ],
+            ],
+        );
+
+        try {
+            fakeGatewayProgressStream("event: complete\ndata: {\"exit_code\":0}\n\n");
+
+            [$exitCode] = runCommand($this, 'workspace:setup', [
+                '--app' => 'happie.nmbp',
+                '--path' => $path,
+                '--json' => true,
+            ]);
+        } finally {
+            removeCodexWorktreeMetadata($path);
+        }
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
+                'name' => 'codex-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-0738f769',
+                'app' => 'happie.nmbp',
+                'path' => $path,
+                'caller_cwd' => getcwd(),
+            ],
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
     it('requires force before removing a workspace non-interactively', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
@@ -297,3 +405,34 @@ describe('workspace write commands', function (): void {
             ->toBe('path');
     });
 });
+
+/**
+ * @param  array<string, array<string, int|string>>  $metadata
+ */
+function createCodexWorktreeMetadata(string $key, string $repository, array $metadata): string
+{
+    $path =
+        sys_get_temp_dir()
+        ."/orbit-cli-codex-worktrees-{$key}-"
+        .bin2hex(random_bytes(8))
+        ."/.codex/worktrees/{$key}/{$repository}";
+    $gitDirectory = dirname($path).'/git';
+
+    mkdir($path, 0755, recursive: true);
+    mkdir($gitDirectory, 0755, recursive: true);
+    file_put_contents("{$path}/.git", "gitdir: {$gitDirectory}\n");
+
+    foreach ($metadata as $filename => $contents) {
+        file_put_contents(
+            "{$gitDirectory}/{$filename}",
+            json_encode($contents, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR)."\n",
+        );
+    }
+
+    return $path;
+}
+
+function removeCodexWorktreeMetadata(string $path): void
+{
+    new \Illuminate\Filesystem\Filesystem()->deleteDirectory(dirname(dirname(dirname(dirname($path)))));
+}

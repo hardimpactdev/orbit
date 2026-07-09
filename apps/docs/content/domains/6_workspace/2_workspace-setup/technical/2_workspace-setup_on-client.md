@@ -12,8 +12,10 @@ This contract defines behavior when `workspace:setup` is invoked from a
 - **Identity**: Uses the client's authorized identity to authenticate
   with the gateway.
 - **Local context resolution**: Attempts to resolve the parent app and
-  workspace identity from local Orbit configuration or current directory
-  before forwarding configuration.
+  workspace identity from local Orbit configuration, current directory, or
+  structured Codex Git-worktree metadata for an explicit Codex `--path` before
+  forwarding configuration. This local metadata resolution is not an Agent IDE
+  adapter.
 - **Progress streaming**: Streams the step tree and apply progress from
   the gateway to the local TTY.
 - **Local config update**: If successful and the workspace is absent from local
