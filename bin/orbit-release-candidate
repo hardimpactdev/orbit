@@ -215,14 +215,25 @@ cmd_build() {
     # Docker config so no credential helper runs. The token is never echoed,
     # teed, or written outside the throwaway config directory.
     ghcr_docker_config="$(mktemp -d)"
-    local ghcr_user ghcr_auth
+    local ghcr_user ghcr_auth active_docker_host
     ghcr_user="$(gh api user -q .login)"
     ghcr_auth="$(printf '%s:%s' "$ghcr_user" "$(gh auth token)" | base64 | tr -d '\n')"
     (umask 077 && printf '{"auths":{"ghcr.io":{"auth":"%s"}}}\n' "$ghcr_auth" > "${ghcr_docker_config}/config.json")
     unset ghcr_auth
 
-    DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
-    DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
+    active_docker_host="${DOCKER_HOST:-}"
+
+    if [ -z "$active_docker_host" ]; then
+        active_docker_host="$(docker context inspect "$(docker context show)" --format '{{ (index .Endpoints "docker").Host }}' 2>/dev/null || true)"
+    fi
+
+    if [ -n "$active_docker_host" ]; then
+        DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
+        DOCKER_CONFIG="$ghcr_docker_config" DOCKER_HOST="$active_docker_host" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
+    else
+        DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_image" > "${work_dir}/gateway-image-push.log" 2>&1
+        DOCKER_CONFIG="$ghcr_docker_config" docker push "$candidate_reverb_image" > "${work_dir}/reverb-image-push.log" 2>&1
+    fi
 
     rm -rf "$ghcr_docker_config"
     ghcr_docker_config=""

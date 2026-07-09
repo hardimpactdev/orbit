@@ -60,7 +60,9 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
 
         $process = release_candidate_process(
             arguments: ['build'],
-            env: release_candidate_process_env(root: $root),
+            env: release_candidate_process_env(root: $root, overrides: [
+                'ORBIT_TEST_DOCKER_CONTEXT_HOST' => 'unix:///Users/nckrtl/.orbstack/run/docker.sock',
+            ]),
         );
 
         expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
@@ -136,6 +138,9 @@ it('writes durable candidate state with sha256 keys and a latest pointer during 
                 '--role-image-artifact=orbit-websocket=orbit-reverb-linux-amd64.tar=',
             )
             ->toContain('docker save ghcr.io/hardimpactdev/orbit-reverb:0.1.200-candidate-'.$buildId.' -o ')
+            ->toContain('docker context show')
+            ->toContain('docker context inspect orbstack --format {{ (index .Endpoints "docker").Host }}')
+            ->toContain('docker-push-host=unix:///Users/nckrtl/.orbstack/run/docker.sock')
             ->not->toContain('Storage::disk')
             ->not->toContain('release create')
             ->not->toContain('push origin')
@@ -396,6 +401,14 @@ function release_candidate_prepare_root(string $temp): string
 
     release_candidate_write_stub(binDir: "{$root}/bin", name: 'docker', body: <<<'BASH'
         printf 'docker %s\n' "$*" >> "${STUB_LOG:-/dev/null}"
+        if [ "$1" = 'context' ] && [ "$2" = 'show' ]; then
+            printf '%s\n' "${ORBIT_TEST_DOCKER_CONTEXT_NAME:-orbstack}"
+            exit 0
+        fi
+        if [ "$1" = 'context' ] && [ "$2" = 'inspect' ]; then
+            printf '%s\n' "${ORBIT_TEST_DOCKER_CONTEXT_HOST:-}"
+            exit 0
+        fi
         if [ "$1" = 'buildx' ] && [ "$2" = 'imagetools' ] && [ "$3" = 'inspect' ]; then
             if [ -n "${ORBIT_TEST_IMAGETOOLS_FAIL:-}" ]; then
                 printf 'ERROR: %s: not found\n' "$4" >&2
@@ -410,6 +423,7 @@ function release_candidate_prepare_root(string $temp): string
             exit 0
         fi
         if [ "$1" = 'push' ]; then
+            printf 'docker-push-host=%s\n' "${DOCKER_HOST:-}" >> "${STUB_LOG:-/dev/null}"
             case "$2" in
                 *orbit-reverb*)
                     printf 'The push refers to repository [ghcr.io/hardimpactdev/orbit-reverb]\n'
