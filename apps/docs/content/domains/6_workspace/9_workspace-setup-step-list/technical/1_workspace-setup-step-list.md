@@ -25,7 +25,7 @@ This command follows the shared
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `app` | `--app` | When no parent app can be inferred from the caller filesystem. | Never. | Cwd-inferred parent app. | Parent app slug or app-instance selector present in the gateway registry and authorized for this caller. Dot notation such as `happie.nmbp` selects one concrete app instance for authorization/path resolution while listing policy stored on the parent app. Single value only. |
+| `app` | `--app` | When no parent app can be inferred from the caller filesystem. | Never. | Cwd-inferred parent app. | Parent app slug or app-instance selector present in the gateway registry and authorized for this caller. Dot notation such as `happie.nmbp` lists instance-scoped setup steps for that app instance, falling back to legacy app-level rows only when no instance rows exist. Single value only. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 ## Visibility Behavior

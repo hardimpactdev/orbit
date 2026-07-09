@@ -13,6 +13,7 @@ use App\Exceptions\AppSelectionResolutionFailed;
 use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\AppSelectorResolver;
@@ -21,6 +22,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceStepListPayload;
+use App\Services\Workspaces\WorkspaceStepPolicyService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,12 +32,16 @@ final class WorkspaceStepDeleteController implements Loggable
 {
     private ?WorkspaceStep $activitySubject = null;
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
         private readonly RemoveWorkspaceStep $removeWorkspaceStep,
         private readonly AppSelectorResolver $appSelectorResolver,
         private readonly WorkspacePlacement $workspacePlacement,
+        private readonly WorkspaceStepPolicyService $stepPolicy,
     ) {}
 
     public function __invoke(
@@ -103,25 +109,24 @@ final class WorkspaceStepDeleteController implements Loggable
             return $this->forbidden($servingNode, $authorization, 'workspace:write');
         }
 
-        $model = WorkspaceStep::query()
-            ->where('app_id', $app->id)
-            ->where('phase', $phaseEnum)
-            ->whereKey($step)
-            ->first();
+        $instance = $selection->instance;
+
+        if (! $instance instanceof AppInstance) {
+            return $this->appInstanceRequired();
+        }
+
+        $model = $this->stepPolicy->findInstanceStep($app, $phaseEnum, $step, $instance);
 
         if (! $model instanceof WorkspaceStep) {
             return $this->stepNotFound($step, $app->name, $phaseEnum);
         }
 
-        $removed = $payload->forStep($model);
+        $removed = $payload->forStep($model, $app);
         $this->activitySubject = $model;
 
         $this->removeWorkspaceStep->handle($model);
 
-        $remaining = WorkspaceStep::query()
-            ->where('app_id', $app->id)
-            ->where('phase', $phaseEnum)
-            ->count();
+        $remaining = $this->stepPolicy->remainingInstanceCount($app, $phaseEnum, $instance);
 
         return response()->json([
             'success' => [
@@ -159,9 +164,15 @@ final class WorkspaceStepDeleteController implements Loggable
         return $selection->app->node;
     }
 
-    /**
-     * @param  array<string, mixed>  $meta
-     */
+    private function appInstanceRequired(): JsonResponse
+    {
+        return $this->validationFailed(
+            'app',
+            'Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
+            ['reason' => 'app_instance_required'],
+        );
+    }
+
     private function validationFailed(string $field, string $message, array $meta = []): JsonResponse
     {
         return response()->json([

@@ -53,7 +53,12 @@ These rules govern all workspace family commands.
   Orbit-managed TLS material, and log paths scoped to the program name).
   Runtime unit convergence belongs to the `process` family.
 - Workspace setup and teardown step definitions are gateway-owned workspace
-  policy. Adding, listing, removing, and ordering those definitions are explicit
+  policy scoped to app instances. `workspace-setup-step:add` and
+  `workspace-teardown-step:add` require dotted selectors such as `hauser.nmbp`;
+  list/remove and lifecycle execution resolve instance-scoped rows first and
+  fall back to legacy app-level rows only when no instance rows exist for list
+  and lifecycle execution. Legacy app-level rows are not mutable. Adding,
+  listing, removing, and ordering instance-owned definitions are explicit
   workspace commands, not doctor repair actions.
 - Workspace setup and teardown step runs are durable workspace history.
   `workspace:history` and `workspace:log` read that history; doctor verifies

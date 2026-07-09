@@ -14,6 +14,7 @@ use App\Exceptions\WorkspaceUnsupportedForProduction;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\AppSelectorResolver;
@@ -22,21 +23,29 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRoleGuard;
 use App\Services\Workspaces\WorkspaceStepListPayload;
+use App\Services\Workspaces\WorkspaceStepPolicyService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/**
+ * @mago-expect lint:kan-defect
+ */
 #[RequiresPermission('workspace:write', servingNode: ServingNode::AppOwning)]
 final class WorkspaceStepStoreController implements Loggable
 {
     private ?WorkspaceStep $activitySubject = null;
 
+    /**
+     * @mago-expect lint:excessive-parameter-list
+     */
     public function __construct(
         private readonly NodeAccessAuthorizer $authorizer,
         private readonly WorkspaceRoleGuard $workspaceRoleGuard,
         private readonly AddWorkspaceStep $addWorkspaceStep,
         private readonly AppSelectorResolver $appSelectorResolver,
         private readonly WorkspacePlacement $workspacePlacement,
+        private readonly WorkspaceStepPolicyService $stepPolicy,
     ) {}
 
     public function __invoke(string $phase, Request $request, WorkspaceStepListPayload $payload): JsonResponse
@@ -106,6 +115,7 @@ final class WorkspaceStepStoreController implements Loggable
         }
 
         $app = $selection->app;
+        $instance = $selection->instance;
         $servingNode = $this->servingNodeForSelection($selection);
 
         try {
@@ -126,7 +136,11 @@ final class WorkspaceStepStoreController implements Loggable
             return $this->forbidden($servingNode, $authorization, 'workspace:write');
         }
 
-        $anchor = $this->anchorStep($app, $phaseEnum, $before ?? $after);
+        if (! $instance instanceof AppInstance) {
+            return $this->appInstanceRequired();
+        }
+
+        $anchor = $this->anchorStep($app, $phaseEnum, $before ?? $after, $instance);
 
         if (($before !== null || $after !== null) && ! $anchor instanceof WorkspaceStep) {
             return $this->stepNotFound((int) ($before ?? $after), $app->name, $phaseEnum);
@@ -139,6 +153,7 @@ final class WorkspaceStepStoreController implements Loggable
             timeoutSeconds: $timeout,
             beforeStepId: is_int($before) ? $before : null,
             afterStepId: is_int($after) ? $after : null,
+            appInstanceId: $instance->id,
         );
         $this->activitySubject = $step;
 
@@ -146,7 +161,7 @@ final class WorkspaceStepStoreController implements Loggable
             'success' => [
                 'data' => [
                     'result' => ['action' => 'added'],
-                    'step' => $payload->forStep($step),
+                    'step' => $payload->forStep($step, $app),
                 ],
                 'meta' => (object) [],
             ],
@@ -163,17 +178,26 @@ final class WorkspaceStepStoreController implements Loggable
         return is_array($input) ? $input : [];
     }
 
-    private function anchorStep(App $app, WorkspaceLifecyclePhase $phase, ?int $stepId): ?WorkspaceStep
-    {
+    private function anchorStep(
+        App $app,
+        WorkspaceLifecyclePhase $phase,
+        ?int $stepId,
+        AppInstance $instance,
+    ): ?WorkspaceStep {
         if ($stepId === null) {
             return null;
         }
 
-        return WorkspaceStep::query()
-            ->where('app_id', $app->id)
-            ->where('phase', $phase)
-            ->whereKey($stepId)
-            ->first();
+        return $this->stepPolicy->findInstanceStep($app, $phase, $stepId, $instance);
+    }
+
+    private function appInstanceRequired(): JsonResponse
+    {
+        return $this->validationFailed(
+            'app',
+            'Workspace steps can only be changed on app instances. Use a dotted selector such as hauser.nmbp.',
+            ['reason' => 'app_instance_required'],
+        );
     }
 
     /**

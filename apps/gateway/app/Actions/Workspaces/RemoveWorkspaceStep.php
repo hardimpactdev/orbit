@@ -14,6 +14,7 @@ final readonly class RemoveWorkspaceStep
         DB::transaction(function () use ($step): void {
             $sortOrder = $step->sort_order;
             $appId = $step->app_id;
+            $appInstanceId = $step->app_instance_id;
             $phase = $step->phase;
 
             $step->delete();
@@ -21,6 +22,11 @@ final readonly class RemoveWorkspaceStep
             WorkspaceStep::query()
                 ->where('app_id', $appId)
                 ->where('phase', $phase)
+                ->when(
+                    $appInstanceId === null,
+                    fn ($query) => $query->whereNull('app_instance_id'),
+                    fn ($query) => $query->where('app_instance_id', $appInstanceId),
+                )
                 ->where('sort_order', '>', $sortOrder)
                 ->decrement('sort_order');
         });

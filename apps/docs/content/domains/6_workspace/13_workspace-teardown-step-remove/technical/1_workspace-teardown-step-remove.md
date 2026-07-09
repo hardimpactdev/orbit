@@ -31,7 +31,7 @@ This command follows the shared
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `step` | `--step` | Always. | Never. | None. | Strict positive integer. Must reference an existing teardown-step record belonging to the resolved app and `phase=teardown`. |
-| `app` | `--app` | No local context resolves to a parent app. | Never. | Cwd-inferred parent app. | Existing parent app slug or app-instance selector authorized for this caller. Dot notation such as `happie.nmbp` selects one concrete app instance for authorization/path resolution while removing policy stored on the parent app. |
+| `app` | `--app` | Always for writes. | Never. | Cwd-inferred parent app when omitted in docs only; writes fail without a dotted selector. | Must resolve to an existing app-instance selector such as `happie.nmbp`. Bare app slugs are rejected with `error.meta.reason=app_instance_required`. Deletes only instance-owned rows for the selected app instance. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
@@ -134,7 +134,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Missing step ID | `--step` is absent in non-interactive mode. | Failure (`error.code=validation_failed`, `error.meta.field=step`). |
 | Step not a positive integer | `--step` is non-numeric, zero, or negative. | Failure (`error.code=validation_failed`, `error.meta.field=step`, `error.meta.reason=must_be_positive_integer`). |
-| Step not found | No teardown-step record matches `(step_id, app, phase=teardown)`. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
+| App instance required | Bare app slug or path-only resolution without a concrete app instance. | Failure (`error.code=validation_failed`, `error.meta.field=app`, `error.meta.reason=app_instance_required`). |
+| Step not found | No instance-owned teardown-step record matches `(step_id, app_instance, phase=teardown)`. Legacy app-level rows are not removable. Already-absent removal is not idempotent. | Failure (`error.code=workspace.step_not_found`, `error.meta.{step_id, app}`). |
 | App not found | Resolved app slug does not exist in gateway configuration. | Failure (`error.code=workspace.app_not_found`, `error.meta.app`). |
 | App unresolved | Parent app cannot be resolved from `--app`, `.orbit/config`, or gateway path-ownership lookup, and prompting is disabled. | Failure (`error.code=validation_failed`, `error.meta.field=app`). |
 | Missing destructive consent | Non-interactive input mode and `--force` is absent. | Failure (`error.code=validation_failed`, `error.meta.field=force`). |

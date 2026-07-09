@@ -6,6 +6,7 @@ use App\Actions\Workspaces\AddWorkspaceStep;
 use App\Actions\Workspaces\RemoveWorkspaceStep;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Models\App;
+use App\Models\AppInstance;
 use App\Models\WorkspaceStep;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -69,4 +70,31 @@ it('orders workspace setup and teardown steps independently', function (): void 
         'composer install' => 1,
         'php artisan migrate' => 2,
     ]);
+});
+
+it('orders workspace steps independently per app instance', function (): void {
+    $app = App::factory()->create();
+    $nmbp = AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'nmbp']);
+    $development = AppInstance::factory()->create(['app_id' => $app->id, 'name' => 'development']);
+    $addStep = app(AddWorkspaceStep::class);
+
+    $nmbpStep = $addStep->handle(
+        appId: $app->id,
+        phase: WorkspaceLifecyclePhase::Setup,
+        command: 'composer install',
+        appInstanceId: $nmbp->id,
+    );
+    $addStep->handle(
+        appId: $app->id,
+        phase: WorkspaceLifecyclePhase::Setup,
+        command: 'npm install',
+        appInstanceId: $development->id,
+    );
+
+    expect(WorkspaceStep::query()->where('app_instance_id', $nmbp->id)->pluck('command')->all())
+        ->toBe(['composer install'])
+        ->and(WorkspaceStep::query()->where('app_instance_id', $development->id)->pluck('command')->all())
+        ->toBe(['npm install'])
+        ->and($nmbpStep->app_instance_id)
+        ->toBe($nmbp->id);
 });
