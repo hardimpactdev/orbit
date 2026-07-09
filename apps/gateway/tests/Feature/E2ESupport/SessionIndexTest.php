@@ -162,6 +162,210 @@ it('writes and checks deterministic facets for heterogeneous session archives', 
     }
 });
 
+it('normalizes accepted same-line and nested packet shapes for facets', function (): void {
+    $workspace = session_index_workspace('facet-normalization');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+
+        $packetTemplate = <<<'MD'
+            # Orbit Current Slice State
+
+            ## Blockers
+
+            %s
+
+            ## Final Distillation
+
+            - Loop outcome: %s
+            - Fresh analyzer: %s
+            MD;
+
+        $cases = [
+            'same-line' => [
+                'blockers' => '- none',
+                'outcome' => 'complete.',
+                'analyzer' => 'not used - compact loop, no analyzer run',
+                'expected' => [
+                    'loop_outcome' => 'complete',
+                    'loop_outcome_raw' => 'complete.',
+                    'fresh_analyzer_verdict' => 'not used',
+                    'fresh_analyzer_verdict_raw' => 'not used - compact loop, no analyzer run',
+                    'blockers_present' => false,
+                ],
+            ],
+            'natural-no-blocker' => [
+                'blockers' => 'No active correctness blocker remains.',
+                'outcome' => 'complete + loop improvement',
+                'analyzer' => 'not applicable.',
+                'expected' => [
+                    'loop_outcome' => 'complete + loop improvement',
+                    'fresh_analyzer_verdict' => 'not used',
+                    'fresh_analyzer_verdict_raw' => 'not applicable.',
+                    'blockers_present' => false,
+                ],
+            ],
+            'deferred' => [
+                'blockers' => '- none',
+                'outcome' => 'blocked',
+                'analyzer' => 'deferred - needs follow up',
+                'expected' => [
+                    'loop_outcome' => 'blocked',
+                    'fresh_analyzer_verdict' => 'deferred',
+                    'fresh_analyzer_verdict_raw' => 'deferred - needs follow up',
+                ],
+            ],
+            'backtick' => [
+                'blockers' => '- none',
+                'outcome' => '`complete + loop improvement`.',
+                'analyzer' => 'not used - compact loop',
+                'expected' => [
+                    'loop_outcome' => 'complete + loop improvement',
+                    'loop_outcome_raw' => '`complete + loop improvement`.',
+                ],
+            ],
+            'blocked-reason' => [
+                'blockers' => '- none',
+                'outcome' => 'blocked - retained topology unavailable',
+                'analyzer' => 'not used',
+                'expected' => [
+                    'loop_outcome' => 'blocked',
+                    'loop_outcome_raw' => 'blocked - retained topology unavailable',
+                ],
+            ],
+            'skipped-because' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'skipped because no escalation',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'not used',
+                    'fresh_analyzer_verdict_raw' => 'skipped because no escalation',
+                ],
+            ],
+            'skipped-for' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'skipped for analyzer lane',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'not used',
+                    'fresh_analyzer_verdict_raw' => 'skipped for analyzer lane',
+                ],
+            ],
+            'verdict-same' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: yes',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'yes',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: yes',
+                ],
+            ],
+        ];
+
+        foreach ([
+            'none-dot' => '- None.',
+            'none-currently' => '- none currently',
+            'none-currently-reviewer' => '- None currently. The reviewer lane was replaced ...',
+            'none-currently-future' => '- none currently. Possible future blocker: ...',
+            'no-blocker-todo190' => '- No blocker for Solo todo #190.',
+            'no-blocker-currently' => '- No blocker currently.',
+            'no-active-remains-resolved' => '- No active implementation or verification blocker remains. The earlier blocker is resolved.',
+            'multiple-resolved-blockers' => "- No active implementation blocker remains.\n- The previous analyzer evidence blocker is resolved.",
+        ] as $slug => $blockers) {
+            $cases[$slug] = [
+                'blockers' => $blockers,
+                'outcome' => 'complete',
+                'analyzer' => 'not used - baseline',
+                'expected' => ['blockers_present' => false],
+            ];
+        }
+
+        foreach ([
+            'safety-control' => '- No blocker was resolved, but deployment remains blocked.',
+            'safety-none-but' => '- None currently, but deployment remains blocked.',
+            'mixed-blockers' => "- none\n- deployment remains blocked",
+        ] as $slug => $blockers) {
+            $cases[$slug] = [
+                'blockers' => $blockers,
+                'outcome' => 'complete',
+                'analyzer' => 'not used - baseline',
+                'expected' => ['blockers_present' => true],
+            ];
+        }
+
+        $caseNumber = 0;
+
+        foreach ($cases as $slug => $case) {
+            session_index_archive(
+                sessionsDir: $sessionsDir,
+                basename: sprintf('2026-07-10-1000%02d-%s', $caseNumber, $slug),
+                loop: sprintf($packetTemplate, $case['blockers'], $case['outcome'], $case['analyzer']),
+            );
+
+            $caseNumber++;
+        }
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100020-nested',
+            loop: session_index_loop(
+                outcome: 'complete',
+                analyzerVerdict: 'skipped.',
+                verificationRows: ['Retained topology proof' => 'not applicable'],
+                blockers: ['none'],
+            ),
+        );
+
+        $indented = <<<'MD'
+            # Orbit Current Slice State
+
+            ## Blockers
+
+            - none
+
+            ## Final Distillation
+
+              - Loop outcome: complete
+              - Fresh analyzer: not used
+            - Some label: value here
+              - Loop outcome: complete
+              - Fresh analyzer: not used
+            MD;
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100021-indented',
+            loop: $indented,
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        foreach ($cases as $slug => $case) {
+            expect(session_index_record($index, $slug))->toMatchArray($case['expected']);
+        }
+
+        expect(session_index_record($index, 'nested'))
+            ->toMatchArray([
+                'loop_outcome' => 'complete',
+                'fresh_analyzer_verdict' => 'not used',
+                'fresh_analyzer_verdict_raw' => 'skipped.',
+                'blockers_present' => false,
+            ]);
+
+        expect(session_index_record($index, 'indented'))
+            ->toHaveKey('loop_outcome', 'unknown')
+            ->toHaveKey('loop_outcome_raw', null)
+            ->toHaveKey('fresh_analyzer_verdict', 'unknown')
+            ->toHaveKey('fresh_analyzer_verdict_raw', null);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
 it('fails check mode when the committed session index is stale', function (): void {
     $workspace = session_index_workspace('drift');
 
