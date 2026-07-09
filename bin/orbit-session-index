@@ -118,33 +118,23 @@ function parse_archive(string $archiveDir, string $timestamp, string $slug): arr
 {
     $loop = read_file_or_empty("{$archiveDir}/loop.md");
 
+    $loopOutcomeRaw = parse_loop_outcome_raw($loop);
+    $analyzerVerdictRaw = parse_analyzer_verdict_raw($loop);
+
     return [
         'archive' => basename($archiveDir),
         'slug' => $slug,
         'timestamp' => $timestamp,
-        'loop_outcome' => parse_loop_outcome($loop),
+        'loop_outcome' => $loopOutcomeRaw !== null ? normalize_loop_outcome($loopOutcomeRaw) : 'unknown',
+        'loop_outcome_raw' => $loopOutcomeRaw,
         'required_verification' => parse_required_verification($loop),
-        'fresh_analyzer_verdict' => parse_analyzer_verdict($loop),
+        'fresh_analyzer_verdict' => $analyzerVerdictRaw !== null ? normalize_analyzer_verdict($analyzerVerdictRaw) : 'unknown',
+        'fresh_analyzer_verdict_raw' => $analyzerVerdictRaw,
         'candidate_signals' => parse_candidate_signals($loop),
         'blockers_present' => blockers_present($loop),
         'token_usage' => token_usage($archiveDir),
         'capture_status' => capture_status($archiveDir),
     ];
-}
-
-function parse_loop_outcome(string $loop): string
-{
-    $section = markdown_section($loop, 'Final Distillation');
-
-    if ($section === null) {
-        return 'unknown';
-    }
-
-    if (! preg_match('/^- Loop outcome:\s*\R\s*-\s*(.+)$/m', $section, $matches)) {
-        return 'unknown';
-    }
-
-    return normalize_value($matches[1]);
 }
 
 /**
@@ -173,37 +163,50 @@ function parse_required_verification(string $loop): array
     return $rows;
 }
 
-function parse_analyzer_verdict(string $loop): string
+function parse_loop_outcome_raw(string $loop): ?string
 {
     $section = markdown_section($loop, 'Final Distillation');
 
-    if ($section === null || ! preg_match('/^- Fresh analyzer:\s*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)) {
-        return 'unknown';
+    if ($section === null) {
+        return null;
     }
 
-    if (! preg_match('/Verdict:\s*(.+)$/mi', $matches[1], $verdict)) {
-        return 'unknown';
+    $value = extract_same_line_label_value($section, 'Loop outcome');
+
+    if ($value !== null) {
+        return $value;
     }
 
-    $value = strtolower($verdict[1]);
-
-    if (str_contains($value, 'verdict: yes') || preg_match('/\byes\b/', $value) === 1) {
-        return 'yes';
+    if (! preg_match('/^- Loop outcome:[ \t]*\R[ \t]*-[ \t]*(.+)$/m', $section, $matches)) {
+        return null;
     }
 
-    if (preg_match('/\bno\b/', $value) === 1) {
-        return 'no';
+    return trim($matches[1]);
+}
+
+function parse_analyzer_verdict_raw(string $loop): ?string
+{
+    $section = markdown_section($loop, 'Final Distillation');
+
+    if ($section === null) {
+        return null;
     }
 
-    if (str_contains($value, 'blocked')) {
-        return 'blocked';
+    $value = extract_same_line_label_value($section, 'Fresh analyzer');
+
+    if ($value !== null) {
+        return $value;
     }
 
-    if (str_contains($value, 'defer')) {
-        return 'deferred';
+    if (! preg_match('/^- Fresh analyzer:[ \t]*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)) {
+        return null;
     }
 
-    return normalize_value($verdict[1]);
+    if (preg_match('/Verdict:[ \t]*(.+)$/mi', $matches[1], $verdict)) {
+        return trim($verdict[1]);
+    }
+
+    return null;
 }
 
 /**
@@ -261,9 +264,57 @@ function blockers_present(string $loop): bool
         return false;
     }
 
-    $normalized = strtolower(normalize_whitespace($section));
+    $entries = [];
 
-    return $normalized !== '' && $normalized !== '- none' && $normalized !== 'none';
+    foreach (preg_split('/\R/', $section) ?: [] as $line) {
+        if (trim($line) === '') {
+            continue;
+        }
+
+        if (preg_match('/^-[ \t]*(.+)$/', $line, $matches)) {
+            $entries[] = $matches[1];
+
+            continue;
+        }
+
+        if ($entries === []) {
+            $entries[] = trim($line);
+
+            continue;
+        }
+
+        $lastEntry = array_key_last($entries);
+        $entries[$lastEntry] .= ' '.trim($line);
+    }
+
+    foreach ($entries as $entry) {
+        $text = strtolower(normalize_whitespace($entry));
+        $text = rtrim($text, '.,;:!?');
+
+        if (str_contains($text, ' but ')) {
+            return true;
+        }
+
+        if ($text === '' || $text === 'none' || preg_match('/^none\b/', $text)) {
+            continue;
+        }
+
+        if (preg_match('/^no blockers?(?:\s+(?:for|currently|present|remain(?:s|ing)?)\b|$)/', $text)) {
+            continue;
+        }
+
+        if (preg_match('/^no active\b.*blockers?\s+remain(?:s|ing)?/', $text)) {
+            continue;
+        }
+
+        if (preg_match('/^the (?:previous|earlier)\b.*\bblockers?\s+(?:is|are)\s+resolved\b/', $text)) {
+            continue;
+        }
+
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -385,6 +436,29 @@ function parse_markdown_label_row(string $line): ?array
     return null;
 }
 
+function extract_same_line_label_value(string $section, string $label): ?string
+{
+    foreach (preg_split('/\R/', $section) ?: [] as $line) {
+        if (! str_starts_with($line, '- ')) {
+            continue;
+        }
+
+        $row = parse_markdown_label_row($line);
+
+        if ($row === null || strcasecmp($row[0], $label) !== 0) {
+            continue;
+        }
+
+        $value = trim($row[1]);
+
+        if ($value !== '' && ! preg_match('/^[ \t]*-[ \t]/', $value)) {
+            return $value;
+        }
+    }
+
+    return null;
+}
+
 function markdown_section(string $contents, string $heading): ?string
 {
     $pattern = '/^##\s+'.preg_quote($heading, '/').'\s*\R(.*?)(?=^##\s+|\z)/ms';
@@ -393,7 +467,7 @@ function markdown_section(string $contents, string $heading): ?string
         return null;
     }
 
-    return trim($matches[1]);
+    return trim($matches[1], "\r\n");
 }
 
 function read_file_or_empty(string $path): string
@@ -419,6 +493,56 @@ function normalize_value(string $value): string
 function normalize_whitespace(string $value): string
 {
     return trim((string) preg_replace('/\s+/u', ' ', $value));
+}
+
+function normalize_loop_outcome(string $value): string
+{
+    $value = trim($value);
+
+    if ($value === '' || str_contains($value, '<')) {
+        return 'unknown';
+    }
+
+    $normalized = normalize_whitespace(rtrim($value, '.,;:!?'));
+
+    if (preg_match('/^`?(complete \+ loop improvement|complete|blocked)`?(?=$|[ \t]+-[ \t]+)/i', $normalized, $matches)) {
+        return strtolower($matches[1]);
+    }
+
+    return $normalized;
+}
+
+function normalize_analyzer_verdict(string $value): string
+{
+    $value = trim($value);
+
+    if ($value === '' || str_contains($value, '<')) {
+        return 'unknown';
+    }
+
+    if (preg_match('/^`?(not used|not applicable|skipped|deferred)`?(?=$|[.,;:!?]|[ \t]+(?:-[ \t]+|because\b|for\b))/i', $value, $matches)) {
+        return strtolower($matches[1]) === 'deferred' ? 'deferred' : 'not used';
+    }
+
+    $lower = strtolower($value);
+
+    if (str_contains($lower, 'verdict: yes') || preg_match('/\byes\b/', $lower) === 1) {
+        return 'yes';
+    }
+
+    if (preg_match('/\bno\b/', $lower) === 1) {
+        return 'no';
+    }
+
+    if (str_contains($lower, 'blocked')) {
+        return 'blocked';
+    }
+
+    if (str_contains($lower, 'defer')) {
+        return 'deferred';
+    }
+
+    return normalize_value($value);
 }
 
 /**
