@@ -18,10 +18,14 @@ use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolInstaller;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Tools\ToolUpdater;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
@@ -57,10 +61,16 @@ it('stages GitHub auth for laravel installer repairs without embedding the token
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
 
+    $toolExecutor = new ToolInstallerGitHubAuthToolRunExecutor($shell);
+
     $this->app->instance(RemoteShell::class, $shell);
     $this->app->instance(RemoteLocalExecutor::class, toolInstallerGitHubAuthLocalExecutor($shell));
+    $this->app->instance(RunsInternalCommands::class, $toolExecutor);
+    $this->app->instance(ToolScriptDispatcher::class, new ToolScriptDispatcher($toolExecutor));
 
     $result = app(ToolInstaller::class)->install('laravel-installer', node: 'app-dev-1');
+
+    $installPayload = toolInstallerGitHubAuthPayload($shell, InternalCommand::ToolRunScript->value);
 
     expect($result)
         ->toMatchArray([
@@ -70,19 +80,23 @@ it('stages GitHub auth for laravel installer repairs without embedding the token
         ])
         ->and(json_decode($shell->options[0]['input'], true)['content_base64'] ?? null)
         ->toBe(base64_encode('ghp_unit_secret'))
-        ->and($shell->scripts[0])
+        ->and($shell->commands[0])
         ->toContain('internal:secret-file')
-        ->and($shell->scripts[1])
+        ->and($shell->commands[1])
+        ->toBe(InternalCommand::ToolRunScript->value)
+        ->and($installPayload['action'] ?? null)
+        ->toBe('install')
+        ->and($installPayload['script'] ?? null)
         ->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
-        ->and($shell->scripts[1])
+        ->and($installPayload['script'] ?? null)
         ->toContain('composer config --global github-oauth.github.com')
-        ->and($shell->scripts[1])
+        ->and($installPayload['script'] ?? null)
         ->toContain('gh auth login --hostname github.com --with-token')
-        ->and($shell->scripts[2])
+        ->and($shell->commands[2])
         ->toContain("internal:secret-file 'remove'");
 
-    foreach ($shell->scripts as $script) {
-        expect($script)
+    foreach ([$installPayload['script'] ?? '', ...$shell->commands] as $script) {
+        expect((string) $script)
             ->not->toContain('ghp_unit_secret')
             ->not->toContain('php -r');
     }
@@ -114,10 +128,16 @@ it('stages GitHub auth for laravel installer updates without embedding the token
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
 
+    $toolExecutor = new ToolInstallerGitHubAuthToolRunExecutor($shell);
+
     $this->app->instance(RemoteShell::class, $shell);
     $this->app->instance(RemoteLocalExecutor::class, toolInstallerGitHubAuthLocalExecutor($shell));
+    $this->app->instance(RunsInternalCommands::class, $toolExecutor);
+    $this->app->instance(ToolScriptDispatcher::class, new ToolScriptDispatcher($toolExecutor));
 
     $result = app(ToolUpdater::class)->update('laravel-installer', node: 'app-dev-1');
+
+    $updatePayload = toolInstallerGitHubAuthPayload($shell, InternalCommand::ToolRunScript->value);
 
     expect($result)
         ->toMatchArray([
@@ -126,23 +146,48 @@ it('stages GitHub auth for laravel installer updates without embedding the token
         ])
         ->and(json_decode($shell->options[0]['input'], true)['content_base64'] ?? null)
         ->toBe(base64_encode('ghp_update_secret'))
-        ->and($shell->scripts[1])
+        ->and($updatePayload['script'] ?? null)
         ->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
-        ->and($shell->scripts[1])
+        ->and($updatePayload['script'] ?? null)
         ->toContain('composer config --global github-oauth.github.com')
-        ->and($shell->scripts[1])
+        ->and($updatePayload['script'] ?? null)
         ->toContain('composer global update laravel/installer')
-        ->and($shell->scripts[1])
+        ->and($updatePayload['script'] ?? null)
         ->toContain('gh auth login --hostname github.com --with-token')
-        ->and($shell->scripts[2])
+        ->and($shell->commands[2])
         ->toContain("internal:secret-file 'remove'");
 
-    foreach ($shell->scripts as $script) {
-        expect($script)
+    foreach ([$updatePayload['script'] ?? '', ...$shell->commands] as $script) {
+        expect((string) $script)
             ->not->toContain('ghp_update_secret')
             ->not->toContain('php -r');
     }
 });
+
+/**
+ * @return array<string, mixed>
+ */
+function toolInstallerGitHubAuthPayload(ToolInstallerGitHubAuthRecordingShell $shell, string $command): array
+{
+    foreach ($shell->commands as $index => $recordedCommand) {
+        if ($recordedCommand !== $command && ! str_contains($recordedCommand, $command)) {
+            continue;
+        }
+
+        $input = $shell->options[$index]['input'] ?? null;
+
+        if (! is_string($input)) {
+            return [];
+        }
+
+        /** @var mixed $payload */
+        $payload = json_decode($input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        return is_array($payload) ? $payload : [];
+    }
+
+    return [];
+}
 
 function toolInstallerGitHubAuthLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecutor
 {
@@ -179,10 +224,58 @@ final readonly class ToolInstallerGitHubAuthRemoteExecutor implements RemoteExec
     }
 }
 
+final class ToolInstallerGitHubAuthToolRunExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private ToolInstallerGitHubAuthRecordingShell $shell,
+    ) {}
+
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
+     */
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        if ($commandName !== InternalCommand::ToolRunScript->value) {
+            throw new RuntimeException("Unexpected internal command {$commandName}.");
+        }
+
+        $result = $this->shell->run(
+            $node,
+            $commandName,
+            [
+                'input' => $transportOptions['input'] ?? null,
+            ],
+        );
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => 0,
+                'stdout' => '',
+                'stderr' => '',
+                'duration_ms' => 1,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+}
+
 final class ToolInstallerGitHubAuthRecordingShell implements RemoteShell
 {
     /** @var list<string> */
-    public array $scripts = [];
+    public array $commands = [];
 
     /** @var list<array<string, mixed>> */
     public array $options = [];
@@ -196,7 +289,7 @@ final class ToolInstallerGitHubAuthRecordingShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $this->scripts[] = $script;
+        $this->commands[] = $script;
         $this->options[] = $options;
 
         $result = array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected call', 1);
@@ -209,6 +302,25 @@ final class ToolInstallerGitHubAuthRecordingShell implements RemoteShell
                         'data' => trim($result->stdout) !== ''
                             ? ['path' => trim($result->stdout)]
                             : ['status' => 'removed'],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                stderr: $result->stderr,
+                durationMs: $result->durationMs,
+            );
+        }
+
+        if ($result->successful() && $script === InternalCommand::ToolRunScript->value) {
+            return new RemoteShellResult(
+                exitCode: $result->exitCode,
+                stdout: json_encode([
+                    'success' => [
+                        'data' => [
+                            'exit_code' => 0,
+                            'stdout' => '',
+                            'stderr' => '',
+                            'duration_ms' => 1,
+                        ],
                         'meta' => [],
                     ],
                 ], JSON_THROW_ON_ERROR),

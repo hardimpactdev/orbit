@@ -60,7 +60,7 @@ These rules describe how `schedule:add` resolves scope and writes the gateway sc
 ### Pickup Rules
 
 - Writes gateway configuration. The gateway-only Orbit Scheduler reads the gateway database every tick; there is no node-side scheduler to notify.
-- Target node SSH reachability is verified at dispatch time, not at `schedule:add` time.
+- Target node local-executor reachability is verified at dispatch time, not at `schedule:add` time.
 - A schedule remains valid configuration even when its target is temporarily unreachable.
 - Dispatch failures are recorded in `schedule_runs` as failed runs.
 

@@ -80,6 +80,7 @@ use App\Commands\Internal\AppRuntimeConfigsProbeCommand;
 use App\Commands\Internal\AppRuntimeContainersProbeCommand;
 use App\Commands\Internal\AppRuntimeExtensionsProbeCommand;
 use App\Commands\Internal\AppSecurityRepairCommand;
+use App\Commands\Internal\AppSetupStepCommand;
 use App\Commands\Internal\AppSourceCreateCommand;
 use App\Commands\Internal\AppSourcePathProbeCommand;
 use App\Commands\Internal\AppWorkerReadinessProbeCommand;
@@ -103,9 +104,11 @@ use App\Commands\Internal\ProcessLogsCommand as InternalProcessLogsCommand;
 use App\Commands\Internal\ProcessSystemdServiceCommand;
 use App\Commands\Internal\RuntimeBackendProbeCommand;
 use App\Commands\Internal\S3RuntimeProbeCommand;
+use App\Commands\Internal\ScheduleRunCommand as InternalScheduleRunCommand;
 use App\Commands\Internal\SecretFileCommand;
 use App\Commands\Internal\SiteCertificateInstallCommand;
 use App\Commands\Internal\SoloUpstreamRequestCommand;
+use App\Commands\Internal\ToolRunScriptCommand;
 use App\Commands\Internal\UnattendedUpgradesApplyCommand;
 use App\Commands\Internal\UnattendedUpgradesProbeCommand;
 use App\Commands\Internal\VerifyExecutorCommand;
@@ -419,6 +422,8 @@ return [
         ProcessLaunchdServiceCommand::class,
         RuntimeBackendProbeCommand::class,
         S3RuntimeProbeCommand::class,
+        InternalScheduleRunCommand::class,
+        ToolRunScriptCommand::class,
         SecretFileCommand::class,
         SiteCertificateInstallCommand::class,
         SoloUpstreamRequestCommand::class,
@@ -430,6 +435,7 @@ return [
         WireGuardSelfRouteCommand::class,
         WorkspaceAdapterLookupCommand::class,
         WorkspaceAdapterUpdateCommand::class,
+        AppSetupStepCommand::class,
         WorkspaceSetupStepCommand::class,
         WorkspaceSourceCreateCommand::class,
     ],

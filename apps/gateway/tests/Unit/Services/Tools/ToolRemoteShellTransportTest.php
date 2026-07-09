@@ -2,28 +2,21 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolReconfigurer;
-use App\Services\Tools\ToolRegistryFailure;
 use App\Services\Tools\ToolUpdater;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Http\JsonEnvelope;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
-
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
-
-it('requires explicit transitional ssh fallback before reconfiguring tool scripts', function (): void {
+it('dispatches reconfigure tool scripts through internal tool run without transitional fallback', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'tool-reconfigure-node']);
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
@@ -32,8 +25,8 @@ it('requires explicit transitional ssh fallback before reconfiguring tool script
             'port' => 9876,
         ],
     ]);
-    $shell = new ToolRemoteShellTransportRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    $executor = new ToolTransportRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
 
     $result = app(ToolReconfigurer::class)->reconfigure(
         tool: 'polyscope-server',
@@ -43,40 +36,7 @@ it('requires explicit transitional ssh fallback before reconfiguring tool script
         ],
     );
 
-    expect($result)
-        ->toBeInstanceOf(ToolRegistryFailure::class)
-        ->and($result->code)
-        ->toBe('node_transport_required')
-        ->and($result->meta['required'])
-        ->toBe('transitional-ssh-fallback')
-        ->and($tool->fresh()->config)
-        ->toBe([
-            'port' => 9876,
-        ])
-        ->and($shell->scripts)
-        ->toBe([]);
-});
-
-it('runs reconfigure tool scripts when transitional ssh fallback is explicit', function (): void {
-    $node = Node::factory()->appDev()->create(['name' => 'tool-reconfigure-node']);
-    $tool = NodeTool::factory()->create([
-        'node_id' => $node->id,
-        'name' => 'polyscope-server',
-        'config' => [
-            'port' => 9876,
-        ],
-    ]);
-    $shell = new ToolRemoteShellTransportRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
-    $result = app(ToolReconfigurer::class)->reconfigure(
-        tool: 'polyscope-server',
-        node: 'tool-reconfigure-node',
-        config: [
-            'port' => 4321,
-        ],
-    );
+    $payload = $executor->payloads()[0];
 
     expect($result)
         ->toMatchArray([
@@ -88,48 +48,37 @@ it('runs reconfigure tool scripts when transitional ssh fallback is explicit', f
         ->toBe([
             'port' => 4321,
         ])
-        ->and($shell->scripts)
-        ->toHaveCount(1);
+        ->and($executor->commands)
+        ->toBe([InternalCommand::ToolRunScript->value])
+        ->and($executor->transportOptions[0]['transport'] ?? null)
+        ->toBe(NodeTransportPreference::AgentPush)
+        ->and($executor->transportOptions[0]['bind_input'] ?? null)
+        ->toBeTrue()
+        ->and($executor->transportOptions[0]['strict'] ?? null)
+        ->toBeFalse()
+        ->and($executor->transportOptions[0]['metadata']['ORBIT_OPERATION_ID'] ?? null)
+        ->toBe('tool.reconfigure')
+        ->and($payload['tool'] ?? null)
+        ->toBe('polyscope-server')
+        ->and($payload['action'] ?? null)
+        ->toBe('reconfigure')
+        ->and($payload['script'] ?? null)
+        ->toContain('orbit reconfigure polyscope-server');
 });
 
-it('requires explicit transitional ssh fallback before bulk tool update scripts', function (): void {
+it('dispatches bulk tool update scripts through internal tool run without transitional fallback', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'tool-update-node']);
     $tool = NodeTool::factory()->create([
         'node_id' => $node->id,
         'name' => 'node-exporter',
         'expected_version' => 'old',
     ]);
-    $shell = new ToolRemoteShellTransportRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
+    $executor = new ToolTransportRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
 
     $result = app(ToolUpdater::class)->updateAll(node: 'tool-update-node');
 
-    expect($result['updated'])
-        ->toBe([])
-        ->and($result['skipped'])
-        ->toBe([])
-        ->and($result['failed'])
-        ->toHaveCount(1)
-        ->and($result['failed'][0]['error'])
-        ->toContain('requires explicit --node-transport=transitional-ssh-fallback')
-        ->and($tool->fresh()->expected_version)
-        ->toBe('old')
-        ->and($shell->scripts)
-        ->toBe([]);
-});
-
-it('runs bulk tool update scripts when transitional ssh fallback is explicit', function (): void {
-    $node = Node::factory()->appDev()->create(['name' => 'tool-update-node']);
-    $tool = NodeTool::factory()->create([
-        'node_id' => $node->id,
-        'name' => 'node-exporter',
-        'expected_version' => 'old',
-    ]);
-    $shell = new ToolRemoteShellTransportRecordingShell;
-    app()->instance(RemoteShell::class, $shell);
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
-    $result = app(ToolUpdater::class)->updateAll(node: 'tool-update-node');
+    $payload = $executor->payloads()[0];
 
     expect($result['updated'])
         ->toBe([
@@ -145,24 +94,84 @@ it('runs bulk tool update scripts when transitional ssh fallback is explicit', f
         ->and($tool->fresh()->expected_version)
         ->not
         ->toBe('old')
-        ->and($shell->scripts)
-        ->toHaveCount(1);
+        ->and($executor->commands)
+        ->toBe([InternalCommand::ToolRunScript->value])
+        ->and($executor->transportOptions[0]['metadata']['ORBIT_OPERATION_ID'] ?? null)
+        ->toBe('tool.update')
+        ->and($payload['tool'] ?? null)
+        ->toBe('node-exporter')
+        ->and($payload['action'] ?? null)
+        ->toBe('update');
 });
 
-final class ToolRemoteShellTransportRecordingShell implements RemoteShell
+final class ToolTransportRecordingInternalExecutor implements RunsInternalCommands
 {
     /**
      * @var list<string>
      */
-    public array $scripts = [];
+    public array $nodes = [];
 
     /**
-     * @param  array<string, mixed>  $options
+     * @var list<string>
      */
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
+    public array $commands = [];
 
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $transportOptions = [];
+
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
+     */
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $this->nodes[] = $node->name;
+        $this->commands[] = $commandName;
+        $this->transportOptions[] = $transportOptions;
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => 0,
+                'stdout' => '',
+                'stderr' => '',
+                'duration_ms' => 1,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function payloads(): array
+    {
+        return array_map(
+            static function (array $options): array {
+                /** @var mixed $payload */
+                $payload = json_decode(
+                    (string) ($options['input'] ?? ''),
+                    associative: true,
+                    flags: JSON_THROW_ON_ERROR,
+                );
+
+                if (! is_array($payload)) {
+                    return [];
+                }
+
+                /** @var array<string, mixed> $payload */
+                return $payload;
+            },
+            $this->transportOptions,
+        );
     }
 }

@@ -7,9 +7,9 @@ The Orbit Scheduler is the schedule executor. It is a resident
 definitions, locks, heartbeat, and durable run history all live in the gateway
 database.
 
-The scheduler evaluates due schedules at least once per minute, aligned to wall-clock minute boundaries. Each tick reads every enabled schedule from the gateway database, claims a per-schedule lock, then dispatches each due schedule in parallel. Schedules whose target resolves to the gateway run locally; schedules targeting any other node execute on that node through the explicitly gated host SSH pool.
+The scheduler evaluates due schedules at least once per minute, aligned to wall-clock minute boundaries. Each tick reads every enabled schedule from the gateway database, claims a per-schedule lock, then dispatches each due schedule. Schedules whose target resolves to the gateway run locally; schedules targeting any other node execute on that node through the signed `internal:schedule:run` local-executor command over agent-push.
 
-This schedule lane remains host/SSH because schedules can contain arbitrary configured commands or scripts, not only allowlisted Orbit Agent internal envelopes. The result of every run — success, failure, exit code, captured output, dispatch failure — is recorded centrally in `schedule_runs`. Schedule expressions remain minute-resolution; the tick interval is an implementation detail. `orbit schedule:run` performs one such tick on demand and shares its evaluation logic with the daemon.
+The schedule payload is authorized and recorded by the gateway, then delivered through the typed local-executor command surface. The result of every run — success, failure, exit code, captured output, dispatch failure — is recorded centrally in `schedule_runs`. Schedule expressions remain minute-resolution; the tick interval is an implementation detail. `orbit schedule:run` performs one such tick on demand and shares its evaluation logic with the daemon.
 
 ## Domain Rules
 
@@ -36,7 +36,7 @@ Schedules may target an app, a node, or Orbit-owned maintenance work. The scope 
   another serving node explicitly.
 - A Laravel scheduler is a normal app-scoped schedule that runs `php artisan schedule:run` every minute.
 
-When the target is not the gateway itself, the gateway dispatches the run through the explicit host SSH pool. The scheduled command executes on the target node, but the gateway records every result centrally. This is a classified host-execution seam, not the normal agent-push managed-command path.
+When the target is not the gateway itself, the gateway dispatches the run through `internal:schedule:run` over agent-push. The scheduled command executes on the target node, but the gateway records every result centrally.
 
 #### Execution source and intervals
 
@@ -131,7 +131,7 @@ items.
 | `scope` | `app`, `node`, or `orbit` | Scope that owns the schedule. |
 | `target.type` | string | Target kind. |
 | `target.name` | string | App, node, or Orbit maintenance target. |
-| `target.node` | string | Node the dispatched command executes on. The gateway scheduler dispatches over the explicitly gated host SSH pool when the target is not the gateway. |
+| `target.node` | string | Node the dispatched command executes on. The gateway scheduler dispatches over agent-push when the target is not the gateway. |
 | `interval` | string | Portable Orbit interval expression. |
 | `timezone` | string | Timezone used to interpret the interval. |
 | `execution.type` | `command` or `script` | Execution source kind. |

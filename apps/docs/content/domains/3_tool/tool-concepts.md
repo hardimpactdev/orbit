@@ -101,6 +101,15 @@ These terms describe the network surfaces a tool may declare.
   tools. Credentials for runnable service instances belong to the owning
   process definition or process runtime configuration.
 
+## Node Execution
+
+Catalog install, update, remove, reconfigure, lifecycle, and credential scripts
+dispatch from the gateway through the typed `internal:tool:run-script` command
+over agent-push. The gateway builds operation-token-bound JSON stdin that
+includes the tool slug, action, and rendered script text; secret values such as
+GitHub tokens stage separately through `internal:secret-file` and reach the
+script only as a staged token-file path in the rendered config.
+
 ## Boundaries
 
 These rules define what tool commands may and may not change.

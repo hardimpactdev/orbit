@@ -13,6 +13,7 @@ use App\Models\ProxyRoute;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolDefinitionRegistry;
@@ -20,6 +21,8 @@ use App\Services\Tools\ToolsFixer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Http\JsonEnvelope;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -43,6 +46,15 @@ function use_tools_fixer_agent_push(): void
     );
 }
 
+function use_tools_fixer_internal_tool_dispatch(): ToolsFixerRecordingInternalExecutor
+{
+    $executor = new ToolsFixerRecordingInternalExecutor;
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    return $executor;
+}
+
+/** @mago-expect lint:cyclomatic-complexity */
 describe('ToolsFixer', function (): void {
     it('returns null for tool.lifecycle_state_mismatch since runtime state is process-family owned', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
@@ -88,8 +100,8 @@ describe('ToolsFixer', function (): void {
         expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
-    it('requires explicit transitional ssh fallback before running repair commands', function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+    it('dispatches repair commands through internal tool run without transitional fallback', function (): void {
+        $executor = use_tools_fixer_internal_tool_dispatch();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -108,15 +120,21 @@ describe('ToolsFixer', function (): void {
             ],
         ));
 
+        $payload = $executor->payloads()[0];
+
         expect($action)
             ->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-1',
                 'key' => 'tool.version_mismatch',
-                'status' => 'failed',
+                'status' => 'completed',
             ])
-            ->and($action['summary'])
-            ->toContain('requires explicit --node-transport=transitional-ssh-fallback')
+            ->and($executor->commands)
+            ->toBe([InternalCommand::ToolRunScript->value])
+            ->and($payload['tool'] ?? null)
+            ->toBe('node-exporter')
+            ->and($payload['action'] ?? null)
+            ->toBe('update')
             ->and($shell->scripts)
             ->toBe([]);
     });
@@ -355,7 +373,7 @@ describe('ToolsFixer', function (): void {
     });
 
     it('installs missing host tools through catalog install script', function (): void {
-        allow_tools_fixer_remote_shell_fallback();
+        $executor = use_tools_fixer_internal_tool_dispatch();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -380,14 +398,14 @@ describe('ToolsFixer', function (): void {
                 'mode' => 'fix',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('composer-setup.php')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     });
 
     it('repairs missing git through the catalog apt install script', function (): void {
-        allow_tools_fixer_remote_shell_fallback();
+        $executor = use_tools_fixer_internal_tool_dispatch();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -412,16 +430,16 @@ describe('ToolsFixer', function (): void {
                 'mode' => 'fix',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('# orbit install git')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('apt-get')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('ppa:git-core/ppa');
     });
 
     it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {
-        allow_tools_fixer_remote_shell_fallback();
+        $executor = use_tools_fixer_internal_tool_dispatch();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -446,26 +464,26 @@ describe('ToolsFixer', function (): void {
                 'mode' => 'fix',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('# orbit install gh')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('gh_package_candidate_available')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('refresh_github_cli_metadata')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('github_cli_metadata_needs_refresh=1')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('Dir::Etc::sourcelist="sources.list.d/github-cli.list"')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('APT::Get::List-Cleanup="0"')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('if ! sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq gh; then')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('download_github_cli_keyring');
     });
 
     it('passes the node managed user into host tool install scripts', function (): void {
-        allow_tools_fixer_remote_shell_fallback();
+        $executor = use_tools_fixer_internal_tool_dispatch();
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active', 'user' => 'nckrtl']);
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -490,11 +508,11 @@ describe('ToolsFixer', function (): void {
                 'mode' => 'fix',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain("MANAGED_USER='nckrtl'")
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->toContain('sudo -u "${MANAGED_USER}"')
-            ->and($shell->scripts[0])
+            ->and($executor->payloads()[0]['script'] ?? null)
             ->not->toContain("MANAGED_USER='orbit'");
     });
 
@@ -709,16 +727,12 @@ describe('agent tool fixes', function (): void {
     });
 
     it('updates credentials when shell returns valid JSON array', function (): void {
-        allow_tools_fixer_remote_shell_fallback();
-        [, $tool] = createAgentToolForFixer();
-        $shell = new ToolsFixerRemoteShell([
-            "echo '[\"user\",\"pass\"]'" => new RemoteShellResult(
-                exitCode: 0,
-                stdout: '["user","pass"]',
-                stderr: '',
-                durationMs: 1,
-            ),
+        $executor = new ToolsFixerRecordingInternalExecutor([
+            ToolsFixerRecordingInternalExecutor::result(stdout: '["user","pass"]'),
         ]);
+        app()->instance(RunsInternalCommands::class, $executor);
+        [, $tool] = createAgentToolForFixer();
+        $shell = new ToolsFixerRemoteShell;
 
         $fixer = new ToolsFixer(
             remoteShell: $shell,
@@ -738,17 +752,13 @@ describe('agent tool fixes', function (): void {
             ->toBe(['fields' => ['user', 'pass']]);
     });
 
-    it('requires explicit transitional ssh fallback before running credential repair scripts', function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-        [, $tool] = createAgentToolForFixer();
-        $shell = new ToolsFixerRemoteShell([
-            "echo '[\"user\",\"pass\"]'" => new RemoteShellResult(
-                exitCode: 0,
-                stdout: '["user","pass"]',
-                stderr: '',
-                durationMs: 1,
-            ),
+    it('dispatches credential repair scripts through internal tool run without transitional fallback', function (): void {
+        $executor = new ToolsFixerRecordingInternalExecutor([
+            ToolsFixerRecordingInternalExecutor::result(stdout: '["user","pass"]'),
         ]);
+        app()->instance(RunsInternalCommands::class, $executor);
+        [, $tool] = createAgentToolForFixer();
+        $shell = new ToolsFixerRemoteShell;
 
         $fixer = new ToolsFixer(
             remoteShell: $shell,
@@ -763,27 +773,25 @@ describe('agent tool fixes', function (): void {
             ->toMatchArray([
                 'family' => 'tool',
                 'key' => 'tool.agent_credentials_missing',
-                'status' => 'failed',
+                'status' => 'completed',
             ])
-            ->and($result['summary'])
-            ->toContain('requires explicit --node-transport=transitional-ssh-fallback')
+            ->and($executor->commands)
+            ->toBe([InternalCommand::ToolRunScript->value])
+            ->and($executor->payloads()[0]['action'] ?? null)
+            ->toBe('credentials')
             ->and($tool->fresh()->credentials)
-            ->toBeNull()
+            ->toBe(['fields' => ['user', 'pass']])
             ->and($shell->scripts)
             ->toBe([]);
     });
 
     it('returns null when credential shell output is not a valid non-empty array', function (): void {
-        allow_tools_fixer_remote_shell_fallback();
-        [, $tool] = createAgentToolForFixer();
-        $shell = new ToolsFixerRemoteShell([
-            'echo invalid' => new RemoteShellResult(
-                exitCode: 0,
-                stdout: 'not-json',
-                stderr: '',
-                durationMs: 1,
-            ),
+        $executor = new ToolsFixerRecordingInternalExecutor([
+            ToolsFixerRecordingInternalExecutor::result(stdout: 'not-json'),
         ]);
+        app()->instance(RunsInternalCommands::class, $executor);
+        [, $tool] = createAgentToolForFixer();
+        $shell = new ToolsFixerRemoteShell;
 
         $fixer = new ToolsFixer(
             remoteShell: $shell,
@@ -984,6 +992,88 @@ function tools_fixer_agent_payload(string $wireguardAddress, string $action): ar
     }
 
     return [];
+}
+
+final class ToolsFixerRecordingInternalExecutor implements RunsInternalCommands
+{
+    /**
+     * @var list<string>
+     */
+    public array $commands = [];
+
+    /**
+     * @var list<array<string, mixed>>
+     */
+    public array $transportOptions = [];
+
+    /**
+     * @param  list<RemoteShellResult>  $responses
+     */
+    public function __construct(
+        private array $responses = [],
+    ) {}
+
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
+     */
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $this->commands[] = $commandName;
+        $this->transportOptions[] = $transportOptions;
+
+        return array_shift($this->responses) ?? self::result();
+    }
+
+    public static function result(
+        int $exitCode = 0,
+        string $stdout = '',
+        string $stderr = '',
+        int $durationMs = 1,
+    ): RemoteShellResult {
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => $exitCode,
+                'stdout' => $stdout,
+                'stderr' => $stderr,
+                'duration_ms' => $durationMs,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $durationMs,
+        );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function payloads(): array
+    {
+        return array_map(
+            static function (array $options): array {
+                /** @var mixed $payload */
+                $payload = json_decode(
+                    (string) ($options['input'] ?? ''),
+                    associative: true,
+                    flags: JSON_THROW_ON_ERROR,
+                );
+
+                if (! is_array($payload)) {
+                    return [];
+                }
+
+                /** @var array<string, mixed> $payload */
+                return $payload;
+            },
+            $this->transportOptions,
+        );
+    }
 }
 
 final class ToolsFixerRemoteShell implements RemoteShell

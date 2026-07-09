@@ -42,6 +42,7 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         app()->instance(SshHostKeyPinner::class, $this->hostKeyPinner);
         app()->instance(RemoteShell::class, new BakeAppNodeRemoteShell);
+        bind_tool_script_dispatcher_to_remote_shell();
         bindDevelopmentDnsMappingTestDoubles('bake-app-node-dns');
         request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     });

@@ -16,7 +16,6 @@ use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Proxy\RemoteCaddyConfig;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use InvalidArgumentException;
 use RuntimeException;
@@ -66,17 +65,35 @@ final readonly class ToolsFixer
      */
     private function runRepairCommand(NodeTool $tool, ?string $command, DriftEntry $entry): ?array
     {
-        if ($command === null) {
+        if ($command === null || $tool->node === null) {
             return null;
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
+        $action = match ($entry->key) {
+            'tool.capability_missing' => 'install',
+            'tool.version_mismatch' => 'update',
+            default => null,
+        };
 
-        if (! $transport->allowed()) {
-            return $this->failedResult($tool, $entry, $transport->message('tool:fix'));
+        if ($action === null) {
+            return null;
         }
 
-        $this->remoteShell->run($tool->node, $command, ['throw' => true]);
+        $result = $this->toolScriptDispatcher()->runForRegistry(
+            node: $tool->node,
+            tool: $tool->name,
+            action: $action,
+            script: $command,
+            throw: true,
+        );
+
+        if ($result instanceof ToolRegistryFailure) {
+            return $this->failedResult($tool, $entry, $result->message);
+        }
+
+        if (! $result->successful()) {
+            return $this->failedResult($tool, $entry, $this->remoteFailureSummary($result));
+        }
 
         return $this->fixResult($tool, $entry);
     }
@@ -359,7 +376,13 @@ final readonly class ToolsFixer
             return null;
         }
 
-        $tld = $this->agentTldForNode($tool->node);
+        $node = $tool->node;
+
+        if (! $node instanceof Node) {
+            return null;
+        }
+
+        $tld = $this->agentTldForNode($node);
         $hostname = $tld !== null ? "{$tool->name}.{$tld}" : $tool->name;
         $credentialsScript = $catalog->credentialsScript($tool->name, ['hostname' => $hostname]);
 
@@ -367,13 +390,16 @@ final readonly class ToolsFixer
             return null;
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
+        $credResult = $this->toolScriptDispatcher()->runForRegistry(
+            node: $node,
+            tool: $tool->name,
+            action: 'credentials',
+            script: $credentialsScript,
+        );
 
-        if (! $transport->allowed()) {
-            return $this->failedResult($tool, $entry, $transport->message('tool:credentials'));
+        if ($credResult instanceof ToolRegistryFailure) {
+            return $this->failedResult($tool, $entry, $credResult->message);
         }
-
-        $credResult = $this->remoteShell->run($tool->node, $credentialsScript, ['throw' => false]);
 
         if (! $credResult->successful()) {
             return null;
@@ -422,6 +448,11 @@ final readonly class ToolsFixer
     private function localExecutor(): RemoteLocalExecutor
     {
         return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+    }
+
+    private function toolScriptDispatcher(): ToolScriptDispatcher
+    {
+        return app(ToolScriptDispatcher::class);
     }
 
     private function agentTldForNode(Node $node): ?string

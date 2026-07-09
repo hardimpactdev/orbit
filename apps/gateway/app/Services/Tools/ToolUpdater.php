@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteSecretFile;
 
 final readonly class ToolUpdater
@@ -19,7 +18,7 @@ final readonly class ToolUpdater
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
-        private RemoteShell $remoteShell,
+        private ToolScriptDispatcher $toolScriptDispatcher,
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
@@ -62,15 +61,6 @@ final readonly class ToolUpdater
             return ToolRegistryFailure::unsupportedAction($tool, 'update');
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
-
-        if (! $transport->allowed()) {
-            return ToolRegistryFailure::nodeTransportRequired(
-                $transport->message('tool:update'),
-                $transport->meta(),
-            );
-        }
-
         if ($expectedVersion !== null) {
             $model->expected_version = $expectedVersion;
             $model->save();
@@ -82,6 +72,10 @@ final readonly class ToolUpdater
             config: $config,
             scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
         );
+
+        if ($result instanceof ToolRegistryFailure) {
+            return $result;
+        }
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
@@ -177,18 +171,6 @@ final readonly class ToolUpdater
                 continue;
             }
 
-            $transport = app(ExplicitRemoteShellFallback::class);
-
-            if (! $transport->allowed()) {
-                $failed[] = [
-                    'tool' => $tool,
-                    'node' => $nodeName,
-                    'error' => $transport->message('tool:update'),
-                ];
-
-                continue;
-            }
-
             $nt->expected_version = $latestVersion;
             $nt->save();
 
@@ -208,6 +190,16 @@ final readonly class ToolUpdater
                 config: $config,
                 scriptFactory: fn (array $config): string => (string) $this->catalog->updateScript($tool, $config),
             );
+
+            if ($result instanceof ToolRegistryFailure) {
+                $failed[] = [
+                    'tool' => $tool,
+                    'node' => $nt->node->name,
+                    'error' => $result->message,
+                ];
+
+                continue;
+            }
 
             if (! $result->successful()) {
                 $failed[] = [
@@ -241,22 +233,32 @@ final readonly class ToolUpdater
         string $tool,
         array $config,
         callable $scriptFactory,
-    ): RemoteShellResult {
+    ): RemoteShellResult|ToolRegistryFailure {
         $token = $this->githubTokenForTool($tool);
 
         if ($token === null) {
-            return $this->remoteShell->run($node, $scriptFactory($config), ['throw' => false]);
+            return $this->toolScriptDispatcher->runForRegistry(
+                node: $node,
+                tool: $tool,
+                action: 'update',
+                script: $scriptFactory($config),
+            );
         }
 
-        return $this->remoteSecretFile->stage(
-            $node,
-            $token,
-            fn (string $path): RemoteShellResult => $this->remoteShell->run(
+        try {
+            return $this->remoteSecretFile->stage(
                 $node,
-                $scriptFactory([...$config, 'github_token_file' => $path]),
-                ['throw' => false],
-            ),
-        );
+                $token,
+                fn (string $path): RemoteShellResult => $this->toolScriptDispatcher->run(
+                    node: $node,
+                    tool: $tool,
+                    action: 'update',
+                    script: $scriptFactory([...$config, 'github_token_file' => $path]),
+                ),
+            );
+        } catch (RemoteLocalExecutorTransportFailed $exception) {
+            return $this->toolScriptDispatcher->nodeTransportRequired($tool, 'update', $exception);
+        }
     }
 
     private function githubTokenForTool(string $tool): ?string

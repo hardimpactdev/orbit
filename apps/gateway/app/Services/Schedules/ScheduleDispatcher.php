@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
-use App\Data\RemoteShell\RemoteShellPoolJob;
-use App\Data\RemoteShell\RemoteShellPoolResult;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Schedules\ScheduleDispatchResult;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
+use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Services\RemoteShell\RemoteShellPool;
+use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Enums\InternalCommand;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
@@ -24,9 +24,8 @@ final readonly class ScheduleDispatcher
     private const int DEFAULT_TIMEOUT = 900;
 
     public function __construct(
-        private RemoteShellPool $remoteShellPool,
+        private RunsInternalCommands $localExecutor,
         private NodeRoleAssignments $nodeRoleAssignments,
-        private ExplicitRemoteShellFallback $transport,
     ) {}
 
     public function run(Schedule $schedule): ScheduleDispatchResult
@@ -45,9 +44,6 @@ final readonly class ScheduleDispatcher
         }
 
         $resultsByIndex = [];
-        $remoteJobs = [];
-        $remoteContexts = [];
-
         foreach (array_values($schedules) as $index => $schedule) {
             $schedule->loadMissing(['app.node', 'node']);
 
@@ -74,40 +70,7 @@ final readonly class ScheduleDispatcher
                 continue;
             }
 
-            if (! $this->transport->allowed()) {
-                $resultsByIndex[$index] = $this->recordDispatchFailure(
-                    schedule: $schedule,
-                    targetNode: $targetNode,
-                    message: $this->transport->message('schedule dispatch'),
-                );
-
-                continue;
-            }
-
-            $jobKey = (string) $index;
-            $remoteJobs[] = new RemoteShellPoolJob(
-                key: $jobKey,
-                node: $targetNode,
-                script: $this->executionScript($schedule),
-                options: $this->executionOptions($schedule),
-            );
-            $remoteContexts[$jobKey] = [
-                'index' => $index,
-                'schedule' => $schedule,
-                'target_node' => $targetNode,
-                'started_at' => CarbonImmutable::now(),
-            ];
-        }
-
-        foreach ($this->remoteShellPool->run($remoteJobs) as $remoteResult) {
-            /** @var array{index: int, schedule: Schedule, target_node: Node, started_at: CarbonImmutable} $context */
-            $context = $remoteContexts[$remoteResult->key];
-            $resultsByIndex[$context['index']] = $this->recordRemotePoolResult(
-                poolResult: $remoteResult,
-                schedule: $context['schedule'],
-                targetNode: $context['target_node'],
-                startedAt: $context['started_at'],
-            );
+            $resultsByIndex[$index] = $this->runRemotelyAndRecord($schedule, $targetNode);
         }
 
         ksort($resultsByIndex);
@@ -160,15 +123,17 @@ final readonly class ScheduleDispatcher
         );
     }
 
-    private function recordRemotePoolResult(
-        RemoteShellPoolResult $poolResult,
-        Schedule $schedule,
-        Node $targetNode,
-        CarbonImmutable $startedAt,
-    ): ScheduleDispatchResult {
-        $finishedAt = CarbonImmutable::now();
+    private function runRemotelyAndRecord(Schedule $schedule, Node $targetNode): ScheduleDispatchResult
+    {
+        $startedAt = CarbonImmutable::now();
+        $startedHrtime = hrtime(true);
 
-        if ($poolResult->exception instanceof Throwable) {
+        try {
+            $result = $this->runRemotely($schedule, $targetNode);
+        } catch (Throwable $throwable) {
+            $finishedAt = CarbonImmutable::now();
+            $durationMs = (int) ((hrtime(true) - $startedHrtime) / 1_000_000);
+
             return new ScheduleDispatchResult(
                 run: $this->recordRun(
                     schedule: $schedule,
@@ -176,21 +141,16 @@ final readonly class ScheduleDispatcher
                     status: 'failed',
                     exitCode: 1,
                     stdout: '',
-                    stderr: $poolResult->exception->getMessage(),
+                    stderr: $throwable->getMessage(),
                     startedAt: $startedAt,
                     finishedAt: $finishedAt,
                 ),
                 targetNode: $targetNode,
-                durationMs: 0,
+                durationMs: $durationMs,
             );
         }
 
-        $result = $poolResult->result ?? new RemoteShellResult(
-            exitCode: 1,
-            stdout: '',
-            stderr: 'Remote shell pool did not return a result.',
-            durationMs: 0,
-        );
+        $finishedAt = CarbonImmutable::now();
 
         return new ScheduleDispatchResult(
             run: $this->recordRun(
@@ -206,6 +166,70 @@ final readonly class ScheduleDispatcher
             targetNode: $targetNode,
             durationMs: $result->durationMs,
         );
+    }
+
+    private function runRemotely(Schedule $schedule, Node $targetNode): RemoteShellResult
+    {
+        $result = $this->localExecutor->runInternal(
+            node: $targetNode,
+            commandName: InternalCommand::ScheduleRun->value,
+            transportOptions: [
+                'input' => json_encode($this->executionPayload($schedule), JSON_THROW_ON_ERROR),
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'schedule.dispatch',
+                ],
+                'strict' => false,
+                'timeout' => self::DEFAULT_TIMEOUT + 15,
+                'transport' => NodeTransportPreference::AgentPush,
+            ],
+        );
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return $this->fromSuccessEnvelope($result);
+    }
+
+    private function fromSuccessEnvelope(RemoteShellResult $result): RemoteShellResult
+    {
+        $data = RemoteShellSuccessData::fromJsonEnvelope($result);
+
+        if (
+            ! is_int($data['exit_code'] ?? null)
+            || ! is_string($data['stdout'] ?? null)
+            || ! is_string($data['stderr'] ?? null)
+            || ! is_int($data['duration_ms'] ?? null)
+        ) {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: $result->stdout,
+                stderr: 'Schedule run response is invalid.',
+                durationMs: $result->durationMs,
+            );
+        }
+
+        return new RemoteShellResult(
+            exitCode: $data['exit_code'],
+            stdout: $data['stdout'],
+            stderr: $data['stderr'],
+            durationMs: $data['duration_ms'],
+        );
+    }
+
+    /**
+     * @return array{execution_type: string, execution_value: string, cwd: string|null, timeout: int}
+     */
+    private function executionPayload(Schedule $schedule): array
+    {
+        $options = $this->executionOptions($schedule);
+
+        return [
+            'execution_type' => $schedule->execution_type,
+            'execution_value' => $schedule->execution_value,
+            'cwd' => $options['cwd'] ?? null,
+            'timeout' => $options['timeout'],
+        ];
     }
 
     private function targetNode(Schedule $schedule): ?Node

@@ -30,7 +30,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 ## Behavior Contract
 
-`schedule:run` triggers one Orbit Scheduler tick on the gateway: query the gateway database for enabled schedules, evaluate which are due in the current minute, and dispatch them. Dispatch runs locally on the gateway when the target resolves to the gateway, and through the explicitly gated host SSH pool when the target is any other node. Generic schedule commands and scripts are not allowlisted Orbit Agent internal envelopes yet, so this lane remains classified as host execution instead of agent-push. The same logic runs inside the resident `orbit-scheduler` daemon at least once per minute. Operators use `schedule:run` to fire a tick on demand for testing, troubleshooting, or recovery; the daemon's loop is the steady-state path.
+`schedule:run` triggers one Orbit Scheduler tick on the gateway: query the gateway database for enabled schedules, evaluate which are due in the current minute, and dispatch them. Dispatch runs locally on the gateway when the target resolves to the gateway, and through the signed `internal:schedule:run` local-executor command over agent-push when the target is any other node. The same logic runs inside the resident `orbit-scheduler` daemon at least once per minute. Operators use `schedule:run` to fire a tick on demand for testing, troubleshooting, or recovery; the daemon's loop is the steady-state path.
 
 When called with a schedule name, `schedule:run [name]` force-runs that one schedule regardless of its interval and records the resulting run.
 
@@ -93,5 +93,7 @@ manual schedule run attempts.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Schedule/ScheduleWriteCommandTest.php` | CLI POST run request with scope filters, success envelope with duration metadata, and `schedule.run_failed` gateway error passthrough. |
+| `apps/cli/tests/Feature/InternalScheduleRunCommandTest.php` | Node-side internal schedule execution command validates operation tokens, runs command/script payloads, and returns exit code plus captured output without treating process failure as transport failure. |
+| `apps/gateway/tests/Feature/Commands/Schedule/OrbitSchedulerCommandTest.php` | Gateway scheduler dispatches non-gateway schedules through `internal:schedule:run` over the local executor and records durable gateway run history. |
 
-There is no gateway-side coverage for this command contract: no gateway API or SDK contract test is linked for this command yet. The linked CLI test proves the mapped CLI behavior above; API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.
+No SDK contract test is linked for this command yet. API behavior, activity logging, and authorization assertions remain coverage gaps until focused tests land.

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -10,6 +12,8 @@ use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\ArrayVpnBackend;
 use App\Services\Vpn\VpnBackend;
 use Illuminate\Contracts\Console\Kernel;
@@ -19,6 +23,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Testing\ParallelRunner;
+use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayIdentityRequest;
 use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
 use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
@@ -161,6 +166,97 @@ function fakeGatewayIdentity(
             $rootCaStatus,
         ),
     ]);
+}
+
+function bind_tool_script_dispatcher_to_remote_shell(): void
+{
+    app()->bind(
+        RunsInternalCommands::class,
+        fn (): RunsInternalCommands => new ToolScriptDispatcherRemoteShellExecutor(app(RemoteShell::class)),
+    );
+}
+
+function bind_unavailable_tool_script_dispatcher(): void
+{
+    app()->instance(RunsInternalCommands::class, new ToolScriptUnavailableInternalExecutor);
+}
+
+final readonly class ToolScriptDispatcherRemoteShellExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private RemoteShell $remoteShell,
+    ) {}
+
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
+     */
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode(
+            (string) ($transportOptions['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        if (! is_array($payload) || ! is_string($payload['script'] ?? null)) {
+            return new RemoteShellResult(
+                exitCode: 1,
+                stdout: json_encode(JsonEnvelope::success([
+                    'exit_code' => 1,
+                    'stdout' => '',
+                    'stderr' => 'Tool run payload is invalid.',
+                    'duration_ms' => 1,
+                ]), JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        $result = $this->remoteShell->run(
+            $node,
+            $payload['script'],
+            ['throw' => (bool) ($transportOptions['throw'] ?? false)],
+        );
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => $result->exitCode,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'duration_ms' => $result->durationMs,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
+        );
+    }
+}
+
+final readonly class ToolScriptUnavailableInternalExecutor implements RunsInternalCommands
+{
+    /**
+     * @param  array<int|string, mixed>  $arguments
+     * @param  array<int|string, mixed>  $commandOptions
+     * @param  array<string, mixed>  $transportOptions
+     */
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        throw new RemoteLocalExecutorTransportFailed(
+            'Remote local executor transport failed: agent-push transport is unavailable',
+        );
+    }
 }
 
 /**

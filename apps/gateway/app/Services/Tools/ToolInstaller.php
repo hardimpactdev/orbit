@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Actions\Processes\AddProcess;
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\ProcessCrashNotification;
@@ -18,7 +17,7 @@ use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteSecretFile;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
@@ -28,7 +27,7 @@ final readonly class ToolInstaller
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
-        private RemoteShell $remoteShell,
+        private ToolScriptDispatcher $toolScriptDispatcher,
         private NodeRoleAssignments $nodeRoleAssignments,
         private RemoteSecretFile $remoteSecretFile,
         private GitHubTokenResolver $githubTokenResolver,
@@ -161,15 +160,6 @@ final readonly class ToolInstaller
             }
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
-
-        if (! $transport->allowed()) {
-            return ToolRegistryFailure::nodeTransportRequired(
-                $transport->message('tool:install'),
-                $transport->meta(),
-            );
-        }
-
         $row = NodeTool::query()->updateOrCreate(
             [
                 'node_id' => $targetNode->id,
@@ -189,6 +179,12 @@ final readonly class ToolInstaller
             scriptFactory: fn (array $config): string => (string) $this->catalog->installScript($tool, $config),
         );
 
+        if ($result instanceof ToolRegistryFailure) {
+            $row->delete();
+
+            return $result;
+        }
+
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 $tool,
@@ -204,7 +200,16 @@ final readonly class ToolInstaller
         $credentialsScript = $this->catalog->credentialsScript($tool, $agentConfig);
 
         if ($credentialsScript !== null) {
-            $credResult = $this->remoteShell->run($targetNode, $credentialsScript, ['throw' => false]);
+            $credResult = $this->toolScriptDispatcher->runForRegistry(
+                node: $targetNode,
+                tool: $tool,
+                action: 'credentials',
+                script: $credentialsScript,
+            );
+
+            if ($credResult instanceof ToolRegistryFailure) {
+                return $credResult;
+            }
 
             if ($credResult->successful()) {
                 $parsed = json_decode(trim($credResult->stdout), true);
@@ -414,22 +419,32 @@ final readonly class ToolInstaller
         string $tool,
         array $config,
         callable $scriptFactory,
-    ): RemoteShellResult {
+    ): RemoteShellResult|ToolRegistryFailure {
         $token = $this->githubTokenForTool($tool);
 
         if ($token === null) {
-            return $this->remoteShell->run($node, $scriptFactory($config), ['throw' => false]);
+            return $this->toolScriptDispatcher->runForRegistry(
+                node: $node,
+                tool: $tool,
+                action: 'install',
+                script: $scriptFactory($config),
+            );
         }
 
-        return $this->remoteSecretFile->stage(
-            $node,
-            $token,
-            fn (string $path): RemoteShellResult => $this->remoteShell->run(
+        try {
+            return $this->remoteSecretFile->stage(
                 $node,
-                $scriptFactory([...$config, 'github_token_file' => $path]),
-                ['throw' => false],
-            ),
-        );
+                $token,
+                fn (string $path): RemoteShellResult => $this->toolScriptDispatcher->run(
+                    node: $node,
+                    tool: $tool,
+                    action: 'install',
+                    script: $scriptFactory([...$config, 'github_token_file' => $path]),
+                ),
+            );
+        } catch (RemoteLocalExecutorTransportFailed $exception) {
+            return $this->toolScriptDispatcher->nodeTransportRequired($tool, 'install', $exception);
+        }
     }
 
     private function githubTokenForTool(string $tool): ?string

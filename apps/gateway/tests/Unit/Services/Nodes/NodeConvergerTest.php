@@ -22,6 +22,7 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
 
+    bind_tool_script_dispatcher_to_remote_shell();
     bindDevelopmentDnsMappingTestDoubles('node-converger-dns');
 });
 

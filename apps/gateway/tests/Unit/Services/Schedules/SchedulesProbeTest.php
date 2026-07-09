@@ -395,7 +395,7 @@ function schedule_probe_local_executor(): RemoteLocalExecutor
         transport: new class implements RemoteExecutor {
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
-                throw new RuntimeException('SSH transport should not be called for schedule target reachability.');
+                throw new RuntimeException('Fallback transport should not be called for schedule target reachability.');
             }
 
             public function start(Node $node, string $script, array $options = []): InvokedProcess

@@ -23,12 +23,21 @@ final readonly class LocalWorkspaceSetupStepEnvironment
         $environment = $value;
 
         foreach (array_keys($environment) as $key) {
-            if (preg_match(self::ENVIRONMENT_KEY_PATTERN, $key) !== 1) {
+            if (preg_match(self::ENVIRONMENT_KEY_PATTERN, $key) !== 1 || self::isForbiddenKey($key)) {
                 throw new InvalidArgumentException('Workspace setup environment is invalid.');
             }
         }
 
         return $environment;
+    }
+
+    private static function isForbiddenKey(string $key): bool
+    {
+        if ($key === 'APP_KEY') {
+            return true;
+        }
+
+        return str_starts_with($key, 'ORBIT_AGENT_PUSH_AUTHORIZED_');
     }
 
     private static function isStringMap(mixed $value): bool

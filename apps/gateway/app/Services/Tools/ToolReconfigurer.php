@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Contracts\RemoteShell;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-
 final readonly class ToolReconfigurer
 {
     public function __construct(
         private ToolCatalog $catalog,
         private ToolRegistry $registry,
-        private RemoteShell $remoteShell,
+        private ToolScriptDispatcher $toolScriptDispatcher,
     ) {}
 
     /**
@@ -57,15 +54,6 @@ final readonly class ToolReconfigurer
             return ToolRegistryFailure::unsupportedAction($tool, 'reconfigure');
         }
 
-        $transport = app(ExplicitRemoteShellFallback::class);
-
-        if (! $transport->allowed()) {
-            return ToolRegistryFailure::nodeTransportRequired(
-                $transport->message('tool:reconfigure'),
-                $transport->meta(),
-            );
-        }
-
         $model->config = $mergedConfig;
 
         if ($password !== null) {
@@ -75,7 +63,16 @@ final readonly class ToolReconfigurer
 
         $model->save();
 
-        $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
+        $result = $this->toolScriptDispatcher->runForRegistry(
+            node: $model->node,
+            tool: $tool,
+            action: 'reconfigure',
+            script: $script,
+        );
+
+        if ($result instanceof ToolRegistryFailure) {
+            return $result;
+        }
 
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
