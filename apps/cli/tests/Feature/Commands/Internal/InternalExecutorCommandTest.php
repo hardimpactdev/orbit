@@ -150,6 +150,43 @@ describe('InternalExecutorCommand base', function (): void {
         });
     });
 
+    it('includes the install metadata path in the gateway verifier environment', function (): void {
+        $previousMetadataPath = getenv('ORBIT_INSTALL_METADATA_PATH');
+        $metadataPath = '/home/orbit/.config/orbit/install.json';
+
+        fakeGateway(fakeSuccessEnvelope([
+            'allowed' => true,
+        ]));
+
+        putenv("ORBIT_INSTALL_METADATA_PATH={$metadataPath}");
+
+        try {
+            $token = signInternalExecutorToken();
+
+            [$exitCode, $output] = runTestInternalExecutorCommand($this, [
+                '--operation-token' => $token,
+                '--json' => true,
+            ]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(0)->and($decoded['success']['data']['verified'])->toBeTrue();
+
+            Http::assertSent(function (Request $request) use ($metadataPath): bool {
+                return (
+                    $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
+                    && ($request['environment']['ORBIT_INSTALL_METADATA_PATH'] ?? null) === $metadataPath
+                );
+            });
+        } finally {
+            if ($previousMetadataPath === false) {
+                putenv('ORBIT_INSTALL_METADATA_PATH');
+            } else {
+                putenv("ORBIT_INSTALL_METADATA_PATH={$previousMetadataPath}");
+            }
+        }
+    });
+
     it('accepts a valid operation token and emits success', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
