@@ -823,21 +823,22 @@ function session_archive_feedback_json(string $id): string
 function session_archive_closed_feedback_json(string $id): string
 {
     $recorded = session_archive_feedback_json($id);
-    $promotion = json_encode([
-        'schema_version' => 1,
-        'type' => 'feedback.promoted',
-        'id' => 'promotion-'.$id,
-        'recorded_at' => '2026-07-10T18:01:00Z',
-        'feedback_id' => $id,
-        'scope' => 'cli.progress',
-        'expectation' => 'Progress remains visible and monotonic.',
-        'protection' => [
-            'kind' => 'test',
-            'reference' => 'bin/quality-check-progress-frame-check',
-            'rejected_example' => 'progress-stalled',
-            'accepted_example' => 'progress-monotonic',
-        ],
-    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+    $promotion =
+        json_encode([
+            'schema_version' => 1,
+            'type' => 'feedback.promoted',
+            'id' => 'promotion-'.$id,
+            'recorded_at' => '2026-07-10T18:01:00Z',
+            'feedback_id' => $id,
+            'scope' => 'cli.progress',
+            'expectation' => 'Progress remains visible and monotonic.',
+            'protection' => [
+                'kind' => 'test',
+                'reference' => 'bin/quality-check-progress-frame-check',
+                'rejected_example' => 'progress-stalled',
+                'accepted_example' => 'progress-monotonic',
+            ],
+        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
 
     return $recorded.$promotion;
 }
