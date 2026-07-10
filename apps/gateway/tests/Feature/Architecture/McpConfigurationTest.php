@@ -210,23 +210,20 @@ it('keeps worktree preparation responsible for seeding the active loop packet', 
 
     expect($fastPath)
         ->toContain('`bin/orbit-prepare-worktree`; it seeds `.orbit/loop.md` when missing')
-        ->toContain('Fill the seeded `.orbit/loop.md`');
+        ->toContain('Fill Goal and Scope in the seeded `.orbit/loop.md`');
 
     expect($harness)
-        ->toContain('`bin/orbit-prepare-worktree` seeds `.orbit/loop.md`')
-        ->toContain('The handoff owner or feature')
-        ->toContain('orchestrator enriches that seeded packet');
+        ->toContain('`bin/orbit-prepare-worktree`')
+        ->toContain('It records only Goal, Scope, Proof, Status');
 
     expect($implementingFeatures)
-        ->toContain('seeds `.orbit/loop.md` when it is missing')
-        ->toContain('Fill or update the seeded `.orbit/loop.md`')
-        ->toContain('If `.orbit/loop.md` is missing, report a setup blocker before editing.')
-        ->toContain('Do not create `.orbit/loop.md`')
-        ->not->toContain('`.orbit/loop.md` when that file exists')
-        ->not->toContain('then copy it to `.orbit/loop.md`');
+        ->toContain('It seeds')
+        ->toContain('`.orbit/loop.md` when it is missing')
+        ->toContain('Fill or update the seeded `.orbit/loop.md` Goal and Scope')
+        ->toContain('do not recreate the setup flow manually');
 
     expect($todoHandoff)
-        ->toContain('fill the seeded .orbit/loop.md Done Contract');
+        ->toContain('fill the seeded .orbit/loop.md Goal and Scope');
 });
 
 it('does not keep gateway-local generated agent artifacts', function (): void {
@@ -241,144 +238,123 @@ it('does not keep gateway-local generated agent artifacts', function (): void {
         ->not->toBeFile();
 });
 
-it('routes post-feature analysis through the analyzer persona', function (): void {
-    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
-    $loopTemplate = file_get_contents(repo_path('LOOP.md.example')) ?: '';
-    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
-    $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
+it('uses one general reviewer and no standing specialist reviewers in the active loop', function (): void {
+    $reviewer = file_get_contents(repo_path('.agents/review-personas/general.md')) ?: '';
+    $active = implode("\n", array_map(
+        static fn (string $path): string => (string) file_get_contents(repo_path($path)),
+        [
+            'HARNESS.md',
+            'AGENTS.md',
+            'AGENT_FAST_PATH.md',
+            '.agents/skills/implementing-features/SKILL.md',
+        ],
+    ));
 
-    expect(repo_path('.agents/review-personas/post-feature-analyzer.md'))
+    expect(repo_path('.agents/review-personas/general.md'))
         ->toBeFile()
-        ->and(repo_path('.agents/review-personas/post-feature-distillation.md'))
-        ->not->toBeFile()->and($analyzer)->toContain('read-only')->and($harness)->toContain(
-            '.agents/review-personas/post-feature-analyzer.md',
+        ->and($reviewer)
+        ->toContain('CHECKOUT_PROOF')
+        ->toContain('OBSERVABLE_CHANGE: yes|no')
+        ->toContain('VERDICT: PASS|FIX|ESCALATE')
+        ->toContain('one concrete high-risk question')
+        ->and($active)
+        ->toContain('.agents/review-personas/general.md')
+        ->not->toContain('.agents/review-personas/cli-command.md')
+        ->not->toContain('.agents/review-personas/docs-librarian.md')
+        ->not->toContain('.agents/review-personas/post-feature-analyzer.md')
+        ->not->toContain('.agents/review-personas/tauri-agent.md');
+});
+
+it('keeps the current feature owner in charge with optional bounded workers', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+
+    expect($harness)
+        ->toContain('FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND')
+        ->toContain('current feature owner owns FRAME through LAND')
+        ->toContain('Workers are optional and bounded')
+        ->and($skill)
+        ->toContain('The current feature owner may implement directly')
+        ->toContain('Use workers only when useful')
+        ->not->toContain('It must spawn')
+        ->not->toContain('substantive repository edits are forbidden');
+});
+
+it('keeps intake compact and e2e prompts execution-safe', function (): void {
+    $intake = file_get_contents(repo_path('.agents/skills/handling-feature-requests/SKILL.md')) ?: '';
+    $intakePrompt = file_get_contents(repo_path('.agents/skills/handling-feature-requests/agents/openai.yaml')) ?: '';
+    $e2ePrompt = file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/agents/openai.yaml')) ?: '';
+
+    expect($intake)
+        ->toContain('Outcome')
+        ->toContain('Acceptance')
+        ->toContain('Constraints')
+        ->toContain('Ambiguity')
+        ->not->toContain('spawn implementation agents')->and($intakePrompt)->toContain(
+            'leave implementation ownership and optional delegation to implementing-features',
         )
-        ->not->toContain('post-feature-distillation')->and($loopTemplate)->toContain('correct-noop')->toContain(
-            'wrong-target',
-        )->and($implementingFeatures)->toContain('.agents/review-personas/post-feature-analyzer.md')
-        ->not->toContain('post-feature-distillation');
+        ->not->toContain('delegate documentation and implementation through Solo')->and($e2ePrompt)->toContain(
+            'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
+        )
+        ->not->toContain('select Docker or Incus E2E verification commands')
+        ->not->toContain('split provider work across Solo agents');
 });
 
-it('keeps post-feature analyzers on demand for compact loops', function (): void {
-    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
-    $loopTemplate = file_get_contents(repo_path('LOOP.md.example')) ?: '';
-    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
-    $normalizedHarness = preg_replace('/\s+/', ' ', $harness) ?: '';
-
-    expect($harness)
-        ->toContain('Default compact loops do not run a standing post-feature analyzer.')
-        ->toContain('Run the fresh post-feature analyzer only when explicitly requested')
-        ->toContain('`not used - <rationale>`')
-        ->not->toContain('Fresh Solo Codex analyzer report for non-trivial loops');
-
-    expect($normalizedHarness)
-        ->toContain(
-            'multi-slice, parallel workers, topology/live-node proof, product-contract change, release scope, messy human steering, reviewer dispute, suspected guardrail drift, or changes to analyzer/loop guardrails',
-        );
-
-    expect($loopTemplate)
-        ->toContain('`not used - <rationale>`')
-        ->toContain('normal compact-loop analyzer result');
-
-    expect($implementingFeatures)
-        ->toContain('record `not used - <rationale>` for compact loops')
-        ->toContain('analyzer/loop guardrail changes')
-        ->not->toContain('request fresh-context post-feature analysis when the loop was non-trivial');
-});
-
-it('keeps the Solo Codex analyzer spawn recipe canonical in the HARNESS role matrix', function (): void {
-    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
-    $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
-    $cliReviewer = file_get_contents(repo_path('.agents/review-personas/cli-command.md')) ?: '';
-    $docsLibrarian = file_get_contents(repo_path('.agents/review-personas/docs-librarian.md')) ?: '';
-
-    expect($harness)
-        ->toContain('## Solo Role Matrix')
-        ->toContain('| Post-feature analyzer | Solo-managed Codex analyzer |')
-        ->toContain('Post-feature analyzers use the enabled `Codex` tool through Solo');
-
-    $roleMatrixStart = strpos($harness, '## Solo Role Matrix');
-    $roleMatrixEnd = strpos($harness, "\n## ", $roleMatrixStart + 1);
-    $roleMatrix = substr(
-        $harness,
-        $roleMatrixStart,
-        $roleMatrixEnd === false ? null : $roleMatrixEnd - $roleMatrixStart,
-    );
-
-    expect($roleMatrix)
-        ->toContain('extra_args')
-        ->toContain('--cd')
-        ->toContain('--cwd')
-        ->and(substr_count($harness, 'extra_args'))
-        ->toBe(substr_count($roleMatrix, 'extra_args'));
-
-    foreach ([$analyzer, $cliReviewer, $docsLibrarian] as $persona) {
-        expect($persona)
-            ->toContain('Spawn per the Solo Role Matrix in HARNESS.md')
-            ->not->toContain('extra_args');
-    }
-});
-
-it('requires checkout proof and machine-parseable verdicts from Solo-spawned review personas', function (): void {
-    $personaPaths = [
-        '.agents/review-personas/cli-command.md',
-        '.agents/review-personas/docs-librarian.md',
-        '.agents/review-personas/post-feature-analyzer.md',
-        '.agents/review-personas/tauri-agent.md',
-    ];
-
-    foreach ($personaPaths as $personaPath) {
-        $persona = file_get_contents(repo_path($personaPath)) ?: '';
-
-        expect($persona)
-            ->toContain('REQUIRED PROOF')
-            ->toContain('CHECKOUT_PROOF')
-            ->toContain('git branch --show-current')
-            ->toContain('git status --short --branch')
-            ->toContain('VERDICT:');
-    }
-
-    $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
-
-    expect($analyzer)
-        ->toContain('yes|flawed|blocked-by-missing-evidence')
-        ->toContain('correct-noop')
-        ->toContain('missed')
-        ->toContain('redundant')
-        ->toContain('wrong-target')
-        ->toContain('defer');
-});
-
-it('routes Orbit Agent Tauri work through a dedicated skill and reviewer persona', function (): void {
-    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
-    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+it('keeps the native Orbit Agent development skill without a standing reviewer lane', function (): void {
     $skill = file_get_contents(repo_path('.agents/skills/tauri-agent-development/SKILL.md')) ?: '';
-    $reviewer = file_get_contents(repo_path('.agents/review-personas/tauri-agent.md')) ?: '';
+    $implementing = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
 
     expect(repo_path('.agents/skills/tauri-agent-development/SKILL.md'))
         ->toBeFile()
-        ->and(repo_path('.agents/review-personas/tauri-agent.md'))
-        ->toBeFile()
-        ->and($harness)
-        ->toContain('| Orbit Agent Rust services |')
-        ->toContain('.agents/skills/tauri-agent-development/SKILL.md')
-        ->toContain('.agents/review-personas/tauri-agent.md')
-        ->and($implementingFeatures)
-        ->toContain('.agents/review-personas/tauri-agent.md')
         ->and($skill)
         ->toContain('name: tauri-agent-development')
         ->toContain('apps/agent')
         ->toContain('apps/macos')
         ->toContain('cargo test')
         ->toContain('Computer Use')
-        ->and($reviewer)
-        ->toContain('Spawn per the Solo Role Matrix in HARNESS.md')
-        ->toContain('apps/agent')
-        ->toContain('apps/macos')
-        ->toContain('cargo test')
-        ->toContain('cargo clippy --all-targets -- -D warnings')
-        ->toContain('Computer Use')
-        ->toContain('VERDICT:');
+        ->and($implementing)
+        ->toContain('macOS Agent: `tauri-agent-development`')
+        ->not->toContain('.agents/review-personas/tauri-agent.md');
+});
+
+it('documents immutable feedback promotion and deterministic protection first', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $skill = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $ux = file_get_contents(repo_path('apps/docs/content/ux/commands/README.md')) ?: '';
+    $normalizedHarness = preg_replace('/\s+/', ' ', $harness) ?: '';
+    $normalizedSkill = preg_replace('/\s+/', ' ', $skill) ?: '';
+
+    expect($normalizedHarness)
+        ->toContain('All non-secret user feedback is stored verbatim as immutable events')
+        ->toContain('redacted in memory before the event is appended')
+        ->toContain('Never ask the user for a waiver')
+        ->and($normalizedSkill)
+        ->toContain('Dogfood the concrete rejected and accepted pair first')
+        ->toContain('Prefer deterministic protection')
+        ->toContain('Do not create a semantic grader')
+        ->toContain('`UNKNOWN` never passes')
+        ->and($ux)
+        ->toContain('Running -> Queued')
+        ->toContain('bin/quality-check-progress-frame-check');
+});
+
+it('keeps loop improvement trigger-only and bounded', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $loopReview = file_get_contents(repo_path('.agents/skills/loop-review/SKILL.md')) ?: '';
+    $normalizedHarness = preg_replace('/\s+/', ' ', $harness) ?: '';
+    $normalizedLoopReview = preg_replace('/\s+/', ' ', $loopReview) ?: '';
+
+    expect($normalizedHarness)
+        ->toContain('Clean loops create no experiment')
+        ->toContain('one active loop experiment')
+        ->toContain('one target metric')
+        ->toContain('Revert by default')
+        ->not->toContain('## Metrics')
+        ->not->toContain('bin/orbit-loop-metrics')->and($normalizedLoopReview)->toContain(
+            'failed promoted protection',
+        )->toContain('reviewer-confirmed recurring process failure')->toContain('existing compact receipts')->toContain(
+            'Do not create generic evaluator tooling',
+        );
 });
 
 it('keeps the general Orbit skill aligned with the macOS Orbit Agent app boundary', function (): void {

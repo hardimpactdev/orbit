@@ -53,7 +53,10 @@ When more than one stage is requested, complete them in order: construct, execut
    - Capture transcript or trajectory separately from final environment outcome.
    - For comparative fresh-agent evals, use fresh processes or threads, pair trials by runtime/model when possible, and record the controlled prompt delta plus friction metrics.
    - For LLM-facing affordance evals with cited docs or evidence, load `../_orbit-eval-references/llm-affordance-file-capture.md` and prefer one temp outcome JSON per trial when practical.
-   - Do not run `composer test:e2e*` unless the user explicitly invokes that Composer command from a shell.
+   - Never run, invoke, dispatch, delegate, schedule, or trigger a
+     `composer test:e2e*` command, including through an eval trial or agent
+     under test. Only a human may manually invoke the Composer command from a
+     shell; agents may inspect the resulting artifact.
 
 4. Review the run before trusting scores.
    - Use `evaluate-eval-execution`.
@@ -65,11 +68,12 @@ When more than one stage is requested, complete them in order: construct, execut
 When the user asks for the next Orbit eval and no narrower target exists, start with an Orbit repo-agent process eval:
 
 - Does the agent read authority docs before changing behavior?
-- Does it use a Solo scratchpad for multi-slice or process artifacts?
+- Does it use a Solo scratchpad only when complexity or durable eval artifacts warrant one?
 - Does it prepare an isolated Orbit worktree before repository edits?
 - Does it keep docs, tests, code, and verification aligned?
-- Does it avoid E2E lanes unless the user explicitly invokes them from a shell?
-- Does it use fresh review and final distillation before merge?
+- Does it leave every E2E invocation to a human at a shell and limit agents to
+  inspecting the resulting artifacts?
+- Does it record compact Proof/Status, one general review, acceptance, and exact tips before LAND?
 
 This is a good first family because it measures the workflow that protects all later product eval work.
 

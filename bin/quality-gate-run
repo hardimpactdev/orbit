@@ -100,6 +100,10 @@ if [ -z "$GATE" ]; then
     usage_error "Missing required option --gate."
 fi
 
+if [ "$GATE" = "quality-check" ]; then
+    usage_error "Gate [quality-check] is reserved for bin/quality-check.sh."
+fi
+
 if [ "$#" -eq 0 ]; then
     usage_error "Missing command after --."
 fi
@@ -111,6 +115,10 @@ fi
 STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_START_CLEAN=0
+if GIT_START_STATUS="$(git -C "$ROOT" status --porcelain --untracked-files=all 2>/dev/null)" && [ -z "$GIT_START_STATUS" ]; then
+    GIT_START_CLEAN=1
+fi
 CAPTURE_E2E_TIMINGS=0
 TIMING_RAW_PATH=""
 TIMING_SUMMARY_PATH=""
@@ -153,6 +161,15 @@ fi
 set -e
 
 ENDED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+GIT_END_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_END_CLEAN=0
+if GIT_END_STATUS="$(git -C "$ROOT" status --porcelain --untracked-files=all 2>/dev/null)" && [ -z "$GIT_END_STATUS" ]; then
+    GIT_END_CLEAN=1
+fi
+GIT_DIRTY=true
+if [ "$GIT_START_CLEAN" -eq 1 ] && [ "$GIT_END_CLEAN" -eq 1 ] && [ "$GIT_COMMIT" != unknown ] && [ "$GIT_END_COMMIT" = "$GIT_COMMIT" ]; then
+    GIT_DIRTY=false
+fi
 
 if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ] && [ -s "$TIMING_RAW_TMP" ]; then
     TIMING_DIR="${ARTIFACT_DIR}/e2e-timings"
@@ -185,6 +202,7 @@ fi
 ARTIFACT_ARGS=(
     "${ROOT}/bin/quality-gate-write-artifact"
     "--gate=$GATE"
+    "--producer=quality-gate-run"
     "--command=$COMMAND"
     "--mode=$MODE"
     "--started-at=$STARTED_AT"
@@ -192,6 +210,7 @@ ARTIFACT_ARGS=(
     "--exit-code=$EXIT_CODE"
     "--git-branch=$GIT_BRANCH"
     "--git-commit=$GIT_COMMIT"
+    "--git-dirty=$GIT_DIRTY"
     "--artifact-dir=$ARTIFACT_DIR"
 )
 

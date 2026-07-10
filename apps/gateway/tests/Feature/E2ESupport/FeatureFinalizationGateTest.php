@@ -4,6 +4,645 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('documents one compact zero-touch loop contract', function (): void {
+    $template = (string) file_get_contents(repo_path('LOOP.md.example'));
+
+    expect($template)
+        ->toContain('# Orbit Feature Loop')
+        ->toContain('## Goal')
+        ->toContain('## Scope')
+        ->toContain('## Proof')
+        ->toContain('- Review: pending')
+        ->toContain('- Reviewed feature tip: none')
+        ->toContain('- Acceptance venue: automated')
+        ->toContain('- Acceptance: pending')
+        ->toContain('- Accepted feature tip: none')
+        ->toContain('- Accepted main tip: none')
+        ->toContain('## Status')
+        ->toContain('- State: frame')
+        ->toContain('- Blocker: none')
+        ->toContain('## Feedback')
+        ->toContain('.orbit/feedback.jsonl')
+        ->not->toContain('Final Distillation')
+        ->not->toContain('Fresh analyzer')
+        ->not->toContain('Candidate Signals While Working')
+        ->not->toContain('Agent session capture waivers');
+});
+
+it('documents clean candidate review escalation and landed archive ordering', function (): void {
+    $harness = (string) file_get_contents(repo_path('HARNESS.md'));
+    $skill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+
+    expect($harness)
+        ->toContain('commit the candidate and confirm a clean worktree')
+        ->toContain('same general reviewer')
+        ->toContain('terminal `PASS` or `FIX`')
+        ->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')
+        ->toContain('After merge, keep the accepted feature worktree open')
+        ->and(strpos($harness, 'Merge through `bin/orbit-feature-finalization-check git merge <branch>`'))
+        ->toBeLessThan(strpos($harness, 'After merge, keep the accepted feature worktree open'))
+        ->and($skill)
+        ->toContain('commit the candidate and confirm the worktree is')
+        ->toContain('same general reviewer')
+        ->toContain('terminal PASS or FIX')
+        ->toContain('After merge, keep the accepted feature worktree open');
+});
+
+it('lints the compact loop contract without historical ceremony', function (): void {
+    $packetDir = make_finalization_lint_dir(compact_feature_loop_packet());
+
+    try {
+        $process = run_finalization_check_wrapper($packetDir, ['--lint']);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS')
+            ->not->toContain('Final Distillation');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('allows only the exact reviewed and accepted feature and main tips to merge', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('blocks compact merge when main moved after acceptance', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+        file_put_contents("{$repo}/AGENTS.md", "# Agents moved\n");
+        run_fixture_command($repo, ['git', 'add', 'AGENTS.md']);
+        run_fixture_command($repo, ['git', 'commit', '-m', 'Move main']);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('main advanced after acceptance');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('requires advanced main to be integrated before proof and acceptance are repeated', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        file_put_contents("{$repo}/AGENTS.md", "# Agents moved\n");
+        run_fixture_command($repo, ['git', 'add', 'AGENTS.md']);
+        run_fixture_command($repo, ['git', 'commit', '-m', 'Move main']);
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('integrate main into the feature branch')
+            ->toContain('repeat PROVE and ACCEPT');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('requires the reviewer PASS to name the exact feature HEAD', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $reviewedTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                reviewedTip: $reviewedTip,
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('reviewed feature tip does not equal the feature branch tip');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('blocks merge when the non-mutating preview finds a conflict', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Feature harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        file_put_contents("{$repo}/HARNESS.md", "# Main harness\n");
+        run_fixture_command($repo, ['git', 'add', 'HARNESS.md']);
+        run_fixture_command($repo, ['git', 'commit', '-m', 'Conflicting main change']);
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('merge preview reported a conflict');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('blocks compact merge when a nonignored untracked file was part of the tested surface', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+        file_put_contents("{$worktree}/untracked-runtime.txt", "not in accepted HEAD\n");
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('uncommitted or untracked changes')
+            ->toContain('untracked-runtime.txt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('routes deleted production files through observable acceptance', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        run_fixture_command($worktree, ['git', 'rm', 'apps/cli/runtime.php']);
+        run_fixture_command($worktree, ['git', 'commit', '-m', 'Delete CLI runtime']);
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - observable',
+                acceptance: 'accepted - automated - automation-only diff',
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('acceptance venue automated does not satisfy')
+            ->toContain('retained-incus');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('requires exact automated acceptance provenance', function (
+    string $review,
+    string $acceptance,
+    string $reason,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: $review,
+                acceptance: $acceptance,
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'generic accepted label' => [
+        'passed - reviewer example - non-observable',
+        'accepted - automated',
+        'acceptance provenance is invalid',
+    ],
+    'automation-only claim on reviewer override' => [
+        'passed - reviewer example - non-observable',
+        'accepted - automated - automation-only diff',
+        'reviewer-confirmed non-observable',
+    ],
+    'reviewer claim without reviewer result' => [
+        'passed - reviewer example - observable',
+        'accepted - automated - reviewer-confirmed non-observable',
+        'review does not confirm non-observable',
+    ],
+]);
+
+it('allows ordinary content-preserving merge options', function (string $options): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, "git merge {$options} feature");
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    '--ff',
+    '--ff-only',
+    '--no-ff',
+    '--no-ff --no-edit',
+    '--no-ff --edit',
+    '--no-ff --no-stat',
+]);
+
+it('rejects merge options that can omit or rewrite the accepted candidate', function (
+    string $options,
+    string $reason,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+
+        $process = run_finalization_gate($repo, "git merge {$options} feature");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'squash' => ['--squash', '--squash'],
+    'no commit' => ['--no-commit', '--no-commit'],
+    'short strategy' => ['-s ours', 'custom merge strategies'],
+    'long strategy' => ['--strategy=ours', 'custom merge strategies'],
+    'strategy option' => ['-X ours', 'strategy options'],
+    'long strategy option' => ['--strategy-option=ours', 'strategy options'],
+]);
+
+it('rejects multi-target or chained destructive boundary commands', function (string $command, string $reason): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $otherWorktree = "{$repo}.other";
+        run_fixture_command($repo, ['git', 'branch', 'other']);
+        run_fixture_command($repo, ['git', 'worktree', 'add', $otherWorktree, 'other']);
+        $command = str_replace(
+            ['{feature-worktree}', '{other-worktree}'],
+            [$worktree, $otherWorktree],
+            $command,
+        );
+
+        $process = run_finalization_gate($repo, $command);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+        new Process(['rm', '-rf', "{$repo}.other"])->run();
+    }
+})->with([
+    'multiple branch targets' => ['git branch -D feature other', 'exactly one branch target'],
+    'multiple worktree targets' => [
+        'git worktree remove {feature-worktree} {other-worktree}',
+        'exactly one worktree target',
+    ],
+    'worktree then branch' => [
+        'git worktree remove {feature-worktree} && git branch -D feature',
+        'exactly one destructive boundary action',
+    ],
+    'merge then branch' => [
+        'git merge feature && git branch -D feature',
+        'exactly one destructive boundary action',
+    ],
+    'two branch commands' => [
+        'git branch -D feature && git branch -D other',
+        'exactly one destructive boundary action',
+    ],
+]);
+
+it('allows exact automation-only acceptance for an automation-only diff', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - observable',
+                acceptance: 'accepted - automated - automation-only diff',
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge --no-ff feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects an invalid existing feedback stream for automated acceptance', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+        file_put_contents(
+            "{$worktree}/.orbit/feedback.jsonl",
+            "{\"schema_version\":1,\"type\":\"unknown\",\"id\":\"bad\",\"recorded_at\":\"2026-07-10T20:00:00Z\"}\n",
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('feedback stream is invalid')
+            ->toContain('unknown feedback event type');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects forged or incomplete reserved quality-check evidence', function (
+    string $mutation,
+    string $reason,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'bin/example', "#!/usr/bin/env bash\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+        $artifactPath = latest_finalization_artifact_path($worktree, 'quality-check');
+        $artifact = json_decode((string) file_get_contents($artifactPath), true, flags: JSON_THROW_ON_ERROR);
+
+        match ($mutation) {
+            'producer' => $artifact['producer'] = 'forged-producer',
+            'command' => $artifact['command'] = 'composer quality-check:fix',
+            'mode' => $artifact['mode'] = 'fix',
+            'missing-subgate' => array_pop($artifact['subgates']),
+            'failed-subgate' => $artifact['subgates']['gateway_pest'] = 1,
+            'extra-subgate' => $artifact['subgates']['forged_lane'] = 0,
+        };
+        file_put_contents(
+            $artifactPath,
+            json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'forged producer' => ['producer', 'producer'],
+    'wrong command' => ['command', 'command'],
+    'fix mode' => ['mode', 'mode'],
+    'missing subgate' => ['missing-subgate', 'exact expected subgate set'],
+    'failed subgate' => ['failed-subgate', 'all subgates must be integer exit code 0'],
+    'extra subgate' => ['extra-subgate', 'exact expected subgate set'],
+]);
+
+it('rejects forged reserved docs-lint evidence', function (string $mutation, string $reason): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+        $artifactPath = latest_finalization_artifact_path($worktree, 'docs-lint');
+        $artifact = json_decode((string) file_get_contents($artifactPath), true, flags: JSON_THROW_ON_ERROR);
+
+        match ($mutation) {
+            'producer' => $artifact['producer'] = 'forged-producer',
+            'command' => $artifact['command'] = 'composer fake-docs-lint',
+            'mode' => $artifact['mode'] = 'fix',
+            'subgates' => $artifact['subgates'] = ['forged_lane' => 0],
+        };
+        file_put_contents(
+            $artifactPath,
+            json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'forged producer' => ['producer', 'producer'],
+    'wrong command' => ['command', 'command'],
+    'fix mode' => ['mode', 'mode'],
+    'nonempty subgates' => ['subgates', 'empty subgate set'],
+]);
+
+it('requires a user acceptance event matching the accepted candidate source and surface', function (
+    string $candidate,
+    string $source,
+    string $surface,
+    string $reason,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/cli/accepted.php', "<?php\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        $sourceRef = 'codex://threads/019f4bd5-ba0e-7d33-af71-2e8ebc774627#accepted';
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - observable',
+                acceptance: "accepted - user @ {$sourceRef}",
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                venue: 'retained-incus',
+            ),
+        );
+        write_finalization_acceptance_event(
+            $worktree,
+            $candidate === 'matching' ? $featureTip : str_repeat('c', 40),
+            $source === 'matching' ? $sourceRef : 'codex://threads/different#accepted',
+            $surface === 'matching' ? 'acceptance.retained-incus' : 'acceptance.browser',
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'candidate mismatch' => ['different', 'matching', 'matching', 'candidate commit'],
+    'source mismatch' => ['matching', 'different', 'matching', 'source reference'],
+    'surface mismatch' => ['matching', 'matching', 'different', 'acceptance surface'],
+]);
+
+it('allows exact user acceptance provenance', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/cli/accepted.php', "<?php\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        $sourceRef = 'codex://threads/019f4bd5-ba0e-7d33-af71-2e8ebc774627#accepted';
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - observable',
+                acceptance: "accepted - user @ {$sourceRef}",
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                venue: 'retained-incus',
+            ),
+        );
+        write_finalization_acceptance_event(
+            $worktree,
+            $featureTip,
+            $sourceRef,
+            'acceptance.retained-incus',
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('classifies and blocks merge operands that are not one exact linked local branch', function (
+    string $command,
+    string $reason,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        run_fixture_command($repo, ['git', 'branch', 'feature-two']);
+        run_fixture_command($repo, ['git', 'update-ref', 'refs/remotes/origin/feature', 'refs/heads/feature']);
+        $featureTip = trim(new Process(['git', 'rev-parse', 'feature'], $repo)->mustRun()->getOutput());
+        $command = str_replace(['{feature-tip}', '{repo}'], [$featureTip, $repo], $command);
+
+        $process = run_finalization_gate($repo, $command);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason);
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'no merge head' => ['git merge --no-ff', 'exactly one merge head'],
+    'raw commit id' => ['git merge {feature-tip}', 'linked local branch'],
+    'missing local branch' => ['git merge absent-local', 'linked local branch'],
+    'remote tracking branch' => ['git merge origin/feature', 'linked local branch'],
+    'revision expression' => ['git merge feature~1', 'linked local branch'],
+    'multiple merge heads' => ['git merge feature feature-two', 'exactly one merge head'],
+    'git directory option with raw commit' => [
+        'git -C {repo} merge {feature-tip}',
+        'context overrides are not accepted',
+    ],
+    'git directory context override with branch' => [
+        'git -C {repo} merge feature',
+        'context overrides are not accepted',
+    ],
+    'git config option with missing branch' => [
+        'git -c advice.detachedHead=false merge absent-local',
+        'linked local branch',
+    ],
+]);
+
 it('blocks a complete loop outcome when retained topology proof is blocked', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
@@ -355,7 +994,6 @@ it('allows a complete loop outcome with explicit non-applicable retained topolog
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
-
     try {
         $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
 
@@ -442,7 +1080,7 @@ it('blocks a merge when the feature worktree has uncommitted tracked changes', f
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('uncommitted tracked changes');
+            ->toContain('uncommitted or untracked changes');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
@@ -480,7 +1118,6 @@ it('blocks a merge when the fresh analyzer row is missing', function (): void {
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
-
     try {
         $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
 
@@ -1235,6 +1872,35 @@ it('blocks native Orbit Agent finalization on non Darwin implementation hosts', 
     }
 });
 
+it('blocks cleanup before the feature tip has landed on main', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
+
+    commit_finalization_gate_file(
+        worktree: $worktree,
+        path: 'harness-signals/2026-07-02-example.md',
+        contents: "# Example\n",
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'docs-lint',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+    write_finalization_gate_session_archive(repo: $repo, slug: 'feature');
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('feature tip is not an ancestor of main')
+            ->not->toContain('no session archive');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
 it('blocks worktree removal when no matching session archive exists', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(finalization_cleanup_packet());
 
@@ -1249,6 +1915,7 @@ it('blocks worktree removal when no matching session archive exists', function (
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
+    land_finalization_gate_feature($repo);
 
     try {
         $process = run_finalization_gate(repo: $repo, command: "git worktree remove {$worktree}");
@@ -1276,6 +1943,7 @@ it('blocks branch deletion when no matching session archive exists', function ()
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
+    land_finalization_gate_feature($repo);
 
     try {
         $process = run_finalization_gate(repo: $repo, command: 'git branch -D feature');
@@ -1303,6 +1971,7 @@ it('allows worktree removal when a matching session archive with loop and manife
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
+    land_finalization_gate_feature($repo);
     write_finalization_gate_session_archive(repo: $repo, slug: 'feature');
 
     try {
@@ -1312,6 +1981,140 @@ it('allows worktree removal when a matching session archive with loop and manife
             ->toBe(0, $process->getErrorOutput());
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('allows cleanup with a valid compact archive receipt and no agent manifests', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+    write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects a malformed compact archive receipt', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    file_put_contents("{$archive}/orbit-session-archive.json", "{}\n");
+    mkdir("{$archive}/agent-sessions");
+    file_put_contents(
+        "{$archive}/agent-sessions/manifest.json",
+        json_encode(['schema_version' => 1, 'sessions' => []], JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects compact archive bytes that no longer match the receipt', function (string $entry): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    write_finalization_acceptance_event(
+        $worktree,
+        trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput()),
+        'codex://threads/example#accepted',
+        'acceptance.automated',
+    );
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature', includeFeedback: true);
+    file_put_contents("{$archive}/{$entry}", "tampered\n", FILE_APPEND);
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with(['loop.md', 'feedback.jsonl']);
+
+it('rejects a compact receipt whose branch or candidate identity is not exact', function (
+    string $field,
+    string $value,
+): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    $receipt = json_decode(
+        (string) file_get_contents("{$archive}/orbit-session-archive.json"),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $receipt[$field] = $value;
+    file_put_contents(
+        "{$archive}/orbit-session-archive.json",
+        json_encode($receipt, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+})->with([
+    'branch' => ['branch', 'different'],
+    'candidate commit' => ['candidate_commit', 'cccccccccccccccccccccccccccccccccccccccc'],
+    'accepted feature tip' => ['accepted_feature_tip', 'cccccccccccccccccccccccccccccccccccccccc'],
+    'accepted main tip' => ['accepted_main_tip', 'cccccccccccccccccccccccccccccccccccccccc'],
+]);
+
+it('rejects compact receipt entry lists that do not match copied archive entries and digests', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+    write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+    write_compact_feature_loop_for_fixture($repo, $worktree);
+    land_finalization_gate_feature($repo);
+    $archive = write_compact_finalization_gate_session_archive($repo, $worktree, 'feature');
+    file_put_contents("{$archive}/unexpected.txt", "not receipted\n");
+
+    try {
+        $process = run_finalization_gate($repo, "git worktree remove {$worktree}");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('valid compact receipt');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
     }
 });
 
@@ -1329,6 +2132,7 @@ it('blocks cleanup when the matching session archive uses only the branch slug',
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
+    land_finalization_gate_feature($repo);
     write_finalization_gate_session_archive(repo: $repo, slug: 'feature', timestamped: false);
 
     try {
@@ -1358,6 +2162,7 @@ it('blocks cleanup when the matching session archive is missing agent session ma
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
+    land_finalization_gate_feature($repo);
     $archiveDir = write_finalization_gate_session_archive(repo: $repo, slug: 'feature');
     unlink("{$archiveDir}/agent-sessions/manifest.json");
 
@@ -1489,27 +2294,17 @@ it('lints a missing packet file as blocked', function (): void {
     }
 });
 
-it('documents the compact default and full multi-slice appendix in the loop template', function (): void {
+it('keeps one compact loop schema without orchestration appendices', function (): void {
     $template = (string) file_get_contents(repo_path('LOOP.md.example'));
 
-    $compactPosition = strpos($template, '- Single-slice: yes -');
-    $fullAppendixPosition = strpos($template, '## Appendix: Full Multi-Slice Variant');
-
     expect($template)
-        ->toContain('## Appendix: Full Multi-Slice Variant')
-        ->not
-        ->toContain('## Appendix: Compact Single-Slice Variant')
-        ->toContain('- Single-slice: yes -')
-        ->toContain('- Parallelization: serial -')
-        ->toContain('- Active slice start gate:')
-        ->toContain('- Parallelization scan:')
-        ->toContain('bin/orbit-session-archive')
-        ->and($compactPosition)
-        ->toBeInt()
-        ->and($fullAppendixPosition)
-        ->toBeInt()
-        ->and($compactPosition)
-        ->toBeLessThan($fullAppendixPosition);
+        ->toContain('# Orbit Feature Loop')
+        ->toContain('## Goal')
+        ->toContain('## Proof')
+        ->toContain('## Status')
+        ->not->toContain('Appendix')
+        ->not->toContain('Parallelization scan')
+        ->not->toContain('Final Distillation');
 });
 
 it('finalization gate blocks lanes-having packet with zero healthy captures and no waiver', function (): void {
@@ -2133,8 +2928,12 @@ function create_finalization_gate_fixture(string $loopMarkdown): array
 
     file_put_contents(filename: "{$repo}/HARNESS.md", data: "# Harness\n");
     file_put_contents(filename: "{$repo}/AGENTS.md", data: "# Agents\n");
+    file_put_contents(filename: "{$repo}/.gitignore", data: ".orbit/\n");
 
-    run_fixture_command(cwd: $repo, command: ['git', 'add', 'HARNESS.md', 'AGENTS.md']);
+    mkdir("{$repo}/apps/cli", recursive: true);
+    file_put_contents(filename: "{$repo}/apps/cli/runtime.php", data: "<?php\n");
+
+    run_fixture_command(cwd: $repo, command: ['git', 'add', 'HARNESS.md', 'AGENTS.md', '.gitignore', 'apps']);
     run_fixture_command(cwd: $repo, command: ['git', 'commit', '-m', 'Initial commit']);
     run_fixture_command(cwd: $repo, command: ['git', 'branch', 'feature']);
     run_fixture_command(cwd: $repo, command: ['git', 'worktree', 'add', $worktree, 'feature']);
@@ -2168,6 +2967,94 @@ function finalization_cleanup_packet(): string
         - No-new-signal rationale:
           - None.
         MARKDOWN;
+}
+
+function compact_feature_loop_packet(
+    string $review = 'passed - reviewer example - non-observable',
+    string $acceptance = 'accepted - automated - reviewer-confirmed non-observable',
+    string $featureTip = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    string $mainTip = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    string $state = 'accepted',
+    string $venue = 'automated',
+    ?string $reviewedTip = null,
+): string {
+    $reviewedTip ??= $featureTip;
+
+    return <<<MARKDOWN
+        # Orbit Feature Loop
+
+        - Scratchpad: solo://proj/4/scratchpad/example--1
+        - Worktree: .worktrees/example
+        - Branch: feature
+
+        ## Goal
+
+        Prove the compact feature loop.
+
+        ## Scope
+
+        - Owned: loop tooling
+        - Constraints: no manual E2E
+        - Out of scope: product behavior
+
+        ## Proof
+
+        - Verification:
+          - focused: passed - focused test
+          - broader: passed - quality artifact
+          - runtime: not applicable - non-observable tooling
+        - Review: {$review}
+        - Reviewed feature tip: {$reviewedTip}
+        - Acceptance venue: {$venue}
+        - Acceptance: {$acceptance}
+        - Accepted feature tip: {$featureTip}
+        - Accepted main tip: {$mainTip}
+
+        ## Status
+
+        - State: {$state}
+        - Blocker: none
+
+        ## Feedback
+
+        - Events: .orbit/feedback.jsonl
+        MARKDOWN;
+}
+
+function write_compact_feature_loop_for_fixture(string $repo, string $worktree): void
+{
+    $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+    $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+
+    file_put_contents(
+        "{$worktree}/.orbit/loop.md",
+        compact_feature_loop_packet(featureTip: $featureTip, mainTip: $mainTip),
+    );
+}
+
+function write_finalization_acceptance_event(
+    string $worktree,
+    string $candidateCommit,
+    string $sourceRef,
+    string $surface,
+): void {
+    $event = [
+        'schema_version' => 1,
+        'type' => 'feedback.recorded',
+        'id' => 'feedback-acceptance-example',
+        'recorded_at' => '2026-07-10T20:00:00+00:00',
+        'raw_text' => 'I accept this candidate.',
+        'session_ref' => $sourceRef,
+        'candidate_commit' => $candidateCommit,
+        'surface' => $surface,
+        'context' => ['kind' => 'acceptance'],
+        'evidence' => [],
+    ];
+
+    file_put_contents(
+        "{$worktree}/.orbit/feedback.jsonl",
+        json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+    );
 }
 
 function full_template_finalization_packet(): string
@@ -2426,6 +3313,58 @@ function write_finalization_gate_session_archive(string $repo, string $slug, boo
     return $archiveDir;
 }
 
+function write_compact_finalization_gate_session_archive(
+    string $repo,
+    string $worktree,
+    string $slug,
+    bool $includeFeedback = false,
+): string {
+    $archiveDir = "{$repo}/.orbit/sessions/2026-07-10-180000-{$slug}";
+    mkdir($archiveDir, recursive: true);
+    copy("{$worktree}/.orbit/loop.md", "{$archiveDir}/loop.md");
+
+    $copiedEntries = ['loop.md'];
+
+    if ($includeFeedback) {
+        copy("{$worktree}/.orbit/feedback.jsonl", "{$archiveDir}/feedback.jsonl");
+        $copiedEntries[] = 'feedback.jsonl';
+    }
+
+    sort($copiedEntries);
+    $entryDigests = [];
+
+    foreach ($copiedEntries as $entry) {
+        $entryDigests[$entry] = hash_file('sha256', "{$archiveDir}/{$entry}");
+    }
+
+    $loop = (string) file_get_contents("{$archiveDir}/loop.md");
+    preg_match('/^- Accepted feature tip:\s*([0-9a-f]{40})$/m', $loop, $acceptedFeature);
+    preg_match('/^- Accepted main tip:\s*([0-9a-f]{40})$/m', $loop, $acceptedMain);
+    $branchTip = trim(new Process(['git', 'rev-parse', 'refs/heads/feature'], $repo)->mustRun()->getOutput());
+
+    file_put_contents(
+        "{$archiveDir}/orbit-session-archive.json",
+        json_encode([
+            'schema_version' => 2,
+            'archive_mode' => 'compact',
+            'branch' => 'feature',
+            'candidate_commit' => $branchTip,
+            'accepted_feature_tip' => $acceptedFeature[1] ?? '',
+            'accepted_main_tip' => $acceptedMain[1] ?? '',
+            'copied_entries' => $copiedEntries,
+            'entry_digests' => $entryDigests,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL,
+    );
+
+    return $archiveDir;
+}
+
+function land_finalization_gate_feature(string $repo): void
+{
+    run_fixture_command($repo, ['git', 'merge', '--no-ff', '--no-edit', 'feature']);
+}
+
 function commit_finalization_gate_file(string $worktree, string $path, string $contents): void
 {
     $absolutePath = "{$worktree}/{$path}";
@@ -2451,7 +3390,9 @@ function write_finalization_gate_artifact(string $worktree, string $gate, int $e
 
     $payload = [
         'gate' => $gate,
+        'producer' => $gate === 'quality-check' ? 'quality-check.sh' : 'quality-gate-run',
         'command' => "composer {$gate}",
+        'mode' => 'check',
         'exit_code' => $exitCode,
         'duration_ms' => 1000,
         'started_at' => '2026-06-25T09:59:59+00:00',
@@ -2461,6 +3402,7 @@ function write_finalization_gate_artifact(string $worktree, string $gate, int $e
             'commit' => trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput()),
             'dirty' => false,
         ],
+        'subgates' => $gate === 'quality-check' ? finalization_quality_check_subgates() : [],
     ];
 
     $encodedPayload = json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
@@ -2470,6 +3412,66 @@ function write_finalization_gate_artifact(string $worktree, string $gate, int $e
         filename: "{$artifactDirectory}/{$gate}-{$timestamp}.json",
         data: $encodedPayload.PHP_EOL,
     );
+}
+
+function latest_finalization_artifact_path(string $worktree, string $gate): string
+{
+    $paths = glob("{$worktree}/.orbit/quality-gates/{$gate}-*.json") ?: [];
+    rsort($paths);
+
+    return $paths[0] ?? throw new RuntimeException("Missing {$gate} fixture artifact");
+}
+
+/** @return array<string, int> */
+function finalization_quality_check_subgates(): array
+{
+    $labels = [
+        'agent_cargo_check',
+        'agent_cargo_clippy',
+        'agent_cargo_fmt',
+        'agent_cargo_test',
+        'cli_mago_analyze',
+        'cli_mago_format',
+        'cli_mago_lint',
+        'cli_pest',
+        'cli_rector',
+        'core_mago_analyze',
+        'core_mago_format',
+        'core_mago_lint',
+        'core_pest',
+        'core_rector',
+        'docs_lint',
+        'docs_mago_analyze',
+        'docs_mago_format',
+        'docs_mago_lint',
+        'docs_pest',
+        'docs_rector',
+        'docs_references',
+        'docs_testing',
+        'e2e_mago_analyze',
+        'e2e_mago_format',
+        'e2e_mago_lint',
+        'e2e_rector',
+        'gateway_mago_analyze',
+        'gateway_mago_format',
+        'gateway_mago_lint',
+        'gateway_pest',
+        'gateway_rector',
+        'macos_cargo_check',
+        'macos_cargo_clippy',
+        'macos_cargo_fmt',
+        'macos_cargo_test',
+        'reverb_mago_analyze',
+        'reverb_mago_format',
+        'reverb_mago_lint',
+        'sdk_mago_analyze',
+        'sdk_mago_format',
+        'sdk_mago_lint',
+        'sdk_pest',
+        'sdk_rector',
+    ];
+
+    return array_fill_keys($labels, 0);
 }
 
 /**

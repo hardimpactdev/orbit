@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 $options = getopt('', [
     'gate:',
+    'producer:',
     'command::',
     'mode::',
     'started-at:',
@@ -12,6 +13,7 @@ $options = getopt('', [
     'exit-code:',
     'git-branch::',
     'git-commit::',
+    'git-dirty:',
     'subgate:',
     'subgate-duration:',
     'e2e-plan-line:',
@@ -23,6 +25,7 @@ $options = getopt('', [
 
 try {
     $gate = required_string($options, 'gate');
+    $producer = required_string($options, 'producer');
     $startedAt = required_string($options, 'started-at');
     $endedAt = required_string($options, 'ended-at');
     $exitCode = required_int($options, 'exit-code');
@@ -31,6 +34,7 @@ try {
     $artifactDir = optional_string($options, 'artifact-dir', default_artifact_dir());
     $gitBranch = optional_string($options, 'git-branch', '');
     $gitCommit = optional_string($options, 'git-commit', '');
+    $gitDirty = required_bool($options, 'git-dirty');
     $subgates = subgates(repeated_values($options, 'subgate'));
     $subgateDurations = subgate_durations(repeated_values($options, 'subgate-duration'));
     $testSummary = test_summary(optional_string($options, 'test-summary-line', ''));
@@ -40,6 +44,8 @@ try {
         optional_string($options, 'timing-summary-path', ''),
         $artifactDir,
     );
+
+    validate_producer($gate, $producer);
 
     if (! in_array($mode, ['check', 'fix'], true)) {
         throw new InvalidArgumentException("Unsupported mode [{$mode}]. Expected check or fix.");
@@ -54,6 +60,7 @@ try {
     $artifact = [
         'schema_version' => 1,
         'gate' => $gate,
+        'producer' => $producer,
         'command' => $command,
         'mode' => $mode,
         'started_at' => $startedAt,
@@ -63,6 +70,7 @@ try {
         'git' => [
             'branch' => $gitBranch !== '' ? $gitBranch : 'unknown',
             'commit' => $gitCommit !== '' ? $gitCommit : 'unknown',
+            'dirty' => $gitDirty,
         ],
         'subgates' => $subgates,
     ];
@@ -129,6 +137,31 @@ function required_int(array $options, string $key): int
     }
 
     return (int) $value;
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function required_bool(array $options, string $key): bool
+{
+    $value = $options[$key] ?? null;
+
+    if (! is_string($value) || ! in_array(strtolower($value), ['true', 'false'], true)) {
+        throw new InvalidArgumentException("Missing or invalid required option --{$key}. Expected true or false.");
+    }
+
+    return strtolower($value) === 'true';
+}
+
+function validate_producer(string $gate, string $producer): void
+{
+    $expectedProducer = $gate === 'quality-check' ? 'quality-check.sh' : 'quality-gate-run';
+
+    if ($producer !== $expectedProducer) {
+        throw new InvalidArgumentException(
+            "Gate [{$gate}] must be written by producer [{$expectedProducer}], received [{$producer}].",
+        );
+    }
 }
 
 /**
@@ -262,7 +295,11 @@ function e2e_plan(string $line): ?array
         return null;
     }
 
-    if (! isset($decoded['lane'], $decoded['provider']) || ! is_string($decoded['lane']) || ! is_string($decoded['provider'])) {
+    if (
+        ! isset($decoded['lane'], $decoded['provider'])
+        || ! is_string($decoded['lane'])
+        || ! is_string($decoded['provider'])
+    ) {
         return null;
     }
 
@@ -471,8 +508,11 @@ function duration_seconds(string $startedAt, string $endedAt): float
         throw new InvalidArgumentException('started-at and ended-at must be ISO-8601 timestamps.');
     }
 
-    return max(0.0, ($ended->getTimestamp() + ((int) $ended->format('u')) / 1_000_000)
-        - ($started->getTimestamp() + ((int) $started->format('u')) / 1_000_000));
+    return max(
+        0.0,
+        $ended->getTimestamp() + ((int) $ended->format('u') / 1_000_000)
+        - ($started->getTimestamp() + ((int) $started->format('u') / 1_000_000)),
+    );
 }
 
 function normalize_timestamp(string $timestamp): string

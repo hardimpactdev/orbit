@@ -30,7 +30,7 @@
             "cd apps/gateway && composer run dev"
         ],
         "docs-lint": [
-            "bin/quality-gate-run --gate=docs-lint --command=\"composer docs-lint\" -- bash -lc 'bin/orbit-docs-artisan librarian:lint --format=agent --path=domains && bin/orbit-docs-artisan librarian:lint --format=agent --path=testing && bin/orbit-docs-artisan librarian:lint --format=agent --group=references && bin/orbit-docs-artisan orbit:command-catalog --check && bin/orbit-docs-artisan orbit:monorepo-unit-map --check && bin/orbit-harness-signal-index --check'"
+            "bin/quality-gate-run --gate=docs-lint --command=\"composer docs-lint\" -- bash -lc 'bin/orbit-docs-artisan librarian:lint --format=agent --path=domains && bin/orbit-docs-artisan librarian:lint --format=agent --path=testing && bin/orbit-docs-artisan librarian:lint --format=agent --group=references && bin/orbit-docs-artisan orbit:command-catalog --check && bin/orbit-docs-artisan orbit:monorepo-unit-map --check'"
         ],
         "docs-test": [
             "bin/orbit-docs-pest --compact"

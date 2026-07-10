@@ -15,7 +15,7 @@ Usage:
   Required before merge-back:
     bin/orbit-feature-finalization-check git merge <feature-branch>
 
-  Optional only after post-feature signal audit or explicit cleanup approval:
+  Required after a compact session archive exists:
     bin/orbit-feature-finalization-check git worktree remove <worktree-path>
     bin/orbit-feature-finalization-check git branch -d <feature-branch>
 
@@ -23,8 +23,13 @@ Explicit invocations print FINALIZATION: PASS or FINALIZATION: BLOCKED and
 exit 64 when the arguments cannot be classified as a merge/cleanup boundary,
 instead of silently passing.
 
-This applies the same final-distillation gate as the Codex PreToolUse hook
-without relying on hook interception.
+Merge requires diff-derived green proof, one independent reviewer PASS,
+accepted feature HEAD, the actual accepted main tip, a clean worktree including
+nonignored untracked files, and a conflict-free preview. Cleanup additionally
+requires a compact receipt or compatible historical/full archive.
+
+This applies the same boundary gate as the Codex PreToolUse hook without
+relying on hook interception.
 EOF
     exit 64
 fi

@@ -1,4 +1,4 @@
 interface:
-  display_name: "E2E Verification Lanes"
-  short_description: "Choose Orbit E2E provider lanes safely."
-  default_prompt: "Use this skill to select Docker or Incus E2E verification commands, split provider work across Solo agents, and avoid human-only aggregate provision commands."
+  display_name: "E2E Artifact Triage"
+  short_description: "Read existing Orbit E2E evidence safely."
+  default_prompt: "Use this skill only to read, classify, or explain existing user-produced Orbit E2E artifacts and lane ownership. Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command."

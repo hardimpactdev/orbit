@@ -4,6 +4,399 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('session archive stores a compact receipt by default', function (): void {
+    $workspace = session_archive_workspace('compact-default');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/feedback.jsonl",
+            session_archive_feedback_json('feedback-compact-default'),
+        );
+        mkdir("{$paths['sourceOrbitDir']}/agent-sessions");
+        file_put_contents("{$paths['sourceOrbitDir']}/agent-sessions/raw.txt", "large trace\n");
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180000',
+            '--slug=compact-default',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ], full: false);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary($process);
+        $archive = (string) $summary['archive_dir'];
+
+        expect($summary)
+            ->toHaveKey('schema_version', 2)
+            ->toHaveKey('archive_mode', 'compact')
+            ->toHaveKey('copied_entries', ['feedback.jsonl', 'loop.md'])
+            ->toHaveKey('entry_digests')
+            ->and($summary['entry_digests'])
+            ->toBe([
+                'feedback.jsonl' => hash_file('sha256', "{$archive}/feedback.jsonl"),
+                'loop.md' => hash_file('sha256', "{$archive}/loop.md"),
+            ])
+            ->and("{$archive}/loop.md")
+            ->toBeFile()
+            ->and("{$archive}/feedback.jsonl")
+            ->toBeFile()
+            ->and("{$archive}/orbit-session-archive.json")
+            ->toBeFile()
+            ->and("{$archive}/agent-sessions")
+            ->not->toBeDirectory()->and("{$archive}/evidence")
+            ->not->toBeDirectory()->and($process->getErrorOutput())
+            ->not->toContain('no Solo process context');
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('binds a compact receipt to the branch and accepted candidate identity', function (): void {
+    $workspace = session_archive_workspace('compact-identity');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        $git = static function (array $arguments) use ($paths): string {
+            $process = new Process(['git', ...$arguments], $paths['cwd']);
+            $process->mustRun();
+
+            return trim($process->getOutput());
+        };
+        $git(['init', '--initial-branch=main']);
+        $git(['config', 'user.email', 'orbit@example.test']);
+        $git(['config', 'user.name', 'Orbit Test']);
+        file_put_contents("{$paths['cwd']}/.gitignore", ".orbit/\n");
+        file_put_contents("{$paths['cwd']}/README.md", "# Fixture\n");
+        $git(['add', '.gitignore', 'README.md']);
+        $git(['commit', '-m', 'Initial']);
+        $mainTip = $git(['rev-parse', 'HEAD']);
+        $git(['checkout', '-b', 'feature']);
+        file_put_contents("{$paths['cwd']}/feature.txt", "candidate\n");
+        $git(['add', 'feature.txt']);
+        $git(['commit', '-m', 'Candidate']);
+        $featureTip = $git(['rev-parse', 'HEAD']);
+        file_put_contents($paths['loopPath'], <<<MARKDOWN
+            # Orbit Feature Loop
+
+            - Scratchpad: solo://proj/4/scratchpad/example--1
+            - Worktree: {$paths['cwd']}
+            - Branch: feature
+
+            ## Goal
+
+            Prove receipt identity.
+
+            ## Scope
+
+            - Owned: feature.txt
+            - Constraints: none
+            - Out of scope: none
+
+            ## Proof
+
+            - Verification:
+              - focused: passed - fixture
+              - broader: passed - fixture
+              - runtime: not applicable - fixture
+            - Review: passed - reviewer - non-observable
+            - Reviewed feature tip: {$featureTip}
+            - Acceptance venue: automated
+            - Acceptance: accepted - automated - reviewer-confirmed non-observable
+            - Accepted feature tip: {$featureTip}
+            - Accepted main tip: {$mainTip}
+
+            ## Status
+
+            - State: accepted
+            - Blocker: none
+
+            ## Feedback
+
+            - Events: .orbit/feedback.jsonl
+            MARKDOWN);
+        $git(['checkout', 'main']);
+        $git(['merge', '--no-ff', '--no-edit', 'feature']);
+        $git(['checkout', 'feature']);
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180004',
+            '--slug=compact-identity',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary($process);
+
+        expect($summary)
+            ->toHaveKey('branch', 'feature')
+            ->toHaveKey('candidate_commit', $featureTip)
+            ->toHaveKey('accepted_feature_tip', $featureTip)
+            ->toHaveKey('accepted_main_tip', $mainTip)
+            ->and(array_keys($summary['entry_digests']))
+            ->toBe($summary['copied_entries']);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('refuses compact archive activation outside the exact accepted landed feature worktree', function (
+    string $mutation,
+    string $reason,
+): void {
+    $workspace = session_archive_workspace('compact-wrong-identity-'.$mutation);
+
+    try {
+        $paths = session_archive_paths($workspace);
+        $identity = session_archive_prepare_accepted_feature($paths, land: $mutation !== 'unlanded');
+        $loop = (string) file_get_contents($paths['loopPath']);
+
+        if ($mutation === 'branch') {
+            $loop = str_replace('- Branch: feature', '- Branch: different', $loop);
+        } elseif ($mutation === 'accepted') {
+            $loop = str_replace(
+                '- Accepted feature tip: '.$identity['featureTip'],
+                '- Accepted feature tip: '.str_repeat('a', 40),
+                $loop,
+            );
+        } elseif ($mutation === 'reviewed') {
+            $loop = str_replace(
+                '- Reviewed feature tip: '.$identity['featureTip'],
+                '- Reviewed feature tip: '.str_repeat('b', 40),
+                $loop,
+            );
+        }
+
+        file_put_contents($paths['loopPath'], $loop);
+
+        if ($mutation === 'main-cwd') {
+            session_archive_git($paths['cwd'], ['checkout', 'main']);
+        }
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180006',
+            '--slug=compact-wrong-identity',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain($reason)
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+})->with([
+    'unlanded feature' => ['unlanded', 'not landed on main'],
+    'wrong loop branch' => ['branch', 'loop branch does not equal current branch'],
+    'wrong accepted tip' => ['accepted', 'accepted feature tip does not equal candidate HEAD'],
+    'wrong reviewed tip' => ['reviewed', 'reviewed feature tip does not equal candidate HEAD'],
+    'main checkout cwd' => ['main-cwd', 'feature branch'],
+]);
+
+it('session archive scans the fully constructed full archive before activation', function (): void {
+    $workspace = session_archive_workspace('full-secret-boundary');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        $token = 'gho_'.str_repeat('g', 24);
+        $loopBefore = (string) file_get_contents($paths['loopPath']);
+        file_put_contents("{$paths['sourceOrbitDir']}/evidence/proof.txt", "captured {$token}\n");
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180002',
+            '--slug=full-secret-boundary',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        $entries = is_dir($paths['archiveRoot'])
+            ? array_values(array_diff(scandir($paths['archiveRoot']) ?: [], ['.', '..']))
+            : [];
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('evidence/proof.txt')
+            ->toContain('github-token')
+            ->and($entries)
+            ->toBe([])
+            ->and((string) file_get_contents($paths['loopPath']))
+            ->toBe($loopBefore);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('session archive refuses a refresh that would remove immutable feedback', function (): void {
+    $workspace = session_archive_workspace('monotonic-refresh');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        session_archive_prepare_accepted_feature($paths);
+        $event = [
+            'schema_version' => 1,
+            'type' => 'feedback.recorded',
+            'id' => 'feedback-monotonic',
+            'recorded_at' => '2026-07-10T18:00:00Z',
+            'raw_text' => 'Keep this feedback.',
+            'session_ref' => 'codex://threads/example#monotonic',
+            'candidate_commit' => str_repeat('a', 40),
+            'surface' => 'cli.progress',
+            'context' => [],
+            'evidence' => [],
+        ];
+        $feedback = json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+        file_put_contents("{$paths['sourceOrbitDir']}/feedback.jsonl", $feedback);
+        $arguments = [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180003',
+            '--slug=monotonic-refresh',
+            "--cwd={$paths['cwd']}",
+        ];
+        $first = run_session_archive($arguments, full: false);
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput());
+        $archive = (string) session_archive_summary($first)['archive_dir'];
+        unlink("{$paths['sourceOrbitDir']}/feedback.jsonl");
+
+        $refresh = run_session_archive(
+            array_values(array_filter(
+                $arguments,
+                static fn (string $argument): bool => ! str_starts_with($argument, '--timestamp='),
+            )),
+            full: false,
+        );
+
+        expect($refresh->getExitCode())
+            ->toBe(2)
+            ->and($refresh->getErrorOutput())
+            ->toContain('would remove archived entry')
+            ->and((string) file_get_contents("{$archive}/feedback.jsonl"))
+            ->toBe($feedback);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('session archive never downgrades a refreshed full archive to compact', function (): void {
+    $workspace = session_archive_workspace('preserve-full-refresh');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        $arguments = [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180010',
+            '--slug=preserve-full-refresh',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ];
+
+        $full = run_session_archive($arguments);
+        expect($full->getExitCode())->toBe(0, $full->getErrorOutput());
+
+        $refreshed = run_session_archive(
+            array_values(array_filter(
+                $arguments,
+                static fn (string $argument): bool => ! str_starts_with($argument, '--timestamp='),
+            )),
+            full: false,
+        );
+        $summary = session_archive_summary($refreshed);
+        $archive = (string) $summary['archive_dir'];
+
+        expect($refreshed->getExitCode())
+            ->toBe(0, $refreshed->getErrorOutput())
+            ->and($summary)
+            ->toHaveKey('mode', 'refreshed')
+            ->toHaveKey('archive_mode', 'full')
+            ->and("{$archive}/agent-sessions/manifest.json")
+            ->toBeFile();
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('session archive blocks before construction when compact state still contains a secret', function (): void {
+    $workspace = session_archive_workspace('secret-boundary');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        $token = 'ghp_'.str_repeat('a', 24);
+        $event = json_decode(
+            session_archive_feedback_json('feedback-secret-boundary'),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $event['raw_text'] = $token;
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/feedback.jsonl",
+            json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n",
+        );
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180001',
+            '--slug=secret-boundary',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('github-token')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('session archive rejects an invalid feedback stream before construction', function (): void {
+    $workspace = session_archive_workspace('invalid-feedback');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/feedback.jsonl",
+            "{\"schema_version\":1,\"type\":\"unknown\",\"id\":\"bad\",\"recorded_at\":\"2026-07-10T18:00:00Z\"}\n",
+        );
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180005',
+            '--slug=invalid-feedback',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('Active feedback stream is invalid')
+            ->toContain('unknown feedback event type')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
 it('session archive generates local time basenames from an explicit slug', function (): void {
     $workspace = session_archive_workspace(suffix: 'name-generation');
 
@@ -388,6 +781,22 @@ function session_archive_workspace(string $suffix): string
     return $workspace;
 }
 
+function session_archive_feedback_json(string $id): string
+{
+    return json_encode([
+        'schema_version' => 1,
+        'type' => 'feedback.recorded',
+        'id' => $id,
+        'recorded_at' => '2026-07-10T18:00:00Z',
+        'raw_text' => 'Retain this feedback.',
+        'session_ref' => 'codex://threads/example#feedback',
+        'candidate_commit' => str_repeat('a', 40),
+        'surface' => 'cli.progress',
+        'context' => [],
+        'evidence' => [],
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+}
+
 /**
  * @return array{cwd: string, home: string, sourceOrbitDir: string, archiveRoot: string, loopPath: string}
  */
@@ -417,12 +826,90 @@ function session_archive_paths(string $workspace, bool $withLoop = true): array
 }
 
 /**
+ * @param array{cwd: string, loopPath: string} $paths
+ * @return array{mainTip: string, featureTip: string}
+ */
+function session_archive_prepare_accepted_feature(array $paths, bool $land = true): array
+{
+    session_archive_git($paths['cwd'], ['init', '--initial-branch=main']);
+    session_archive_git($paths['cwd'], ['config', 'user.email', 'orbit@example.test']);
+    session_archive_git($paths['cwd'], ['config', 'user.name', 'Orbit Test']);
+    file_put_contents("{$paths['cwd']}/.gitignore", ".orbit/\n");
+    file_put_contents("{$paths['cwd']}/README.md", "# Fixture\n");
+    session_archive_git($paths['cwd'], ['add', '.gitignore', 'README.md']);
+    session_archive_git($paths['cwd'], ['commit', '-m', 'Initial']);
+    $mainTip = session_archive_git($paths['cwd'], ['rev-parse', 'HEAD']);
+    session_archive_git($paths['cwd'], ['checkout', '-b', 'feature']);
+    file_put_contents("{$paths['cwd']}/feature.txt", "candidate\n");
+    session_archive_git($paths['cwd'], ['add', 'feature.txt']);
+    session_archive_git($paths['cwd'], ['commit', '-m', 'Candidate']);
+    $featureTip = session_archive_git($paths['cwd'], ['rev-parse', 'HEAD']);
+    file_put_contents($paths['loopPath'], <<<MARKDOWN
+        # Orbit Feature Loop
+
+        - Scratchpad: solo://proj/4/scratchpad/example--1
+        - Worktree: {$paths['cwd']}
+        - Branch: feature
+
+        ## Goal
+
+        Prove compact archive identity.
+
+        ## Scope
+
+        - Owned: feature.txt
+        - Constraints: none
+        - Out of scope: none
+
+        ## Proof
+
+        - Verification:
+          - focused: passed - fixture
+          - broader: passed - fixture
+          - runtime: not applicable - fixture
+        - Review: passed - reviewer - non-observable
+        - Reviewed feature tip: {$featureTip}
+        - Acceptance venue: automated
+        - Acceptance: accepted - automated - reviewer-confirmed non-observable
+        - Accepted feature tip: {$featureTip}
+        - Accepted main tip: {$mainTip}
+
+        ## Status
+
+        - State: accepted
+        - Blocker: none
+
+        ## Feedback
+
+        - Events: .orbit/feedback.jsonl
+        MARKDOWN);
+
+    if ($land) {
+        session_archive_git($paths['cwd'], ['checkout', 'main']);
+        session_archive_git($paths['cwd'], ['merge', '--no-ff', '--no-edit', 'feature']);
+        session_archive_git($paths['cwd'], ['checkout', 'feature']);
+    }
+
+    return ['mainTip' => $mainTip, 'featureTip' => $featureTip];
+}
+
+/** @param list<string> $arguments */
+function session_archive_git(string $cwd, array $arguments): string
+{
+    $process = new Process(['git', ...$arguments], $cwd);
+    $process->mustRun();
+
+    return trim($process->getOutput());
+}
+
+/**
  * @param list<string> $arguments
  */
-function run_session_archive(array $arguments): Process
+function run_session_archive(array $arguments, bool $full = true): Process
 {
+    $modeArguments = $full ? ['--full'] : [];
     $process = new Process(
-        [repo_path('bin/orbit-session-archive'), ...$arguments],
+        [repo_path('bin/orbit-session-archive'), ...$modeArguments, ...$arguments],
         repo_path(),
         [
             'SOLO_PROCESS_ID' => false,
@@ -430,6 +917,56 @@ function run_session_archive(array $arguments): Process
         ],
     );
 
+    $process->run();
+
+    return $process;
+}
+
+function run_session_archive_copy_swap_harness(string $workspace): Process
+{
+    $harness = <<<'PHP'
+        declare(strict_types=1);
+
+        require $argv[1];
+
+        $workspace = $argv[2];
+        $source = "{$workspace}/source.txt";
+        $external = "{$workspace}/external.txt";
+        $target = "{$workspace}/target.txt";
+        file_put_contents($source, "safe source\n");
+        file_put_contents($external, "external secret\n");
+        $failure = null;
+
+        try {
+            orbitSessionArchiveCopyFile(
+                $source,
+                $target,
+                static function () use ($source, $external): void {
+                    unlink($source);
+                    symlink($external, $source);
+                },
+            );
+        } catch (RuntimeException $exception) {
+            $failure = $exception->getMessage();
+        }
+
+        if ($failure === null || ! str_contains($failure, 'changed before copy')) {
+            fwrite(STDERR, "Source swap was not rejected: ".($failure ?? 'no failure')."\n");
+            exit(103);
+        }
+
+        if (file_exists($target) || file_get_contents($external) !== "external secret\n") {
+            fwrite(STDERR, "Source swap wrote external bytes or left a target.\n");
+            exit(104);
+        }
+        PHP;
+    $process = new Process([
+        PHP_BINARY,
+        '-r',
+        $harness,
+        repo_path('bin/orbit-session-archive-filesystem.php'),
+        $workspace,
+    ], repo_path());
     $process->run();
 
     return $process;
@@ -1319,6 +1856,19 @@ it('session archive filesystem helper rolls the old final back when the second r
     }
 });
 
+it('session archive filesystem helper rejects a source swap before copying bytes', function (): void {
+    $workspace = session_archive_workspace(suffix: 'copy-source-swap');
+
+    try {
+        $process = run_session_archive_copy_swap_harness($workspace);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
 it('session archive filesystem helper rejects an unexpected final without mutating it', function (): void {
     $workspace = session_archive_workspace(suffix: 'unexpected-final');
 
@@ -1384,8 +1934,7 @@ it('session archive retains the coherent new final and old backup when index ref
                 $backupDirectories[0],
             ))->toBe($oldFinalSnapshot)->and("{$archiveDir}/evidence/proof.txt")->toBeFile()->and(
                 "{$archiveDir}/previous-final.txt",
-            )
-            ->not->toBeFile()->and("{$archiveDir}/orbit-session-archive.json")->toBeFile()->and(file_get_contents(
+            )->toBeFile()->and("{$archiveDir}/orbit-session-archive.json")->toBeFile()->and(file_get_contents(
                 "{$archiveDir}/loop.md",
             ))->toBe(file_get_contents($paths['loopPath']))->and(strtolower($process->getErrorOutput()))->toContain(
                 'index recovery',
@@ -1713,7 +2262,7 @@ it('session archive excludes release candidates and reports only copied top-leve
         $archiveDir = $summary['archive_dir'];
 
         expect($summary['copied_entries'])
-            ->toBe(['evidence', 'loop.md'])
+            ->toBe(['agent-sessions', 'evidence', 'loop.md'])
             ->and("{$archiveDir}/release-candidates")
             ->not->toBeDirectory()->and("{$archiveDir}/sessions")
             ->not->toBeDirectory()->and("{$archiveDir}/linked-root-file.txt")

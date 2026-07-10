@@ -1,174 +1,19 @@
-# Orbit Harness Signal Ledger
+# Historical Harness Signal Archive
 
-This directory stores curated repo-development signals that should compound
-Orbit's harness over time. A signal record is not a raw log. It is a small
-learning artifact that explains what happened, whether it appeared before, and
-which guardrail target absorbed the lesson.
+These records are historical evidence from Orbit's previous signal-promotion
+workflow. Do not add new records for ordinary feature loops.
 
-The pattern is inspired by
-[Compound Engineering](https://github.com/everyinc/compound-engineering-plugin):
-each unit of work should make later units easier by preserving the useful
-lesson, not just the final diff.
+Use the directory only when a human explicitly requests historical diagnosis
+or when a qualifying trigger needs prior evidence. Read the generated
+`index.json` first, then open only the named records. Product behavior remains
+authoritative under `apps/docs/content/`; current delivery behavior is
+authoritative in `HARNESS.md`.
 
-## When To Record
-
-Create or update a signal record when a signal is likely to recur, was expensive
-to diagnose, affected correctness or safety, or revealed missing repo-wide
-guidance. Do not record ordinary typo fixes, one-off local mistakes, or every
-failed command.
-
-Raw `.orbit/` artifacts, persisted `.orbit/sessions/` archives, Codex/Solo
-session messages, and post-feature review notes create candidate signals, not
-records by default. Session archives preserve completed active slice state for
-trace evidence; this ledger remains curated distilled learning and guardrail
-history, not raw session storage. Before a candidate becomes a record or
-guardrail, the completed loop's final distillation should classify it and the
-feature orchestrator should adjudicate it against `HARNESS_SIGNALS.md`. When
-HARNESS.md routes a fresh post-feature analyzer, adjudicate that analyzer
-classification before changing guardrails.
-Post-feature analysis and eval construction may inspect session archives as
-trace evidence: the archive helper tooling exists (`bin/orbit-session-archive`,
-`bin/orbit-agent-session-archive`) and session archives are a preferred eval
-trace source (see `.agents/skills/_orbit-eval-references/session-mining.md`).
-A reviewed `no durable guardrail needed` result is healthy; do not add a record
-just to prove the review happened.
-
-Good candidates:
-
-- A human correction that should not need to be repeated
-- A failed verification lane that exposed missing routing guidance
-- A recurring agent mistake across worktrees
-- A docs conflict that showed unclear authority
-- A live-node or runtime-user issue that static tests missed
-- A signal that reappears after a guardrail already claimed to cover it
-
-## Before Starting Work
-
-Agents do not need to read every record. Start with the generated metadata index
-for quick routing, then open only the records that match the task:
+The legacy index is still available:
 
 ```bash
 bin/orbit-harness-signal-index
-rg -n '"path"|"title"|"tags"|"signal_summary"' harness-signals/index.json
 ```
 
-Use `harness-signals/index.json` to scan titles, statuses, tags, guardrail
-targets, and short summaries before opening full records. When a candidate
-record looks relevant, open that file next. If the index is missing or stale,
-regenerate it with `bin/orbit-harness-signal-index --write`; `composer docs-lint`
-runs `bin/orbit-harness-signal-index --check` with the other generated
-LLM-facing artifacts.
-
-For deeper search across record bodies, use ripgrep on the ledger itself:
-
-```bash
-rg -n "doctor|e2e|worktree|guardrail|runtime user" harness-signals
-```
-
-If a matching record exists, read it before choosing a fix path. If the same
-signal is recurring, assume the existing guardrail is insufficient until proven
-otherwise.
-
-## Record Lifecycle
-
-Use one of these statuses:
-
-| Status | Meaning |
-|--------|---------|
-| `open` | Signal is recorded, but no guardrail target has absorbed it yet. |
-| `guarded` | A guardrail target was updated and verified. |
-| `recurring` | The signal reappeared after a guardrail target was updated. |
-| `stale` | The record may be outdated or misleading, but the right action is not clear yet. |
-| `retired` | Later work has not reproduced the signal, or a stronger guardrail superseded it. |
-
-Retirement is deliberately manual in this slice. Prefer marking a record
-`retired` before deleting it, so future agents can still discover the history
-while the signal cools down.
-
-## Curation
-
-Signal records should make future work easier. If the ledger starts producing
-too many weak matches, curate it instead of expecting agents to read around the
-noise.
-
-### Uniqueness Rule
-
-Keep one canonical record per durable signal. Before creating or keeping a
-related record, ask whether a future agent would take the same reappearance
-action and update the same guardrail target for both records. If yes,
-consolidate the unique recurrence history into the canonical record and delete
-the redundant file after checking inbound references.
-
-Overlap is allowed only when the records answer different triage questions,
-have different guardrail targets, or need different reappearance checks. In
-that case, keep both records, cross-link them through `Related signals`, and add
-a short curation note that names the boundary.
-
-Run a focused curation pass when:
-
-- A search returns several records for the same underlying signal
-- A `guarded` signal reappears in a new worktree
-- A record points at files, skills, commands, or docs that no longer exist
-- A record is repeatedly skipped because it no longer helps decisions
-- Roughly ten feature or bugfix worktrees have landed since the last broad pass
-
-Use these outcomes:
-
-| Outcome | Action |
-|---------|--------|
-| Keep | Record is still accurate and useful. Do not edit just to leave a review breadcrumb. |
-| Update | Facts drifted, but the signal and guardrail target are still valid. Fix paths, commits, status, or verification. |
-| Consolidate | Two or more records cover the same signal. Merge unique recurrence history into the canonical record, then delete the redundant files. |
-| Mark recurring | The signal reappeared after a guardrail target changed. Set `Status: recurring` and tighten or replace the guardrail target. |
-| Mark stale | The record seems outdated, but the right replacement or deletion is ambiguous. Add a short stale reason. |
-| Retire | The signal has cooled down or a stronger guardrail superseded it, but the history remains useful. Set `Status: retired`. |
-| Delete | The record no longer has retrieval value, is fully redundant, or points at a dead concern with no active lesson. Delete it; git history is the archive. |
-
-Do not create an `_archived/` directory. Archive folders pollute searches and
-hide old guidance without removing it. If a deleted record is needed later, git
-history can recover it.
-
-Before deleting a record, search for inbound references:
-
-```bash
-rg -n "signal-slug-or-filename" .
-```
-
-If another record or harness doc relies on it for context, consolidate or
-retire instead of deleting.
-
-## Record Shape
-
-Copy `_template.md` and name the file:
-
-```text
-YYYY-MM-DD-short-signal-slug.md
-```
-
-Keep the file short. The goal is fast retrieval:
-
-- What happened?
-- Has it happened before?
-- Which guardrail target handled it?
-- How was the target verified?
-- What should a future agent do if it appears again?
-
-## Relationship To Guardrails
-
-The signal record is evidence and history. It is not the guardrail.
-
-Durable guardrail targets live in places like `AGENTS.md`, `HARNESS.md`,
-`.orbit/loop.md`, `HARNESS_SIGNALS.md`, `.agents/skills/**`,
-`.agents/review-personas/**`, product docs, tests, or static checks. A guarded
-signal should point to the target that now guides or blocks future work.
-
-Do not replace `harness-signals/` with raw session archives under
-`.orbit/sessions/`. When a lesson should compound, distill it into a curated
-record here. Completed active `.orbit/` state belongs in
-the persistent project archive home before worktree cleanup or before rewriting
-`.orbit/loop.md` for a new slice. The default archive home is the primary
-checkout's `.orbit/sessions/<timestamp-feature-slug>/`.
-`bin/orbit-session-archive` generates and enforces the archive directory name;
-run it instead of hand-writing timestamps, and see HARNESS.md Worktree-Local
-State for the naming contract. Archive creation copies every active `.orbit/`
-entry except `.orbit/sessions/` to avoid recursive copies.
+Current feedback and protection lineage lives in compact session
+`feedback.jsonl` streams. Do not copy raw archive traces into this directory.

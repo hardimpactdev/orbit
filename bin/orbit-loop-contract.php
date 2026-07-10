@@ -1,0 +1,356 @@
+<?php
+
+declare(strict_types=1);
+
+const ORBIT_LOOP_STATES = ['frame', 'build', 'prove', 'accept', 'accepted', 'land', 'blocked'];
+
+const ORBIT_LOOP_ACCEPTANCE_VENUES = ['automated', 'retained-incus', 'browser', 'host-macos'];
+
+function orbitLoopIsCompact(string $markdown): bool
+{
+    return (
+        str_contains($markdown, '# Orbit Feature Loop')
+        && orbitLoopSection($markdown, 'Proof') !== null
+        && orbitLoopSection($markdown, 'Status') !== null
+    );
+}
+
+function orbitLoopSection(string $markdown, string $heading): ?string
+{
+    $lines = preg_split('/\R/', $markdown) ?: [];
+    $capturing = false;
+    $section = [];
+
+    foreach ($lines as $line) {
+        if (preg_match('/^##\s+'.preg_quote($heading, '/').'\s*$/i', $line) === 1) {
+            $capturing = true;
+
+            continue;
+        }
+
+        if ($capturing && preg_match('/^##\s+/', $line) === 1) {
+            break;
+        }
+
+        if ($capturing) {
+            $section[] = $line;
+        }
+    }
+
+    return $capturing ? trim(implode("\n", $section)) : null;
+}
+
+function orbitLoopLabel(string $markdown, string $section, string $label): ?string
+{
+    $body = orbitLoopSection($markdown, $section);
+
+    if ($body === null) {
+        return null;
+    }
+
+    if (preg_match('/^-\s+'.preg_quote($label, '/').':\s*(.*)$/mi', $body, $match) !== 1) {
+        return null;
+    }
+
+    return trim($match[1]);
+}
+
+function orbitLoopNestedLabel(string $markdown, string $section, string $parent, string $label): ?string
+{
+    $body = orbitLoopSection($markdown, $section);
+
+    if ($body === null) {
+        return null;
+    }
+
+    $pattern =
+        '/^-\s+'
+        .preg_quote($parent, '/')
+        .':\s*\R'
+        .'(?:(?:\s{2,}.*)\R)*?\s{2,}-\s+'
+        .preg_quote($label, '/')
+        .':\s*(.*)$/mi';
+
+    if (preg_match($pattern, $body, $match) !== 1) {
+        return null;
+    }
+
+    return trim($match[1]);
+}
+
+function orbitLoopSetLabel(string $markdown, string $section, string $label, string $value): string
+{
+    if (str_contains($value, "\n") || str_contains($value, "\r")) {
+        throw new InvalidArgumentException('Loop label values must fit on one line.');
+    }
+
+    $lines = preg_split('/\R/', $markdown) ?: [];
+    $inSection = false;
+    $matches = 0;
+
+    foreach ($lines as $index => $line) {
+        if (preg_match('/^##\s+'.preg_quote($section, '/').'\s*$/i', $line) === 1) {
+            $inSection = true;
+
+            continue;
+        }
+
+        if ($inSection && preg_match('/^##\s+/', $line) === 1) {
+            $inSection = false;
+        }
+
+        if (! $inSection || preg_match('/^-\s+'.preg_quote($label, '/').':\s*.*$/i', $line) !== 1) {
+            continue;
+        }
+
+        $lines[$index] = '- '.$label.': '.$value;
+        $matches++;
+    }
+
+    if ($matches !== 1) {
+        throw new RuntimeException("Expected exactly one `{$label}` label in `{$section}`; found {$matches}.");
+    }
+
+    return implode("\n", $lines);
+}
+
+function orbitLoopSetNestedLabel(
+    string $markdown,
+    string $section,
+    string $parent,
+    string $label,
+    string $value,
+): string {
+    if (str_contains($value, "\n") || str_contains($value, "\r")) {
+        throw new InvalidArgumentException('Loop label values must fit on one line.');
+    }
+
+    $lines = preg_split('/\R/', $markdown) ?: [];
+    $inSection = false;
+    $inParent = false;
+    $matches = 0;
+
+    foreach ($lines as $index => $line) {
+        if (preg_match('/^##\s+'.preg_quote($section, '/').'\s*$/i', $line) === 1) {
+            $inSection = true;
+            $inParent = false;
+
+            continue;
+        }
+
+        if ($inSection && preg_match('/^##\s+/', $line) === 1) {
+            $inSection = false;
+            $inParent = false;
+        }
+
+        if (! $inSection) {
+            continue;
+        }
+
+        if (preg_match('/^-\s+'.preg_quote($parent, '/').':\s*$/i', $line) === 1) {
+            $inParent = true;
+
+            continue;
+        }
+
+        if ($inParent && preg_match('/^-\s+/', $line) === 1) {
+            $inParent = false;
+        }
+
+        if (! $inParent || preg_match('/^(\s+)-\s+'.preg_quote($label, '/').':\s*.*$/i', $line, $match) !== 1) {
+            continue;
+        }
+
+        $lines[$index] = $match[1].'- '.$label.': '.$value;
+        $matches++;
+    }
+
+    if ($matches !== 1) {
+        throw new RuntimeException(
+            "Expected exactly one `{$label}` label below `{$parent}` in `{$section}`; found {$matches}.",
+        );
+    }
+
+    return implode("\n", $lines);
+}
+
+function orbitLoopStatusHead(?string $value): ?string
+{
+    if ($value === null) {
+        return null;
+    }
+
+    $head = strtolower(trim((string) preg_replace('/\s+-\s+.*/', '', $value)));
+
+    return $head === '' ? null : $head;
+}
+
+function orbitLoopReviewPassed(?string $review): bool
+{
+    return orbitLoopStatusHead($review) === 'passed';
+}
+
+function orbitLoopReviewSaysNonObservable(?string $review): bool
+{
+    return orbitLoopReviewPassed($review) && preg_match('/\bnon[- ]observable\b/i', (string) $review) === 1;
+}
+
+function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip): ?string
+{
+    if (! orbitLoopReviewPassed(orbitLoopLabel($markdown, 'Proof', 'Review'))) {
+        return 'Review must be passed';
+    }
+
+    $reviewedFeature = orbitLoopLabel($markdown, 'Proof', 'Reviewed feature tip');
+
+    if ($reviewedFeature === null || ! hash_equals($featureTip, $reviewedFeature)) {
+        return 'reviewed feature tip does not equal candidate HEAD';
+    }
+
+    return null;
+}
+
+function orbitLoopVenueSatisfies(string $actual, string $minimum, ?string $review): bool
+{
+    if ($actual === $minimum) {
+        return true;
+    }
+
+    return $actual === 'automated' && orbitLoopReviewSaysNonObservable($review);
+}
+
+function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, string $mainTip): ?string
+{
+    $state = orbitLoopStatusHead(orbitLoopLabel($markdown, 'Status', 'State'));
+
+    if (! in_array($state, ['accepted', 'land'], true)) {
+        return 'State must be accepted or land; current: '.($state ?? 'missing');
+    }
+
+    $reviewProblem = orbitLoopReviewedIdentityProblem($markdown, $featureTip);
+
+    if ($reviewProblem !== null) {
+        return $reviewProblem;
+    }
+
+    if (orbitLoopStatusHead(orbitLoopLabel($markdown, 'Proof', 'Acceptance')) !== 'accepted') {
+        return 'Acceptance must be accepted';
+    }
+
+    $acceptedFeature = orbitLoopLabel($markdown, 'Proof', 'Accepted feature tip');
+    $acceptedMain = orbitLoopLabel($markdown, 'Proof', 'Accepted main tip');
+
+    if ($acceptedFeature === null || ! hash_equals($featureTip, $acceptedFeature)) {
+        return 'accepted feature tip does not equal the feature branch tip';
+    }
+
+    if ($acceptedMain === null || ! hash_equals($mainTip, $acceptedMain)) {
+        return 'main advanced after acceptance';
+    }
+
+    return null;
+}
+
+function orbitLoopAcceptanceVenue(array $changedFiles): string
+{
+    $venue = 'automated';
+
+    foreach ($changedFiles as $path) {
+        $path = ltrim((string) $path, './');
+
+        if ($path === '' || orbitLoopPathIsAutomationOnly($path)) {
+            continue;
+        }
+
+        if (str_starts_with($path, 'apps/macos/')) {
+            return 'host-macos';
+        }
+
+        if (
+            str_starts_with($path, 'apps/gateway/resources/')
+            || str_starts_with($path, 'apps/docs/resources/')
+        ) {
+            $venue = orbitLoopStrongerVenue($venue, 'browser');
+
+            continue;
+        }
+
+        $venue = orbitLoopStrongerVenue($venue, 'retained-incus');
+    }
+
+    return $venue;
+}
+
+function orbitLoopPathIsAutomationOnly(string $path): bool
+{
+    return (
+        str_ends_with($path, '.md')
+        || str_contains($path, '/tests/')
+        || str_starts_with($path, 'tests/')
+        || str_starts_with($path, 'bin/')
+        || str_starts_with($path, '.agents/')
+        || str_starts_with($path, '.github/')
+        || in_array(
+            $path,
+            ['composer.json', 'composer.lock', 'LOOP.md.example', 'AGENTS.md', 'AGENT_FAST_PATH.md', 'HARNESS.md'],
+            true,
+        )
+    );
+}
+
+function orbitLoopStrongerVenue(string $left, string $right): string
+{
+    $strength = [
+        'automated' => 0,
+        'retained-incus' => 1,
+        'browser' => 2,
+        'host-macos' => 3,
+    ];
+
+    return ($strength[$right] ?? -1) > ($strength[$left] ?? -1) ? $right : $left;
+}
+
+/**
+ * @return list<string>
+ */
+function orbitLoopChangedFiles(string $cwd, string $head = 'HEAD', string $base = 'main'): array
+{
+    $mergeBase = orbitLoopGitValue($cwd, ['merge-base', $base, $head]);
+
+    if ($mergeBase === null) {
+        return [];
+    }
+
+    $output = orbitLoopGitValue($cwd, ['diff', '--name-only', '--diff-filter=ACDMRT', $mergeBase, $head]);
+
+    if ($output === null) {
+        return [];
+    }
+
+    return array_values(array_filter(
+        array_map('trim', preg_split('/\R/', $output) ?: []),
+        static fn (string $path): bool => $path !== '',
+    ));
+}
+
+function orbitLoopGitValue(string $cwd, array $arguments): ?string
+{
+    $command = ['git', ...$arguments];
+    $descriptorSpec = [
+        0 => ['file', '/dev/null', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+    $process = proc_open($command, $descriptorSpec, $pipes, $cwd);
+
+    if (! is_resource($process)) {
+        return null;
+    }
+
+    $stdout = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($process);
+
+    return $exitCode === 0 ? trim((string) $stdout) : null;
+}

@@ -3,6 +3,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-loop-contract.php';
+require_once __DIR__.'/orbit-feedback-events.php';
+
 const ARCHIVE_NAME_PATTERN = '/^(\d{4}-\d{2}-\d{2}-\d{6})-([a-z0-9-]+)$/';
 
 $options = getopt('', ['sessions-dir:', 'check', 'write', 'help']);
@@ -108,7 +111,7 @@ function build_session_index(string $sessionsDir): array
     }
 
     return [
-        'schema_version' => 1,
+        'schema_version' => 2,
         'generated_from' => '.orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>',
         'record_count' => count($records),
         'records' => $records,
@@ -121,14 +124,9 @@ function build_session_index(string $sessionsDir): array
 function parse_archive(string $archiveDir, string $timestamp, string $slug): array
 {
     $loop = read_file_or_empty("{$archiveDir}/loop.md");
-
     $loopOutcomeRaw = parse_loop_outcome_raw($loop);
     $analyzerVerdict = parse_analyzer_verdict($loop);
-
-    return [
-        'archive' => basename($archiveDir),
-        'slug' => $slug,
-        'timestamp' => $timestamp,
+    $legacy = [
         'loop_outcome' => $loopOutcomeRaw !== null ? normalize_loop_outcome($loopOutcomeRaw) : 'unknown',
         'loop_outcome_raw' => $loopOutcomeRaw,
         'required_verification' => parse_required_verification($loop),
@@ -141,6 +139,97 @@ function parse_archive(string $archiveDir, string $timestamp, string $slug): arr
         'token_usage' => token_usage($archiveDir),
         'capture_status' => capture_status($archiveDir),
     ];
+    $compact = orbitLoopIsCompact($loop);
+    $feedback = feedback_facets("{$archiveDir}/feedback.jsonl");
+
+    $record = [
+        'archive' => basename($archiveDir),
+        'slug' => $slug,
+        'timestamp' => $timestamp,
+        'schema' => $compact ? 'compact-v1' : 'legacy',
+        'archive_mode' => archive_mode($archiveDir),
+    ];
+
+    if (! $compact) {
+        $record['legacy'] = $legacy;
+
+        if ($feedback['status'] !== 'absent') {
+            $record['feedback_count'] = $feedback['event_count'];
+            $record['feedback'] = $feedback;
+        }
+
+        return $record;
+    }
+
+    return array_merge($record, [
+        'state' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Status', 'State')),
+        'review_status' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Review')),
+        'acceptance_status' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Acceptance')),
+        'acceptance_venue' => orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Acceptance venue')),
+        'feedback_count' => $feedback['event_count'],
+        'feedback' => $feedback,
+        'legacy' => null,
+    ]);
+}
+
+/**
+ * @return array{status: string, event_count: ?int, raw_count: ?int, promoted_count: ?int, waived_count: ?int, protection_failures: ?int}
+ */
+function feedback_facets(string $path): array
+{
+    $empty = [
+        'status' => 'absent',
+        'event_count' => 0,
+        'raw_count' => 0,
+        'promoted_count' => 0,
+        'waived_count' => 0,
+        'protection_failures' => 0,
+    ];
+
+    if (! is_file($path) || is_link($path)) {
+        return $empty;
+    }
+
+    try {
+        $events = orbitFeedbackRead($path);
+    } catch (Throwable) {
+        return [
+            'status' => 'invalid',
+            'event_count' => null,
+            'raw_count' => null,
+            'promoted_count' => null,
+            'waived_count' => null,
+            'protection_failures' => null,
+        ];
+    }
+
+    $count = static fn (string $type): int => count(array_filter(
+        $events,
+        static fn (array $event): bool => $event['type'] === $type,
+    ));
+
+    return [
+        'status' => 'valid',
+        'event_count' => count($events),
+        'raw_count' => $count('feedback.recorded'),
+        'promoted_count' => $count('feedback.promoted'),
+        'waived_count' => $count('feedback.waived'),
+        'protection_failures' => $count('protection.failed'),
+    ];
+}
+
+function archive_mode(string $archiveDir): string
+{
+    $receiptPath = "{$archiveDir}/orbit-session-archive.json";
+
+    if (! is_file($receiptPath) || is_link($receiptPath)) {
+        return 'legacy';
+    }
+
+    $receipt = json_decode((string) file_get_contents($receiptPath), true);
+    $mode = is_array($receipt) ? $receipt['archive_mode'] ?? null : null;
+
+    return in_array($mode, ['compact', 'full'], true) ? $mode : 'legacy';
 }
 
 /**

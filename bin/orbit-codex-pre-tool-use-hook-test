@@ -103,9 +103,9 @@ write_loop() {
   - Includes objective/final diff: yes
   - Includes worker/reviewer/terminal/evidence pointers: yes
   - Includes orchestrator steering notes: yes
-- Fresh reviewer:
+- Fresh analyzer:
   - Persona: not used
-  - Solo process or reviewer: not used; tiny mechanical hook test
+  - Solo process or analyzer: not used; tiny mechanical hook test
   - Verdict: not used with rationale
 - Candidate signals:
   - none
@@ -175,6 +175,20 @@ No-new-signal rationale
 EOF
 }
 
+commit_docs_fixture() {
+    local worktree="$1"
+    local name="$2"
+    local head
+
+    printf '# %s\n' "$name" >"$worktree/$name.md"
+    git -C "$worktree" add "$name.md"
+    git -C "$worktree" commit -m "Add $name fixture" >/dev/null
+    head="$(git -C "$worktree" rev-parse HEAD)"
+    mkdir -p "$worktree/.orbit/quality-gates"
+    printf '{"gate":"docs-lint","producer":"quality-gate-run","command":"composer docs-lint","mode":"check","exit_code":0,"ended_at":"2026-07-10T18:00:00Z","subgates":[],"git":{"commit":"%s","dirty":false}}\n' "$head" \
+        >"$worktree/.orbit/quality-gates/docs-lint.json"
+}
+
 REPO="$TMP/repo"
 
 mkdir -p "$REPO"
@@ -184,17 +198,19 @@ git init -b main >/dev/null
 git config user.name 'Orbit Hook Test'
 git config user.email 'orbit-hook-test@example.invalid'
 
-printf '/.worktrees/\n' >.gitignore
+printf '/.worktrees/\n/.orbit/\n' >.gitignore
 touch HARNESS.md AGENTS.md README.md
 git add .gitignore HARNESS.md AGENTS.md README.md
 git commit -m 'Initial test repo' >/dev/null
 
 git branch finalized
 git worktree add .worktrees/finalized finalized >/dev/null 2>&1
+commit_docs_fixture "$REPO/.worktrees/finalized" 'finalized'
 write_loop "$REPO/.worktrees/finalized/.orbit/loop.md" 'complete' 'No durable signal remained after reviewing the feature evidence.'
 
 git branch historical-pending
 git worktree add .worktrees/historical-pending historical-pending >/dev/null 2>&1
+commit_docs_fixture "$REPO/.worktrees/historical-pending" 'historical-pending'
 write_loop "$REPO/.worktrees/historical-pending/.orbit/loop.md" 'complete' 'No durable signal remained after reviewing the historical pending-state block evidence.'
 
 git branch templated
@@ -218,6 +234,7 @@ git worktree add .worktrees/missing-loop missing-loop >/dev/null 2>&1
 
 expect_pass "$REPO" 'composer quality-check'
 expect_pass "$REPO" 'git merge --ff-only finalized'
+git -C "$REPO" merge --ff-only finalized >/dev/null
 expect_pass "$REPO" 'git merge --ff-only historical-pending'
 expect_block "$REPO" 'git merge --ff-only templated'
 expect_block "$REPO" 'git merge --ff-only pending-outcome'
@@ -226,6 +243,11 @@ expect_block "$REPO" 'git merge --ff-only bare-outcome-labels'
 expect_block "$REPO" 'git merge --ff-only missing-loop'
 expect_block "$REPO" 'git worktree remove .worktrees/templated && git branch -d templated'
 expect_check_block "$REPO" git merge --ff-only templated
+
+mkdir -p "$REPO/.orbit/sessions/2026-07-10-180000-finalized/agent-sessions"
+cp "$REPO/.worktrees/finalized/.orbit/loop.md" "$REPO/.orbit/sessions/2026-07-10-180000-finalized/loop.md"
+printf '{"schema_version":1,"sessions":[]}\n' \
+    >"$REPO/.orbit/sessions/2026-07-10-180000-finalized/agent-sessions/manifest.json"
 expect_pass "$REPO" 'git branch -d finalized'
 
 printf 'orbit-codex-pre-tool-use-hook tests passed\n'

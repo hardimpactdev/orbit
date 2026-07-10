@@ -39,10 +39,8 @@ Solo todo id or URL.
    another model.
 6. Send the first prompt with `send_input`. If Solo returns
    `agent_instructions`, prepend them verbatim before everything else in
-   `send_input.input`, then place the `/goal` body verbatim after them —
-   the same prepend-first rule as every Solo spawn in
-   `implementing-features`. When no `agent_instructions` are returned, the
-   input starts directly with `/goal`.
+   `send_input.input`, then place the `/goal` body verbatim after them. When no
+   `agent_instructions` are returned, the input starts directly with `/goal`.
 7. Report the Solo process id/name, todo URL, and `/goal` character count. The
    handoff is complete once `send_input` succeeds. Do not poll, supervise, or
    send follow-up prompts unless the user explicitly asks to inspect or resume
@@ -75,7 +73,7 @@ Solo todo id or URL.
 
 Required workflow:
 - Read and follow AGENTS.md, HARNESS.md, and .agents/skills/implementing-features/SKILL.md.
-- Act as the Orbit feature owner/orchestrator: prepare the implementation worktree with bin/orbit-prepare-worktree, fill the seeded .orbit/loop.md Done Contract, delegate through Solo only when the workflow requires it, verify, and report completion evidence.
+- Act as the Orbit feature owner: prepare the implementation worktree with bin/orbit-prepare-worktree, fill the seeded .orbit/loop.md Goal and Scope, implement directly or use bounded workers only when useful, then PROVE, ACCEPT, and LAND with exact evidence.
 
 Goal:
 - <one concrete objective from the todo>
@@ -83,7 +81,7 @@ Goal:
 Success criteria:
 - <criterion from todo/comment/scratchpad>
 - <criterion from todo/comment/scratchpad>
-- Verification: <focused command(s), quality gate, E2E lane, or "derive from implementing-features and changed files">
+- Verification: <focused command(s), quality gate, existing human-run E2E artifact, or "derive from implementing-features and changed files">
 
 Context:
 - Solo todo: <solo URL>

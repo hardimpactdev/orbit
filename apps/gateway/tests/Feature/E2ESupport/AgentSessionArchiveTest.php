@@ -272,6 +272,7 @@ it('archives active orbit state and provider sessions into one session directory
         $process = new Process(
             [
                 repo_path('bin/orbit-session-archive'),
+                '--full',
                 "--source-orbit-dir={$sourceOrbitDir}",
                 "--archive-dir={$archiveDir}",
                 "--processes-json={$processesPath}",
@@ -296,7 +297,7 @@ it('archives active orbit state and provider sessions into one session directory
         expect($summary)
             ->toHaveKey('archive_dir', $archiveDir)
             ->and($summary['copied_entries'])
-            ->toBe(['evidence', 'loop.md', 'quality-gates'])
+            ->toBe(['agent-sessions', 'evidence', 'loop.md', 'quality-gates'])
             ->and("{$archiveDir}/loop.md")
             ->toBeFile()
             ->and("{$archiveDir}/evidence/proof.txt")
@@ -340,6 +341,7 @@ it('creates generated session archives with local timestamp and feature slug nam
         $process = new Process(
             [
                 repo_path('bin/orbit-session-archive'),
+                '--full',
                 "--source-orbit-dir={$sourceOrbitDir}",
                 "--archive-root={$archiveRoot}",
                 '--timestamp=2026-07-01-100305',
@@ -373,7 +375,7 @@ it('creates generated session archives with local timestamp and feature slug nam
     }
 });
 
-it('documents session archive directory names as local date time and feature slug', function (): void {
+it('documents compact default archives and explicit full capture', function (): void {
     $archiveName = '2026-07-01-100305-session-archive';
     $archivePattern = '/^\d{4}-\d{2}-\d{2}-\d{6}-[a-z0-9]+(?:-[a-z0-9]+)*$/';
 
@@ -390,40 +392,12 @@ it('documents session archive directory names as local date time and feature slu
     });
 
     foreach (session_archive_contract_paths() as $path) {
-        $contents = file_get_contents(repo_path($path));
-        $normalizedContents = preg_replace(
-            pattern: '/\s+/',
-            replacement: ' ',
-            subject: $contents === false ? '' : $contents,
-        );
+        $contents = (string) file_get_contents(repo_path($path));
 
-        if ($normalizedContents === null) {
-            $normalizedContents = '';
-        }
-
-        if ($path === 'HARNESS.md') {
-            expect($normalizedContents)
-                ->toContain('YYYY-MM-DD-HHMMSS-<feature-slug>')
-                ->toContain(
-                    'Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.',
-                );
-
-            continue;
-        }
-
-        $statesNamingContract = str_contains($normalizedContents, 'YYYY-MM-DD-HHMMSS-<feature-slug>')
-        && str_contains(
-            $normalizedContents,
-            'Do not use compact timestamps, `T` separators, `Z`, or UTC offsets in archive directory names.',
-        );
-        $pointsAtArchiveTool = str_contains(
-            $normalizedContents,
-            '`bin/orbit-session-archive` generates and enforces the archive directory name',
-        );
-
-        expect($statesNamingContract || $pointsAtArchiveTool)->toBeTrue(
-            "{$path} must restate the archive naming contract or point at `bin/orbit-session-archive` as the naming authority.",
-        );
+        expect($contents)
+            ->toContain('bin/orbit-session-archive')
+            ->toContain('compact')
+            ->toContain('--full');
     }
 });
 
@@ -615,9 +589,6 @@ function session_archive_contract_paths(): array
 {
     return [
         'HARNESS.md',
-        'LOOP.md.example',
-        'harness-signals/README.md',
-        '.agents/skills/handling-feature-requests/SKILL.md',
         '.agents/skills/implementing-features/SKILL.md',
     ];
 }

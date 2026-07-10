@@ -74,27 +74,28 @@ product authority and are not linted as product docs.
 
 ## Development and debugging Rules
 
-- Feature-request handling is intake only: clarify intent and do not update
-  repository files while handling the request. Multi-slice requests need a
-  Solo scratchpad roadmap before worker dispatch, cross-project handoffs must
-  mirror the roadmap substance, and Solo todos stay thin; see `HARNESS.md`
-  Feature Slices for the pre-dispatch gate and those rules.
+- Feature-request handling is intake only: clarify the outcome, surface,
+  acceptance, constraints, authority, and unresolved product ambiguity without
+  updating repository files. Scratchpads are optional for genuinely complex
+  roadmaps; they are not a worker-dispatch gate.
 - Actual implementation happens through `.agents/skills/implementing-features`
   in an isolated worktree. That includes documentation updates, product-decision
   ledger entries, tests, and code changes. Read that skill before starting
   implementation work.
-- Before executing a goal, feature, or quality-gate tuning pass, apply the
-  `HARNESS.md` parallelization gate: parallel dispatch of independent slices is
-  the default, and a serial plan must name its concrete reason.
+- The current feature owner owns `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`
+  and may implement directly. Use bounded workers only when they materially
+  improve elapsed time or a concrete decision; no separate dispatch paperwork
+  is required.
 - Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
   implementation worktrees. This is Orbit's worktree setup path and takes
   priority over generic worktree skills or ad hoc `git worktree add`. Agents
   must not recreate that setup flow manually. If the script cannot be used,
   stop and report the blocker instead of silently falling back.
-- When a feature is implemented and verified, follow `HARNESS.md` for merge,
-  post-feature signal audit, and cleanup boundaries. Leave `~/orbit` on updated
-  `main`, and preserve unrelated dirty files; never discard user changes to make
-  a merge easier.
+- When a feature is implemented and verified, follow `HARNESS.md` for one
+  independent review, real-surface acceptance, exact accepted feature/main
+  identity, merge, post-merge compact archive, and cleanup. Leave `~/orbit` on
+  updated `main`, and preserve unrelated dirty files; never discard user
+  changes to make a merge easier.
 - Always make sure that `apps/docs/content/` describes the correct behavior. If
   the docs are lacking or contradict what is requested, flag that first before
   proceeding.

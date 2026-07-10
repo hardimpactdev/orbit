@@ -1,4 +1,4 @@
 interface:
   display_name: "Loop Observer"
-  short_description: "Measure LLM loop friction live"
-  default_prompt: "Use $loop-observer while another agent implements a feature through implementing-features; stay read-only and report friction."
+  short_description: "Observe one loop only on explicit request."
+  default_prompt: "Use this read-only skill only because the human explicitly requested live observation. Sample the named loop, report concrete friction with evidence, and do not steer, edit, dispatch, or create routine ceremony."

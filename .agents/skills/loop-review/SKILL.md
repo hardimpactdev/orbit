@@ -1,110 +1,70 @@
 ---
 name: loop-review
-description: Use when a human explicitly requests a batch review of Orbit feature-loop archives, session indexes, or recurring repo-development loop signals across completed sessions.
+description: Use only when a human explicitly requests historical loop diagnosis or a bounded process experiment.
 ---
 
-# Loop Review
+# Trigger-Only Loop Review
 
-## Role
+Ordinary successful feature loops do no retrospective work. This skill is
+human-invoked and repository-read-only unless the user separately authorizes a
+normal implementation slice.
 
-Run a budgeted, human-invoked batch review over completed Orbit feature loops.
-The review finds recurrence evidence that a single post-feature analyzer cannot
-see, then writes one findings scratchpad for human adjudication.
+## Eligible Evidence After Human Invocation
 
-This skill is read-only for the repository. It never edits guardrails, skills,
-signal records, product docs, tests, or tooling. It feeds the existing promotion
-gate in `HARNESS_SIGNALS.md`; it is not a second promotion gate.
+- a failed promoted protection;
+- a severe preventable safety incident;
+- a reviewer-confirmed recurring process failure; or
+- explicit user process feedback.
 
-## Budgets
+One ordinary mistake is evidence, not automatically an experiment. A severe
+safety incident may trigger immediately.
 
-- Cadence: run after about 10 new session archives or monthly, whichever comes
-  first, when a human explicitly asks for it.
-- Archive reads: open at most 15 archive directories in one pass. Use
-  `.orbit/sessions/index.json` to cover the rest.
-- Turn budget: one setup turn, one analysis turn, and one findings turn. Stop
-  instead of expanding into an open-ended audit.
-- Token budget: keep the pass under roughly 80k input tokens by reading index
-  facets first and opening only flagged archive files.
-- Hard stop: if `bin/orbit-session-index --check` fails, or the index is
-  missing when archives exist, stop and report the stale-index blocker. Do not
-  read around a stale index.
+## Historical Diagnosis
 
-## Procedure
+Use `.orbit/sessions/index.json` to select the named time window or surface,
+then open only relevant compact receipts and feedback streams. Historical/full
+archives may be read when the question needs them. Missing values stay
+`unknown`; do not invent zeroes or reconstruct a generic metric store.
 
-1. **Find the previous review window** - Locate the latest findings scratchpad
-   tagged `loop-review`. If none exists, start from the earliest indexed archive
-   or the human-specified window. Record the window start and end.
-2. **Read the index first** - Run `bin/orbit-session-index --check`, then read
-   `.orbit/sessions/index.json`. Use facets such as outcome, blocker presence,
-   analyzer verdict, candidate classifications, capture status, and token usage
-   to choose which archives need deeper inspection.
-3. **Open only flagged archives** - Inspect the selected archive `loop.md`,
-   `agent-sessions/*/manifest.json`, quality-gate artifacts, and evidence files.
-   Stay under the archive-read budget.
-4. **Group recurring failure classes** - Group repeated blockers, analyzer
-   criticisms, merge-gate failures, worker friction, verification misses, and
-   first-diff-budget misses. Include counts and archive pointers.
-5. **Check guardrail coverage** - Search `harness-signals/index.json` and then
-   matching `harness-signals/` records. If an existing guarded record did not
-   prevent recurrence, produce a `tighten` candidate. If no record covers a
-   recurring class, produce a `promote` candidate. If evidence is weak, produce
-   `reject` or `defer`.
-6. **Compute index metrics** - Report sessions per period, outcome mix, blocked
-   rate, analyzer-verdict mix, capture-status mix, and token totals where the
-   index has usage data.
-7. **Spot-check distillation** - Audit 1-2 accepted durable updates or archived
-   distillations from the window against shipped behavior. Flag inverted or
-   stale distillations as candidate findings; do not fix them directly.
-8. **Check observer usage** - Record whether a `loop-observer` lane was requested
-   during the window, which mode was used, and whether its output affected final
-   distillation. This informs the observer keep/fold decision.
+Return the recurring failure, exact evidence refs, likely cause, existing
+protection, and smallest preventive change. Do not require analyzer, capture,
+observer, or signal-taxonomy fields that compact receipts do not contain.
 
-## Findings Scratchpad
+## One Bounded Experiment
 
-Write one Solo scratchpad tagged `loop-review`. Use this shape:
+There may be one active loop experiment at a time. Create a Solo scratchpad
+tagged `loop-experiment` only after a qualifying trigger:
 
 ```markdown
-# Loop Review Findings - <date>
+# Loop Experiment: <id>
 
-## Coverage Window
-- Previous review: <scratchpad/id or none>
-- Archives covered: <start> through <end>
-- Archives opened: <count/list>
-
-## Metrics
-- Sessions per period:
-- Outcome mix:
-- Blocked rate:
-- Analyzer verdict mix:
-- Capture-status mix:
-- Token totals:
-
-## Recurring Classes
-- <class>: <count>, <archive pointers>, <evidence summary>
-
-## Distillation Spot-Checks
-- <guardrail/distillation>: <kept | stale | inverted | unclear> - <evidence>
-
-## Observer Usage
-- Requested: <yes/no>
-- Mode/effect:
-
-## Candidates For Human Adjudication
-- <promote | tighten | reject | defer>: <target>, <reason>, <evidence>
-
-## Open Questions
-- <question or none>
+- Status: proposed | active | pending | keep | revert | complete
+- Surface:
+- Trigger:
+- Observed failure:
+- Cause hypothesis:
+- Smallest preventive change:
+- Target metric:
+- Receipt derivation:
+- Baseline boundary:
+- Window:
+- Revert condition:
+- Revert command:
+- Treatment commits:
+- Selected receipt refs:
+- Outcome:
 ```
 
-End the scratchpad with a clear reminder: the human adjudicates candidates
-through `HARNESS_SIGNALS.md`, and a follow-up implementation loop owns any
-guardrail edits.
+The experiment has one target metric, an exact derivation from existing compact
+receipts, a fixed window, and revert by default. Implement its preventive change
+as an ordinary isolated feature through `implementing-features`; never self-edit
+inside the feature that exposed the issue.
 
-## Do Not Build
+Keep only when the target improves without a hard-protection failure or material
+ordinary-loop slowdown. Otherwise execute the recorded revert slice. If the
+same stable calculation is genuinely needed for a second experiment, request a
+separate thin helper. Do not create generic evaluator tooling, dashboards,
+metrics schemas, or routine cadence in anticipation.
 
-- Do not create a scheduled, hook-driven, CI, nightly, or unattended invocation.
-- Do not create dashboards, embeddings, clustering, or A/B infrastructure.
-- Do not edit `harness-signals/`, `HARNESS.md`, `.agents/skills/`, product docs,
-  or tests during the review.
-- Do not treat one weak archive as recurrence. Mark it `defer` with the needed
-  evidence.
+Hard security, correctness, acceptance, and evidence-integrity protections are
+never experimental.

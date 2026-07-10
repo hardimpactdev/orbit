@@ -22,6 +22,10 @@ STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 ARTIFACT_DIR="${ORBIT_QUALITY_GATES_DIR:-${ROOT}/.orbit/quality-gates}"
 GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_START_CLEAN=0
+if GIT_START_STATUS="$(git -C "$ROOT" status --porcelain --untracked-files=all 2>/dev/null)" && [ -z "$GIT_START_STATUS" ]; then
+    GIT_START_CLEAN=1
+fi
 
 FIX_MODE=0
 if [ "${1:-}" = "--fix" ]; then
@@ -960,8 +964,18 @@ if [ "$overall" -ne 0 ]; then
 fi
 
 ENDED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+GIT_END_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+GIT_END_CLEAN=0
+if GIT_END_STATUS="$(git -C "$ROOT" status --porcelain --untracked-files=all 2>/dev/null)" && [ -z "$GIT_END_STATUS" ]; then
+    GIT_END_CLEAN=1
+fi
+GIT_DIRTY=true
+if [ "$GIT_START_CLEAN" -eq 1 ] && [ "$GIT_END_CLEAN" -eq 1 ] && [ "$GIT_COMMIT" != unknown ] && [ "$GIT_END_COMMIT" = "$GIT_COMMIT" ]; then
+    GIT_DIRTY=false
+fi
 php "${ROOT}/bin/quality-gate-write-artifact" \
     --gate=quality-check \
+    --producer=quality-check.sh \
     --command="$COMMAND" \
     --mode="$MODE" \
     --started-at="$STARTED_AT" \
@@ -969,6 +983,7 @@ php "${ROOT}/bin/quality-gate-write-artifact" \
     --exit-code="$overall" \
     --git-branch="$GIT_BRANCH" \
     --git-commit="$GIT_COMMIT" \
+    --git-dirty="$GIT_DIRTY" \
     --artifact-dir="$ARTIFACT_DIR" \
     "${SUBGATE_ARGS[@]}" \
     "${SUBGATE_DURATION_ARGS[@]}" >/dev/null 2>&1 || true

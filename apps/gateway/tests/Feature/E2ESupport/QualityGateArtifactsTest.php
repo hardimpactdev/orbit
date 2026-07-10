@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('writes a quality gate artifact with required timing and git metadata', function (): void {
+it('writes authentic quality-check evidence with required producer, command, mode, subgates, timing, and git metadata', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-'.bin2hex(random_bytes(6));
 
     try {
@@ -12,6 +12,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
             PHP_BINARY,
             repo_path('bin/quality-gate-write-artifact'),
             '--gate=quality-check',
+            '--producer=quality-check.sh',
             '--command=composer quality-check',
             '--mode=check',
             '--started-at=2026-06-23T10:00:00Z',
@@ -19,6 +20,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
             '--exit-code=0',
             '--git-branch=quality-gate-timing-artifacts',
             '--git-commit=abc123def456',
+            '--git-dirty=false',
             '--subgate=gateway_pest=0',
             '--subgate=docs_lint=0',
             '--subgate=gateway_mago_analyze=1',
@@ -37,6 +39,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
         expect($artifact)->toMatchArray([
             'schema_version' => 1,
             'gate' => 'quality-check',
+            'producer' => 'quality-check.sh',
             'command' => 'composer quality-check',
             'mode' => 'check',
             'started_at' => '2026-06-23T10:00:00Z',
@@ -46,6 +49,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
             'git' => [
                 'branch' => 'quality-gate-timing-artifacts',
                 'commit' => 'abc123def456',
+                'dirty' => false,
             ],
             'subgates' => [
                 'gateway_pest' => 0,
@@ -55,6 +59,266 @@ it('writes a quality gate artifact with required timing and git metadata', funct
         ]);
     } finally {
         new Process(['rm', '-rf', $artifactDir])->run();
+    }
+});
+
+it('requires an explicit git dirty state for every artifact', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-required-dirty-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-write-artifact'),
+            '--gate=docs-lint',
+            '--producer=quality-gate-run',
+            '--started-at=2026-06-23T10:00:00Z',
+            '--ended-at=2026-06-23T10:00:01Z',
+            '--exit-code=0',
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('Missing or invalid required option --git-dirty. Expected true or false.')
+            ->and(glob("{$artifactDir}/*.json") ?: [])
+            ->toBe([]);
+    } finally {
+        new Process(['rm', '-rf', $artifactDir])->run();
+    }
+});
+
+it('requires a recognized producer identity for every artifact', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-required-producer-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-write-artifact'),
+            '--gate=docs-lint',
+            '--started-at=2026-06-23T10:00:00Z',
+            '--ended-at=2026-06-23T10:00:01Z',
+            '--exit-code=0',
+            '--git-dirty=false',
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('Missing required option --producer.')
+            ->and(glob("{$artifactDir}/*.json") ?: [])
+            ->toBe([]);
+    } finally {
+        new Process(['rm', '-rf', $artifactDir])->run();
+    }
+});
+
+it('rejects the generic producer identity for reserved quality-check artifacts', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-invalid-reserved-producer-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-write-artifact'),
+            '--gate=quality-check',
+            '--producer=quality-gate-run',
+            '--command=composer quality-check',
+            '--mode=check',
+            '--started-at=2026-06-23T10:00:00Z',
+            '--ended-at=2026-06-23T10:00:01Z',
+            '--exit-code=0',
+            '--git-dirty=false',
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain(
+                'Gate [quality-check] must be written by producer [quality-check.sh], received [quality-gate-run].',
+            )
+            ->and(glob("{$artifactDir}/*.json") ?: [])
+            ->toBe([]);
+    } finally {
+        new Process(['rm', '-rf', $artifactDir])->run();
+    }
+});
+
+it('prevents a generic true command from minting reserved quality-check evidence', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-reserved-quality-check-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-run'),
+            '--gate=quality-check',
+            '--command=composer quality-check',
+            "--artifact-dir={$artifactDir}",
+            '--',
+            '/usr/bin/true',
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(1)
+            ->and($process->getErrorOutput())
+            ->toContain('Gate [quality-check] is reserved for bin/quality-check.sh.')
+            ->and(glob("{$artifactDir}/quality-check-*.json") ?: [])
+            ->toBe([]);
+    } finally {
+        new Process(['rm', '-rf', $artifactDir])->run();
+    }
+});
+
+it('marks producer evidence clean only when both snapshots are clean and HEAD is stable', function (): void {
+    $checkout = sys_get_temp_dir().'/orbit-quality-gate-producer-'.bin2hex(random_bytes(6));
+    mkdir("{$checkout}/bin", 0700, true);
+
+    try {
+        copy(repo_path('bin/quality-gate-run'), "{$checkout}/bin/quality-gate-run");
+        copy(repo_path('bin/quality-gate-write-artifact'), "{$checkout}/bin/quality-gate-write-artifact");
+        chmod("{$checkout}/bin/quality-gate-run", 0755);
+        chmod("{$checkout}/bin/quality-gate-write-artifact", 0755);
+        file_put_contents("{$checkout}/.gitignore", "artifacts-*\n");
+        file_put_contents("{$checkout}/fixture.txt", "original\n");
+
+        foreach ([
+            ['git', 'init', '--initial-branch=main'],
+            ['git', 'config', 'user.name', 'Orbit Tests'],
+            ['git', 'config', 'user.email', 'orbit-tests@example.com'],
+            ['git', 'add', '.gitignore', 'fixture.txt', 'bin/quality-gate-run', 'bin/quality-gate-write-artifact'],
+            ['git', 'commit', '-m', 'Initial fixture'],
+        ] as $command) {
+            $setup = new Process($command, $checkout);
+            $setup->run();
+
+            expect($setup->getExitCode())->toBe(0, $setup->getErrorOutput());
+        }
+
+        $head = new Process(['git', 'rev-parse', 'HEAD'], $checkout);
+        $head->run();
+        expect($head->getExitCode())->toBe(0, $head->getErrorOutput());
+        $initialHead = trim($head->getOutput());
+        $cleanArtifactDir = "{$checkout}/artifacts-clean";
+        $clean = new Process([
+            "{$checkout}/bin/quality-gate-run",
+            '--gate=docs-lint',
+            "--artifact-dir={$cleanArtifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'exit(0);',
+        ], $checkout);
+        $clean->run();
+
+        expect($clean->getExitCode())->toBe(0, $clean->getErrorOutput());
+
+        $cleanArtifacts = glob("{$cleanArtifactDir}/docs-lint-*.json") ?: [];
+        expect($cleanArtifacts)->toHaveCount(1);
+
+        $cleanArtifact = json_decode(
+            (string) file_get_contents($cleanArtifacts[0]),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($cleanArtifact['git'])->toMatchArray([
+            'branch' => 'main',
+            'commit' => $initialHead,
+            'dirty' => false,
+        ]);
+
+        file_put_contents("{$checkout}/fixture.txt", "dirty before start\n");
+        $dirtyAtStartArtifactDir = "{$checkout}/artifacts-dirty-at-start";
+        $dirtyAtStart = new Process([
+            "{$checkout}/bin/quality-gate-run",
+            '--gate=docs-lint',
+            "--artifact-dir={$dirtyAtStartArtifactDir}",
+            '--',
+            'git',
+            'checkout',
+            '--',
+            'fixture.txt',
+        ], $checkout);
+        $dirtyAtStart->run();
+
+        expect($dirtyAtStart->getExitCode())->toBe(0, $dirtyAtStart->getErrorOutput());
+
+        $dirtyAtStartArtifacts = glob("{$dirtyAtStartArtifactDir}/docs-lint-*.json") ?: [];
+        expect($dirtyAtStartArtifacts)->toHaveCount(1);
+
+        $dirtyAtStartArtifact = json_decode(
+            (string) file_get_contents($dirtyAtStartArtifacts[0]),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($dirtyAtStartArtifact['git']['dirty'])->toBeTrue();
+
+        $dirtyAtEndArtifactDir = "{$checkout}/artifacts-dirty-at-end";
+        $dirtyAtEnd = new Process([
+            "{$checkout}/bin/quality-gate-run",
+            '--gate=docs-lint',
+            "--artifact-dir={$dirtyAtEndArtifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'file_put_contents("fixture.txt", "dirty after start\\n");',
+        ], $checkout);
+        $dirtyAtEnd->run();
+
+        expect($dirtyAtEnd->getExitCode())->toBe(0, $dirtyAtEnd->getErrorOutput());
+
+        $dirtyAtEndArtifacts = glob("{$dirtyAtEndArtifactDir}/docs-lint-*.json") ?: [];
+        expect($dirtyAtEndArtifacts)->toHaveCount(1);
+
+        $dirtyAtEndArtifact = json_decode(
+            (string) file_get_contents($dirtyAtEndArtifacts[0]),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($dirtyAtEndArtifact['git']['dirty'])->toBeTrue();
+
+        $restore = new Process(['git', 'checkout', '--', 'fixture.txt'], $checkout);
+        $restore->run();
+        expect($restore->getExitCode())->toBe(0, $restore->getErrorOutput());
+
+        $movedHeadArtifactDir = "{$checkout}/artifacts-moved-head";
+        $movedHead = new Process([
+            "{$checkout}/bin/quality-gate-run",
+            '--gate=docs-lint',
+            "--artifact-dir={$movedHeadArtifactDir}",
+            '--',
+            'git',
+            'commit',
+            '--allow-empty',
+            '-m',
+            'Move HEAD during gate',
+        ], $checkout);
+        $movedHead->run();
+
+        expect($movedHead->getExitCode())->toBe(0, $movedHead->getErrorOutput());
+
+        $movedHeadArtifacts = glob("{$movedHeadArtifactDir}/docs-lint-*.json") ?: [];
+        expect($movedHeadArtifacts)->toHaveCount(1);
+
+        $movedHeadArtifact = json_decode(
+            (string) file_get_contents($movedHeadArtifacts[0]),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($movedHeadArtifact['git'])
+            ->toMatchArray([
+                'commit' => $initialHead,
+                'dirty' => true,
+            ]);
+    } finally {
+        new Process(['rm', '-rf', $checkout])->run();
     }
 });
 
@@ -89,6 +353,7 @@ it('runs a wrapped quality gate command and writes timing evidence', function ()
             ->toMatchArray([
                 'schema_version' => 1,
                 'gate' => 'e2e-docker',
+                'producer' => 'quality-gate-run',
                 'command' => 'composer test:e2e:docker',
                 'mode' => 'check',
                 'exit_code' => 0,
@@ -887,6 +1152,7 @@ it('keeps final-check wired as an evidence-only composer script', function (): v
     );
     $script = (string) file_get_contents(repo_path('bin/quality-gate-final-check'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+    $normalizedImplementingFeaturesSkill = preg_replace('/\s+/', ' ', $implementingFeaturesSkill) ?: '';
 
     expect($composer['scripts'])
         ->toHaveKey('quality-gate:final-check')
@@ -900,11 +1166,11 @@ it('keeps final-check wired as an evidence-only composer script', function (): v
         ->not->toContain('vendor/bin/pest')
         ->not->toContain('bin/orbit-gateway-pest')
         ->not->toContain('bin/orbit-e2e-artisan')
-        ->not->toContain('test:e2e')->and($implementingFeaturesSkill)->toContain(
+        ->not->toContain('test:e2e')->and($normalizedImplementingFeaturesSkill)->toContain(
             'composer quality-gate:final-check',
         )->toContain('must not rerun Pest')->toContain('timing analysis was skipped')->toContain(
-            'first narrow diff',
-        )->toContain('broad repository discovery');
+            'Run the narrowest relevant verification',
+        )->toContain('diff-routed broader gate');
 });
 
 it('keeps e2e test commands manual only across default gates and skills', function (): void {
@@ -931,6 +1197,7 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     $e2eSkill = (string) file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/SKILL.md'));
     $releaseSkill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
     $qualityGateTriageSkill = (string) file_get_contents(repo_path('.agents/skills/quality-gate-triage/SKILL.md'));
+    $e2ePrompt = (string) file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/agents/openai.yaml'));
     $defaultGateScripts = [
         'bin/orbit-codex-pre-tool-use-hook',
         'bin/orbit-feature-finalization-check',
@@ -943,12 +1210,16 @@ it('keeps e2e test commands manual only across default gates and skills', functi
         ->toContain('default scripts must not trigger them')
         ->toContain('user explicitly invokes the Composer command from a shell')
         ->and($implementingFeaturesSkill)
-        ->toContain('Agents must not run `composer test:e2e*` commands')
+        ->toContain('Never run, delegate, background, schedule, hook, script, or trigger a')
         ->and($e2eSkill)
         ->toContain('Agents must not run, delegate, background, schedule, hook, or script any')
         ->and($qualityGateTriageSkill)
         ->toContain('Do not run any `composer test:e2e*` command')
-        ->and($releaseSkill)
+        ->and($e2ePrompt)
+        ->toContain(
+            'Never run, delegate, split, background, schedule, hook, script, or trigger any composer test:e2e* command',
+        )
+        ->not->toContain('split provider work across Solo agents')->and($releaseSkill)
         ->not->toContain('composer test:e2e')
         ->not->toContain('composer e2e:ensure-artifacts');
 
@@ -960,16 +1231,18 @@ it('keeps e2e test commands manual only across default gates and skills', functi
 it('requires retained cli topology proof to keep the solo terminal open', function (): void {
     $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+    $normalizedHarness = preg_replace('/\s+/', ' ', $harness) ?: '';
+    $normalizedImplementingFeaturesSkill = preg_replace('/\s+/', ' ', $implementingFeaturesSkill) ?: '';
 
-    expect($harness)
+    expect($normalizedHarness)
         ->toContain('CLI retained topology proof must run in a Solo terminal')
         ->toContain('Keep that Solo terminal open')
         ->toContain('through feature completion')
         ->toContain('leave it available afterward')
         ->toContain('addressed CLI commands')
         ->toContain('their output')
-        ->and($implementingFeaturesSkill)
-        ->toContain('HARNESS.md` -> `Retained Incus Inspection Gate');
+        ->and($normalizedImplementingFeaturesSkill)
+        ->toContain('keep one ready Solo terminal at `/home/orbit/orbit-run`');
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {
@@ -988,8 +1261,14 @@ it('keeps quality-check artifact capture wired into the aggregate gate script', 
         ])
         ->and($script)
         ->toContain('quality-gate-write-artifact')
+        ->toContain('--producer=quality-check.sh')
         ->toContain('ORBIT_QUALITY_GATES_DIR')
-        ->toContain('.orbit/quality-gates');
+        ->toContain('.orbit/quality-gates')
+        ->toContain('GIT_START_CLEAN')
+        ->toContain('GIT_END_CLEAN')
+        ->toContain('GIT_END_COMMIT')
+        ->toContain('[ "$GIT_END_COMMIT" = "$GIT_COMMIT" ]')
+        ->toContain('--git-dirty="$GIT_DIRTY"');
 });
 
 it('keeps docs-lint artifact capture wired into the docs lint script', function (): void {
@@ -1010,10 +1289,10 @@ it('keeps docs-lint artifact capture wired into the docs lint script', function 
         ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --group=references')
         ->toContain('bin/orbit-docs-artisan orbit:command-catalog --check')
         ->toContain('bin/orbit-docs-artisan orbit:monorepo-unit-map --check')
-        ->toContain('bin/orbit-harness-signal-index --check');
+        ->not->toContain('bin/orbit-harness-signal-index --check');
 });
 
-it('keeps the harness signal index reachable from docs-lint and the index script', function (): void {
+it('keeps the historical harness signal index available outside docs-lint', function (): void {
     $indexPath = repo_path('harness-signals/index.json');
     $scriptPath = repo_path('bin/orbit-harness-signal-index');
     $knownRecord = repo_path('harness-signals/2026-06-23-worker-first-diff-checkpoint.md');
@@ -1328,6 +1607,7 @@ it('writes per-subgate duration data into quality-check artifacts', function ():
             PHP_BINARY,
             repo_path('bin/quality-gate-write-artifact'),
             '--gate=quality-check',
+            '--producer=quality-check.sh',
             '--command=composer quality-check',
             '--mode=check',
             '--started-at=2026-06-23T10:00:00Z',
@@ -1335,6 +1615,7 @@ it('writes per-subgate duration data into quality-check artifacts', function ():
             '--exit-code=0',
             '--git-branch=quality-gate-baseline-capture',
             '--git-commit=profiling123',
+            '--git-dirty=false',
             '--subgate=gateway_pest=0',
             '--subgate=docs_lint=0',
             '--subgate-duration=gateway_pest=245.5',

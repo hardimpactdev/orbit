@@ -4,6 +4,8 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/orbit-session-archive-filesystem.php';
+require_once __DIR__.'/orbit-loop-contract.php';
+require_once __DIR__.'/orbit-feedback-events.php';
 
 /**
  * Archive a completed active .orbit session and preserve related provider
@@ -11,6 +13,7 @@ require_once __DIR__.'/orbit-session-archive-filesystem.php';
  */
 
 const ARCHIVE_BASENAME_PATTERN = '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[a-z0-9-]+$';
+
 const STAGED_CAPTURE_STATUSES = [
     'ok',
     'partial',
@@ -42,13 +45,14 @@ $options = getopt('', [
     'max-start-distance:',
     'only-ok',
     'discover-by-cwd',
+    'full',
     'help',
 ]);
 
 if (array_key_exists('help', $options)) {
     fwrite(STDOUT, <<<'EOF'
         Usage:
-          bin/orbit-session-archive [--archive-dir=<path> | --slug=<slug>] [agent session options]
+          bin/orbit-session-archive [--archive-dir=<path> | --slug=<slug>] [--full] [agent session options]
 
         Options:
           --source-orbit-dir=<path>     Active .orbit directory to archive. Defaults to <cwd>/.orbit.
@@ -59,20 +63,22 @@ if (array_key_exists('help', $options)) {
                                         current branch name sanitized to kebab-case.
           --timestamp=<value>           Timestamp prefix when --archive-dir is omitted. Defaults to current local time as YYYY-MM-DD-HHMMSS.
           --cwd=<path>                  Feature checkout cwd. Defaults to the current directory.
+          --full                       Preserve the complete active .orbit state and provider captures.
+                                       The default archive is compact: loop.md, feedback.jsonl when present,
+                                       and a versioned archive receipt.
 
-        Provider session options are forwarded to bin/orbit-agent-session-archive:
+        In --full mode, provider session options are forwarded to bin/orbit-agent-session-archive:
           --processes-json, --solo-process-id, --solo-project-id, --discover-by-cwd,
           --home, --marker, --solo-app-data-dir, --solo-db, --solo-cli,
           --max-start-distance, --only-ok.
 
         The active <source-orbit-dir>/loop.md is required. When the newest archive
         for the same slug already contains a byte-identical loop.md, that archive is
-        refreshed in place instead of minting a near-duplicate directory. After a
-        successful archive the "- Session archive: .orbit/sessions/<basename>"
-        bullet is appended or updated under "## Evidence Links" in the active
-        loop.md, and loop.md is re-copied so archive and source match.
+        refreshed in place instead of minting a near-duplicate directory. Compact
+        loop.md files stay byte-stable; the versioned receipt records the archive.
+        Historical loop packets retain their Evidence Links write-back behavior.
 
-        If no explicit provider process context is supplied, this command scans
+        In --full mode, if no explicit provider process context is supplied, this command scans
         <source-orbit-dir>/loop.md for Solo process ids and passes them as a
         comma-separated --solo-process-id list. Without discovered process ids,
         agent session archiving safely writes an empty manifest and a WARNING is
@@ -111,6 +117,28 @@ if (! is_file($activeLoopPath) || is_link($activeLoopPath)) {
     exit(2);
 }
 
+$activeFeedbackPath = "{$sourceOrbitDir}/feedback.jsonl";
+
+try {
+    if (file_exists($activeFeedbackPath) || is_link($activeFeedbackPath)) {
+        orbitFeedbackRead($activeFeedbackPath);
+    }
+} catch (Throwable $exception) {
+    fwrite(STDERR, "Active feedback stream is invalid: {$exception->getMessage()}\n");
+    exit(2);
+}
+
+[$secretScanExit, , $secretScanError] = runCommand([
+    __DIR__.'/orbit-secret-scan',
+    "--worktree={$cwd}",
+    "--orbit-dir={$sourceOrbitDir}",
+]);
+
+if ($secretScanExit !== 0) {
+    fwrite(STDERR, rtrim($secretScanError, "\n").PHP_EOL);
+    exit(2);
+}
+
 try {
     [$archiveDir, $archiveRoot, $mode] = resolveArchiveDirectory($options, $cwd, $sourceOrbitDir, $activeLoopPath);
 } catch (Throwable $exception) {
@@ -124,7 +152,10 @@ if (is_link($archiveDir)) {
 }
 
 if ($mode === 'refreshed') {
-    fwrite(STDERR, "Refreshing existing session archive with identical loop.md instead of minting a duplicate: {$archiveDir}\n");
+    fwrite(
+        STDERR,
+        "Refreshing existing session archive with identical loop.md instead of minting a duplicate: {$archiveDir}\n",
+    );
 } elseif (directoryHasEntries($archiveDir)) {
     fwrite(STDERR, "Archive directory already exists and is not empty: {$archiveDir}\n");
     exit(2);
@@ -137,7 +168,18 @@ try {
     exit(2);
 }
 
-$loopDiscoveryAttempted = shouldDiscoverLoopProcessIds($options);
+$archiveMode = requestedArchiveMode($options, $mode, $archiveDir);
+
+if ($archiveMode === 'compact') {
+    try {
+        assertCompactArchiveIdentity($cwd, $sourceOrbitDir, (string) file_get_contents($activeLoopPath));
+    } catch (Throwable $exception) {
+        fwrite(STDERR, $exception->getMessage().PHP_EOL);
+        exit(2);
+    }
+}
+
+$loopDiscoveryAttempted = $archiveMode === 'full' && shouldDiscoverLoopProcessIds($options);
 $loopProcessIds = $loopDiscoveryAttempted ? loopSoloProcessIds($activeLoopPath) : [];
 
 $temporaryArchiveFinalPath = isset($options['archive-dir'])
@@ -145,11 +187,16 @@ $temporaryArchiveFinalPath = isset($options['archive-dir'])
     : "{$archiveRoot}/".basename($archiveDir);
 $temporaryArchiveDir = uniqueSiblingPath($temporaryArchiveFinalPath, 'tmp');
 $backupDir = uniqueSiblingPath($archiveDir, 'backup');
-$updatedLoop = sessionArchiveLinkedLoopContent($activeLoopPath, basename($archiveDir));
+$activeLoop = (string) file_get_contents($activeLoopPath);
+$updatedLoop = orbitLoopIsCompact($activeLoop)
+    ? $activeLoop
+    : sessionArchiveLinkedLoopContent($activeLoopPath, basename($archiveDir));
 
 try {
     orbitSessionArchiveEnsureDirectory($temporaryArchiveDir);
-    $copiedEntries = copyActiveOrbitEntries($sourceOrbitDir, $temporaryArchiveDir);
+    $copiedEntries = $archiveMode === 'full'
+        ? copyActiveOrbitEntries($sourceOrbitDir, $temporaryArchiveDir)
+        : copyCompactOrbitEntries($sourceOrbitDir, $temporaryArchiveDir);
 
     if ($copiedEntries === []) {
         throw new RuntimeException(
@@ -157,43 +204,70 @@ try {
         );
     }
 
-    $hasStagedCaptures = validateStagedCaptures("{$temporaryArchiveDir}/agent-sessions");
+    $agentResults = [];
 
-    if ($hasStagedCaptures) {
-        fwrite(
-            STDERR,
-            "Preferring validated staged captures from active .orbit/agent-sessions; skipping live extraction.\n",
-        );
-        $agentResults = [];
-    } else {
-        if ($loopDiscoveryAttempted && $loopProcessIds === []) {
+    if ($archiveMode === 'full') {
+        $hasStagedCaptures = validateStagedCaptures("{$temporaryArchiveDir}/agent-sessions");
+
+        if ($hasStagedCaptures) {
             fwrite(
                 STDERR,
-                'WARNING: no Solo process context available — no --processes-json/--solo-process-id/'
-                . '--solo-project-id/--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, '
-                ."and no Solo process ids found in {$activeLoopPath}; agent-sessions will contain an empty manifest.\n",
+                "Preferring validated staged captures from active .orbit/agent-sessions; skipping live extraction.\n",
             );
-        }
+        } else {
+            if ($loopDiscoveryAttempted && $loopProcessIds === []) {
+                fwrite(
+                    STDERR,
+                    'WARNING: no Solo process context available — no --processes-json/--solo-process-id/'
+                    .'--solo-project-id/--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, '
+                    ."and no Solo process ids found in {$activeLoopPath}; agent-sessions will contain an empty manifest.\n",
+                );
+            }
 
-        $agentResults = runAgentSessionArchive($options, $cwd, $temporaryArchiveDir, $loopProcessIds);
-        normalizeFallbackManifestArchiveDirectory($temporaryArchiveDir, $archiveDir);
+            $agentResults = runAgentSessionArchive($options, $cwd, $temporaryArchiveDir, $loopProcessIds);
+            normalizeFallbackManifestArchiveDirectory($temporaryArchiveDir, $archiveDir);
+        }
     }
 
     orbitSessionArchiveWriteFile("{$temporaryArchiveDir}/loop.md", $updatedLoop);
 
+    if ($mode === 'refreshed') {
+        assertRefreshPreservesArchive($archiveDir, $temporaryArchiveDir);
+    }
+
+    $copiedEntries = archiveTopLevelEntries($temporaryArchiveDir);
+    $entryDigests = archiveEntryDigests($temporaryArchiveDir, $copiedEntries);
+    $branch = archiveGitValue($cwd, ['branch', '--show-current']) ?? 'unknown';
+    $candidateCommit = archiveGitValue($cwd, ['rev-parse', 'HEAD']) ?? 'unknown';
+
     $summary = [
-        'schema_version' => 1,
+        'schema_version' => 2,
         'generated_at' => gmdate('c'),
         'mode' => $mode,
+        'archive_mode' => $archiveMode,
         'source_orbit_dir' => $sourceOrbitDir,
         'archive_dir' => $archiveDir,
-        'agent_sessions_dir' => "{$archiveDir}/agent-sessions",
+        'agent_sessions_dir' => $archiveMode === 'full' ? "{$archiveDir}/agent-sessions" : null,
         'copied_entries' => $copiedEntries,
+        'entry_digests' => $entryDigests,
+        'branch' => $branch,
+        'candidate_commit' => $candidateCommit,
+        'accepted_feature_tip' => orbitLoopLabel($updatedLoop, 'Proof', 'Accepted feature tip'),
+        'accepted_main_tip' => orbitLoopLabel($updatedLoop, 'Proof', 'Accepted main tip'),
         'discovered_solo_process_ids' => $loopProcessIds,
         'agent_results' => $agentResults,
     ];
 
     writeJsonFile("{$temporaryArchiveDir}/orbit-session-archive.json", $summary);
+
+    [$secretScanExit, , $secretScanError] = runCommand([
+        __DIR__.'/orbit-secret-scan',
+        "--tree={$temporaryArchiveDir}",
+    ]);
+
+    if ($secretScanExit !== 0) {
+        throw new RuntimeException(trim($secretScanError));
+    }
 } catch (Throwable $exception) {
     cleanupConstructionFailure($temporaryArchiveDir, $exception);
     exit(2);
@@ -234,7 +308,275 @@ try {
     exit(2);
 }
 
-echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
+echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
+
+/** @return list<string> */
+function archiveTopLevelEntries(string $archiveDir): array
+{
+    $entries = [];
+
+    foreach (new DirectoryIterator($archiveDir) as $entry) {
+        if ($entry->isDot() || $entry->getFilename() === 'orbit-session-archive.json') {
+            continue;
+        }
+
+        if ($entry->isLink() || ! $entry->isFile() && ! $entry->isDir()) {
+            throw new RuntimeException("Unsafe constructed archive entry: {$entry->getPathname()}");
+        }
+
+        $entries[] = $entry->getFilename();
+    }
+
+    sort($entries, SORT_STRING);
+
+    return $entries;
+}
+
+/**
+ * @param list<string> $entries
+ * @return array<string, string>
+ */
+function archiveEntryDigests(string $archiveDir, array $entries): array
+{
+    $digests = [];
+
+    foreach ($entries as $entry) {
+        $digests[$entry] = archiveEntryDigest("{$archiveDir}/{$entry}");
+    }
+
+    ksort($digests, SORT_STRING);
+
+    return $digests;
+}
+
+function archiveEntryDigest(string $path): string
+{
+    $stat = @lstat($path);
+
+    if ($stat === false) {
+        throw new RuntimeException("Unable to digest missing archive entry: {$path}");
+    }
+
+    if (orbitSessionArchiveStatIsRegular($stat)) {
+        $digest = hash_file('sha256', $path);
+
+        if ($digest === false) {
+            throw new RuntimeException("Unable to digest archive file: {$path}");
+        }
+
+        return $digest;
+    }
+
+    if (! orbitSessionArchiveStatIsDirectory($stat)) {
+        throw new RuntimeException("Unable to digest non-regular archive entry: {$path}");
+    }
+
+    $lines = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::LEAVES_ONLY,
+    );
+
+    foreach ($iterator as $entry) {
+        if ($entry->isLink() || ! $entry->isFile()) {
+            throw new RuntimeException("Unable to digest unsafe archive entry: {$entry->getPathname()}");
+        }
+
+        $relative = ltrim(substr($entry->getPathname(), strlen($path)), '/');
+        $digest = hash_file('sha256', $entry->getPathname());
+
+        if ($digest === false) {
+            throw new RuntimeException("Unable to digest archive file: {$entry->getPathname()}");
+        }
+
+        $lines[] = $relative."\0".$digest;
+    }
+
+    sort($lines, SORT_STRING);
+
+    return hash('sha256', implode("\n", $lines));
+}
+
+function archiveGitValue(string $cwd, array $arguments): ?string
+{
+    [$exitCode, $stdout] = runCommand(['git', '-C', $cwd, ...$arguments]);
+    $value = trim($stdout);
+
+    return $exitCode === 0 && $value !== '' ? $value : null;
+}
+
+function assertCompactArchiveIdentity(string $cwd, string $sourceOrbitDir, string $loop): void
+{
+    $gitRoot = archiveGitValue($cwd, ['rev-parse', '--show-toplevel']);
+    $canonicalCwd = realpath($cwd) ?: $cwd;
+
+    if ($gitRoot === null || (realpath($gitRoot) ?: $gitRoot) !== $canonicalCwd) {
+        throw new RuntimeException('Compact archive must run from the exact feature worktree root.');
+    }
+
+    $expectedOrbitDir = realpath($canonicalCwd.'/.orbit') ?: $canonicalCwd.'/.orbit';
+    $canonicalSource = realpath($sourceOrbitDir) ?: $sourceOrbitDir;
+
+    if ($canonicalSource !== $expectedOrbitDir) {
+        throw new RuntimeException('Compact archive source must be the accepted feature worktree .orbit directory.');
+    }
+
+    if (! orbitLoopIsCompact($loop)) {
+        throw new RuntimeException(
+            'Compact archive requires an accepted compact feature loop; use --full for historical state.',
+        );
+    }
+
+    $branch = archiveGitValue($cwd, ['branch', '--show-current']);
+
+    if ($branch === null || in_array($branch, ['main', 'master'], true)) {
+        throw new RuntimeException('Compact archive must run from the still-open accepted feature branch, not main.');
+    }
+
+    if (archiveLoopTopLabel($loop, 'Branch') !== $branch) {
+        throw new RuntimeException('Compact archive loop branch does not equal current branch.');
+    }
+
+    $loopWorktree = archiveLoopTopLabel($loop, 'Worktree');
+
+    if ($loopWorktree === null || (realpath($loopWorktree) ?: $loopWorktree) !== $canonicalCwd) {
+        throw new RuntimeException('Compact archive loop worktree does not equal the current feature worktree.');
+    }
+
+    $candidate = archiveGitValue($cwd, ['rev-parse', 'HEAD']);
+
+    if ($candidate === null) {
+        throw new RuntimeException('Compact archive cannot resolve candidate HEAD.');
+    }
+
+    $reviewProblem = orbitLoopReviewedIdentityProblem($loop, $candidate);
+
+    if ($reviewProblem !== null) {
+        throw new RuntimeException('Compact archive '.$reviewProblem.'.');
+    }
+
+    if (orbitLoopLabel($loop, 'Proof', 'Accepted feature tip') !== $candidate) {
+        throw new RuntimeException('Compact archive accepted feature tip does not equal candidate HEAD.');
+    }
+
+    if (orbitLoopStatusHead(orbitLoopLabel($loop, 'Proof', 'Acceptance')) !== 'accepted') {
+        throw new RuntimeException('Compact archive requires accepted feature state.');
+    }
+
+    $acceptedMain = orbitLoopLabel($loop, 'Proof', 'Accepted main tip');
+
+    if ($acceptedMain === null || preg_match('/^[0-9a-f]{40}$/', $acceptedMain) !== 1) {
+        throw new RuntimeException('Compact archive requires an exact accepted main tip.');
+    }
+
+    if (archiveGitExitCode($cwd, ['merge-base', '--is-ancestor', $acceptedMain, $candidate]) !== 0) {
+        throw new RuntimeException('Compact archive accepted main tip is not an ancestor of candidate HEAD.');
+    }
+
+    if (archiveGitExitCode($cwd, ['merge-base', '--is-ancestor', $candidate, 'main']) !== 0) {
+        throw new RuntimeException('Compact archive candidate is not landed on main.');
+    }
+
+    [$statusExit, $status] = runCommand(['git', '-C', $cwd, 'status', '--porcelain', '--untracked-files=all']);
+
+    if ($statusExit !== 0 || trim($status) !== '') {
+        throw new RuntimeException('Compact archive feature worktree must be clean.');
+    }
+}
+
+function archiveLoopTopLabel(string $loop, string $label): ?string
+{
+    if (preg_match('/^-\s+'.preg_quote($label, '/').':\s*(.+)$/mi', $loop, $match) !== 1) {
+        return null;
+    }
+
+    return trim($match[1]);
+}
+
+/** @param list<string> $arguments */
+function archiveGitExitCode(string $cwd, array $arguments): int
+{
+    [$exitCode] = runCommand(['git', '-C', $cwd, ...$arguments]);
+
+    return $exitCode;
+}
+
+function assertRefreshPreservesArchive(string $archiveDir, string $temporaryArchiveDir): void
+{
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($archiveDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+
+    foreach ($iterator as $entry) {
+        $relative = ltrim(substr($entry->getPathname(), strlen($archiveDir)), '/');
+
+        if ($relative === 'orbit-session-archive.json') {
+            continue;
+        }
+
+        $replacement = "{$temporaryArchiveDir}/{$relative}";
+
+        if ($entry->isLink()) {
+            throw new RuntimeException("Refusing refresh of archive containing a symlink: {$relative}");
+        }
+
+        if ($entry->isDir()) {
+            if (! file_exists($replacement) && ! is_link($replacement)) {
+                if ($relative === 'agent-sessions' || str_starts_with($relative, 'agent-sessions/')) {
+                    throw new RuntimeException("Refresh would remove archived entry: {$relative}");
+                }
+
+                copyDirectory($entry->getPathname(), $replacement);
+
+                continue;
+            }
+
+            if (! is_dir($replacement) || is_link($replacement)) {
+                throw new RuntimeException("Refresh would replace archived directory: {$relative}");
+            }
+
+            continue;
+        }
+
+        if (! $entry->isFile()) {
+            throw new RuntimeException("Refresh contains unsafe archived entry: {$relative}");
+        }
+
+        if (! file_exists($replacement) && ! is_link($replacement)) {
+            if ($relative === 'feedback.jsonl' || str_starts_with($relative, 'agent-sessions/')) {
+                throw new RuntimeException("Refresh would remove archived entry: {$relative}");
+            }
+
+            orbitSessionArchiveCopyFile($entry->getPathname(), $replacement);
+
+            continue;
+        }
+
+        if (! is_file($replacement) || is_link($replacement)) {
+            throw new RuntimeException("Refresh would replace archived file: {$relative}");
+        }
+
+        $old = (string) file_get_contents($entry->getPathname());
+        $new = (string) file_get_contents($replacement);
+        $isAppendOnly =
+            $relative === 'feedback.jsonl'
+            || str_contains('/'.$relative, '/agent-sessions/') && str_ends_with($relative, '.jsonl');
+
+        if ($isAppendOnly && ! str_starts_with($new, $old)) {
+            throw new RuntimeException("Refresh would reduce append-only archived entry: {$relative}");
+        }
+
+        if (
+            $relative !== 'loop.md'
+            && ! $isAppendOnly
+            && basename($relative) !== 'manifest.json'
+            && ! hash_equals($old, $new)
+        ) {
+            throw new RuntimeException("Refresh would replace immutable archived entry: {$relative}");
+        }
+    }
+}
 
 /**
  * @param array<string, mixed> $options
@@ -248,10 +590,11 @@ function resolveArchiveDirectory(array $options, string $cwd, string $sourceOrbi
         $archiveDir = normalizedAbsolutePath($requestedArchiveDir, $cwd);
         $basename = basename($archiveDir);
 
-        if (preg_match('/' . ARCHIVE_BASENAME_PATTERN . '/', $basename) !== 1) {
+        if (preg_match('/'.ARCHIVE_BASENAME_PATTERN.'/', $basename) !== 1) {
             throw new RuntimeException(
-                'Archive directory basename must match ' . ARCHIVE_BASENAME_PATTERN
-                . " (YYYY-MM-DD-HHMMSS-<feature-slug> in local time): {$basename}",
+                'Archive directory basename must match '
+                .ARCHIVE_BASENAME_PATTERN
+                ." (YYYY-MM-DD-HHMMSS-<feature-slug> in local time): {$basename}",
             );
         }
 
@@ -375,7 +718,7 @@ function localArchiveTimestamp(): string
 
 function newestArchiveForSlug(string $archiveRoot, string $slug): ?string
 {
-    if (!is_dir($archiveRoot)) {
+    if (! is_dir($archiveRoot)) {
         return null;
     }
 
@@ -441,7 +784,7 @@ function upsertEvidenceLinkBullet(string $content, string $bullet): string
     }
 
     if ($sectionStart === null) {
-        return rtrim($content, "\n") . "\n\n## Evidence Links\n\n{$bullet}\n";
+        return rtrim($content, "\n")."\n\n## Evidence Links\n\n{$bullet}\n";
     }
 
     $lineCount = count($lines);
@@ -465,7 +808,7 @@ function upsertEvidenceLinkBullet(string $content, string $bullet): string
 
     $insertAt = $sectionEnd;
 
-    while ($insertAt > $sectionStart + 1 && trim($lines[$insertAt - 1]) === '') {
+    while ($insertAt > ($sectionStart + 1) && trim($lines[$insertAt - 1]) === '') {
         $insertAt--;
     }
 
@@ -492,14 +835,14 @@ function defaultArchiveRoot(string $cwd, string $sourceOrbitDir): string
 
 function defaultArchiveSlug(string $cwd): string
 {
-    $branch = trim((string) shell_exec('git -C ' . escapeshellarg($cwd) . ' branch --show-current 2>/dev/null'));
+    $branch = trim((string) shell_exec('git -C '.escapeshellarg($cwd).' branch --show-current 2>/dev/null'));
 
     return $branch !== '' ? $branch : basename($cwd);
 }
 
 function directoryHasEntries(string $directory): bool
 {
-    if (!is_dir($directory)) {
+    if (! is_dir($directory)) {
         return false;
     }
 
@@ -518,15 +861,77 @@ function uniqueSiblingPath(string $archiveDir, string $kind): string
 }
 
 /**
+ * @param array<string, mixed> $options
+ */
+function requestedArchiveMode(array $options, string $lifecycleMode, string $archiveDir): string
+{
+    if (array_key_exists('full', $options)) {
+        return 'full';
+    }
+
+    if ($lifecycleMode !== 'refreshed') {
+        return 'compact';
+    }
+
+    $receiptPath = "{$archiveDir}/orbit-session-archive.json";
+
+    if (is_file($receiptPath) && ! is_link($receiptPath)) {
+        $receipt = json_decode((string) file_get_contents($receiptPath), true);
+
+        if (is_array($receipt) && ($receipt['archive_mode'] ?? null) === 'full') {
+            return 'full';
+        }
+    }
+
+    return is_dir("{$archiveDir}/agent-sessions") ? 'full' : 'compact';
+}
+
+/**
+ * @return list<string>
+ */
+function copyCompactOrbitEntries(string $sourceOrbitDir, string $archiveDir): array
+{
+    orbitSessionArchiveEnsureDirectory($archiveDir);
+    $sourceIdentity = archiveDirectoryIdentity($sourceOrbitDir);
+    $copiedEntries = [];
+
+    foreach (['loop.md', 'feedback.jsonl'] as $name) {
+        assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+        $source = "{$sourceOrbitDir}/{$name}";
+
+        if (is_link($source)) {
+            warnSkippedSourceSymlink($source);
+
+            continue;
+        }
+
+        if (! is_file($source)) {
+            continue;
+        }
+
+        orbitSessionArchiveCopyFile($source, "{$archiveDir}/{$name}");
+        $copiedEntries[] = $name;
+    }
+
+    sort($copiedEntries, SORT_STRING);
+    assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+
+    return $copiedEntries;
+}
+
+/**
  * @return list<string>
  */
 function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): array
 {
     orbitSessionArchiveEnsureDirectory($archiveDir);
+    $sourceIdentity = archiveDirectoryIdentity($sourceOrbitDir);
     $copiedEntries = [];
     $iterator = new DirectoryIterator($sourceOrbitDir);
 
     foreach ($iterator as $entry) {
+        assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
+
         if ($entry->isDot()) {
             continue;
         }
@@ -558,16 +963,20 @@ function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): arr
     }
 
     sort($copiedEntries, SORT_STRING);
+    assertArchiveDirectoryIdentity($sourceOrbitDir, $sourceIdentity);
 
     return $copiedEntries;
 }
 
 function copyDirectory(string $source, string $target, ?int $agentSessionsDepth = null): void
 {
+    $sourceIdentity = archiveDirectoryIdentity($source);
     orbitSessionArchiveEnsureDirectory($target);
     $iterator = new DirectoryIterator($source);
 
     foreach ($iterator as $entry) {
+        assertArchiveDirectoryIdentity($source, $sourceIdentity);
+
         if ($entry->isDot()) {
             continue;
         }
@@ -604,6 +1013,28 @@ function copyDirectory(string $source, string $target, ?int $agentSessionsDepth 
             orbitSessionArchiveCopyFile($entry->getPathname(), $destination);
         }
     }
+
+    assertArchiveDirectoryIdentity($source, $sourceIdentity);
+}
+
+/** @return array{dev: int, ino: int, mode: int} */
+function archiveDirectoryIdentity(string $path): array
+{
+    $stat = @lstat($path);
+
+    if ($stat === false || ! orbitSessionArchiveStatIsDirectory($stat)) {
+        throw new RuntimeException("Archive source directory must be real, not a symlink: {$path}");
+    }
+
+    return ['dev' => (int) $stat['dev'], 'ino' => (int) $stat['ino'], 'mode' => (int) $stat['mode']];
+}
+
+/** @param array{dev: int, ino: int, mode: int} $expected */
+function assertArchiveDirectoryIdentity(string $path, array $expected): void
+{
+    if (archiveDirectoryIdentity($path) !== $expected) {
+        throw new RuntimeException("Archive source directory changed during copy: {$path}");
+    }
 }
 
 function warnSkippedSourceSymlink(string $path): void
@@ -638,7 +1069,7 @@ function shouldDiscoverLoopProcessIds(array $options): bool
  */
 function loopSoloProcessIds(string $loopPath): array
 {
-    if (!is_file($loopPath)) {
+    if (! is_file($loopPath)) {
         return [];
     }
 
@@ -656,7 +1087,7 @@ function loopSoloProcessIds(string $loopPath): array
         foreach ($matches[1] ?? [] as $match) {
             $id = (int) $match;
 
-            if ($id > 0 && !in_array($id, $ids, true)) {
+            if ($id > 0 && ! in_array($id, $ids, true)) {
                 $ids[] = $id;
             }
         }
@@ -677,7 +1108,7 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
 {
     $command = [
         PHP_BINARY,
-        __DIR__ . '/orbit-agent-session-archive',
+        __DIR__.'/orbit-agent-session-archive',
         "--archive-dir={$archiveDir}/agent-sessions",
         "--cwd={$cwd}",
     ];
@@ -698,8 +1129,8 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
         }
     }
 
-    if (!isset($options['solo-process-id']) && $loopProcessIds !== []) {
-        $command[] = '--solo-process-id=' . implode(',', $loopProcessIds);
+    if (! isset($options['solo-process-id']) && $loopProcessIds !== []) {
+        $command[] = '--solo-process-id='.implode(',', $loopProcessIds);
     }
 
     foreach (['only-ok', 'discover-by-cwd'] as $flag) {
@@ -711,7 +1142,7 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
     [$exitCode, $stdout, $stderr] = runCommand($command);
 
     if ($stderr !== '') {
-        fwrite(STDERR, rtrim($stderr, "\n") . PHP_EOL);
+        fwrite(STDERR, rtrim($stderr, "\n").PHP_EOL);
     }
 
     if ($exitCode !== 0) {
@@ -755,10 +1186,10 @@ function normalizeFallbackManifestArchiveDirectory(string $temporaryArchiveDir, 
 function runCommand(array $command): array
 {
     $stderrPath = tempnam(sys_get_temp_dir(), 'orbit-session-archive-stderr-');
-    $redirect = $stderrPath === false ? '2>&1' : '2>' . escapeshellarg($stderrPath);
+    $redirect = $stderrPath === false ? '2>&1' : '2>'.escapeshellarg($stderrPath);
     $output = [];
     $exitCode = 0;
-    exec(implode(' ', array_map('escapeshellarg', $command)) . ' ' . $redirect, $output, $exitCode);
+    exec(implode(' ', array_map('escapeshellarg', $command)).' '.$redirect, $output, $exitCode);
     $stderr = '';
 
     if ($stderrPath !== false) {
@@ -784,7 +1215,7 @@ function writeJsonFile(string $path, array $payload): void
 {
     orbitSessionArchiveWriteFile(
         $path,
-        json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL,
+        json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
     );
 }
 
@@ -793,7 +1224,7 @@ function refreshSessionIndex(string $sessionsDir): void
     $process = proc_open(
         [
             PHP_BINARY,
-            __DIR__ . '/orbit-session-index',
+            __DIR__.'/orbit-session-index',
             "--sessions-dir={$sessionsDir}",
         ],
         [
@@ -1008,8 +1439,13 @@ function reportActiveLoopWriteFailure(
         fwrite(STDERR, "Previous archive retained at: {$backupDir}\n");
         fwrite(
             STDERR,
-            'Recovery: remove '.escapeshellarg($archiveDir).' and run mv '
-            .escapeshellarg($backupDir).' '.escapeshellarg($archiveDir)."\n",
+            'Recovery: remove '
+            .escapeshellarg($archiveDir)
+            .' and run mv '
+            .escapeshellarg($backupDir)
+            .' '
+            .escapeshellarg($archiveDir)
+            ."\n",
         );
 
         return;
@@ -1034,7 +1470,9 @@ function reportIndexRefreshFailure(
     fwrite(
         STDERR,
         'Index recovery: keep the coherent new archive and active loop; repair the index with bin/orbit-session-index '
-        .'--sessions-dir='.escapeshellarg($archiveRoot)." --write.\n",
+        .'--sessions-dir='
+        .escapeshellarg($archiveRoot)
+        ." --write.\n",
     );
 
     if (file_exists($backupDir) || is_link($backupDir)) {

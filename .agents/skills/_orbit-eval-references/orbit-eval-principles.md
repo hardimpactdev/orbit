@@ -8,7 +8,10 @@ Use these rules across Orbit eval construction, execution, and review.
 - Treat code, tests, live-node incidents, failed commands, and prior sessions as evidence for failure modes, not as product authority.
 - Keep eval artifacts in Solo scratchpads while iterating. Graduate validated fixtures to the repo only with user approval.
 - Do not wire release gates from eval skills. The review skill may recommend a gate; Orbit's release and quality-gate process owns implementation.
-- Do not run `composer test:e2e*` unless the user explicitly invokes that Composer E2E command.
+- Never run, invoke, dispatch, delegate, schedule, or trigger a
+  `composer test:e2e*` command through an agent, eval trial, hook, release flow,
+  or default script. Only a human may manually invoke the Composer command from
+  a shell; agents may inspect the resulting artifact.
 
 ## Suite Types
 

@@ -44,11 +44,12 @@ Do not execute from a vague idea. The minimum executable unit is an `eval-case` 
 The first recommended family is Orbit repo-agent process compliance. It measures whether an agent working on Orbit follows the workflow that protects the codebase:
 
 - reads authority docs before changing behavior
-- uses Solo scratchpads for feature roadmaps and eval artifacts
+- uses Solo scratchpads only when feature complexity or durable eval artifacts warrant them
 - prepares an isolated worktree before repository edits
 - keeps docs, tests, code, and verification aligned
-- avoids E2E lanes unless the user explicitly invokes them from a shell
-- captures fresh review and final distillation before merge
+- leaves every E2E invocation to a human at a shell and limits agents to
+  inspecting the resulting artifacts
+- records compact Proof/Status, one general review, acceptance, and exact tips before LAND
 
 Use `capability` while exploring whether agents can follow the process from a realistic request. Convert narrow, high-confidence cases into `regression` only after they repeatedly catch real backsliding or protect accepted behavior.
 
@@ -94,7 +95,11 @@ Promote slowly:
 When starting a fresh LLM agent on Orbit eval work, include:
 
 ```text
-Read `.agents/skills/orbit-evals/SKILL.md` first, then load only the referenced eval skill that matches the stage. Store eval artifacts in Solo scratchpads unless the user explicitly asks for durable repo fixtures. Do not run `composer test:e2e*` unless the user explicitly invokes that Composer command from a shell. Keep answer keys and reference solutions out of the agent-under-test context.
+Read `.agents/skills/orbit-evals/SKILL.md` first, then load only the referenced eval skill that matches the stage.
+Store eval artifacts in Solo scratchpads unless the user explicitly asks for durable repo fixtures.
+Never run, invoke, dispatch, delegate, schedule, or trigger a `composer test:e2e*` command, including through an eval trial or agent under test.
+Only a human may manually invoke the Composer command from a shell; agents may inspect the resulting artifact.
+Keep answer keys and reference solutions out of the agent-under-test context.
 ```
 
 Add the exact scratchpad URLs for the current suite, run, and review if they already exist.

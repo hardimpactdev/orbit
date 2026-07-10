@@ -4,6 +4,132 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('indexes compact loop receipts alongside historical archives', function (): void {
+    $workspace = session_index_workspace('compact-mixed');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        session_index_archive(
+            $sessionsDir,
+            '2026-07-10-180000-compact-loop',
+            session_index_compact_loop(),
+        );
+        $compactDir = "{$sessionsDir}/2026-07-10-180000-compact-loop";
+        file_put_contents(
+            "{$compactDir}/orbit-session-archive.json",
+            json_encode([
+                'schema_version' => 2,
+                'archive_mode' => 'compact',
+                'copied_entries' => ['feedback.jsonl', 'loop.md'],
+            ], JSON_THROW_ON_ERROR)
+                .PHP_EOL,
+        );
+        file_put_contents("{$compactDir}/feedback.jsonl", implode("\n", [
+            json_encode([
+                'schema_version' => 1,
+                'type' => 'feedback.recorded',
+                'id' => 'feedback-1',
+                'recorded_at' => '2026-07-10T18:00:00Z',
+                'raw_text' => 'Progress froze.',
+                'session_ref' => 'codex://threads/example#feedback',
+                'candidate_commit' => str_repeat('a', 40),
+                'surface' => 'cli.progress',
+                'context' => [],
+                'evidence' => [],
+            ], JSON_THROW_ON_ERROR),
+            json_encode([
+                'schema_version' => 1,
+                'type' => 'feedback.promoted',
+                'id' => 'promotion-1',
+                'recorded_at' => '2026-07-10T18:01:00Z',
+                'feedback_id' => 'feedback-1',
+                'scope' => 'cli.progress',
+                'expectation' => 'Keep progress monotonic.',
+                'protection' => [
+                    'kind' => 'test',
+                    'reference' => 'bin/quality-check-progress-frame-check',
+                    'rejected_example' => 'feedback-1',
+                    'accepted_example' => 'monotonic-progress',
+                ],
+            ], JSON_THROW_ON_ERROR),
+            '',
+        ]));
+        session_index_archive(
+            $sessionsDir,
+            '2026-07-09-120000-historical-loop',
+            session_index_loop(outcome: 'complete'),
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+        $compact = session_index_record($index, 'compact-loop');
+        $historical = session_index_record($index, 'historical-loop');
+
+        expect($index)
+            ->toHaveKey('schema_version', 2)
+            ->and($compact)
+            ->toMatchArray([
+                'schema' => 'compact-v1',
+                'state' => 'accepted',
+                'review_status' => 'passed',
+                'acceptance_status' => 'accepted',
+                'acceptance_venue' => 'automated',
+                'feedback_count' => 2,
+                'archive_mode' => 'compact',
+            ])
+            ->and($compact['feedback'])
+            ->toMatchArray([
+                'status' => 'valid',
+                'raw_count' => 1,
+                'promoted_count' => 1,
+                'waived_count' => 0,
+                'protection_failures' => 0,
+            ])
+            ->and($historical)
+            ->toHaveKey('schema', 'legacy')
+            ->toHaveKey('archive_mode', 'legacy')
+            ->toHaveKey('loop_outcome', 'complete');
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('reports malformed compact feedback as invalid instead of silently ignoring it', function (): void {
+    $workspace = session_index_workspace('invalid-feedback');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        session_index_archive(
+            $sessionsDir,
+            '2026-07-10-181000-invalid-feedback',
+            session_index_compact_loop(),
+        );
+        file_put_contents(
+            "{$sessionsDir}/2026-07-10-181000-invalid-feedback/feedback.jsonl",
+            "{not-json}\n",
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+        $record = session_index_record(session_index_json($sessionsDir), 'invalid-feedback');
+
+        expect($write->getExitCode())
+            ->toBe(0, $write->getErrorOutput())
+            ->and($record['feedback'])
+            ->toMatchArray([
+                'status' => 'invalid',
+                'event_count' => null,
+                'raw_count' => null,
+            ])
+            ->and($record['feedback_count'])
+            ->toBeNull();
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
 it('writes and checks deterministic facets for heterogeneous session archives', function (): void {
     $workspace = session_index_workspace('facets');
 
@@ -110,7 +236,7 @@ it('writes and checks deterministic facets for heterogeneous session archives', 
         $index = session_index_json($sessionsDir);
 
         expect($index)
-            ->toHaveKey('schema_version', 1)
+            ->toHaveKey('schema_version', 2)
             ->toHaveKey('record_count', 4);
 
         $legacy = session_index_record($index, 'legacy-slice');
@@ -400,7 +526,7 @@ it('classifies token usage without inventing missing or invalid values', functio
         $invalidPrecedence = session_index_record($index, 'invalid-precedence-token-usage');
 
         expect($index)
-            ->toHaveKey('schema_version', 1)
+            ->toHaveKey('schema_version', 2)
             ->and($unavailable)
             ->not
             ->toHaveKey('token_usage_status')
@@ -495,13 +621,13 @@ it('serializes empty and populated candidate classifications as JSON objects', f
             $records[$record->slug] = $record;
         }
 
-        expect($records['empty-classifications']->candidate_signals->classifications)
+        expect($records['empty-classifications']->legacy->candidate_signals->classifications)
             ->toBeInstanceOf(stdClass::class)
-            ->and((array) $records['empty-classifications']->candidate_signals->classifications)
+            ->and((array) $records['empty-classifications']->legacy->candidate_signals->classifications)
             ->toBe([])
-            ->and($records['populated-classifications']->candidate_signals->classifications)
+            ->and($records['populated-classifications']->legacy->candidate_signals->classifications)
             ->toBeInstanceOf(stdClass::class)
-            ->and((array) $records['populated-classifications']->candidate_signals->classifications)
+            ->and((array) $records['populated-classifications']->legacy->candidate_signals->classifications)
             ->toBe([
                 'promote' => 1,
                 'reject' => 1,
@@ -1286,6 +1412,7 @@ function run_session_archive_for_index(string $sourceOrbitDir, string $archiveRo
 {
     $process = new Process([
         session_index_repo_path('bin/orbit-session-archive'),
+        '--full',
         "--source-orbit-dir={$sourceOrbitDir}",
         "--archive-root={$archiveRoot}",
         '--cwd='.dirname($sourceOrbitDir),
@@ -1419,6 +1546,42 @@ function session_index_loop(
         MARKDOWN;
 }
 
+function session_index_compact_loop(): string
+{
+    return <<<'MARKDOWN'
+        # Orbit Feature Loop
+
+        ## Goal
+
+        Compact history.
+
+        ## Scope
+
+        - Owned: loop tools
+
+        ## Proof
+
+        - Verification:
+          - focused: passed - test
+          - broader: passed - quality
+          - runtime: not applicable - tooling
+        - Review: passed - reviewer 1 - non-observable
+        - Acceptance venue: automated
+        - Acceptance: accepted - automated
+        - Accepted feature tip: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        - Accepted main tip: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+        ## Status
+
+        - State: accepted
+        - Blocker: none
+
+        ## Feedback
+
+        - Events: `.orbit/feedback.jsonl`
+        MARKDOWN;
+}
+
 function session_index_json(string $sessionsDir): array
 {
     return json_decode((string) file_get_contents("{$sessionsDir}/index.json"), true, flags: JSON_THROW_ON_ERROR);
@@ -1428,7 +1591,9 @@ function session_index_record(array $index, string $slug): array
 {
     foreach ($index['records'] as $record) {
         if ($record['slug'] === $slug) {
-            return $record;
+            return is_array($record['legacy'] ?? null)
+                ? array_merge($record, $record['legacy'])
+                : $record;
         }
     }
 

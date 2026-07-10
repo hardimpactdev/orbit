@@ -30,7 +30,11 @@ Load only what the run needs:
    - For state-modifying evals, isolate by worktree, sandbox, database, temp path, retained topology, or explicit reset.
    - For comparative fresh-agent evals, prepare separate fresh agent processes or fresh threads per trial and record which artifacts each condition can see.
    - For LLM-facing affordance evals where cited docs or evidence matter, prefer the file-capture pattern in `../_orbit-eval-references/llm-affordance-file-capture.md` when practical: one temp outcome JSON per trial, transcript refs separate from outcome refs, and read-only worktrees unless the case measures edits.
-   - Do not run `composer test:e2e*` unless the user explicitly invokes the relevant Composer E2E command.
+   - Never run, invoke, dispatch, delegate, schedule, or trigger a
+     `composer test:e2e*` command. Do not put one in an eval trial, worker
+     prompt, hook, release flow, or default script. Only a human may manually
+     invoke the Composer command from a shell; agents may inspect the resulting
+     artifact.
 
 3. Execute one trial at a time.
    - Record `trial_id`, `case_id`, `attempt_index`, condition, pair id when applicable, working directory, model, agent harness, eval harness, command or prompt, user simulation when applicable, start state, and environment snapshot.

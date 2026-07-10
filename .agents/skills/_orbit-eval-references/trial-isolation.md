@@ -72,5 +72,8 @@ Only agent failures should count as agent capability failures. Grader, harness, 
 ## Orbit Boundaries
 
 - Use Orbit worktree setup and verification conventions.
-- Do not run E2E lanes unless explicitly requested by the user.
+- Never run, invoke, dispatch, delegate, schedule, or trigger a
+  `composer test:e2e*` command, including through the agent under test. Only a
+  human may manually invoke the Composer command from a shell; agents may
+  inspect the resulting artifact.
 - Use retained topology proof when the evaluated behavior touches integrated topology, VM runtime, node behavior, or operator-visible CLI behavior that cannot be judged locally.

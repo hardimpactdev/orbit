@@ -4,12 +4,24 @@ declare(strict_types=1);
 
 function orbitSessionArchiveEnsureDirectory(string $directory): void
 {
-    if (is_dir($directory)) {
+    $stat = @lstat($directory);
+
+    if ($stat !== false) {
+        if (! orbitSessionArchiveStatIsDirectory($stat)) {
+            throw new RuntimeException("Archive directory must be a real directory, not a symlink: {$directory}");
+        }
+
         return;
     }
 
-    if (! @mkdir($directory, 0o775, true) && ! is_dir($directory)) {
+    if (! @mkdir($directory, 0o775, true)) {
         throw new RuntimeException("Unable to create directory: {$directory}");
+    }
+
+    $created = @lstat($directory);
+
+    if ($created === false || ! orbitSessionArchiveStatIsDirectory($created)) {
+        throw new RuntimeException("Archive directory was replaced during creation: {$directory}");
     }
 }
 
@@ -42,13 +54,113 @@ function orbitSessionArchiveWriteFileAtomically(string $path, string $contents):
     }
 }
 
-function orbitSessionArchiveCopyFile(string $source, string $target): void
+function orbitSessionArchiveCopyFile(string $source, string $target, ?callable $afterSourceInspection = null): void
 {
-    orbitSessionArchiveEnsureDirectory(dirname($target));
+    $initial = @lstat($source);
 
-    if (! @copy($source, $target)) {
-        throw new RuntimeException("Unable to copy file: {$source} -> {$target}");
+    if ($initial === false || ! orbitSessionArchiveStatIsRegular($initial)) {
+        throw new RuntimeException("Archive source must be a regular file, not a symlink: {$source}");
     }
+
+    if ($afterSourceInspection !== null) {
+        $afterSourceInspection();
+    }
+
+    $sourceHandle = @fopen($source, 'rb');
+
+    if ($sourceHandle === false) {
+        throw new RuntimeException("Archive source changed before copy: {$source}");
+    }
+
+    orbitSessionArchiveEnsureDirectory(dirname($target));
+    $temporaryTarget = dirname($target).'/.'.basename($target).'.copy-'.bin2hex(random_bytes(8));
+    $targetHandle = null;
+
+    try {
+        $opened = fstat($sourceHandle);
+        $current = @lstat($source);
+
+        if (
+            $opened === false
+            || $current === false
+            || ! orbitSessionArchiveSameFileSnapshot($initial, $opened)
+            || ! orbitSessionArchiveSameFileSnapshot($initial, $current)
+        ) {
+            throw new RuntimeException("Archive source changed before copy: {$source}");
+        }
+
+        $targetHandle = @fopen($temporaryTarget, 'x+b');
+
+        if ($targetHandle === false) {
+            throw new RuntimeException("Unable to create archive copy target: {$temporaryTarget}");
+        }
+
+        $copied = stream_copy_to_stream($sourceHandle, $targetHandle);
+
+        if ($copied === false || $copied !== (int) $initial['size'] || ! fflush($targetHandle)) {
+            throw new RuntimeException("Unable to copy file: {$source} -> {$target}");
+        }
+
+        if (function_exists('fsync') && ! fsync($targetHandle)) {
+            throw new RuntimeException("Unable to sync copied archive file: {$target}");
+        }
+
+        $afterOpened = fstat($sourceHandle);
+        $afterCurrent = @lstat($source);
+
+        if (
+            $afterOpened === false
+            || $afterCurrent === false
+            || ! orbitSessionArchiveSameFileSnapshot($initial, $afterOpened)
+            || ! orbitSessionArchiveSameFileSnapshot($initial, $afterCurrent)
+        ) {
+            throw new RuntimeException("Archive source changed during copy: {$source}");
+        }
+
+        fclose($targetHandle);
+        $targetHandle = null;
+
+        if (! @rename($temporaryTarget, $target)) {
+            throw new RuntimeException("Unable to activate copied archive file: {$target}");
+        }
+    } finally {
+        fclose($sourceHandle);
+
+        if (is_resource($targetHandle)) {
+            fclose($targetHandle);
+        }
+
+        if (file_exists($temporaryTarget) || is_link($temporaryTarget)) {
+            @unlink($temporaryTarget);
+        }
+    }
+}
+
+/** @param array<int|string, mixed> $stat */
+function orbitSessionArchiveStatIsDirectory(array $stat): bool
+{
+    return ((int) $stat['mode'] & 0o170000) === 0o040000;
+}
+
+/** @param array<int|string, mixed> $stat */
+function orbitSessionArchiveStatIsRegular(array $stat): bool
+{
+    return ((int) $stat['mode'] & 0o170000) === 0o100000;
+}
+
+/**
+ * @param array<int|string, mixed> $left
+ * @param array<int|string, mixed> $right
+ */
+function orbitSessionArchiveSameFileSnapshot(array $left, array $right): bool
+{
+    return (
+        (int) $left['dev'] === (int) $right['dev']
+        && (int) $left['ino'] === (int) $right['ino']
+        && (int) $left['size'] === (int) $right['size']
+        && (int) $left['mtime'] === (int) $right['mtime']
+        && ((int) $left['mode'] & 0o170000) === ((int) $right['mode'] & 0o170000)
+    );
 }
 
 function orbitSessionArchiveRemovePath(string $path): void

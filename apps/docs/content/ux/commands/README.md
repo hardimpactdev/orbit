@@ -35,6 +35,28 @@ These rules apply to all renderer and input-mode docs in this tree.
 - `--json` always selects the JSON renderer and forces non-interactive input
   mode. No primitive prompts in JSON mode; missing required input fails with
   `validation_failed`.
+- Progress state is monotonic. An area may move from `Queued` to `Running` to a
+  terminal result, but it never returns from `Running` to `Queued` while later
+  work is pending. Long operations keep communicating liveness instead of
+  appearing frozen.
+
+## Feedback-Derived Protections
+
+Reusable command feedback becomes product authority here and must gain the
+strongest practical deterministic protection. Every promoted expectation keeps
+one rejected and one accepted example; semantic similarity alone never gates a
+command.
+
+The monotonic progress rule is the reference pair:
+
+- rejected: a captured area frame sequence contains `Running -> Queued`;
+- accepted: the same area remains `Running` until it reaches its terminal
+  result;
+- protection: `bin/quality-check-progress-frame-check`, exercised by the
+  verification-script test fixtures.
+
+Only run a feedback protection for the command surface it covers. Do not turn
+these outcome rules into implementation-style policing.
 
 ## Index
 

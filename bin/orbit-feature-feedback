@@ -1,0 +1,266 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__.'/orbit-feedback-events.php';
+require_once __DIR__.'/orbit-loop-contract.php';
+require_once __DIR__.'/orbit-secret-rules.php';
+
+try {
+    $command = $argv[1] ?? null;
+    $options = feedbackOptions(array_slice($argv, 2));
+    $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
+    $orbitDir = rtrim((string) ($options['orbit-dir'] ?? "{$cwd}/.orbit"), '/');
+    $stream = "{$orbitDir}/feedback.jsonl";
+
+    match ($command) {
+        'record' => feedbackRecord($stream, $cwd, $options),
+        'promote' => feedbackPromote($stream, $options),
+        'waive' => feedbackWaive($stream, $options),
+        'relevant' => feedbackRelevant($stream, $cwd, $options),
+        'show' => feedbackShow($stream, $options),
+        default => throw new RuntimeException(
+            'Usage: bin/orbit-feature-feedback record|promote|waive|relevant|show [options]',
+        ),
+    };
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}
+
+/**
+ * @param list<string> $arguments
+ * @return array<string, string|bool>
+ */
+function feedbackOptions(array $arguments): array
+{
+    $options = [];
+
+    foreach ($arguments as $argument) {
+        if (! str_starts_with($argument, '--')) {
+            throw new RuntimeException("Unexpected argument: {$argument}");
+        }
+
+        $parts = explode('=', substr($argument, 2), 2);
+        $options[$parts[0]] = $parts[1] ?? true;
+    }
+
+    return $options;
+}
+
+/** @param array<string, string|bool> $options */
+function feedbackRecord(string $stream, string $cwd, array $options): never
+{
+    $raw = rtrim((string) stream_get_contents(STDIN), "\r\n");
+    $sessionRef = feedbackRequiredOption($options, 'session-ref');
+    $surface = feedbackRequiredOption($options, 'surface');
+    $candidate = orbitLoopGitValue($cwd, ['rev-parse', 'HEAD']);
+
+    if ($raw === '') {
+        throw new RuntimeException('feedback record requires text on STDIN');
+    }
+
+    if ($candidate === null || preg_match('/^[0-9a-f]{40}$/', $candidate) !== 1) {
+        throw new RuntimeException('feedback record requires a Git candidate HEAD');
+    }
+
+    $redacted = orbitRedactSecrets($raw);
+    $command = isset($options['command']) ? orbitRedactSecrets((string) $options['command']) : null;
+    $event = [
+        'schema_version' => 1,
+        'type' => 'feedback.recorded',
+        'id' => feedbackEventId('feedback'),
+        'recorded_at' => gmdate('c'),
+        'raw_text' => $redacted['text'],
+        'session_ref' => $sessionRef,
+        'candidate_commit' => $candidate,
+        'surface' => $surface,
+        'context' => $command !== null ? ['command' => $command['text']] : [],
+        'evidence' => [],
+    ];
+
+    if ($redacted['redactions'] !== []) {
+        $event['raw_sha256'] = $redacted['raw_sha256'];
+        $event['redactions'] = $redacted['redactions'];
+    }
+
+    if ($command !== null && $command['redactions'] !== []) {
+        $event['context']['command_sha256'] = $command['raw_sha256'];
+        $event['context']['command_redactions'] = $command['redactions'];
+    }
+
+    orbitFeedbackAppend($stream, $event);
+    feedbackJson($event);
+}
+
+/** @param array<string, string|bool> $options */
+function feedbackPromote(string $stream, array $options): never
+{
+    if (! isset($options['rejected-example'], $options['accepted-example'])) {
+        throw new RuntimeException('feedback promotion requires rejected and accepted examples');
+    }
+
+    $scope = feedbackRequiredOption($options, 'scope');
+    $event = [
+        'schema_version' => 1,
+        'type' => 'feedback.promoted',
+        'id' => feedbackEventId('promotion'),
+        'recorded_at' => gmdate('c'),
+        'feedback_id' => feedbackRequiredOption($options, 'feedback-id'),
+        'scope' => $scope,
+        'expectation' => (string) ($options['expectation'] ?? "Protect {$scope}"),
+        'protection' => [
+            'kind' => feedbackRequiredOption($options, 'kind'),
+            'reference' => feedbackRequiredOption($options, 'reference'),
+            'rejected_example' => (string) $options['rejected-example'],
+            'accepted_example' => (string) $options['accepted-example'],
+        ],
+    ];
+    orbitFeedbackAppend($stream, $event);
+    feedbackJson($event);
+}
+
+/** @param array<string, string|bool> $options */
+function feedbackWaive(string $stream, array $options): never
+{
+    if (($options['source'] ?? null) !== 'user') {
+        throw new RuntimeException('feedback waiver requires source=user');
+    }
+
+    $sourceRef = feedbackRequiredOption($options, 'source-ref');
+
+    if (! orbitFeedbackSourceRefIsValid($sourceRef)) {
+        throw new RuntimeException('feedback waiver requires a safe Codex or Solo source reference');
+    }
+
+    $raw = rtrim((string) stream_get_contents(STDIN), "\r\n");
+
+    if ($raw === '') {
+        throw new RuntimeException('feedback waiver requires the verbatim user message on STDIN');
+    }
+
+    $redacted = orbitRedactSecrets($raw);
+
+    $event = [
+        'schema_version' => 1,
+        'type' => 'feedback.waived',
+        'id' => feedbackEventId('waiver'),
+        'recorded_at' => gmdate('c'),
+        'feedback_id' => feedbackRequiredOption($options, 'feedback-id'),
+        'source' => 'user',
+        'source_ref' => $sourceRef,
+        'reason' => $redacted['text'],
+        'user_message' => $redacted['text'],
+    ];
+
+    if ($redacted['redactions'] !== []) {
+        $event['raw_sha256'] = $redacted['raw_sha256'];
+        $event['redactions'] = $redacted['redactions'];
+    }
+
+    orbitFeedbackAppend($stream, $event);
+    feedbackJson($event);
+}
+
+/** @param array<string, string|bool> $options */
+function feedbackRelevant(string $stream, string $cwd, array $options): never
+{
+    $surface = feedbackRequiredOption($options, 'surface');
+    $paths = [$stream];
+    $sessionsDir = isset($options['sessions-dir'])
+        ? rtrim((string) $options['sessions-dir'], '/')
+        : feedbackDefaultSessionsDir($cwd);
+
+    if (is_dir($sessionsDir)) {
+        $archiveStreams = glob("{$sessionsDir}/*/feedback.jsonl") ?: [];
+        sort($archiveStreams, SORT_STRING);
+        array_push($paths, ...$archiveStreams);
+    }
+
+    $allEvents = [];
+    $seen = [];
+
+    foreach ($paths as $path) {
+        foreach (orbitFeedbackRead($path) as $event) {
+            if (isset($seen[$event['id']])) {
+                continue;
+            }
+
+            $allEvents[] = $event;
+            $seen[$event['id']] = true;
+        }
+    }
+
+    $relevantIds = [];
+
+    foreach ($allEvents as $event) {
+        $eventSurface = (string) ($event['surface'] ?? '');
+
+        if (
+            ($event['type'] ?? null) === 'feedback.recorded'
+            && ($eventSurface === $surface
+            || $eventSurface !== ''
+            && str_starts_with($surface, $eventSurface.'.'))
+        ) {
+            $relevantIds[$event['id']] = true;
+        }
+    }
+
+    $events = array_values(array_filter(
+        $allEvents,
+        static fn (array $event): bool => (
+            isset($relevantIds[$event['id']]) || isset($relevantIds[$event['feedback_id'] ?? ''])
+        ),
+    ));
+
+    feedbackJson($events);
+}
+
+function feedbackDefaultSessionsDir(string $cwd): string
+{
+    $commonGitDir = orbitLoopGitValue($cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+
+    if ($commonGitDir !== null && basename($commonGitDir) === '.git') {
+        return dirname($commonGitDir).'/.orbit/sessions';
+    }
+
+    return rtrim($cwd, '/').'/.orbit/sessions';
+}
+
+/** @param array<string, string|bool> $options */
+function feedbackShow(string $stream, array $options): never
+{
+    $id = feedbackRequiredOption($options, 'id');
+
+    foreach (orbitFeedbackRead($stream) as $event) {
+        if (($event['id'] ?? null) === $id) {
+            feedbackJson($event);
+        }
+    }
+
+    throw new RuntimeException("feedback event not found: {$id}");
+}
+
+/** @param array<string, string|bool> $options */
+function feedbackRequiredOption(array $options, string $name): string
+{
+    $value = $options[$name] ?? null;
+
+    if (! is_string($value) || trim($value) === '') {
+        throw new RuntimeException("missing --{$name}");
+    }
+
+    return trim($value);
+}
+
+function feedbackEventId(string $prefix): string
+{
+    return $prefix.'-'.gmdate('YmdHis').'-'.bin2hex(random_bytes(6));
+}
+
+function feedbackJson(array $payload): never
+{
+    fwrite(STDOUT, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
+    exit(0);
+}

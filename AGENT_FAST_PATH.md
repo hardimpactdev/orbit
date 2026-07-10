@@ -16,24 +16,28 @@ navigation aid, not product authority.
 
 ## Implementation Route
 
-1. Use Solo scratchpads for multi-slice roadmaps and eval artifacts.
+1. Use a Solo scratchpad only when a complex roadmap or durable design needs
+   one; ordinary features use the compact local loop anchor.
 2. For repository implementation, create an isolated worktree with
    `bin/orbit-prepare-worktree`; it seeds `.orbit/loop.md` when missing. Do
    not edit the primary checkout directly.
-3. Fill the seeded `.orbit/loop.md` with the current slice, Done Contract,
-   scratchpad or source pointer, and keep it current.
-4. Make `bin/orbit-feature-finalization-check --lint .orbit/loop.md` a
-   first-checkpoint habit: lint the packet shape early and after edits, not
-   only at the merge boundary.
+3. Fill Goal and Scope in the seeded `.orbit/loop.md`, then move through
+   `FRAME -> BUILD <-> PROVE -> ACCEPT -> LAND`.
+4. In LAND, lint the completed packet with
+   `bin/orbit-feature-finalization-check --lint .orbit/loop.md`; FRAME and BUILD
+   packets intentionally remain pending and are not finalization-lintable.
 5. Read the authority docs first, then align docs, tests, and code in that
    order when behavior changes.
 6. Run the narrowest useful verification while developing.
-7. Before merge or cleanup, run the finalization helper with the actual git
-   command and archive `.orbit/` to the primary checkout.
-8. Archive names are tool-generated: run `bin/orbit-session-archive` instead of
-   hand-writing archive timestamps or directories.
-9. For disposable Solo agents, capture needed output, verify the artifact, then
-   stop or delete the process in a separate command.
+7. Use one general reviewer, prepare the derived real acceptance venue, and
+   record the exact accepted feature and current main tips.
+8. Before merge, run the finalization helper with the actual git command.
+9. After merge, stay in the accepted feature worktree and run its now-landed
+   `bin/orbit-session-archive`; never run the compact archive with cwd main.
+   Then run the finalization helper before cleanup. Archive names are
+   tool-generated; never hand-write timestamps or directories.
+10. Use `bin/orbit-session-archive --full` only for failure, escalation,
+    security/release scope, or explicit request.
 
 ## Search Route
 
@@ -58,10 +62,11 @@ navigation aid, not product authority.
   broadly safe.
 - CLI/gateway/core/sdk behavior: focused Pest in the owning app/package, Mago
   format/lint/analyze on touched PHP, then `composer quality-check`.
-- Integrated topology or runtime-node behavior: focused Pest first, then
-  retained topology proof with topology id, role/node, command, and evidence.
-- E2E Composer commands are manual-only. Agents do not run `composer test:e2e*`
-  unless the user explicitly invokes that command from a shell.
+- Integrated topology or runtime-node behavior: focused owning tests first,
+  then retained real-surface acceptance with topology id, role/node, command,
+  ready Solo terminal, and evidence.
+- E2E Composer commands are manual-only. Agents never run, delegate,
+  background, schedule, hook, script, or trigger `composer test:e2e*`.
 
 ## Stop Conditions
 
