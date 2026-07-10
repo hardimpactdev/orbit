@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "archive-export-integrity-spec-reviewer-1017",
+    "solo_process_id": 1017,
+    "kind": "agent",
+    "started_at": "2026-07-10 14:53:30",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T16-53-30-019f4c84-f997-7eb0-b4c4-36e1d90c2576.jsonl",
+    "source": "codex_exact_marker",
+    "disambiguation_basis": "provider=codex; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none; timestamp_corroboration=corroborated",
+    "timestamp_corroboration": "corroborated"
+}

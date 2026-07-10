@@ -1,0 +1,23 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T16:45:07+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/archive-export-integrity/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-184507-archive-export-integrity",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-184507-archive-export-integrity/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [
+        942,
+        1016,
+        1017,
+        1018,
+        1019,
+        1020
+    ],
+    "agent_results": []
+}

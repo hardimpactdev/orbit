@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 89,
+    "record_count": 90,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -2661,6 +2661,34 @@
                 "reasoning_tokens": 31679
             },
             "capture_status": "ok"
+        },
+        {
+            "archive": "2026-07-10-184507-archive-export-integrity",
+            "slug": "archive-export-integrity",
+            "timestamp": "2026-07-10-184507",
+            "loop_outcome": "complete",
+            "loop_outcome_raw": "complete",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "fresh_analyzer_verdict_raw": "`yes`; no findings or packet gaps after the two stale packet sentences were corrected.",
+            "candidate_signals": {
+                "total": 5,
+                "classifications": {
+                    "unknown": 5
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "status": "consistent",
+                "input_tokens": 5906391,
+                "output_tokens": 25388,
+                "total_tokens": 5931779,
+                "reasoning_tokens": 18149
+            },
+            "capture_status": "partial"
         }
     ]
 }
