@@ -140,7 +140,10 @@ try {
 $loopDiscoveryAttempted = shouldDiscoverLoopProcessIds($options);
 $loopProcessIds = $loopDiscoveryAttempted ? loopSoloProcessIds($activeLoopPath) : [];
 
-$temporaryArchiveDir = uniqueSiblingPath($archiveDir, 'tmp');
+$temporaryArchiveFinalPath = isset($options['archive-dir'])
+    ? $archiveDir
+    : "{$archiveRoot}/".basename($archiveDir);
+$temporaryArchiveDir = uniqueSiblingPath($temporaryArchiveFinalPath, 'tmp');
 $backupDir = uniqueSiblingPath($archiveDir, 'backup');
 $updatedLoop = sessionArchiveLinkedLoopContent($activeLoopPath, basename($archiveDir));
 
@@ -279,22 +282,21 @@ function resolveArchiveDirectory(array $options, string $cwd, string $sourceOrbi
         return [$archiveDir, $archiveRoot, $mode];
     }
 
-    $archiveRoot = canonicalArchiveRoot(
-        isset($options['archive-root'])
-            ? (string) $options['archive-root']
-            : defaultArchiveRoot($cwd, $sourceOrbitDir),
-        $cwd,
-    );
+    $archiveRootInput = isset($options['archive-root'])
+        ? (string) $options['archive-root']
+        : defaultArchiveRoot($cwd, $sourceOrbitDir);
+    $visibleArchiveRoot = normalizedAbsolutePath(rtrim($archiveRootInput, '/'), $cwd);
+    $archiveRoot = canonicalArchiveRoot($archiveRootInput, $cwd);
     $slug = slugify(isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd));
     $existingArchiveDir = newestArchiveForSlug($archiveRoot, $slug);
 
     if ($existingArchiveDir !== null && archiveLoopMatchesActive($existingArchiveDir, $activeLoopPath)) {
-        return [$existingArchiveDir, $archiveRoot, 'refreshed'];
+        return ["{$visibleArchiveRoot}/".basename($existingArchiveDir), $archiveRoot, 'refreshed'];
     }
 
     $timestamp = archiveTimestamp($options);
 
-    return ["{$archiveRoot}/{$timestamp}-{$slug}", $archiveRoot, 'created'];
+    return ["{$visibleArchiveRoot}/{$timestamp}-{$slug}", $archiveRoot, 'created'];
 }
 
 function canonicalArchiveRoot(string $path, string $cwd): string

@@ -232,6 +232,11 @@ closed nested-parent source aliases and manifestless capture publication,
 revalidated destination identity before swap, retained both recovery trees when
 rollback failed, and split active-loop, index, and backup-cleanup guidance by
 the state that each phase had already committed.
+The path-alias quality correction keeps generated final, summary, and manifest
+paths on the normalized caller/default root spelling while the canonical root
+continues to own transaction construction, scanning, security, and index work;
+the isolated wrapper passed at 1 test / 7 assertions and the full owning file at
+63 tests / 842 assertions.
 
 The high-model correction red is retained at
 `.orbit/evidence/capture-review-corrections-red.txt`. It covers invalid
