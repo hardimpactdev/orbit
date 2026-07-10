@@ -41,6 +41,15 @@ harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md. No
 reviewer-persona edit and no new signal. harness-signals/index.json is accepted
 solely as the owning tool's deterministic companion after the stale-index gate.
 
+The replay-correction slice then repeated the same handoff loss at the action
+boundary. A user-requested high-model review was still running, but the packet
+kept a completion-ready `Loop outcome`; the implementation was merged and
+archived before that review returned two required corrections. Claude 943 and
+the feature owner adjudicated that an open user-requested review is part of the
+accepted contract: the packet must keep `Loop outcome: blocked` and name the
+review as a blocker until its findings are closed. The existing finalization
+gate then prevents the merge without another guidance surface.
+
 ## Prior Occurrences
 
 Related CLI and review signals existed, but no dedicated record covered raw
@@ -102,6 +111,10 @@ deferral, keep this record `recurring` and tighten the Done Contract template
 or worker-prompt shape. Apply the same recurrence rule when accepted
 design/panel adjudication lines or their precise pointer disappear across a
 handoff, or when per-loop Reviewer checks fail to compare against them.
+Also keep this record `recurring` when a user-requested review gate is recorded
+but `Loop outcome` becomes completion-ready before that review and its
+corrections are closed; the required state is `blocked`, with the open review
+named in `## Blockers`.
 
 ## Curation Notes
 

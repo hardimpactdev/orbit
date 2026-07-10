@@ -207,7 +207,6 @@ function parse_analyzer_verdict(string $loop): ?array
     $lines = preg_split('/\R/', $section) ?: [];
     $sameLineValue = null;
     $insideFreshAnalyzer = false;
-    $freshAnalyzerBody = [];
 
     foreach ($lines as $line) {
         if (str_starts_with($line, '- ')) {
@@ -231,8 +230,6 @@ function parse_analyzer_verdict(string $loop): ?array
         if (! $insideFreshAnalyzer) {
             continue;
         }
-
-        $freshAnalyzerBody[] = $line;
 
         if (preg_match('/^ {2}-[ \t]+(.+)$/', $line, $matches) !== 1) {
             continue;
@@ -263,15 +260,7 @@ function parse_analyzer_verdict(string $loop): ?array
     }
 
     if ($sameLineValue === null) {
-        if (preg_match('/Verdict:[ \t]*(.+)$/mi', implode("\n", $freshAnalyzerBody), $matches) !== 1) {
-            return null;
-        }
-
-        return [
-            'value' => trim($matches[1]),
-            'raw_value' => trim($matches[1]),
-            'provenance' => 'fresh-analyzer-prose',
-        ];
+        return null;
     }
 
     return [

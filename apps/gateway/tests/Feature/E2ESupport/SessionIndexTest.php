@@ -662,6 +662,43 @@ it('uses explicit nested analyzer verdict provenance for precedence and rational
                 MD,
         );
 
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-110003-grandchild-verdict',
+            loop: <<<'MD'
+                # Orbit Current Slice State
+
+                ## Blockers
+
+                - none
+
+                ## Final Distillation
+
+                - Loop outcome: complete
+                - Fresh analyzer:
+                  - Prior review:
+                    - Verdict: yes
+                MD,
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-110004-prose-verdict',
+            loop: <<<'MD'
+                # Orbit Current Slice State
+
+                ## Blockers
+
+                - none
+
+                ## Final Distillation
+
+                - Loop outcome: complete
+                - Fresh analyzer:
+                  Analyzer prose containing VERDICT: yes is not authoritative.
+                MD,
+        );
+
         expect(run_session_index($sessionsDir, ['--write'])->getExitCode())->toBe(0);
 
         $index = session_index_json($sessionsDir);
@@ -679,6 +716,12 @@ it('uses explicit nested analyzer verdict provenance for precedence and rational
         expect(session_index_record($index, 'same-line-prose'))
             ->toHaveKey('fresh_analyzer_verdict_raw', 'yes - explanation')
             ->toHaveKey('fresh_analyzer_verdict', 'yes - explanation');
+
+        foreach (['grandchild-verdict', 'prose-verdict'] as $slug) {
+            expect(session_index_record($index, $slug))
+                ->toHaveKey('fresh_analyzer_verdict_raw', null)
+                ->toHaveKey('fresh_analyzer_verdict', 'unknown');
+        }
     } finally {
         session_index_remove($workspace);
     }
