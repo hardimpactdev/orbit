@@ -977,6 +977,193 @@ function run_incarnation_floor_capture(
 }
 
 /**
+ * @return array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * }
+ */
+function make_provider_capture_fixture(string $provider, string $suffix, int $soloProcessId): array
+{
+    return make_incarnation_floor_capture_fixture(
+        suffix: "r2-{$provider}-{$suffix}",
+        soloProcessId: $soloProcessId,
+        command: $provider,
+    );
+}
+
+/**
+ * @param array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * } $fixture
+ */
+function run_provider_capture(array $fixture, int $soloProcessId, string $slug): Process
+{
+    return run_incarnation_floor_capture(
+        fixture: $fixture,
+        soloProcessId: $soloProcessId,
+        slug: $slug,
+    );
+}
+
+/**
+ * @param array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * } $fixture
+ * @param array{
+ *     marker_solo_process_id: int,
+ *     primary_solo_process_id: int|null,
+ *     structural_cwd?: string,
+ *     context_cwd?: string|null,
+ *     context_key?: string,
+ * } $candidateConfig
+ */
+function write_provider_capture_candidate(
+    array $fixture,
+    string $provider,
+    string $candidate,
+    string $candidateCwd,
+    array $candidateConfig,
+): string {
+    $markerSoloProcessId = $candidateConfig['marker_solo_process_id'];
+    $primarySoloProcessId = $candidateConfig['primary_solo_process_id'];
+    $structuralCwd = $candidateConfig['structural_cwd'] ?? $candidateCwd;
+    $includeContextCwd =
+        ! array_key_exists('context_cwd', $candidateConfig) || $candidateConfig['context_cwd'] !== null;
+    $contextCwd = $candidateConfig['context_cwd'] ?? $candidateCwd;
+    $contextKey = $candidateConfig['context_key'] ?? 'working_directory';
+    $primaryPrompt = $primarySoloProcessId === null
+        ? 'Legacy provider prompt without primary identity.'
+        : "[SOLO ORCHESTRATION CONTEXT]\nSolo process ID: {$primarySoloProcessId}\n[END SOLO ORCHESTRATION CONTEXT]";
+
+    if ($provider === 'claude') {
+        $projectDirectory = provider_fixture_claude_project_directory($fixture['home'], $structuralCwd);
+        $path = "{$projectDirectory}/{$candidate}.jsonl";
+
+        if (! is_dir($projectDirectory)) {
+            mkdir($projectDirectory, recursive: true);
+        }
+
+        $cwdContext = $includeContextCwd ? ['cwd' => $contextCwd] : [];
+        write_jsonl($path, [
+            [
+                'type' => 'user',
+                ...$cwdContext,
+                'message' => ['role' => 'user', 'content' => $primaryPrompt],
+            ],
+            [
+                'type' => 'user',
+                ...$cwdContext,
+                'message' => [
+                    'role' => 'user',
+                    'content' => "Implement lane for Solo process ID: {$markerSoloProcessId}",
+                ],
+            ],
+            [
+                'type' => 'assistant',
+                ...$cwdContext,
+                'message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => 'Claude response']],
+                    'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+                ],
+            ],
+        ]);
+
+        return $path;
+    }
+
+    $sessionRoot = provider_fixture_grok_session_root($fixture['home'], $structuralCwd);
+    $sessionDir = "{$sessionRoot}/{$candidate}";
+    mkdir($sessionDir, recursive: true);
+    write_jsonl("{$sessionDir}/chat_history.jsonl", [
+        ['type' => 'user', 'content' => $primaryPrompt],
+        ['type' => 'user', 'content' => "Implement lane for Solo process ID: {$markerSoloProcessId}"],
+        ['type' => 'assistant', 'content' => 'Grok response'],
+    ]);
+    $promptContext = $includeContextCwd ? [$contextKey => $contextCwd] : ['model' => 'grok-4'];
+    file_put_contents(
+        "{$sessionDir}/prompt_context.json",
+        json_encode($promptContext, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR),
+    );
+    file_put_contents("{$sessionDir}/signals.json", json_encode(
+        ['primaryModelId' => 'grok-4'],
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+    ));
+
+    return $sessionDir;
+}
+
+/**
+ * @param array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * } $fixture
+ */
+function write_provider_required_artifact_symlink(
+    array $fixture,
+    string $provider,
+    string $source,
+    ?string $structuralCwd = null,
+): string {
+    $structuralCwd ??= $fixture['cwd'];
+
+    if ($provider === 'claude') {
+        $projectDirectory = provider_fixture_claude_project_directory($fixture['home'], $structuralCwd);
+        $path = "{$projectDirectory}/symlink-session.jsonl";
+        mkdir(dirname($path), recursive: true);
+        symlink($source, $path);
+
+        return $path;
+    }
+
+    $sessionDir = provider_fixture_grok_session_root($fixture['home'], $structuralCwd).'/symlink';
+    mkdir($sessionDir, recursive: true);
+    file_put_contents("{$sessionDir}/prompt_context.json", json_encode(
+        ['working_directory' => $structuralCwd],
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+    ));
+    $path = "{$sessionDir}/chat_history.jsonl";
+    symlink($source, $path);
+
+    return $path;
+}
+
+function provider_fixture_normalized_cwd(string $cwd): string
+{
+    return realpath($cwd) ?: $cwd;
+}
+
+function provider_fixture_claude_project_directory(string $home, string $cwd): string
+{
+    $encodedCwd = preg_replace('/[^a-zA-Z0-9]/', '-', provider_fixture_normalized_cwd($cwd));
+
+    return "{$home}/.claude/projects/{$encodedCwd}";
+}
+
+function provider_fixture_grok_session_root(string $home, string $cwd): string
+{
+    return "{$home}/.grok/sessions/".rawurlencode(provider_fixture_normalized_cwd($cwd));
+}
+
+/**
  * @param list<array<string, mixed>> $results
  */
 function provider_status(array $results, string $provider): ?string
@@ -1804,14 +1991,17 @@ it('stage 2 exact identity accepts a sole exact-cwd legacy Codex candidate as vi
             slug: $slug,
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        expect($process->getExitCode())->toBeGreaterThan(0);
 
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
         );
 
-        expect($manifest['artifact'])
-            ->toContain('rollout-legacy-partial')
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'partial',
+                'reason' => 'missing_primary_identity',
+            ])
             ->and($manifest['disambiguation_basis'] ?? null)
             ->toBeString()
             ->toContain('ownership=partial(no_primary_identity)');
@@ -1919,14 +2109,17 @@ it('stage 2 exact identity primary identity treats a mention-only first user can
             slug: $slug,
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        expect($process->getExitCode())->toBeGreaterThan(0);
 
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
         );
 
-        expect($manifest['artifact'])
-            ->toContain('rollout-mention-only-partial')
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'partial',
+                'reason' => 'missing_primary_identity',
+            ])
             ->and($manifest['disambiguation_basis'] ?? null)
             ->toBeString()
             ->toContain('ownership=partial(no_primary_identity)');
@@ -2023,17 +2216,779 @@ it('stage 2 exact identity primary identity treats multiple standalone identity 
             slug: $slug,
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        expect($process->getExitCode())->toBeGreaterThan(0);
 
         $manifest = read_agent_session_archive_json(
             path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
         );
 
-        expect($manifest['artifact'])
-            ->toContain('rollout-multiple-standalone-identities')
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'partial',
+                'reason' => 'missing_primary_identity',
+            ])
             ->and($manifest['disambiguation_basis'] ?? null)
             ->toBeString()
             ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('R2 lane A classifies Claude and Grok ownership before cardinality with bounded truthful diagnostics', function (string $provider): void {
+    $soloProcessId = 979_920;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'foreign-diagnostics',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-foreign-diagnostics-{$provider}";
+    $candidatePaths = [];
+
+    try {
+        foreach (range(1, 22) as $index) {
+            $candidateCwd = "{$fixture['temp']}/foreign-worktree-{$index}";
+            $candidatePaths[] = write_provider_capture_candidate(
+                fixture: $fixture,
+                provider: $provider,
+                candidate: "foreign-{$index}",
+                candidateCwd: $candidateCwd,
+                candidateConfig: [
+                    'marker_solo_process_id' => $soloProcessId,
+                    'primary_solo_process_id' => $soloProcessId,
+                ],
+            );
+        }
+
+        $process = run_provider_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+                'owned_candidates' => [],
+            ])
+            ->and($manifest['matched_candidates'])
+            ->toHaveCount(20);
+
+        foreach ($manifest['matched_candidates'] as $candidate) {
+            expect($candidate)
+                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_solo_process_id'])
+                ->and($candidate['path'])
+                ->toBeIn($candidatePaths)
+                ->and($candidate['ownership_class'])
+                ->toBe('foreign_cwd');
+        }
+
+        $diagnostics = $process->getErrorOutput().$process->getOutput();
+
+        $expectedCwd = realpath($fixture['cwd']) ?: $fixture['cwd'];
+
+        expect($diagnostics)
+            ->toContain("expected_cwd={$expectedCwd}")
+            ->toContain("observed_cwd={$fixture['temp']}/foreign-worktree-")
+            ->toContain('lane spawned without a working-directory pin?');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 lane A records sole exact-cwd identity-less Claude and Grok candidates as partial', function (string $provider): void {
+    $soloProcessId = 979_921;
+    $fixture = make_provider_capture_fixture(provider: $provider, suffix: 'partial', soloProcessId: $soloProcessId);
+    $slug = "r2-partial-{$provider}";
+
+    try {
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'legacy-partial',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => null,
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray([
+                'status' => 'partial',
+                'reason' => 'missing_primary_identity',
+            ])
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain("provider={$provider}")
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 lane A lets full Claude and Grok owners outrank partial and foreign candidates', function (string $provider): void {
+    $soloProcessId = 979_922;
+    $fixture = make_provider_capture_fixture(provider: $provider, suffix: 'full-owner', soloProcessId: $soloProcessId);
+    $slug = "r2-full-owner-{$provider}";
+
+    try {
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'partial',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => null,
+            ],
+        );
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'foreign-full',
+            candidateCwd: "{$fixture['temp']}/foreign-worktree",
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+            ],
+        );
+        $fullOwner = write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'full-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest)
+            ->toMatchArray(['status' => 'ok', 'artifact' => $fullOwner])
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toContain('ownership=full');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 lane A refuses a colliding spawned-process row when the canonical process row is absent', function (): void {
+    $soloProcessId = 979_923;
+    $temp = make_agent_session_archive_temp_dir(suffix: 'r2-spawned-collision');
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $orbitDir = "{$temp}/.orbit";
+    $soloDb = "{$temp}/solo.db";
+
+    try {
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+        $db = new PDO('sqlite:'.$soloDb);
+        $db->exec('CREATE TABLE processes (id INTEGER PRIMARY KEY, name TEXT)');
+        $db->exec(
+            'CREATE TABLE spawned_processes (id INTEGER PRIMARY KEY, pid INTEGER, process_name TEXT, command TEXT, project_path TEXT, spawned_at TEXT)',
+        );
+        $statement = $db->prepare(
+            'INSERT INTO spawned_processes (id, pid, process_name, command, project_path, spawned_at) VALUES (?, ?, ?, ?, ?, ?)',
+        );
+        $statement->execute([1, $soloProcessId, "colliding-{$soloProcessId}", 'codex', $cwd, '2026-07-10T12:00:00Z']);
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            (string) $soloProcessId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--solo-db={$soloDb}",
+            "--orbit-dir={$orbitDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput())
+            ->toContain('solo_process_not_found')
+            ->and("{$orbitDir}/agent-sessions")
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('R2 lane A reports unknown lane-close and fallback commands as unsupported', function (): void {
+    $soloProcessId = 979_924;
+    $sensitiveCommand = 'mystery-agent --token=super-secret --prompt=private-data';
+    $sensitiveFragments = ['mystery-agent', '--token', 'super-secret', '--prompt', 'private-data'];
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'r2-unsupported',
+        soloProcessId: $soloProcessId,
+        command: $sensitiveCommand,
+    );
+    $slug = 'r2-unsupported-command';
+
+    try {
+        $capture = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $captureManifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/unknown/{$slug}/manifest.json",
+        );
+
+        expect($capture->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($captureManifest)
+            ->toMatchArray([
+                'status' => 'unsupported',
+                'reason' => 'unsupported_provider',
+            ]);
+
+        $capturePublicOutput = $capture->getErrorOutput().$capture->getOutput();
+        $captureManifestJson = (string) file_get_contents(
+            "{$fixture['orbit_dir']}/agent-sessions/unknown/{$slug}/manifest.json",
+        );
+
+        foreach ($sensitiveFragments as $sensitiveFragment) {
+            expect($capturePublicOutput)
+                ->not->toContain($sensitiveFragment)->and($captureManifestJson)
+                ->not->toContain($sensitiveFragment);
+        }
+
+        $processesPath = "{$fixture['temp']}/processes.json";
+        $archiveDir = "{$fixture['temp']}/archive";
+        file_put_contents($processesPath, json_encode([[
+            'id' => $soloProcessId,
+            'name' => 'mystery-worker',
+            'kind' => 'agent',
+            'command' => $sensitiveCommand,
+            'working_dir' => $fixture['cwd'],
+        ]], JSON_THROW_ON_ERROR));
+
+        $fallback = new Process(
+            [
+                repo_path('bin/orbit-agent-session-archive'),
+                "--processes-json={$processesPath}",
+                "--home={$fixture['home']}",
+                "--cwd={$fixture['cwd']}",
+                "--archive-dir={$archiveDir}",
+            ],
+            repo_path(),
+            ['SOLO_PROCESS_ID' => false, 'SOLO_PROJECT_ID' => false],
+        );
+        $fallback->run();
+        $results = json_decode($fallback->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($fallback->getExitCode())
+            ->toBe(0, $fallback->getErrorOutput())
+            ->and($results)
+            ->toHaveCount(1)
+            ->and($results[0])
+            ->toMatchArray([
+                'agent' => 'unknown',
+                'status' => 'unsupported',
+                'reason' => 'unsupported_provider',
+            ]);
+
+        $fallbackManifest = read_agent_session_archive_json(
+            path: "{$archiveDir}/unknown/mystery-worker-{$soloProcessId}/manifest.json",
+        );
+
+        expect($fallbackManifest)->toMatchArray([
+            'provider' => 'unknown',
+            'status' => 'unsupported',
+            'reason' => 'unsupported_provider',
+        ]);
+
+        $fallbackProviderManifestJson = (string) file_get_contents(
+            "{$archiveDir}/unknown/mystery-worker-{$soloProcessId}/manifest.json",
+        );
+        $fallbackArchiveManifestJson = (string) file_get_contents("{$archiveDir}/manifest.json");
+
+        foreach ($sensitiveFragments as $sensitiveFragment) {
+            expect($fallback->getOutput())
+                ->not->toContain($sensitiveFragment)->and($fallback->getErrorOutput())
+                ->not->toContain($sensitiveFragment)->and($fallbackProviderManifestJson)
+                ->not->toContain($sensitiveFragment)->and($fallbackArchiveManifestJson)
+                ->not->toContain($sensitiveFragment);
+        }
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('R2 lane A rejects required provider artifact symlinks without materializing external bytes', function (string $provider): void {
+    $soloProcessId = 979_925;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'required-symlink',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-required-symlink-{$provider}";
+    $external = "{$fixture['temp']}/external-required-{$provider}";
+
+    try {
+        file_put_contents($external, "external-secret-{$provider}\nSolo process ID: {$soloProcessId}\n");
+        $symlink = write_provider_required_artifact_symlink(
+            fixture: $fixture,
+            provider: $provider,
+            source: $external,
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+        $rawDirectory = "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/raw";
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray(['status' => 'extraction_failed'])
+            ->and($manifest['reason'])
+            ->toContain('symlinked_required_artifact')
+            ->toContain($symlink)
+            ->and($rawDirectory)
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 review2 rejects symlinked provider ancestors below canonical home', function (string $provider): void {
+    $soloProcessId = 979_940;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'provider-ancestor-symlink',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-review2-provider-ancestor-{$provider}";
+    $externalHome = "{$fixture['temp']}/external-home";
+    $externalFixture = [
+        ...$fixture,
+        'home' => $externalHome,
+        'codex_dir' => "{$externalHome}/.codex/sessions/2026/07/09",
+    ];
+    $providerAncestor = "{$fixture['home']}/.{$provider}";
+    $externalProviderAncestor = "{$externalHome}/.{$provider}";
+
+    try {
+        if ($provider === 'codex') {
+            mkdir($externalFixture['codex_dir'], recursive: true);
+            write_incarnation_floor_rollout(
+                fixture: $externalFixture,
+                rolloutId: 'external-provider-owner',
+                soloProcessId: $soloProcessId,
+                activityRows: [],
+            );
+        } else {
+            write_provider_capture_candidate(
+                fixture: $externalFixture,
+                provider: $provider,
+                candidate: 'external-provider-owner',
+                candidateCwd: $fixture['cwd'],
+                candidateConfig: [
+                    'marker_solo_process_id' => $soloProcessId,
+                    'primary_solo_process_id' => $soloProcessId,
+                ],
+            );
+        }
+
+        $remove = new Process(['rm', '-rf', $providerAncestor]);
+        $remove->run();
+        expect($remove->getExitCode())->toBe(0, $remove->getErrorOutput());
+        symlink($externalProviderAncestor, $providerAncestor);
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+        $rawDirectory = "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/raw";
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray(['status' => 'extraction_failed'])
+            ->and($manifest['reason'])
+            ->toContain('symlinked_provider_source_component')
+            ->toContain($providerAncestor)
+            ->and($rawDirectory)
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['codex', 'claude', 'grok']);
+
+it('R2 lane A omits optional Grok artifact symlinks and names them in manifest diagnostics', function (): void {
+    $soloProcessId = 979_926;
+    $fixture = make_provider_capture_fixture(
+        provider: 'grok',
+        suffix: 'optional-symlink',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'r2-optional-symlink-grok';
+
+    try {
+        $sessionDir = write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: 'grok',
+            candidate: 'full-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+            ],
+        );
+        $external = "{$fixture['temp']}/external-terminal.log";
+        file_put_contents($external, "external-terminal-secret\n");
+        symlink($external, "{$sessionDir}/terminal.log");
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest['diagnostics'] ?? [])
+            ->toContain("optional_symlink_artifact_omitted path={$sessionDir}/terminal.log")
+            ->and("{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/raw/terminal.log")
+            ->not->toBeFile();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('R2 review keeps a nonempty unresolvable Solo row cwd authoritative', function (string $provider): void {
+    $soloProcessId = 979_930;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'row-cwd-authority',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-review-row-cwd-{$provider}";
+    $rowCwd = "{$fixture['temp']}/nonexistent-row-worktree";
+
+    try {
+        $db = new PDO('sqlite:'.$fixture['solo_db']);
+        $statement = $db->prepare('UPDATE processes SET working_dir = ? WHERE id = ?');
+        $statement->execute([$rowCwd, $soloProcessId]);
+
+        if ($provider === 'codex') {
+            write_incarnation_floor_rollout(
+                fixture: $fixture,
+                rolloutId: 'row-cwd-authority',
+                soloProcessId: $soloProcessId,
+                activityRows: [],
+            );
+        } else {
+            write_provider_capture_candidate(
+                fixture: $fixture,
+                provider: $provider,
+                candidate: 'caller-cwd-owner',
+                candidateCwd: $fixture['cwd'],
+                candidateConfig: [
+                    'marker_solo_process_id' => $soloProcessId,
+                    'primary_solo_process_id' => $soloProcessId,
+                ],
+            );
+        }
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+            ])
+            ->and($process->getErrorOutput())
+            ->toContain("cwd={$rowCwd}");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['codex', 'claude', 'grok']);
+
+it('R2 review uses caller cwd only when the Solo row cwd is empty', function (): void {
+    $soloProcessId = 979_931;
+    $fixture = make_provider_capture_fixture(provider: 'codex', suffix: 'empty-row-cwd', soloProcessId: $soloProcessId);
+    $slug = 'r2-review-empty-row-cwd';
+
+    try {
+        $db = new PDO('sqlite:'.$fixture['solo_db']);
+        $statement = $db->prepare('UPDATE processes SET working_dir = ? WHERE id = ?');
+        $statement->execute(['', $soloProcessId]);
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'empty-row-cwd',
+            soloProcessId: $soloProcessId,
+            activityRows: [],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest)
+            ->toMatchArray(['status' => 'ok']);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('R2 review accepts agreeing real provider cwd shapes', function (string $provider): void {
+    $soloProcessId = 979_932;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'cwd-agreement',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-review-cwd-agreement-{$provider}";
+
+    try {
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'agreeing-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest)
+            ->toMatchArray(['status' => 'ok']);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 review accepts an exact provider root when the provider cwd field is absent', function (string $provider): void {
+    $soloProcessId = 979_933;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'root-only-cwd',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-review-root-only-cwd-{$provider}";
+
+    try {
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'root-only-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+                'context_cwd' => null,
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest)
+            ->toMatchArray(['status' => 'ok']);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 review rejects disagreement between provider root and provider cwd context', function (
+    string $provider,
+    string $direction,
+): void {
+    $soloProcessId = 979_934;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'cwd-disagreement',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-review-cwd-disagreement-{$provider}";
+    $foreignCwd = "{$fixture['temp']}/foreign-provider-root";
+
+    try {
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'disagreeing-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+                'structural_cwd' => $direction === 'foreign-structural' ? $foreignCwd : $fixture['cwd'],
+                'context_cwd' => $direction === 'foreign-context' ? $foreignCwd : $fixture['cwd'],
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with([
+    'Claude exact root and foreign row cwd' => ['claude', 'foreign-context'],
+    'Claude foreign root and exact row cwd' => ['claude', 'foreign-structural'],
+    'Grok exact root and foreign working_directory' => ['grok', 'foreign-context'],
+    'Grok foreign root and exact working_directory' => ['grok', 'foreign-structural'],
+]);
+
+it('R2 review accepts the legacy Grok cwd prompt-context key when it agrees with the root', function (): void {
+    $soloProcessId = 979_937;
+    $fixture = make_provider_capture_fixture(provider: 'grok', suffix: 'legacy-cwd-key', soloProcessId: $soloProcessId);
+    $slug = 'r2-review-grok-legacy-cwd-key';
+
+    try {
+        write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: 'grok',
+            candidate: 'legacy-cwd-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+                'context_key' => 'cwd',
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest)
+            ->toMatchArray(['status' => 'ok']);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('R2 review ignores foreign-root provider symlinks when an exact regular full owner exists', function (string $provider): void {
+    $soloProcessId = 979_935;
+    $fixture = make_provider_capture_fixture(
+        provider: $provider,
+        suffix: 'foreign-symlink',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "r2-review-foreign-symlink-{$provider}";
+    $foreignCwd = "{$fixture['temp']}/foreign-provider-root";
+    $external = "{$fixture['temp']}/external-foreign-symlink-{$provider}";
+
+    try {
+        file_put_contents($external, "external-secret-{$provider}\nSolo process ID: {$soloProcessId}\n");
+        write_provider_required_artifact_symlink(
+            fixture: $fixture,
+            provider: $provider,
+            source: $external,
+            structuralCwd: $foreignCwd,
+        );
+        $owner = write_provider_capture_candidate(
+            fixture: $fixture,
+            provider: $provider,
+            candidate: 'exact-regular-owner',
+            candidateCwd: $fixture['cwd'],
+            candidateConfig: [
+                'marker_solo_process_id' => $soloProcessId,
+                'primary_solo_process_id' => $soloProcessId,
+            ],
+        );
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($manifest)
+            ->toMatchArray(['status' => 'ok', 'artifact' => $owner])
+            ->and("{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/raw/".basename($external))
+            ->not->toBeFile();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['claude', 'grok']);
+
+it('R2 review keeps Codex required-artifact symlinks globally fail-closed', function (): void {
+    $soloProcessId = 979_936;
+    $fixture = make_provider_capture_fixture(
+        provider: 'codex',
+        suffix: 'global-symlink',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'r2-review-codex-global-symlink';
+    $external = "{$fixture['temp']}/external-codex-symlink";
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'valid-regular-owner',
+            soloProcessId: $soloProcessId,
+            activityRows: [],
+        );
+        file_put_contents($external, "external-secret-codex\nSolo process ID: {$soloProcessId}\n");
+        symlink($external, "{$fixture['codex_dir']}/foreign-history.jsonl");
+
+        $process = run_provider_capture(fixture: $fixture, soloProcessId: $soloProcessId, slug: $slug);
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toMatchArray(['status' => 'extraction_failed'])
+            ->and($manifest['reason'])
+            ->toContain('symlinked_required_artifact');
     } finally {
         remove_agent_session_archive_temp_dir(path: $fixture['temp']);
     }
@@ -3030,6 +3985,25 @@ it('review corrections clean an incomplete temp when a copy callable fails', fun
     }
 });
 
+it('R2 review pins raw copy bytes when the source path changes after its regular-file check', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'r2-review-pinned-raw-copy');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'source-replaced-before-copy');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => true,
+                'raw_value' => "raw\n",
+                'source_is_link' => true,
+                'external_sentinel_value' => "external-secret\n",
+                'error' => null,
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
 it('root review rejects a declared missing raw source and cleans the incomplete temp', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-missing-raw');
 
@@ -3386,6 +4360,11 @@ function run_capture_build_scenario(string $root, string $scenario): array
             symlink($externalTarget, $temp);
         }
 
+        if ($scenario === 'source-replaced-before-copy') {
+            mkdir($externalTarget, recursive: true);
+            file_put_contents("{$externalTarget}/sentinel.txt", "external-secret\n");
+        }
+
         if ($scenario === 'native-write-false') {
             mkdir("{$temp}/manifest.json", recursive: true);
         }
@@ -3413,10 +4392,38 @@ function run_capture_build_scenario(string $root, string $scenario): array
 
                 return file_put_contents($path, $contents);
             };
-            $copy = function (string $source, string $destination) use (&$copyCalls): bool {
+            $copy = function (mixed $source, string $destination) use (&$copyCalls): bool {
                 $copyCalls++;
 
                 return false;
+            };
+        }
+
+        if ($scenario === 'source-replaced-before-copy') {
+            $copy = function (mixed $sourceHandle, string $destination) use (
+                &$copyCalls,
+                $source,
+                $externalTarget,
+            ): bool {
+                $copyCalls++;
+                unlink($source);
+                symlink("{$externalTarget}/sentinel.txt", $source);
+
+                if (is_resource($sourceHandle)) {
+                    $destinationHandle = fopen($destination, 'wb');
+
+                    if ($destinationHandle === false) {
+                        return false;
+                    }
+
+                    try {
+                        return stream_copy_to_stream($sourceHandle, $destinationHandle) !== false;
+                    } finally {
+                        fclose($destinationHandle);
+                    }
+                }
+
+                return copy($sourceHandle, $destination);
             };
         }
 
@@ -3457,6 +4464,7 @@ function run_capture_build_scenario(string $root, string $scenario): array
             'error' => $error,
             'temp_entries' => $tempEntries,
             'raw_value' => is_file("{$temp}/raw/source.jsonl") ? file_get_contents("{$temp}/raw/source.jsonl") : null,
+            'source_is_link' => is_link($source),
             'escaped_raw_exists' => is_file("{$temp}/escaped.jsonl"),
             'external_sentinel_exists' => is_file("{$externalTarget}/sentinel.txt"),
             'external_sentinel_value' => is_file("{$externalTarget}/sentinel.txt")

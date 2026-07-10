@@ -48,6 +48,25 @@ staged manifests, followed file symlinks, retained transaction-shaped provider
 residue, and used unchecked in-place bookkeeping writes. Fallback extraction
 also recorded its temporary construction path in the final top-level manifest.
 
+The R2 capture-health review found the same ownership and no-follow contract was
+not yet applied to real Claude and Grok provider shapes. Those providers decided
+cardinality before exact cwd and standalone primary identity, a missing canonical
+Solo process row could fall back to a colliding `spawned_processes` row, unknown
+commands defaulted to Codex or disappeared from fallback extraction, and provider
+discovery/raw copy could follow required or optional artifact symlinks.
+
+The independent R2 review then found that an unresolvable nonempty Solo-row cwd
+fell back to caller `--cwd`, lstat checks were separated from later path-based
+opens/copies, and the first Claude/Grok fixture pass did not enforce agreement
+between each provider's structural cwd root and its row/prompt-context cwd. The
+owner's final symlink adjudication kept Codex global fail-closed while limiting
+Claude/Grok required-artifact vetoes to their expected encoded-cwd roots.
+
+The second independent R2 review found that discovery still traversed a
+symlinked `.codex`, `.claude`, or `.grok` ancestor below canonical home, and
+that unknown-provider results retained the complete command and its arguments
+across public and archived output.
+
 ## Prior Occurrences
 
 This is adjacent to
@@ -147,6 +166,32 @@ artifact completeness gate.
   `matched_candidates` and `owned_candidates` records with actual paths,
   ownership class, normalized cwd, and primary Solo identity in both the
   manifest and stderr. These diagnostics never rank or select candidates.
+- Claude and Grok now apply the same ownership order to their actual transcript
+  and prompt-context/session-root shapes. Claude requires its normalized
+  nonalphanumeric-to-dash project root to agree with row cwd when present; Grok
+  requires its normalized raw-url-encoded root to agree with current
+  `working_directory` or legacy `cwd` when present. Exact structural roots may
+  supply cwd when the provider field is absent. Full owners outrank partials, a
+  sole identity-less exact owner is `partial`, diagnostics remain bounded to 20,
+  and either disagreement direction is foreign/nonhealthy.
+- Lane-close capture now requires the canonical `processes` row and reports
+  `solo_process_not_found` without consulting `spawned_processes`. Unknown
+  lane-close and fallback commands use the existing `unsupported` status with
+  the fixed, argument-free `unsupported_provider` reason instead of defaulting,
+  being omitted, or retaining command text. A nonempty row cwd remains
+  authoritative even when it cannot `realpath`; caller cwd is used only when
+  the row has no nonempty cwd value.
+- Provider readers and raw staging pin each immediately checked regular file by
+  lstat, one open, and matching fstat device/inode before consuming bytes.
+  Before discovery, every provider-root component below canonical home is
+  lstat-checked and must resolve to its expected canonical directory, so a
+  symlinked `.codex`, `.claude`, or `.grok` ancestor cannot expose external
+  provider files.
+  Codex required-artifact symlinks remain globally fail-closed. Claude/Grok veto
+  required symlinks only inside the same expected encoded-cwd root used for
+  ownership, so foreign-root symlinks cannot poison an exact regular owner.
+  Owned-root required symlinks remain nonhealthy, optional Grok symlinks remain
+  omitted and diagnosed, and external target bytes are never consumed or staged.
 - `bin/orbit-session-archive` accepts staged capture statuses only from the
   exact `ok`, `partial`, `ambiguous`, `capture_failed`, `extraction_failed`,
   `invalid`, `missing`, `solo_process_not_found`, `stale`, and `unsupported`
@@ -238,8 +283,26 @@ continues to own transaction construction, scanning, security, and index work;
 the isolated wrapper passed at 1 test / 7 assertions and the full owning file at
 63 tests / 842 assertions.
 
+The R2 review-correction matrix passed at 17 tests / 99 assertions, the combined
+R2 provider/capture matrix passed at 34 tests / 515 assertions, and the full
+`AgentSessionArchiveTest.php` file passed at 94 tests / 1,342 assertions. The
+second-review focused matrix passed at 4 tests / 75 assertions after a RED of 4
+tests / 4 failures / 15 assertions (1,872 bytes, SHA-256
+`ee207f5cb39df8ee339c4d57485afabeb4733b29e73b6bc237ae25bfd61ba95f`). The
+owned scripts and test passed PHP syntax, the owned test file passed Mago format
+check, and the signal index write/check plus `git diff --check` completed after
+the signal update.
+
+The shared lane-B hook correction RED was 3 tests / 2 passed / 1 failed / 5
+assertions (749 bytes, SHA-256
+`d66dbaacbc58e1d1ed1e062773fb96c850c2a6fb81944737dc19580db6a2b9dc`). Its
+backup filter passed at 3 tests / 6 assertions, full
+`FeatureFinalizationGateTest.php` at 50 tests / 117 assertions, and hook syntax,
+Mago, and diff checks passed. The predicate is `backup-.+`, so an empty backup
+suffix remains visible.
+
 The high-model correction red is retained at
-`.orbit/evidence/capture-review-corrections-red.txt`. It covers invalid
+`.orbit/sessions/2026-07-10-105744-capture-evidence-integrity-hardening/evidence/capture-review-corrections-red.txt`. It covers invalid
 providers, symlinked roots, construction write/copy failures, native false-write
 checking and native success, delete-site containment, actionable ambiguity and
 no-owned diagnostics, include idempotence beside a generic `main`, and foreign
