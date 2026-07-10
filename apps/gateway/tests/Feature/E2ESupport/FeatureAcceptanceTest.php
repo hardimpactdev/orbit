@@ -192,6 +192,48 @@ it('requires reviewer PASS to be bound to the exact candidate HEAD', function ()
     }
 });
 
+it('does not ask for or record acceptance before current main is integrated', function (): void {
+    $fixture = acceptance_test_workspace('main-before-acceptance', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - observable',
+            venue: 'retained-incus',
+        );
+        $before = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+
+        acceptance_test_git($fixture, ['checkout', 'main']);
+        file_put_contents("{$fixture}/README.md", "# Main moved before acceptance\n");
+        acceptance_test_git($fixture, ['add', 'README.md']);
+        acceptance_test_git($fixture, ['commit', '-m', 'Move main before acceptance']);
+        acceptance_test_git($fixture, ['checkout', 'feature']);
+
+        $ready = acceptance_test_run($fixture, ['ready', '--venue=retained-incus']);
+        $accepted = acceptance_test_run(
+            $fixture,
+            ['accept', '--actor=user', '--source-ref=codex://threads/example#stale-acceptance'],
+            "Do not consume this acceptance.\n",
+        );
+
+        expect($ready->getExitCode())
+            ->toBe(2)
+            ->and($ready->getErrorOutput())
+            ->toContain('main advanced before acceptance')
+            ->and($accepted->getExitCode())
+            ->toBe(2)
+            ->and($accepted->getErrorOutput())
+            ->toContain('main advanced before acceptance')
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toBe($before)
+            ->and("{$fixture}/.orbit/feedback.jsonl")
+            ->not->toBeFile();
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('invalidating accepted feedback resets the reviewer identity for the FIX delta', function (): void {
     $fixture = acceptance_test_workspace('review-reset', 'bin/orbit-example');
 

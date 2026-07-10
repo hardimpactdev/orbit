@@ -72,6 +72,8 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException($reviewProblem);
     }
 
+    acceptanceRequireCurrentMainIncluded($cwd, $featureTip);
+
     $minimum = orbitLoopAcceptanceVenue(orbitLoopChangedFiles($cwd));
     $defaultVenue = orbitLoopReviewSaysNonObservable($review) ? 'automated' : $minimum;
     $venue = (string) ($options['venue'] ?? $defaultVenue);
@@ -116,6 +118,8 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException($reviewProblem);
     }
 
+    $mainTip = acceptanceRequireCurrentMainIncluded($cwd, $featureTip);
+
     $actor = acceptanceRequiredOption($options, 'actor');
 
     if (! in_array($actor, ['user', 'automated'], true)) {
@@ -133,7 +137,6 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $mainTip = acceptanceGitRequired($cwd, ['rev-parse', 'main']);
     $acceptanceValue = 'accepted - automated - reviewer-confirmed non-observable';
 
     if ($actor === 'user') {
@@ -280,6 +283,20 @@ function acceptanceRequireFeedbackValid(string $path): void
     } catch (Throwable $exception) {
         throw new RuntimeException('feedback stream is invalid: '.$exception->getMessage(), previous: $exception);
     }
+}
+
+function acceptanceRequireCurrentMainIncluded(string $cwd, string $featureTip): string
+{
+    $mainTip = acceptanceGitRequired($cwd, ['rev-parse', 'main']);
+    [$exitCode] = acceptanceRun(['git', 'merge-base', '--is-ancestor', $mainTip, $featureTip], $cwd);
+
+    if ($exitCode !== 0) {
+        throw new RuntimeException(
+            'main advanced before acceptance; integrate main into the feature branch, then repeat PROVE before asking for ACCEPT',
+        );
+    }
+
+    return $mainTip;
 }
 
 function acceptanceAppendUserMessage(
