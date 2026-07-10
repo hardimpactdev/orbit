@@ -8,8 +8,7 @@
     "copied_entries": [
         "evidence",
         "loop.md",
-        "quality-gates",
-        "release-candidates"
+        "quality-gates"
     ],
     "discovered_solo_process_ids": [],
     "agent_results": []
