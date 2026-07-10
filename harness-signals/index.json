@@ -732,9 +732,10 @@
                 ".agents/skills/implementing-features/SKILL.md",
                 "bin/orbit-agent-session-capture",
                 "bin/orbit-session-archive",
+                "bin/orbit-session-archive-filesystem.php",
                 "bin/orbit-codex-pre-tool-use-hook"
             ],
-            "guardrail_change": "reject non-Codex incarnation floors and invalid explicit providers before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; expose bounded matched/owned diagnostics; construct each capture from validated raw declarations with checked writes/copies inside a canonical direct-child temp; atomically replace the final slug directory with rollback; exclude only direct foreign temp siblings from session archives without following directory symlinks or dropping backups",
+            "guardrail_change": "reject non-Codex incarnation floors and invalid explicit providers before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; expose bounded matched/owned diagnostics; construct captures and complete session archives in checked sibling transactions with rollback and recovery state; validate the closed staged-manifest contract; never follow source symlinks; exclude direct provider temp/backup residue while preserving unrelated evidence",
             "related_signals": [
                 "harness-signals/2026-06-25-required-verification-finalization-gap.md"
             ],

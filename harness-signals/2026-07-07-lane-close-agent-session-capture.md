@@ -7,8 +7,8 @@ Last reviewed: 2026-07-10
 Source worktree: agent-session-capture-disambiguation
 Source commit: none
 Signal type: agent-mistake
-Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: reject non-Codex incarnation floors and invalid explicit providers before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; expose bounded matched/owned diagnostics; construct each capture from validated raw declarations with checked writes/copies inside a canonical direct-child temp; atomically replace the final slug directory with rollback; exclude only direct foreign temp siblings from session archives without following directory symlinks or dropping backups
+Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-session-archive-filesystem.php, bin/orbit-codex-pre-tool-use-hook
+Guardrail change: reject non-Codex incarnation floors and invalid explicit providers before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; expose bounded matched/owned diagnostics; construct captures and complete session archives in checked sibling transactions with rollback and recovery state; validate the closed staged-manifest contract; never follow source symlinks; exclude direct provider temp/backup residue while preserving unrelated evidence
 Related signals: harness-signals/2026-06-25-required-verification-finalization-gap.md
 Superseded by: none
 Tags: finalization, agent-sessions, solo, loop-engineering
@@ -41,6 +41,12 @@ pre-replacement writes could fail without cleanup, ambiguity evidence named
 arbitrary scan-order files, the private seam collided with generic globals, and
 session archiving copied incomplete foreign temp siblings. Those defects made
 the claimed transaction and retained evidence weaker than the signal record.
+
+The archive-integrity review then found that archive refresh still mutated the
+old final before a replacement was complete, accepted open-ended or incomplete
+staged manifests, followed file symlinks, retained transaction-shaped provider
+residue, and used unchecked in-place bookkeeping writes. Fallback extraction
+also recorded its temporary construction path in the final top-level manifest.
 
 ## Prior Occurrences
 
@@ -81,6 +87,12 @@ provider-root containment, and recursive delete re-derived its boundary from
 the target path. Failure manifests retained `checked` but omitted the actual
 matched and owned candidates. Archive discovery also treated manifest-bearing
 `.tmp-*` siblings as valid staged captures.
+
+The outer session archive had no equivalent complete-build transaction. A
+refresh could destroy the previous final during construction, swap failure had
+no deterministic rollback seam, and post-swap loop/index failure had no retained
+backup or recovery contract. Staged evidence also lacked a closed schema and
+artifact completeness gate.
 
 ## Guardrail Change
 
@@ -135,12 +147,35 @@ matched and owned candidates. Archive discovery also treated manifest-bearing
   `matched_candidates` and `owned_candidates` records with actual paths,
   ownership class, normalized cwd, and primary Solo identity in both the
   manifest and stderr. These diagnostics never rank or select candidates.
-- `bin/orbit-session-archive` warns about and excludes foreign `.tmp-*` capture
-  siblings only when they are direct slug siblings under
-  `.orbit/agent-sessions/<provider>/`, without deleting them. A lone temp does
-  not suppress archive-time fallback, `.backup-*` evidence is copied, unrelated
-  temp-shaped `.orbit/evidence/` directories remain byte-identical, and copy or
-  staged discovery never follows directory symlinks.
+- `bin/orbit-session-archive` accepts staged capture statuses only from the
+  exact `ok`, `partial`, `ambiguous`, `capture_failed`, `extraction_failed`,
+  `invalid`, `missing`, `solo_process_not_found`, `stale`, and `unsupported`
+  allowlist after source evidence has been copied into the complete archive
+  temp. Every non-transaction direct provider/slug directory in that temp must
+  contain a non-symlink regular manifest; each manifest must be schema v1,
+  match its path, name a positive integer Solo process id, and provide a
+  trimmed reason when non-ok. `ok` additionally requires non-empty regular
+  usage, messages, and raw artifacts.
+- `bin/orbit-session-archive-filesystem.php` provides the narrow checked-write,
+  atomic active-loop/index write, recursive cleanup, and injected-rename swap
+  seam. The command constructs the semantically final archive in a unique
+  sibling temp, normalizes fallback manifest `archive_dir`, captures the final
+  path's `lstat` identity before construction, and revalidates it immediately
+  before swap. An unexpected final is untouched while only the temp is cleaned;
+  activation failure without a prior final retains the complete temp without
+  claiming rollback, and failed activation plus failed rollback retains complete
+  temp and backup. Active-loop, index, and backup-cleanup failures report
+  phase-correct recovery, and the old backup is removed only after active-loop
+  and index bookkeeping succeeds.
+- Archive roots, explicit destinations, and source `.orbit` roots reject
+  symlinks, including source-root dot/dot-dot aliases found by lexical endpoint
+  normalization before canonicalization; the original spelling still owns
+  actual `realpath` resolution. Explicit destinations are canonical direct
+  children of their owned archive root. Copying never follows root or nested
+  file/directory symlinks, omits top-level `release-candidates`, and reports only
+  copied source entries. Direct provider `.tmp-*` and `.backup-*` siblings are
+  warned and excluded without deletion, while unrelated backup-shaped evidence
+  remains byte-exact.
 
 ## Verification
 
@@ -156,8 +191,14 @@ bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTes
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 3 staging replacement'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php tests/Feature/E2ESupport/SessionArchiveTest.php --filter='review corrections|session archive excludes|session archive does not treat'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/SessionArchiveTest.php
 php -l bin/orbit-agent-session-capture
+php -l bin/orbit-session-archive
+php -l bin/orbit-session-archive-filesystem.php
 bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/AgentSessionArchiveTest.php
+bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/SessionArchiveTest.php
+git diff --check
+bin/orbit-harness-signal-index --write
 bin/orbit-harness-signal-index --check
 ```
 
@@ -176,6 +217,26 @@ PHP syntax and the gateway-test-only Mago format check passed. The new `main()`
 boundary is structurally indented and the replacement transaction follows
 project style; unrelated legacy statements inside and after `main()` retain the
 pre-existing baseline and are not claimed Mago-clean.
+
+The R1 archive-integrity file passed at 50 tests / 328 assertions. Both archive
+bin files passed PHP syntax, the focused app-relative Mago check passed, and the
+harness signal index was regenerated and checked. The correction after the
+first focused run canonicalized the explicit destination's parent for macOS
+`/var` versus `/private/var` containment while preserving the requested
+destination spelling. The exact-tree review then routed index replacement
+through the checked atomic helper and made generated-destination symlink
+rejection explicit. The spec-review correction rejected terminal-dot source
+aliases before archive-root construction and moved staged precedence validation
+onto the copied, final-semantic archive temp. The security-review correction
+closed nested-parent source aliases and manifestless capture publication,
+revalidated destination identity before swap, retained both recovery trees when
+rollback failed, and split active-loop, index, and backup-cleanup guidance by
+the state that each phase had already committed.
+The path-alias quality correction keeps generated final, summary, and manifest
+paths on the normalized caller/default root spelling while the canonical root
+continues to own transaction construction, scanning, security, and index work;
+the isolated wrapper passed at 1 test / 7 assertions and the full owning file at
+63 tests / 842 assertions.
 
 The high-model correction red is retained at
 `.orbit/evidence/capture-review-corrections-red.txt`. It covers invalid
@@ -212,6 +273,12 @@ agent-session/provider roots, the direct-child temp cleanup result, and the
 bounded matched/owned diagnostics. Never derive recursive-delete authority from
 the deletion target itself, accept a symlinked capture root, ignore a false
 write/copy result, or archive a foreign `.tmp-*` sibling as completed evidence.
+
+For outer session-archive failures, inspect the hidden sibling temp/backup paths,
+the final top-level agent-session manifest `archive_dir`, and the printed
+recovery paths. Never refresh the final in place, follow source symlinks, accept
+unknown staged statuses or incomplete `ok` artifacts, write the active loop in
+place, or remove the previous backup before checked index bookkeeping succeeds.
 
 For a deliberate Codex process restart, prefer a fresh process id. If the id is
 reused, record the restart time and pass the caller-attested floor; a stale
