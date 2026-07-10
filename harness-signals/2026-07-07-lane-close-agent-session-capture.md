@@ -8,7 +8,7 @@ Source worktree: agent-session-capture-disambiguation
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: after exact-marker discovery, disambiguate duplicate Codex candidates only by provider context, exact normalized cwd, and the transcript's primary Solo identity; retain loud ambiguity when multiple candidates survive; after one candidate remains, an optional caller-attested incarnation floor validates canonical activity without selecting or ranking candidates
+Guardrail change: reject non-Codex incarnation floors and invalid explicit providers before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; expose bounded matched/owned diagnostics; construct each capture from validated raw declarations with checked writes/copies inside a canonical direct-child temp; atomically replace the final slug directory with rollback; exclude only direct foreign temp siblings from session archives without following directory symlinks or dropping backups
 Related signals: harness-signals/2026-06-25-required-verification-finalization-gap.md
 Superseded by: none
 Tags: finalization, agent-sessions, solo, loop-engineering
@@ -31,6 +31,16 @@ It recurred again when a deliberately restarted Codex process retained the same
 marker and lane-close capture accepted the sole pre-restart rollout. The marker
 still proved session ownership, but not that the rollout belonged to the active
 process incarnation.
+
+The same review found numeric-prefix marker matches, unowned Codex singletons,
+and direct writes into reused slug directories. Those paths could select the
+wrong transcript or mix stale success artifacts into a later success or failure.
+
+The high-model review then found that provider containment remained lexical,
+pre-replacement writes could fail without cleanup, ambiguity evidence named
+arbitrary scan-order files, the private seam collided with generic globals, and
+session archiving copied incomplete foreign temp siblings. Those defects made
+the claimed transaction and retained evidence weaker than the signal record.
 
 ## Prior Occurrences
 
@@ -62,6 +72,16 @@ After disambiguation, the Codex path also lacked a caller-attested restart floor
 that could reject a stale singleton without turning timestamps into candidate
 ownership or selection evidence.
 
+The helper also silently canonicalized explicit slugs and wrote captures
+directly into the final directory, so reruns could retain files from a previous
+capture and had no rollback boundary for replacement failure.
+
+The replacement boundary did not yet cover construction failures or canonical
+provider-root containment, and recursive delete re-derived its boundary from
+the target path. Failure manifests retained `checked` but omitted the actual
+matched and owned candidates. Archive discovery also treated manifest-bearing
+`.tmp-*` siblings as valid staged captures.
+
 ## Guardrail Change
 
 - `bin/orbit-agent-session-capture` stages provider artifacts by exact
@@ -74,11 +94,12 @@ ownership or selection evidence.
 - `HARNESS.md`, `LOOP.md.example`, and the implementation skill now document
   the lane-close capture and waiver contract.
 - On duplicate Codex marker matches, `bin/orbit-agent-session-capture` now
-  filters by the already-selected provider context, exact normalized cwd, and
-  the transcript's own primary Solo identity. It selects only one survivor,
-  preserves `ambiguous_duplicate_markers` otherwise, and records both a stable
-  `disambiguation_basis` and non-selecting timestamp corroboration in successful
-  manifests.
+  uses one all-occurrences exact-integer parser for provider discovery, then
+  filters every candidate by exact normalized cwd and a separate standalone-line
+  primary identity channel. A sole no-primary legacy candidate is visibly
+  partial, a full owner outranks partial candidates, and multiple full or
+  partial-only owners preserve `ambiguous_duplicate_markers`. Timestamp evidence
+  remains corroborative and never selects or ranks candidates.
 - `--incarnation-started-at=<ISO8601>` is a Codex-only, caller-attested
   validate-after-selection floor. Its syntax is checked before Solo DB access or
   staging; ambiguity returns before activity validation; and a unique candidate
@@ -86,6 +107,40 @@ ownership or selection evidence.
   non-`session_meta` row. Before-floor, missing, or unparseable activity returns
   `stale_pre_restart_session` with the floor, source, rollout id, and observed
   last activity, while no-flag captures retain their prior output and manifest.
+- Claude and Grok reject `--incarnation-started-at` with
+  `incarnation_floor_unsupported_provider` before staging mutation. Restarted
+  Claude or Grok lanes require a fresh Solo process id or an explicit capture
+  waiver.
+- Explicit `--slug` input must already be non-empty and canonical; invalid input
+  fails before Solo DB access or staging. Every success or capture-failure result
+  is completed in a unique temporary directory directly under the provider root,
+  then replaces the final slug directory through sibling rename, backup, and
+  rollback steps. Direct-child assertions guard every rename and recursive
+  delete, successful replacement removes the backup, and coherent failure
+  replacement cannot retain stale success artifacts.
+- Explicit `--provider` accepts only the closed `codex`, `claude`, `grok`, and
+  `terminal` set before Solo DB or staging access. The helper creates and
+  canonicalizes `.orbit/agent-sessions`, rejects symlinked agent-session and
+  provider roots, and proves the canonical provider directory is exactly one
+  child below the canonical agent-session root before deriving staging paths.
+- Filesystem construction and replacement live in one bin-local procedural
+  include with project-prefixed functions. Checked manifest, usage, messages,
+  and raw-copy syscalls clean only the direct-child temp on construction
+  failure and leave final/backup state untouched. Declared raw sources must
+  exist and archive names must be basenames within `raw/`. Recursive deletion
+  receives and reasserts the canonical non-symlinked provider root, its real
+  path, and the candidate parent real path at the delete operation itself. A
+  temp symlink is rejected and unlinked without following its target.
+- Codex ambiguity and no-owned failures retain legacy `checked` and add bounded
+  `matched_candidates` and `owned_candidates` records with actual paths,
+  ownership class, normalized cwd, and primary Solo identity in both the
+  manifest and stderr. These diagnostics never rank or select candidates.
+- `bin/orbit-session-archive` warns about and excludes foreign `.tmp-*` capture
+  siblings only when they are direct slug siblings under
+  `.orbit/agent-sessions/<provider>/`, without deleting them. A lone temp does
+  not suppress archive-time fallback, `.backup-*` evidence is copied, unrelated
+  temp-shaped `.orbit/evidence/` directories remain byte-identical, and copy or
+  staged discovery never follows directory symlinks.
 
 ## Verification
 
@@ -97,19 +152,37 @@ bin/orbit-agent-session-capture 801 --orbit-dir=.orbit --cwd=/Users/nckrtl/orbit
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='(inherited marker|wrong cwd)'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='duplicate markers'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter=incarnation
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 2 exact identity'
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 3 staging replacement'
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php tests/Feature/E2ESupport/SessionArchiveTest.php --filter='review corrections|session archive excludes|session archive does not treat'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php
 php -l bin/orbit-agent-session-capture
 bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/AgentSessionArchiveTest.php
+bin/orbit-harness-signal-index --check
 ```
 
 The live capture command staged a real Solo-spawned Grok worker session with
 `status: ok` under `.orbit/agent-sessions/grok/lane-close-capture-worker-801/`.
 The 2026-07-10 recurrence verification passed with 2 focused disambiguation
 tests / 9 assertions, 1 duplicate-marker safety test / 3 assertions, and the
-incarnation-floor filter at 7 tests / 74 assertions, including the non-Codex
-compatibility case. The full archive file passed at 22 tests / 359 assertions;
-PHP syntax and the gateway-test-only Mago format check passed. The root helper
-retains its pre-existing baseline style and is not claimed Mago-clean.
+incarnation-floor filter at 7 tests / 74 assertions. The provider-floor
+hardening additionally covers Claude and Grok rejection before staging
+mutation. The exact-identity/ownership filter passed at 11 tests / 66 assertions,
+and atomic staging replacement passed at 13 tests / 116 assertions, including
+the private procedural rollback matrix accepted by Claude 943. The full owning
+file passed at 47 tests / 545 assertions; the related `SessionArchive` and
+`FeatureFinalizationGate` filters passed at 56 / 607 and 47 / 111 respectively.
+PHP syntax and the gateway-test-only Mago format check passed. The new `main()`
+boundary is structurally indented and the replacement transaction follows
+project style; unrelated legacy statements inside and after `main()` retain the
+pre-existing baseline and are not claimed Mago-clean.
+
+The high-model correction red is retained at
+`.orbit/evidence/capture-review-corrections-red.txt`. It covers invalid
+providers, symlinked roots, construction write/copy failures, native false-write
+checking and native success, delete-site containment, actionable ambiguity and
+no-owned diagnostics, include idempotence beside a generic `main`, and foreign
+temp archive hygiene before production changes.
 
 ## Reappearance Check
 
@@ -120,15 +193,31 @@ the exact marker parser missed a runtime-specific prompt shape. Tighten the
 capture helper and add a provider fixture before weakening finalization.
 
 For duplicate Codex markers, also inspect whether provider context, exact
-normalized cwd, and primary Solo identity leave exactly one candidate. Never
-use session-meta timestamp, file order, mtime, or newest-file selection to
-rescue or tie-break the match; session-meta timestamp remains manifest
-corroboration only, while the caller floor validates non-session-meta activity
-only after one candidate remains.
+normalized cwd, and standalone primary Solo identity leave exactly one full
+owner or one allowed partial-only legacy candidate. Numeric marker comparison
+must remain exact, and a mid-sentence child mention must never establish primary
+ownership. Never use session-meta timestamp, file order, mtime, or newest-file
+selection to rescue or tie-break the match; session-meta timestamp remains
+manifest corroboration only, while the caller floor validates non-session-meta
+activity only after one candidate remains.
 
-For a deliberate process restart, prefer a fresh process id. If the id is
+For repeated slugs, inspect the final directory as one coherent capture and
+check for lingering sibling temp or backup directories. Never restore direct
+in-place writes or delete the previous final before a complete sibling capture
+is ready; replacement failure must preserve or roll back the prior coherent
+capture and report the exact involved paths.
+
+For construction or containment failures, inspect the canonical
+agent-session/provider roots, the direct-child temp cleanup result, and the
+bounded matched/owned diagnostics. Never derive recursive-delete authority from
+the deletion target itself, accept a symlinked capture root, ignore a false
+write/copy result, or archive a foreign `.tmp-*` sibling as completed evidence.
+
+For a deliberate Codex process restart, prefer a fresh process id. If the id is
 reused, record the restart time and pass the caller-attested floor; a stale
 result requires an explicit lane-close waiver rather than capture acceptance.
+Restarted Claude or Grok lanes require a fresh Solo process id or an explicit
+capture waiver because incarnation floors are unsupported for those providers.
 
 ## Curation Notes
 

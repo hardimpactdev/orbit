@@ -3,6 +3,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-agent-session-capture-filesystem.php';
+
 /**
  * Lane-close agent session capture.
  *
@@ -14,223 +16,324 @@ declare(strict_types=1);
  * session candidate. Ambiguity or zero matches = loud failure with diagnostics.
  */
 
-// Robust arg parsing for mixed positional id + long options (works under test Process exec too)
-$rawArgv = $GLOBALS['argv'] ?? $_SERVER['argv'] ?? [];
-$script = array_shift($rawArgv); // drop script name
+function orbitAgentSessionCaptureMain(array $argv): int
+{
+    // Robust arg parsing for mixed positional id + long options (works under test Process exec too)
+    $rawArgv = $argv;
+    $script = array_shift($rawArgv); // drop script name
 
-$soloProcessId = null;
-$options = [];
+    $soloProcessId = null;
+    $options = [];
 
-foreach ($rawArgv as $a) {
-    if (preg_match('/^--([a-z0-9-]+)(?:=(.*))?$/', $a, $m)) {
-        $key = str_replace('-', '_', $m[1]);
-        $val = $m[2] ?? true;
-        $options[$key] = $val;
-    } elseif ($soloProcessId === null && preg_match('/^\d+$/', $a)) {
-        $soloProcessId = (int) $a;
-    } elseif (preg_match('/^--solo-process-id=(.+)$/', $a, $m)) {
-        $soloProcessId = (int) $m[1];
-    }
-}
-
-if (array_key_exists('help', $options) || $soloProcessId === null) {
-    fwrite(STDOUT, <<<'EOF'
-Usage:
-  bin/orbit-agent-session-capture <solo-process-id> [--home=...] [--cwd=...] [--solo-db=...] [--orbit-dir=...] [--incarnation-started-at=<ISO8601>]
-
-Extracts the provider session for the given live Solo process id using exact marker match
-"Solo process ID: <id>" (and close variants). Writes staged capture under
-.orbit/agent-sessions/<provider>/<slug>/ containing manifest.json, usage.json,
-messages.jsonl, and raw/ copies.
-
-Exits non-zero with diagnostics on missing or ambiguous marker match.
-EOF);
-    exit($soloProcessId === null ? 2 : 0);
-}
-
-if ($soloProcessId <= 0) {
-    fwrite(STDERR, "solo-process-id is required and must be positive\n");
-    exit(2);
-}
-
-$home = (string) ($options['home'] ?? getenv('HOME'));
-$cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
-$soloDb = (string) ($options['solo_db'] ?? $options['solo-db'] ?? "{$home}/.config/soloterm/solo.db");
-$orbitDir = (string) ($options['orbit_dir'] ?? $options['orbit-dir'] ?? ($cwd.'/.orbit'));
-$explicitProvider = $options['provider'] ?? null;
-$explicitSlug = $options['slug'] ?? null;
-$incarnationFloor = null;
-$incarnationFloorTimestamp = null;
-
-if (array_key_exists('incarnation_started_at', $options)) {
-    $incarnationFloor = $options['incarnation_started_at'];
-
-    if (! is_string($incarnationFloor) || ($incarnationFloorTimestamp = parseIso8601Timestamp($incarnationFloor)) === null) {
-        fwrite(STDERR, "incarnation-started-at must be a valid ISO-8601 timestamp\n");
-        exit(2);
-    }
-}
-
-if (! is_file($soloDb)) {
-    fwrite(STDERR, "solo db not found: {$soloDb}\n");
-    exit(2);
-}
-
-$processRow = loadSoloProcessRow($soloDb, $soloProcessId);
-
-if ($processRow === null) {
-    // Try spawned_processes as fallback for runtime liveness
-    $processRow = loadSoloSpawnedProcess($soloDb, $soloProcessId);
-}
-
-if ($processRow === null) {
-    fwrite(STDERR, "solo process {$soloProcessId} not found in solo db (row not alive)\n");
-    exit(2);
-}
-
-$kind = strtolower((string) ($processRow['kind'] ?? $processRow['process_kind'] ?? 'command'));
-$command = (string) ($processRow['command'] ?? '');
-$workingDir = realpath((string) ($processRow['working_dir'] ?? $processRow['project_path'] ?? $cwd)) ?: $cwd;
-$name = (string) ($processRow['name'] ?? $processRow['process_name'] ?? 'agent');
-
-$provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
-
-// Resolve started_at from Solo row (prefer runtime spawned_at when the row is alive)
-$startedAt = $processRow['spawned_at']
-    ?? $processRow['created_at']
-    ?? $processRow['started_at']
-    ?? null;
-
-fwrite(STDERR, sprintf(
-    "resolved from solo.db: solo_process_id=%d provider=%s cwd=%s started_at=%s\n",
-    $soloProcessId,
-    $provider,
-    $workingDir,
-    $startedAt ?? 'null'
-));
-
-$slug = $explicitSlug ?: slugify($name ?: 'process-'.$soloProcessId).'-'.$soloProcessId;
-
-$stagingBase = rtrim($orbitDir, '/').'/agent-sessions/'.$provider.'/'.$slug;
-ensureDirectory($stagingBase);
-ensureDirectory($stagingBase.'/raw');
-
-$markerNeedle = "Solo process ID: {$soloProcessId}";
-
-$extract = match ($provider) {
-    'codex' => captureCodexExact(
-        $home,
-        $workingDir,
-        $soloProcessId,
-        $markerNeedle,
-        $startedAt,
-        $incarnationFloor,
-        $incarnationFloorTimestamp,
-    ),
-    'claude' => captureClaudeExact($home, $workingDir, $soloProcessId, $markerNeedle),
-    'grok' => captureGrokExact($home, $workingDir, $soloProcessId, $markerNeedle),
-    default => [
-        'status' => 'unsupported',
-        'reason' => $kind === 'terminal' ? 'terminal_kind_requires_waiver' : 'provider_unsupported',
-        'checked' => [],
-    ],
-};
-
-if (($extract['status'] ?? null) === 'ok') {
-    // Write staged artifacts
-    $manifest = [
-        'schema_version' => 1,
-        'provider' => $provider,
-        'status' => 'ok',
-        'slug' => $slug,
-        'solo_process_id' => $soloProcessId,
-        'kind' => $kind,
-        'started_at' => $startedAt,
-        'marker_match' => 'exact',
-        'artifact' => $extract['artifact'] ?? null,
-        'source' => $extract['source'] ?? 'lane_close_capture',
-    ];
-
-    if (isset($extract['disambiguation_basis'])) {
-        $manifest['disambiguation_basis'] = $extract['disambiguation_basis'];
-    }
-
-    if (isset($extract['timestamp_corroboration'])) {
-        $manifest['timestamp_corroboration'] = $extract['timestamp_corroboration'];
-    }
-
-    if (array_key_exists('incarnation_floor', $extract)) {
-        $manifest['incarnation_floor'] = $extract['incarnation_floor'];
-        $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
-        $manifest['rollout_id'] = $extract['rollout_id'];
-        $manifest['last_activity_at'] = $extract['last_activity_at'];
-    }
-
-    writeJsonFile($stagingBase.'/manifest.json', $manifest);
-    writeJsonFile($stagingBase.'/usage.json', $extract['usage'] ?? []);
-    file_put_contents($stagingBase.'/messages.jsonl', ($extract['messages_jsonl'] ?? '')."\n");
-
-    if (!empty($extract['raw_files'])) {
-        foreach ($extract['raw_files'] as $rf) {
-            $src = $rf['path'];
-            $dest = $stagingBase.'/raw/'.$rf['archive_name'];
-            if (is_file($src)) {
-                copyFileOrFail($src, $dest);
-            }
+    foreach ($rawArgv as $a) {
+        if (preg_match('/^--([a-z0-9-]+)(?:=(.*))?$/', $a, $m)) {
+            $key = str_replace('-', '_', $m[1]);
+            $val = $m[2] ?? true;
+            $options[$key] = $val;
+        } elseif ($soloProcessId === null && preg_match('/^\d+$/', $a)) {
+            $soloProcessId = (int) $a;
+        } elseif (preg_match('/^--solo-process-id=(.+)$/', $a, $m)) {
+            $soloProcessId = (int) $m[1];
         }
     }
 
-    $result = [
-        'status' => 'ok',
-        'provider' => $provider,
-        'solo_process_id' => $soloProcessId,
-        'slug' => $slug,
-        'started_at' => $startedAt,
-        'staging_dir' => $stagingBase,
-    ];
-    echo json_encode($result, JSON_UNESCAPED_SLASHES)."\n";
-    exit(0);
-}
+    if (array_key_exists('help', $options) || $soloProcessId === null) {
+        fwrite(STDOUT, <<<'EOF'
+    Usage:
+      bin/orbit-agent-session-capture <solo-process-id> [--home=...] [--cwd=...] [--solo-db=...] [--orbit-dir=...] [--incarnation-started-at=<ISO8601>]
 
-// Failure or unsupported path: write explicit manifest entry (supports waiver later)
-$manifest = [
-    'schema_version' => 1,
-    'provider' => $provider,
-    'status' => $extract['status'] ?? 'missing',
-    'slug' => $slug,
-    'solo_process_id' => $soloProcessId,
-    'kind' => $kind,
-    'started_at' => $startedAt,
-    'reason' => $extract['reason'] ?? 'capture_failed',
-    'checked' => $extract['checked'] ?? [],
-    'marker' => $markerNeedle,
-];
+    Extracts the provider session for the given live Solo process id using exact marker match
+    "Solo process ID: <id>" (and close variants). Writes staged capture under
+    .orbit/agent-sessions/<provider>/<slug>/ containing manifest.json, usage.json,
+    messages.jsonl, and raw/ copies.
 
-if (($extract['status'] ?? null) === 'stale') {
-    $manifest['incarnation_floor'] = $extract['incarnation_floor'];
-    $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
-    $manifest['rollout_id'] = $extract['rollout_id'];
-    $manifest['last_activity_at'] = $extract['last_activity_at'];
-}
+    Exits non-zero with diagnostics on missing or ambiguous marker match.
+    EOF);
+        return $soloProcessId === null ? 2 : 0;
+    }
 
-writeJsonFile($stagingBase.'/manifest.json', $manifest);
+    if ($soloProcessId <= 0) {
+        fwrite(STDERR, "solo-process-id is required and must be positive\n");
+        return 2;
+    }
 
-fwrite(STDERR, "capture failed for solo_process_id={$soloProcessId} provider={$provider}: ".($extract['reason'] ?? 'unknown')."\n");
-if (($extract['status'] ?? null) === 'stale') {
-    fwrite(STDERR, 'stale diagnostics: '.json_encode([
-        'incarnation_floor' => $extract['incarnation_floor'],
-        'incarnation_floor_source' => $extract['incarnation_floor_source'],
-        'rollout_id' => $extract['rollout_id'],
-        'last_activity_at' => $extract['last_activity_at'],
-    ], JSON_UNESCAPED_SLASHES)."\n");
+    $home = (string) ($options['home'] ?? getenv('HOME'));
+    $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
+    $soloDb = (string) ($options['solo_db'] ?? $options['solo-db'] ?? "{$home}/.config/soloterm/solo.db");
+    $orbitDir = (string) ($options['orbit_dir'] ?? $options['orbit-dir'] ?? ($cwd.'/.orbit'));
+    $explicitProvider = $options['provider'] ?? null;
+    $explicitSlug = $options['slug'] ?? null;
+    $incarnationFloor = null;
+    $incarnationFloorTimestamp = null;
+
+    if (array_key_exists('provider', $options)) {
+        if (! is_string($explicitProvider) || ! in_array($explicitProvider, ['codex', 'claude', 'grok', 'terminal'], true)) {
+            fwrite(STDERR, "invalid_explicit_provider\n");
+
+            return 2;
+        }
+    }
+
+    if (array_key_exists('slug', $options)) {
+        if (! is_string($explicitSlug) || $explicitSlug === '' || slugify($explicitSlug) !== $explicitSlug) {
+            fwrite(STDERR, "invalid_explicit_slug\n");
+
+            return 2;
+        }
+    }
+
+    if (array_key_exists('incarnation_started_at', $options)) {
+        $incarnationFloor = $options['incarnation_started_at'];
+
+        if (! is_string($incarnationFloor) || ($incarnationFloorTimestamp = parseIso8601Timestamp($incarnationFloor)) === null) {
+            fwrite(STDERR, "incarnation-started-at must be a valid ISO-8601 timestamp\n");
+            return 2;
+        }
+    }
+
+    if (! is_file($soloDb)) {
+        fwrite(STDERR, "solo db not found: {$soloDb}\n");
+        return 2;
+    }
+
+    $processRow = loadSoloProcessRow($soloDb, $soloProcessId);
+
+    if ($processRow === null) {
+        // Try spawned_processes as fallback for runtime liveness
+        $processRow = loadSoloSpawnedProcess($soloDb, $soloProcessId);
+    }
+
+    if ($processRow === null) {
+        fwrite(STDERR, "solo process {$soloProcessId} not found in solo db (row not alive)\n");
+        return 2;
+    }
+
+    $kind = strtolower((string) ($processRow['kind'] ?? $processRow['process_kind'] ?? 'command'));
+    $command = (string) ($processRow['command'] ?? '');
+    $workingDir = realpath((string) ($processRow['working_dir'] ?? $processRow['project_path'] ?? $cwd)) ?: $cwd;
+    $name = (string) ($processRow['name'] ?? $processRow['process_name'] ?? 'agent');
+
+    $provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
+
+    if ($incarnationFloor !== null && $provider !== 'codex') {
+        fwrite(STDERR, "incarnation_floor_unsupported_provider\n");
+        return 2;
+    }
+
+    // Resolve started_at from Solo row (prefer runtime spawned_at when the row is alive)
+    $startedAt = $processRow['spawned_at']
+        ?? $processRow['created_at']
+        ?? $processRow['started_at']
+        ?? null;
+
+    fwrite(STDERR, sprintf(
+        "resolved from solo.db: solo_process_id=%d provider=%s cwd=%s started_at=%s\n",
+        $soloProcessId,
+        $provider,
+        $workingDir,
+        $startedAt ?? 'null'
+    ));
+
+    $slug = is_string($explicitSlug) ? $explicitSlug : slugify($name ?: 'process-'.$soloProcessId).'-'.$soloProcessId;
+    $agentSessionsRoot = rtrim($orbitDir, '/').'/agent-sessions';
+
+    if (is_link($agentSessionsRoot)) {
+        fwrite(STDERR, "symlinked_agent_sessions_root path={$agentSessionsRoot}\n");
+
+        return 1;
+    }
+
+    orbitAgentSessionCaptureEnsureDirectory($agentSessionsRoot);
+
+    if (is_link($agentSessionsRoot) || ($canonicalAgentSessionsRoot = realpath($agentSessionsRoot)) === false) {
+        fwrite(STDERR, "symlinked_agent_sessions_root path={$agentSessionsRoot}\n");
+
+        return 1;
+    }
+
+    $providerPath = "{$canonicalAgentSessionsRoot}/{$provider}";
+
+    if (is_link($providerPath)) {
+        fwrite(STDERR, "symlinked_provider_root path={$providerPath}\n");
+
+        return 1;
+    }
+
+    orbitAgentSessionCaptureEnsureDirectory($providerPath);
+
+    if (is_link($providerPath) || ($providerRoot = realpath($providerPath)) === false) {
+        fwrite(STDERR, "symlinked_provider_root path={$providerPath}\n");
+
+        return 1;
+    }
+
+    if (dirname($providerRoot) !== $canonicalAgentSessionsRoot || basename($providerRoot) !== $provider) {
+        fwrite(
+            STDERR,
+            "provider_root_not_direct_child provider_root={$providerRoot} agent_sessions_root={$canonicalAgentSessionsRoot}\n",
+        );
+
+        return 1;
+    }
+
+    $stagingBase = $providerRoot.'/'.$slug;
+    $reportedStagingBase = rtrim($orbitDir, '/').'/agent-sessions/'.$provider.'/'.$slug;
+    $temporaryStaging = uniqueStagingSiblingPath($providerRoot, $slug, 'tmp');
+    $backupStaging = uniqueStagingSiblingPath($providerRoot, $slug, 'backup');
+
+    $markerNeedle = "Solo process ID: {$soloProcessId}";
+
+    $extract = match ($provider) {
+        'codex' => captureCodexExact(
+            $home,
+            $workingDir,
+            $soloProcessId,
+            $startedAt,
+            $incarnationFloor,
+            $incarnationFloorTimestamp,
+        ),
+        'claude' => captureClaudeExact($home, $workingDir, $soloProcessId),
+        'grok' => captureGrokExact($home, $workingDir, $soloProcessId),
+        default => [
+            'status' => 'unsupported',
+            'reason' => $kind === 'terminal' ? 'terminal_kind_requires_waiver' : 'provider_unsupported',
+            'checked' => [],
+        ],
+    };
+
+    if (($extract['status'] ?? null) === 'ok') {
+        // Write staged artifacts
+        $manifest = [
+            'schema_version' => 1,
+            'provider' => $provider,
+            'status' => 'ok',
+            'slug' => $slug,
+            'solo_process_id' => $soloProcessId,
+            'kind' => $kind,
+            'started_at' => $startedAt,
+            'marker_match' => 'exact',
+            'artifact' => $extract['artifact'] ?? null,
+            'source' => $extract['source'] ?? 'lane_close_capture',
+        ];
+
+        if (isset($extract['disambiguation_basis'])) {
+            $manifest['disambiguation_basis'] = $extract['disambiguation_basis'];
+        }
+
+        if (isset($extract['timestamp_corroboration'])) {
+            $manifest['timestamp_corroboration'] = $extract['timestamp_corroboration'];
+        }
+
+        if (array_key_exists('incarnation_floor', $extract)) {
+            $manifest['incarnation_floor'] = $extract['incarnation_floor'];
+            $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
+            $manifest['rollout_id'] = $extract['rollout_id'];
+            $manifest['last_activity_at'] = $extract['last_activity_at'];
+        }
+
+        $usage = $extract['usage'] ?? [];
+        $messagesJsonl = ($extract['messages_jsonl'] ?? '')."\n";
+        $rawFiles = $extract['raw_files'] ?? [];
+    } else {
+        // Failure or unsupported path: write explicit manifest entry (supports waiver later)
+        $manifest = [
+            'schema_version' => 1,
+            'provider' => $provider,
+            'status' => $extract['status'] ?? 'missing',
+            'slug' => $slug,
+            'solo_process_id' => $soloProcessId,
+            'kind' => $kind,
+            'started_at' => $startedAt,
+            'reason' => $extract['reason'] ?? 'capture_failed',
+            'checked' => $extract['checked'] ?? [],
+            'marker' => $markerNeedle,
+        ];
+
+        if (($extract['status'] ?? null) === 'stale') {
+            $manifest['incarnation_floor'] = $extract['incarnation_floor'];
+            $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
+            $manifest['rollout_id'] = $extract['rollout_id'];
+            $manifest['last_activity_at'] = $extract['last_activity_at'];
+        }
+
+        foreach (['matched_candidates', 'owned_candidates'] as $diagnosticKey) {
+            if (array_key_exists($diagnosticKey, $extract)) {
+                $manifest[$diagnosticKey] = $extract[$diagnosticKey];
+            }
+        }
+
+        $usage = null;
+        $messagesJsonl = null;
+        $rawFiles = [];
+    }
+
+    try {
+        orbitAgentSessionCaptureBuildStagingDirectory(
+            canonicalProviderRoot: $providerRoot,
+            temporaryStaging: $temporaryStaging,
+            manifest: $manifest,
+            usage: $usage,
+            messagesJsonl: $messagesJsonl,
+            rawFiles: $rawFiles,
+        );
+    } catch (Throwable $throwable) {
+        fwrite(STDERR, "capture staging construction failed: {$throwable->getMessage()}\n");
+
+        return 1;
+    }
+
+    try {
+        orbitAgentSessionCaptureReplaceStagedDirectory(
+            $providerRoot,
+            $temporaryStaging,
+            $stagingBase,
+            $backupStaging,
+        );
+    } catch (Throwable $throwable) {
+        fwrite(STDERR, "capture staging replacement failed: {$throwable->getMessage()}\n");
+
+        return 1;
+    }
+
+    if (($extract['status'] ?? null) === 'ok') {
+        $result = [
+            'status' => 'ok',
+            'provider' => $provider,
+            'solo_process_id' => $soloProcessId,
+            'slug' => $slug,
+            'started_at' => $startedAt,
+            'staging_dir' => $reportedStagingBase,
+        ];
+        echo json_encode($result, JSON_UNESCAPED_SLASHES)."\n";
+
+        return 0;
+    }
+
+    fwrite(STDERR, "capture failed for solo_process_id={$soloProcessId} provider={$provider}: ".($extract['reason'] ?? 'unknown')."\n");
+    if (($extract['status'] ?? null) === 'stale') {
+        fwrite(STDERR, 'stale diagnostics: '.json_encode([
+            'incarnation_floor' => $extract['incarnation_floor'],
+            'incarnation_floor_source' => $extract['incarnation_floor_source'],
+            'rollout_id' => $extract['rollout_id'],
+            'last_activity_at' => $extract['last_activity_at'],
+        ], JSON_UNESCAPED_SLASHES)."\n");
+    }
+    if (!empty($extract['checked'])) {
+        fwrite(STDERR, "candidates checked:\n".json_encode($extract['checked'], JSON_PRETTY_PRINT)."\n");
+    }
+    foreach (['matched_candidates', 'owned_candidates'] as $diagnosticKey) {
+        if (array_key_exists($diagnosticKey, $extract)) {
+            fwrite(
+                STDERR,
+                "{$diagnosticKey}:\n".json_encode($extract[$diagnosticKey], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n",
+            );
+        }
+    }
+    if (($extract['status'] ?? '') === 'ambiguous') {
+        fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect matched_candidates and owned_candidates above.\n");
+    }
+    return 1;
 }
-if (!empty($extract['checked'])) {
-    fwrite(STDERR, "candidates checked:\n".json_encode($extract['checked'], JSON_PRETTY_PRINT)."\n");
-}
-if (($extract['status'] ?? '') === 'ambiguous') {
-    fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect checked list above.\n");
-}
-exit(1);
 
 // --- helpers ---
 
@@ -377,28 +480,13 @@ function slugify(string $value): string
     return $slug === '' ? 'session' : $slug;
 }
 
-function ensureDirectory(string $directory): void
+function uniqueStagingSiblingPath(string $providerRoot, string $slug, string $kind): string
 {
-    if (is_dir($directory)) {
-        return;
-    }
-    if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
-        throw new RuntimeException("Unable to create directory: {$directory}");
-    }
-}
+    do {
+        $path = rtrim($providerRoot, '/')."/.{$slug}.{$kind}-".bin2hex(random_bytes(8));
+    } while (file_exists($path) || is_link($path));
 
-function writeJsonFile(string $path, array $payload): void
-{
-    ensureDirectory(dirname($path));
-    file_put_contents($path, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
-}
-
-function copyFileOrFail(string $src, string $dest): void
-{
-    ensureDirectory(dirname($dest));
-    if (!copy($src, $dest)) {
-        throw new RuntimeException("copy failed: {$src} -> {$dest}");
-    }
+    return $path;
 }
 
 function fileContains(string $path, string $needle): bool
@@ -444,7 +532,6 @@ function captureCodexExact(
     string $home,
     string $cwd,
     int $soloProcessId,
-    string $markerNeedle,
     mixed $startedAt,
     ?string $incarnationFloor,
     ?DateTimeImmutable $incarnationFloorTimestamp,
@@ -457,7 +544,7 @@ function captureCodexExact(
 
     foreach ($rollouts as $file) {
         $checked[] = $file;
-        if (! codexFileHasScopedMarker($file, $markerNeedle)) {
+        if (! codexFileHasScopedMarker($file, $soloProcessId)) {
             continue;
         }
         $candidates[] = $file;
@@ -471,47 +558,80 @@ function captureCodexExact(
         ];
     }
 
-    $chosen = $candidates[0];
-    $disambiguationBasis = null;
-    $timestampCorroboration = null;
+    $normalizedCwd = normalizeCodexCwd($cwd);
+    $fullOwners = [];
+    $partialOwners = [];
+    $matchedCandidates = [];
+    $ownedCandidates = [];
 
-    if (count($candidates) > 1) {
-        $normalizedCwd = normalizeCodexCwd($cwd);
-        $survivors = [];
+    foreach ($candidates as $candidate) {
+        $context = codexCandidateContext($candidate);
+        $ownershipClass = match (true) {
+            $context['normalized_cwd'] !== $normalizedCwd => 'foreign_cwd',
+            $context['primary_solo_process_id'] === $soloProcessId => 'full',
+            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            default => 'foreign_primary_identity',
+        };
+        $diagnostic = [
+            'path' => $candidate,
+            'ownership_class' => $ownershipClass,
+            'normalized_cwd' => $context['normalized_cwd'],
+            'primary_solo_process_id' => $context['primary_solo_process_id'],
+        ];
+        $matchedCandidates[] = $diagnostic;
 
-        foreach ($candidates as $candidate) {
-            $context = codexCandidateContext($candidate);
-
-            if ($context['normalized_cwd'] !== $normalizedCwd) {
-                continue;
-            }
-
-            if ($context['primary_solo_process_id'] !== $soloProcessId) {
-                continue;
-            }
-
-            $survivors[] = [
-                'path' => $candidate,
-                'timestamp' => $context['timestamp'],
-            ];
+        if ($context['normalized_cwd'] !== $normalizedCwd) {
+            continue;
         }
 
-        if (count($survivors) !== 1) {
-            return [
-                'status' => 'ambiguous',
-                'reason' => 'ambiguous_duplicate_markers',
-                'checked' => array_slice($checked, 0, 20),
-            ];
+        $owner = [
+            ...$diagnostic,
+            'timestamp' => $context['timestamp'],
+        ];
+
+        if ($context['primary_solo_process_id'] === $soloProcessId) {
+            $fullOwners[] = $owner;
+            $ownedCandidates[] = $diagnostic;
+
+            continue;
         }
 
-        $chosen = $survivors[0]['path'];
-        $timestampCorroboration = codexTimestampCorroboration($survivors[0]['timestamp'], $startedAt);
-        $disambiguationBasis = sprintf(
-            'provider=codex; normalized_cwd=exact; primary_solo_process_id=%d; timestamp_corroboration=%s',
-            $soloProcessId,
-            $timestampCorroboration,
-        );
+        if ($context['primary_solo_process_id'] === null) {
+            $partialOwners[] = $owner;
+            $ownedCandidates[] = $diagnostic;
+        }
     }
+
+    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+        return [
+            'status' => 'ambiguous',
+            'reason' => 'ambiguous_duplicate_markers',
+            'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => array_slice($ownedCandidates, 0, 20),
+        ];
+    }
+
+    if ($fullOwners === [] && $partialOwners === []) {
+        return [
+            'status' => 'missing',
+            'reason' => 'no_owned_marker_transcript',
+            'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => [],
+        ];
+    }
+
+    $ownership = $fullOwners !== [] ? 'full' : 'partial(no_primary_identity)';
+    $chosenOwner = $fullOwners[0] ?? $partialOwners[0];
+    $chosen = $chosenOwner['path'];
+    $timestampCorroboration = codexTimestampCorroboration($chosenOwner['timestamp'], $startedAt);
+    $disambiguationBasis = sprintf(
+        'provider=codex; ownership=%s; normalized_cwd=exact; primary_solo_process_id=%s; timestamp_corroboration=%s',
+        $ownership,
+        $ownership === 'full' ? (string) $soloProcessId : 'none',
+        $timestampCorroboration,
+    );
 
     $incarnationActivity = null;
 
@@ -566,10 +686,8 @@ function captureCodexExact(
         'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
     ];
 
-    if ($disambiguationBasis !== null) {
-        $result['disambiguation_basis'] = $disambiguationBasis;
-        $result['timestamp_corroboration'] = $timestampCorroboration;
-    }
+    $result['disambiguation_basis'] = $disambiguationBasis;
+    $result['timestamp_corroboration'] = $timestampCorroboration;
 
     if ($incarnationFloor !== null && $incarnationActivity !== null) {
         $result['incarnation_floor'] = $incarnationFloor;
@@ -635,6 +753,7 @@ function codexCandidateContext(string $path): array
     $candidateCwd = null;
     $timestamp = null;
     $baseInstructionsIdentity = null;
+    $baseInstructionsIdentityAmbiguous = false;
     $firstUserIdentity = null;
     $firstUserMessageSeen = false;
 
@@ -655,7 +774,13 @@ function codexCandidateContext(string $path): array
                 $baseText = is_array($base) && isset($base['text'])
                     ? (string) $base['text']
                     : (is_string($base) ? $base : '');
-                $baseInstructionsIdentity = soloProcessIdFromText($baseText);
+                $baseInstructionIdentities = standaloneSoloProcessIdsFromIdentityText($baseText);
+
+                if (count($baseInstructionIdentities) > 1) {
+                    $baseInstructionsIdentityAmbiguous = true;
+                } elseif (count($baseInstructionIdentities) === 1) {
+                    $baseInstructionsIdentity = $baseInstructionIdentities[0];
+                }
             }
 
             continue;
@@ -672,32 +797,42 @@ function codexCandidateContext(string $path): array
         }
 
         $firstUserMessageSeen = true;
-        $firstUserIdentity = soloProcessIdFromUserIdentityMarker(extractText($payload['content'] ?? ''));
+        $firstUserIdentities = standaloneSoloProcessIdsFromIdentityText(extractText($payload['content'] ?? ''));
+        $firstUserIdentity = count($firstUserIdentities) === 1 ? $firstUserIdentities[0] : null;
     }
 
     return [
         'normalized_cwd' => normalizeCodexCwd($candidateCwd),
-        'primary_solo_process_id' => $baseInstructionsIdentity ?? $firstUserIdentity,
+        'primary_solo_process_id' => $baseInstructionsIdentityAmbiguous
+            ? null
+            : ($baseInstructionsIdentity ?? $firstUserIdentity),
         'timestamp' => $timestamp,
     ];
 }
 
-function soloProcessIdFromText(string $text): ?int
+/** @return list<int> */
+function soloProcessIdsFromText(string $text): array
 {
-    if (preg_match('/Solo process ID:\s*(\d+)\b/', $text, $matches) !== 1) {
-        return null;
+    if (preg_match_all('/Solo process ID:\s*(\d+)(?!\d)/', $text, $matches) === false) {
+        return [];
     }
 
-    return (int) $matches[1];
+    return array_map(static fn (string $id): int => (int) $id, $matches[1]);
 }
 
-function soloProcessIdFromUserIdentityMarker(string $text): ?int
+/** @return list<int> */
+function standaloneSoloProcessIdsFromIdentityText(string $text): array
 {
-    if (preg_match('/(?:^|\R)\s*Solo process ID:\s*(\d+)\b/', $text, $matches) !== 1) {
-        return null;
+    if (preg_match_all('/(?:^|\R)\h*Solo process ID:\h*(\d+)(?!\d)\h*(?=\R|$)/', $text, $matches) === false) {
+        return [];
     }
 
-    return (int) $matches[1];
+    return array_map(static fn (string $id): int => (int) $id, $matches[1]);
+}
+
+function textHasSoloProcessId(string $text, int $soloProcessId): bool
+{
+    return in_array($soloProcessId, soloProcessIdsFromText($text), true);
 }
 
 function normalizeCodexCwd(?string $cwd): ?string
@@ -824,7 +959,7 @@ function parseIso8601Timestamp(mixed $timestamp): ?DateTimeImmutable
     return $parsed;
 }
 
-function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
+function codexFileHasScopedMarker(string $path, int $soloProcessId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) === 'session_meta') {
@@ -837,7 +972,7 @@ function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
                 $text = $base;
             }
 
-            if (str_contains($text, $markerNeedle)) {
+            if (textHasSoloProcessId($text, $soloProcessId)) {
                 return true;
             }
 
@@ -854,7 +989,7 @@ function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
             continue;
         }
 
-        if (str_contains(extractText($payload['content'] ?? ''), $markerNeedle)) {
+        if (textHasSoloProcessId(extractText($payload['content'] ?? ''), $soloProcessId)) {
             return true;
         }
     }
@@ -862,13 +997,13 @@ function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
     return false;
 }
 
-function captureClaudeExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+function captureClaudeExact(string $home, string $cwd, int $soloProcessId): array
 {
     $checked = [];
     $matches = [];
     foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
         $checked[] = $file;
-        if (claudeFileHasPromptMarker($file, $markerNeedle)) {
+        if (claudeFileHasPromptMarker($file, $soloProcessId)) {
             $matches[] = $file;
         }
     }
@@ -910,7 +1045,7 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId, strin
     ];
 }
 
-function captureGrokExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
 {
     $checked = [];
     $candidates = [];
@@ -918,7 +1053,7 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId, string 
     foreach (glob("{$base}/*/*", GLOB_ONLYDIR) ?: [] as $dir) {
         foreach (glob("{$dir}/chat_history.jsonl") ?: [] as $f) {
             $checked[] = $f;
-            if (grokChatHasPromptMarker($f, $markerNeedle)) {
+            if (grokChatHasPromptMarker($f, $soloProcessId)) {
                 $candidates[] = $dir;
             }
         }
@@ -964,14 +1099,14 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId, string 
     ];
 }
 
-function claudeFileHasPromptMarker(string $path, string $markerNeedle): bool
+function claudeFileHasPromptMarker(string $path, int $soloProcessId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) !== 'user') {
             continue;
         }
 
-        if (str_contains(extractText($row['message']['content'] ?? ''), $markerNeedle)) {
+        if (textHasSoloProcessId(extractText($row['message']['content'] ?? ''), $soloProcessId)) {
             return true;
         }
     }
@@ -979,14 +1114,14 @@ function claudeFileHasPromptMarker(string $path, string $markerNeedle): bool
     return false;
 }
 
-function grokChatHasPromptMarker(string $path, string $markerNeedle): bool
+function grokChatHasPromptMarker(string $path, int $soloProcessId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) !== 'user') {
             continue;
         }
 
-        if (str_contains(extractText($row['content'] ?? ''), $markerNeedle)) {
+        if (textHasSoloProcessId(extractText($row['content'] ?? ''), $soloProcessId)) {
             return true;
         }
     }
@@ -1057,3 +1192,5 @@ function extractGrokMessages(string $sessionDir): array
     }
     return $messages;
 }
+
+exit(orbitAgentSessionCaptureMain($GLOBALS['argv'] ?? $_SERVER['argv'] ?? []));

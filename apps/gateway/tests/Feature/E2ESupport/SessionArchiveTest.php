@@ -565,3 +565,253 @@ it(
         }
     },
 );
+
+it('session archive excludes and warns about foreign temp capture siblings without deleting them', function (): void {
+    $workspace = session_archive_workspace(suffix: 'foreign-temp-excluded');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $agentSessionsRoot = $paths['sourceOrbitDir'].'/agent-sessions/codex';
+        $stagedProvider = "{$agentSessionsRoot}/valid-lane-801";
+        $foreignTemp = "{$agentSessionsRoot}/.valid-lane-801.tmp-foreign";
+        $retainedBackup = "{$agentSessionsRoot}/.valid-lane-801.backup-retained";
+        mkdir($stagedProvider, recursive: true);
+        mkdir($foreignTemp, recursive: true);
+        mkdir($retainedBackup, recursive: true);
+        file_put_contents("{$stagedProvider}/manifest.json", json_encode([
+            'schema_version' => 1,
+            'provider' => 'codex',
+            'status' => 'ok',
+            'slug' => 'valid-lane-801',
+            'solo_process_id' => 801,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+        file_put_contents("{$foreignTemp}/manifest.json", json_encode([
+            'status' => 'ok',
+            'slug' => 'foreign-temp',
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+        file_put_contents("{$foreignTemp}/sentinel.txt", "preserve\n");
+        file_put_contents("{$retainedBackup}/sentinel.txt", "backup preserve\n");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-07-111111',
+            '--slug=foreign-temp-excluded',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('WARNING')
+            ->toContain($foreignTemp)
+            ->not
+            ->toContain("excluding foreign temporary capture directory: {$retainedBackup}")
+            ->and("{$foreignTemp}/sentinel.txt")
+            ->toBeFile()
+            ->and(file_get_contents("{$foreignTemp}/sentinel.txt"))
+            ->toBe("preserve\n")
+            ->and("{$retainedBackup}/sentinel.txt")
+            ->toBeFile()
+            ->and(file_get_contents("{$retainedBackup}/sentinel.txt"))
+            ->toBe("backup preserve\n");
+
+        $summary = session_archive_summary(process: $process);
+
+        expect("{$summary['archive_dir']}/agent-sessions/codex/valid-lane-801/manifest.json")
+            ->toBeFile()
+            ->and("{$summary['archive_dir']}/agent-sessions/codex/.valid-lane-801.tmp-foreign")
+            ->not
+            ->toBeDirectory()
+            ->and("{$summary['archive_dir']}/agent-sessions/codex/.valid-lane-801.backup-retained/sentinel.txt")
+            ->toBeFile()
+            ->and(file_get_contents(
+                "{$summary['archive_dir']}/agent-sessions/codex/.valid-lane-801.backup-retained/sentinel.txt",
+            ))
+            ->toBe("backup preserve\n");
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive does not treat a lone foreign temp capture as valid staging', function (): void {
+    $workspace = session_archive_workspace(suffix: 'lone-foreign-temp-fallback');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $foreignTemp = $paths['sourceOrbitDir'].'/agent-sessions/codex/.lane.tmp-foreign';
+        mkdir($foreignTemp, recursive: true);
+        file_put_contents("{$foreignTemp}/manifest.json", json_encode([
+            'status' => 'ok',
+            'slug' => 'foreign-temp',
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+        file_put_contents("{$foreignTemp}/sentinel.txt", "preserve\n");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-07-121212',
+            '--slug=lone-foreign-temp-fallback',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('WARNING')
+            ->toContain($foreignTemp)
+            ->not
+            ->toContain('Preferring validated staged captures')
+            ->and("{$foreignTemp}/sentinel.txt")
+            ->toBeFile();
+
+        $summary = session_archive_summary(process: $process);
+
+        expect("{$summary['archive_dir']}/agent-sessions/manifest.json")
+            ->toBeFile()
+            ->and("{$summary['archive_dir']}/agent-sessions/codex/.lane.tmp-foreign")
+            ->not->toBeDirectory();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('root review preserves unrelated temp-shaped evidence directories byte for byte', function (): void {
+    $workspace = session_archive_workspace(suffix: 'unrelated-temp-evidence');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $evidenceTemp = $paths['sourceOrbitDir'].'/evidence/.report.tmp-kept';
+        mkdir($evidenceTemp, recursive: true);
+        file_put_contents("{$evidenceTemp}/sentinel.txt", "preserve evidence\n");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-07-131313',
+            '--slug=unrelated-temp-evidence',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput())
+            ->not->toContain("excluding foreign temporary capture directory: {$evidenceTemp}");
+
+        $summary = session_archive_summary(process: $process);
+        $archivedSentinel = "{$summary['archive_dir']}/evidence/.report.tmp-kept/sentinel.txt";
+
+        expect($archivedSentinel)
+            ->toBeFile()
+            ->and(file_get_contents($archivedSentinel))
+            ->toBe("preserve evidence\n")
+            ->and("{$evidenceTemp}/sentinel.txt")
+            ->toBeFile();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('root review never follows an agent session directory symlink for copy or staged discovery', function (): void {
+    $workspace = session_archive_workspace(suffix: 'agent-session-directory-symlink');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $providerRoot = $paths['sourceOrbitDir'].'/agent-sessions/codex';
+        $external = "{$workspace}/external-capture";
+        $linkedCapture = "{$providerRoot}/linked-capture";
+        mkdir($providerRoot, recursive: true);
+        mkdir($external, recursive: true);
+        file_put_contents("{$external}/manifest.json", json_encode([
+            'status' => 'ok',
+            'slug' => 'external-capture',
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+        file_put_contents("{$external}/sentinel.txt", "external preserve\n");
+        symlink($external, $linkedCapture);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-07-141414',
+            '--slug=agent-session-directory-symlink',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput())
+            ->not->toContain('Preferring validated staged captures');
+
+        $summary = session_archive_summary(process: $process);
+
+        expect("{$summary['archive_dir']}/agent-sessions/manifest.json")
+            ->toBeFile()
+            ->and("{$summary['archive_dir']}/agent-sessions/codex/linked-capture")
+            ->not
+            ->toBeDirectory()
+            ->and("{$external}/sentinel.txt")
+            ->toBeFile()
+            ->and(file_get_contents("{$external}/sentinel.txt"))
+            ->toBe("external preserve\n");
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('late re-review never follows a root agent sessions symlink for copy or staged discovery', function (): void {
+    $workspace = session_archive_workspace(suffix: 'root-agent-sessions-symlink');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $external = "{$workspace}/external-agent-sessions";
+        $rootLink = $paths['sourceOrbitDir'].'/agent-sessions';
+        mkdir($external, recursive: true);
+        file_put_contents("{$external}/manifest.json", json_encode([
+            'status' => 'ok',
+            'slug' => 'external-root',
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+        file_put_contents("{$external}/sentinel.txt", "external root preserve\n");
+        symlink($external, $rootLink);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-07-151515',
+            '--slug=root-agent-sessions-symlink',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getErrorOutput())
+            ->not->toContain('Preferring validated staged captures');
+
+        $summary = session_archive_summary(process: $process);
+
+        expect("{$summary['archive_dir']}/agent-sessions/manifest.json")
+            ->toBeFile()
+            ->and("{$summary['archive_dir']}/agent-sessions/sentinel.txt")
+            ->not
+            ->toBeFile()
+            ->and("{$external}/sentinel.txt")
+            ->toBeFile()
+            ->and(file_get_contents("{$external}/sentinel.txt"))
+            ->toBe("external root preserve\n")
+            ->and($rootLink)
+            ->toBeDirectory()
+            ->and(is_link($rootLink))
+            ->toBeTrue();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});

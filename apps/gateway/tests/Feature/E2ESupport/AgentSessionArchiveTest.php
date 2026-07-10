@@ -1540,6 +1540,505 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
     }
 });
 
+it('stage 2 exact identity rejects numeric-prefix marker collisions', function (string $provider): void {
+    $soloProcessId = 12;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: "numeric-prefix-{$provider}",
+        soloProcessId: $soloProcessId,
+        command: $provider,
+    );
+    $slug = "numeric-prefix-{$provider}";
+
+    try {
+        if ($provider === 'codex') {
+            write_incarnation_floor_rollout(
+                fixture: $fixture,
+                rolloutId: 'numeric-prefix',
+                soloProcessId: 123,
+                activityRows: [],
+            );
+        } elseif ($provider === 'claude') {
+            write_claude_project_dir_fixture(
+                home: $fixture['home'],
+                cwd: $fixture['cwd'],
+                marker: 'Solo process ID: 123',
+            );
+        } else {
+            write_grok_fixture(
+                home: $fixture['home'],
+                cwd: $fixture['cwd'],
+                marker: 'Solo process ID: 123',
+            );
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('exact_marker_not_found');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'exact_marker_not_found',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['codex', 'claude', 'grok']);
+
+it('stage 2 exact identity rejects a wrong-cwd Codex singleton', function (): void {
+    $soloProcessId = 979_810;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'wrong-cwd-singleton', soloProcessId: $soloProcessId);
+    $slug = 'wrong-cwd-singleton';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-wrong-cwd.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'wrong-cwd',
+                'cwd' => "{$fixture['temp']}/foreign-worktree",
+                'timestamp' => '2026-07-09T10:00:00Z',
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('no_owned_marker_transcript');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity rejects a foreign-primary Codex singleton with a later target marker', function (): void {
+    $soloProcessId = 979_811;
+    $foreignSoloProcessId = 979_812;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'foreign-primary-singleton',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'foreign-primary-singleton';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-foreign-primary.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'foreign-primary',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2026-07-09T10:00:00Z',
+                    'base_instructions' => ['text' => "Solo process ID: {$foreignSoloProcessId}"],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Continue the foreign lane.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                ],
+            ],
+        ]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('no_owned_marker_transcript');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity prefers a full Codex owner over a partial owner and records the basis', function (): void {
+    $soloProcessId = 979_813;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'full-over-partial', soloProcessId: $soloProcessId);
+    $slug = 'full-over-partial';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-partial-newer.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'partial-newer',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2030-01-01T00:00:00Z',
+                    'base_instructions' => ['text' => 'Legacy lane without primary identity.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Legacy first message.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                ],
+            ],
+        ]);
+        write_jsonl("{$fixture['codex_dir']}/rollout-full-older.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'full-older',
+                'cwd' => $fixture['cwd'],
+                'timestamp' => '2020-01-01T00:00:00Z',
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-full-older')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toContain('ownership=full');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity accepts a sole exact-cwd legacy Codex candidate as visibly partial ownership', function (): void {
+    $soloProcessId = 979_814;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy-partial', soloProcessId: $soloProcessId);
+    $slug = 'legacy-partial';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-legacy-partial.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'legacy-partial',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2026-07-09T10:00:00Z',
+                    'base_instructions' => ['text' => 'Legacy lane without primary identity.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Legacy first message.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                ],
+            ],
+        ]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-legacy-partial')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity keeps multiple partial-only Codex candidates loudly ambiguous', function (): void {
+    $soloProcessId = 979_815;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'multiple-legacy-partials',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'multiple-legacy-partials';
+
+    try {
+        foreach (['first', 'second'] as $candidate) {
+            write_jsonl("{$fixture['codex_dir']}/rollout-legacy-partial-{$candidate}.jsonl", [
+                [
+                    'type' => 'session_meta',
+                    'payload' => [
+                        'id' => "legacy-partial-{$candidate}",
+                        'cwd' => $fixture['cwd'],
+                        'timestamp' => '2026-07-09T10:00:00Z',
+                        'base_instructions' => ['text' => 'Legacy lane without primary identity.'],
+                    ],
+                ],
+                [
+                    'type' => 'response_item',
+                    'payload' => [
+                        'type' => 'message',
+                        'role' => 'user',
+                        'content' => [['type' => 'input_text', 'text' => 'Legacy first message.']],
+                    ],
+                ],
+                [
+                    'type' => 'response_item',
+                    'payload' => [
+                        'type' => 'message',
+                        'role' => 'user',
+                        'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                    ],
+                ],
+            ]);
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('ambiguous_duplicate_markers');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'ambiguous',
+                'reason' => 'ambiguous_duplicate_markers',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity primary identity treats a mention-only first user candidate as visibly partial', function (): void {
+    $soloProcessId = 979_816;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'mention-only-partial', soloProcessId: $soloProcessId);
+    $slug = 'mention-only-partial';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-mention-only-partial.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'mention-only-partial',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2026-07-09T10:00:00Z',
+                    'base_instructions' => ['text' => 'Coordinate the child lane.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "coordinate spawned child Solo process ID: {$soloProcessId}",
+                    ]],
+                ],
+            ],
+        ]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-mention-only-partial')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity primary identity prefers a standalone full owner over a mention-only candidate', function (): void {
+    $soloProcessId = 979_817;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'standalone-over-mention', soloProcessId: $soloProcessId);
+    $slug = 'standalone-over-mention';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-mention-only.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'mention-only',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2030-01-01T00:00:00Z',
+                    'base_instructions' => ['text' => 'Coordinate the child lane.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "coordinate spawned child Solo process ID: {$soloProcessId}",
+                    ]],
+                ],
+            ],
+        ]);
+        write_jsonl("{$fixture['codex_dir']}/rollout-standalone-full.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'standalone-full',
+                'cwd' => $fixture['cwd'],
+                'timestamp' => '2020-01-01T00:00:00Z',
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-standalone-full')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=full');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity primary identity treats multiple standalone identity markers as partial', function (): void {
+    $soloProcessId = 979_818;
+    $otherSoloProcessId = 979_819;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'multiple-standalone-identities',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'multiple-standalone-identities';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-multiple-standalone-identities.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'multiple-standalone-identities',
+                'cwd' => $fixture['cwd'],
+                'timestamp' => '2026-07-09T10:00:00Z',
+                'base_instructions' => [
+                    'text' => "Solo process ID: {$soloProcessId}\nSolo process ID: {$otherSoloProcessId}",
+                ],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-multiple-standalone-identities')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
 it('exact marker join ignores parent-orchestrator transcript containing child marker (does not select parent for child)', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'capture-parent');
 
@@ -1728,7 +2227,7 @@ it('rejects malformed caller-attested incarnation floors before capture staging'
     }
 });
 
-it('keeps incarnation floor metadata Codex-only for successful Grok capture', function (): void {
+it('rejects caller-attested incarnation floors for Grok before staging mutation', function (): void {
     $soloProcessId = 979_799;
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'grok',
@@ -1736,6 +2235,7 @@ it('keeps incarnation floor metadata Codex-only for successful Grok capture', fu
         command: 'grok',
     );
     $slug = 'incarnation-floor-grok';
+    $stagingDir = "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}";
 
     try {
         write_grok_fixture(
@@ -1743,6 +2243,8 @@ it('keeps incarnation floor metadata Codex-only for successful Grok capture', fu
             cwd: $fixture['cwd'],
             marker: "Solo process ID: {$soloProcessId}",
         );
+        mkdir($stagingDir, recursive: true);
+        file_put_contents("{$stagingDir}/sentinel.txt", "preserve\n");
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
@@ -1751,17 +2253,57 @@ it('keeps incarnation floor metadata Codex-only for successful Grok capture', fu
             incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("incarnation_floor_unsupported_provider\n")
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and(glob("{$stagingDir}/*"))
+            ->toBe(["{$stagingDir}/sentinel.txt"])
+            ->and(file_get_contents("{$stagingDir}/sentinel.txt"))
+            ->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
 
-        $manifest = read_agent_session_archive_json(
-            path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
+it('rejects caller-attested incarnation floors for Claude before staging mutation', function (): void {
+    $soloProcessId = 979_804;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'claude',
+        soloProcessId: $soloProcessId,
+        command: 'claude',
+    );
+    $slug = 'incarnation-floor-claude';
+    $stagingDir = "{$fixture['orbit_dir']}/agent-sessions/claude/{$slug}";
+
+    try {
+        write_claude_project_dir_fixture(
+            home: $fixture['home'],
+            cwd: $fixture['cwd'],
+            marker: "Solo process ID: {$soloProcessId}",
+        );
+        mkdir($stagingDir, recursive: true);
+        file_put_contents("{$stagingDir}/sentinel.txt", "preserve\n");
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+            incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
 
-        expect($manifest)
-            ->not->toHaveKey('incarnation_floor')
-            ->not->toHaveKey('incarnation_floor_source')
-            ->not->toHaveKey('rollout_id')
-            ->not->toHaveKey('last_activity_at');
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("incarnation_floor_unsupported_provider\n")
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and(glob("{$stagingDir}/*"))
+            ->toBe(["{$stagingDir}/sentinel.txt"])
+            ->and(file_get_contents("{$stagingDir}/sentinel.txt"))
+            ->toBe("preserve\n");
     } finally {
         remove_agent_session_archive_temp_dir(path: $fixture['temp']);
     }
@@ -2005,3 +2547,927 @@ it('keeps duplicate owned Codex sessions ambiguous when an incarnation floor is 
         remove_agent_session_archive_temp_dir(path: $fixture['temp']);
     }
 });
+
+it('stage 3 staging replacement rejects invalid explicit slugs before DB access or staging', function (string $slugArgument): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'stage-3-invalid-slug');
+    $orbitDir = "{$temp}/.orbit";
+
+    try {
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            '979901',
+            "--home={$temp}/home",
+            "--cwd={$temp}/worktree",
+            "--solo-db={$temp}/missing-solo.db",
+            "--orbit-dir={$orbitDir}",
+            "--slug={$slugArgument}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("invalid_explicit_slug\n")
+            ->not->toContain('solo db not found')->and($process->getOutput())->toBe('')->and(
+                "{$orbitDir}/agent-sessions",
+            )
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+})->with([
+    'empty' => '',
+    'requires lowercasing' => 'Stage-Three',
+    'requires separator rewriting' => 'stage three',
+    'requires repeated-separator collapse' => 'stage--three',
+    'requires edge trimming' => '-stage-three-',
+    'rejects path traversal' => '../escape',
+]);
+
+it('stage 3 staging replacement replaces same-slug success with only new coherent artifacts', function (): void {
+    $soloProcessId = 979_902;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-success', soloProcessId: $soloProcessId);
+    $slug = 'stage-3-success-success';
+    $providerRoot = "{$fixture['orbit_dir']}/agent-sessions/codex";
+    $finalDir = "{$providerRoot}/{$slug}";
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'first-success',
+            soloProcessId: $soloProcessId,
+            activityRows: [[
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'First success.']],
+                ],
+            ]],
+        );
+
+        $first = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+
+        unlink("{$fixture['codex_dir']}/rollout-first-success.jsonl");
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'second-success',
+            soloProcessId: $soloProcessId,
+            activityRows: [[
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'Second success.']],
+                ],
+            ]],
+        );
+
+        $second = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($second->getExitCode())->toBe(0, $second->getErrorOutput().$second->getOutput());
+
+        $rawFiles = array_map('basename', glob("{$finalDir}/raw/*") ?: []);
+        $finalEntries = array_map('basename', glob("{$finalDir}/*") ?: []);
+        sort($rawFiles);
+        sort($finalEntries);
+
+        expect(dirname($finalDir))
+            ->toBe($providerRoot)
+            ->and($finalEntries)
+            ->toBe(['manifest.json', 'messages.jsonl', 'raw', 'usage.json'])
+            ->and($rawFiles)
+            ->toBe(['rollout-second-success.jsonl'])
+            ->and("{$finalDir}/raw/rollout-first-success.jsonl")
+            ->not->toBeFile()->and(file_get_contents("{$finalDir}/messages.jsonl"))->toContain('Second success.')
+            ->not->toContain('First success.')->and(glob("{$providerRoot}/.{$slug}.tmp-*") ?: [])->toBe([])->and(
+                glob("{$providerRoot}/.{$slug}.backup-*") ?: [],
+            )->toBe([]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 3 staging replacement replaces same-slug success with one coherent failure capture', function (): void {
+    $soloProcessId = 979_903;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-failure', soloProcessId: $soloProcessId);
+    $slug = 'stage-3-success-failure';
+    $providerRoot = "{$fixture['orbit_dir']}/agent-sessions/codex";
+    $finalDir = "{$providerRoot}/{$slug}";
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'success-before-failure',
+            soloProcessId: $soloProcessId,
+            activityRows: [[
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'Success before failure.']],
+                ],
+            ]],
+        );
+
+        $success = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($success->getExitCode())->toBe(0, $success->getErrorOutput().$success->getOutput());
+
+        unlink("{$fixture['codex_dir']}/rollout-success-before-failure.jsonl");
+
+        $failure = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($failure->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($failure->getErrorOutput().$failure->getOutput())
+            ->toContain('exact_marker_not_found');
+
+        $finalEntries = array_map('basename', glob("{$finalDir}/*") ?: []);
+        sort($finalEntries);
+
+        expect(dirname($finalDir))
+            ->toBe($providerRoot)
+            ->and($finalEntries)
+            ->toBe(['manifest.json'])
+            ->and("{$finalDir}/usage.json")
+            ->not->toBeFile()->and("{$finalDir}/messages.jsonl")
+            ->not->toBeFile()->and("{$finalDir}/raw")
+            ->not->toBeDirectory()->and(glob("{$providerRoot}/.{$slug}.tmp-*") ?: [])->toBe([])->and(
+                glob("{$providerRoot}/.{$slug}.backup-*") ?: [],
+            )->toBe([]);
+
+        $manifest = read_agent_session_archive_json(path: "{$finalDir}/manifest.json");
+
+        expect($manifest)
+            ->toBe([
+                'schema_version' => 1,
+                'provider' => 'codex',
+                'status' => 'missing',
+                'slug' => $slug,
+                'solo_process_id' => $soloProcessId,
+                'kind' => 'agent',
+                'started_at' => '2026-07-09T09:00:00Z',
+                'reason' => 'exact_marker_not_found',
+                'checked' => [],
+                'marker' => "Solo process ID: {$soloProcessId}",
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it(
+    'stage 3 staging replacement proves deterministic replacement and rollback behavior',
+    function (string $scenario, array $expected): void {
+        $temp = make_agent_session_archive_temp_dir(suffix: "stage-3-replacement-{$scenario}");
+
+        try {
+            $process = run_staged_capture_replacement_scenario(root: $temp, scenario: $scenario);
+
+            expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+            $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+            $expectedState = $expected;
+            unset($expectedState['error_contains']);
+
+            expect($result)->toMatchArray($expectedState);
+
+            foreach ($expected['error_contains'] ?? [] as $fragment) {
+                expect($result['error'])->toContain($fragment);
+            }
+        } finally {
+            remove_agent_session_archive_temp_dir(path: $temp);
+        }
+    },
+)->with([
+    'final to backup failure' => [
+        'first-rename-fails',
+        [
+            'final_old' => true,
+            'final_new' => false,
+            'temp_exists' => true,
+            'backup_exists' => false,
+            'rename_calls' => 1,
+            'error_contains' => ['final_to_backup_failed', '/temp', '/final', '/backup'],
+        ],
+    ],
+    'temp to final failure rolls back' => [
+        'second-rename-fails',
+        [
+            'final_old' => true,
+            'final_new' => false,
+            'temp_exists' => false,
+            'backup_exists' => false,
+            'rename_calls' => 3,
+            'error_contains' => ['temp_to_final_failed_rolled_back', '/temp', '/final', '/backup'],
+        ],
+    ],
+    'rollback rename also fails loudly' => [
+        'rollback-rename-fails',
+        [
+            'final_old' => false,
+            'final_new' => false,
+            'temp_exists' => true,
+            'backup_exists' => true,
+            'backup_old' => true,
+            'rename_calls' => 3,
+            'error_contains' => ['temp_to_final_and_rollback_failed', '/temp', '/final', '/backup'],
+        ],
+    ],
+    'native same-filesystem success' => [
+        'native-success',
+        [
+            'final_old' => false,
+            'final_new' => true,
+            'temp_exists' => false,
+            'backup_exists' => false,
+            'rename_calls' => 0,
+            'error' => null,
+        ],
+    ],
+]);
+
+it('stage 3 staging replacement rejects non-sibling paths before any rename', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'stage-3-replacement-non-sibling');
+
+    try {
+        $process = run_staged_capture_replacement_scenario(root: $temp, scenario: 'non-sibling');
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result['rename_calls'])
+            ->toBe(0)
+            ->and($result['error'])
+            ->toContain('not_direct_child')
+            ->toContain('/nested/temp');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+function run_staged_capture_replacement_scenario(string $root, string $scenario): Process
+{
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $root = realpath($argv[2]) ?: $argv[2];
+        $scenario = $argv[3];
+        $temp = $scenario === 'non-sibling' ? "{$root}/nested/temp" : "{$root}/temp";
+        $final = "{$root}/final";
+        $backup = "{$root}/backup";
+
+        mkdir($temp, recursive: true);
+        mkdir($final, recursive: true);
+        file_put_contents("{$temp}/new.txt", "new\n");
+        file_put_contents("{$final}/old.txt", "old\n");
+
+        $renameCalls = 0;
+        $rename = null;
+
+        if ($scenario !== 'native-success') {
+            $rename = function (string $from, string $to) use ($scenario, &$renameCalls): bool {
+                $renameCalls++;
+
+                if ($scenario === 'first-rename-fails' && $renameCalls === 1) {
+                    return false;
+                }
+
+                if ($scenario === 'second-rename-fails' && $renameCalls === 2) {
+                    return false;
+                }
+
+                if ($scenario === 'rollback-rename-fails' && $renameCalls >= 2) {
+                    return false;
+                }
+
+                return rename($from, $to);
+            };
+        }
+
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureReplaceStagedDirectory($root, $temp, $final, $backup, $rename);
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        echo json_encode([
+            'final_old' => is_file("{$final}/old.txt"),
+            'final_new' => is_file("{$final}/new.txt"),
+            'temp_exists' => is_dir($temp),
+            'backup_exists' => is_dir($backup),
+            'backup_old' => is_file("{$backup}/old.txt"),
+            'rename_calls' => $renameCalls,
+            'error' => $error,
+        ], JSON_UNESCAPED_SLASHES);
+        PHP;
+
+    $process = new Process([PHP_BINARY, '-r', $code, $include, $root, $scenario], repo_path());
+    $process->run();
+
+    return $process;
+}
+
+it('review corrections reject invalid explicit providers before DB access or staging', function (string $provider): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-invalid-provider');
+    $orbitDir = "{$temp}/.orbit";
+
+    try {
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            '979911',
+            "--home={$temp}/home",
+            "--cwd={$temp}/worktree",
+            "--solo-db={$temp}/missing-solo.db",
+            "--orbit-dir={$orbitDir}",
+            "--provider={$provider}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("invalid_explicit_provider\n")
+            ->not->toContain('solo db not found')->and("{$orbitDir}/agent-sessions")
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+})->with([
+    'parent traversal' => '../x',
+    'nested path' => 'a/b',
+]);
+
+it('review corrections reject a symlinked provider directory without touching its target', function (): void {
+    $soloProcessId = 979_912;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-provider-symlink', soloProcessId: $soloProcessId);
+    $agentSessionsRoot = "{$fixture['orbit_dir']}/agent-sessions";
+    $external = "{$fixture['temp']}/external-provider";
+    $sentinel = "{$external}/sentinel.txt";
+
+    try {
+        mkdir($agentSessionsRoot, recursive: true);
+        mkdir($external, recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        symlink($external, "{$agentSessionsRoot}/codex");
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: 'review-provider-symlink',
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput())
+            ->toContain('symlinked_provider_root')
+            ->and($sentinel)
+            ->toBeFile()
+            ->and(file_get_contents($sentinel))
+            ->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('review corrections reject a symlinked agent sessions root without touching its target', function (): void {
+    $soloProcessId = 979_913;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-root-symlink', soloProcessId: $soloProcessId);
+    $external = "{$fixture['temp']}/external-agent-sessions";
+    $sentinel = "{$external}/sentinel.txt";
+
+    try {
+        mkdir($external, recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        symlink($external, "{$fixture['orbit_dir']}/agent-sessions");
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: 'review-root-symlink',
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput())
+            ->toContain('symlinked_agent_sessions_root')
+            ->and($sentinel)
+            ->toBeFile()
+            ->and(file_get_contents($sentinel))
+            ->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('review corrections clean an incomplete temp when a write callable fails mid build', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-write-failure');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'write-fails-mid-build');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 2,
+                'copy_calls' => 0,
+            ])
+            ->and($result['error'])
+            ->toContain('write_failed')
+            ->toContain('/temp/usage.json');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections clean an incomplete temp when a copy callable fails', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-copy-failure');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'copy-fails');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 3,
+                'copy_calls' => 1,
+            ])
+            ->and($result['error'])
+            ->toContain('copy_failed')
+            ->toContain('/source.jsonl')
+            ->toContain('/temp/raw/source.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects a declared missing raw source and cleans the incomplete temp', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-missing-raw');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'missing-raw-source');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'escaped_raw_exists' => false,
+            ])
+            ->and($result['error'])
+            ->toContain('raw_source_missing')
+            ->toContain('/source.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects a non-basename raw archive name before it can escape raw', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-raw-name');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'invalid-raw-archive-name');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'escaped_raw_exists' => false,
+            ])
+            ->and($result['error'])
+            ->toContain('invalid_raw_archive_name')
+            ->toContain('../escaped.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections check a false native write and never install an incomplete capture', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-native-write-false');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'native-write-false');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 0,
+                'copy_calls' => 0,
+            ])
+            ->and($result['error'])
+            ->toContain('write_failed')
+            ->toContain('/temp/manifest.json');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections build a complete capture with native writes and copies', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-native-success');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'native-success');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => true,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 0,
+                'copy_calls' => 0,
+                'error' => null,
+                'temp_entries' => ['manifest.json', 'messages.jsonl', 'raw', 'usage.json'],
+                'raw_value' => "raw\n",
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections reassert canonical containment at recursive delete without touching an external sentinel', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-delete-containment');
+    $providerRoot = "{$temp}/agent-sessions/codex";
+    $external = "{$temp}/external/nested";
+    $sentinel = "{$external}/sentinel.txt";
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $path = $argv[2];
+        $canonicalProviderRoot = $argv[3];
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureRemovePathRecursively($path, $canonicalProviderRoot);
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        echo json_encode([
+            'error' => $error,
+            'sentinel_exists' => is_file("{$path}/sentinel.txt"),
+            'sentinel_value' => file_get_contents("{$path}/sentinel.txt"),
+        ], JSON_UNESCAPED_SLASHES);
+        PHP;
+
+    try {
+        mkdir($providerRoot, recursive: true);
+        mkdir($external, recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        $providerRoot = realpath($providerRoot) ?: $providerRoot;
+        $external = realpath($external) ?: $external;
+        $sentinel = "{$external}/sentinel.txt";
+
+        $process = new Process([PHP_BINARY, '-r', $code, $include, $external, $providerRoot], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result)
+            ->toMatchArray([
+                'sentinel_exists' => true,
+                'sentinel_value' => "preserve\n",
+            ])
+            ->and($result['error'])
+            ->toContain('not_direct_child')
+            ->toContain($external)
+            ->toContain($providerRoot);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects a noncanonical symlinked provider root without touching its target', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-provider-root-canonical');
+    $realProviderRoot = "{$temp}/real-provider";
+    $symlinkedProviderRoot = "{$temp}/provider-link";
+    $candidate = "{$symlinkedProviderRoot}/candidate";
+    $sentinel = "{$realProviderRoot}/candidate/sentinel.txt";
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureRemovePathRecursively($argv[2], $argv[3]);
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        echo json_encode(['error' => $error], JSON_UNESCAPED_SLASHES);
+        PHP;
+
+    try {
+        mkdir("{$realProviderRoot}/candidate", recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        symlink($realProviderRoot, $symlinkedProviderRoot);
+
+        $process = new Process([
+            PHP_BINARY,
+            '-r',
+            $code,
+            $include,
+            $candidate,
+            $symlinkedProviderRoot,
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect((string) ($result['error'] ?? ''))->toContain('provider_root_not_canonical');
+        expect($sentinel)->toBeFile();
+        expect(file_get_contents($sentinel))->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects and unlinks a temp symlink without touching its target', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-temp-symlink');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'temp-symlink');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'temp_link_exists' => false,
+                'external_sentinel_exists' => true,
+                'external_sentinel_value' => "preserve\n",
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+            ])
+            ->and($result['error'])
+            ->toContain('symlinked_temporary_staging');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections expose bounded actual Codex ownership diagnostics while retaining checked', function (string $scenario): void {
+    $soloProcessId = 979_914;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: "review-diagnostics-{$scenario}",
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "review-diagnostics-{$scenario}";
+
+    try {
+        foreach (range(1, 25) as $index) {
+            write_jsonl("{$fixture['codex_dir']}/noise-{$index}.jsonl", [[
+                'type' => 'session_meta',
+                'payload' => ['id' => "noise-{$index}", 'cwd' => $fixture['cwd']],
+            ]]);
+        }
+
+        $candidateCwd = $scenario === 'ambiguous' ? $fixture['cwd'] : "{$fixture['temp']}/foreign-worktree";
+        $candidatePaths = [];
+
+        $rolloutIds = $scenario === 'ambiguous'
+            ? array_map(static fn (int $index): string => "actual-{$index}", range(1, 22))
+            : ['actual-a', 'actual-b'];
+
+        foreach ($rolloutIds as $rolloutId) {
+            $candidatePath = "{$fixture['codex_dir']}/rollout-{$rolloutId}.jsonl";
+            $candidatePaths[] = $candidatePath;
+            write_jsonl($candidatePath, [[
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => $rolloutId,
+                    'cwd' => $candidateCwd,
+                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                ],
+            ]]);
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toHaveKey('checked')
+            ->toHaveKey('matched_candidates')
+            ->toHaveKey('owned_candidates')
+            ->and($manifest['matched_candidates'])
+            ->toHaveCount($scenario === 'ambiguous' ? 20 : 2)
+            ->and($manifest['owned_candidates'])
+            ->toHaveCount($scenario === 'ambiguous' ? 20 : 0)
+            ->and(count($manifest['matched_candidates']))
+            ->toBeLessThanOrEqual(20)
+            ->and(count($manifest['owned_candidates']))
+            ->toBeLessThanOrEqual(20);
+
+        foreach ($manifest['matched_candidates'] as $candidate) {
+            expect($candidate)
+                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_solo_process_id'])
+                ->and($candidate['path'])
+                ->toBeIn($candidatePaths);
+        }
+
+        foreach ($manifest['owned_candidates'] as $candidate) {
+            expect($candidate['ownership_class'])->toBe('full');
+        }
+
+        $diagnostics = $process->getErrorOutput().$process->getOutput();
+
+        foreach ($manifest['matched_candidates'] as $candidate) {
+            $candidatePath = $candidate['path'];
+            expect($diagnostics)->toContain($candidatePath);
+        }
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with([
+    'ambiguous owned candidates' => 'ambiguous',
+    'no owned candidates' => 'no-owned',
+]);
+
+it('review corrections include is idempotent beside a predeclared generic main without executing the CLI', function (): void {
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        function main(): string
+        {
+            return 'generic-main';
+        }
+
+        require_once $argv[1];
+        require_once $argv[1];
+
+        echo main().'|'.(function_exists('orbitAgentSessionCaptureBuildStagingDirectory') ? 'loaded' : 'missing');
+        PHP;
+    $process = new Process([PHP_BINARY, '-r', $code, $include], repo_path());
+
+    $process->run();
+
+    expect($process->getExitCode())
+        ->toBe(0, $process->getErrorOutput().$process->getOutput())
+        ->and($process->getOutput())
+        ->toBe('generic-main|loaded');
+});
+
+/** @return array<string, mixed> */
+function run_capture_build_scenario(string $root, string $scenario): array
+{
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $root = realpath($argv[2]) ?: $argv[2];
+        $scenario = $argv[3];
+        $providerRoot = "{$root}/provider";
+        $temp = "{$providerRoot}/temp";
+        $final = "{$providerRoot}/final";
+        $backup = "{$providerRoot}/backup";
+        $source = "{$root}/source.jsonl";
+
+        mkdir($final, recursive: true);
+        mkdir($backup, recursive: true);
+        $providerRoot = realpath($providerRoot) ?: $providerRoot;
+        $temp = "{$providerRoot}/temp";
+        $final = "{$providerRoot}/final";
+        $backup = "{$providerRoot}/backup";
+        file_put_contents("{$final}/sentinel.txt", "final-old\n");
+        file_put_contents("{$backup}/sentinel.txt", "backup-old\n");
+        file_put_contents($source, "raw\n");
+
+        if ($scenario === 'missing-raw-source') {
+            unlink($source);
+        }
+
+        $externalTarget = "{$root}/external-target";
+
+        if ($scenario === 'temp-symlink') {
+            mkdir($externalTarget, recursive: true);
+            file_put_contents("{$externalTarget}/sentinel.txt", "preserve\n");
+            symlink($externalTarget, $temp);
+        }
+
+        if ($scenario === 'native-write-false') {
+            mkdir("{$temp}/manifest.json", recursive: true);
+        }
+
+        $writeCalls = 0;
+        $copyCalls = 0;
+        $write = null;
+        $copy = null;
+
+        if ($scenario === 'write-fails-mid-build') {
+            $write = function (string $path, string $contents) use (&$writeCalls): int|false {
+                $writeCalls++;
+
+                if ($writeCalls === 2) {
+                    return false;
+                }
+
+                return file_put_contents($path, $contents);
+            };
+        }
+
+        if ($scenario === 'copy-fails') {
+            $write = function (string $path, string $contents) use (&$writeCalls): int|false {
+                $writeCalls++;
+
+                return file_put_contents($path, $contents);
+            };
+            $copy = function (string $source, string $destination) use (&$copyCalls): bool {
+                $copyCalls++;
+
+                return false;
+            };
+        }
+
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureBuildStagingDirectory(
+                canonicalProviderRoot: $providerRoot,
+                temporaryStaging: $temp,
+                manifest: ['status' => 'ok'],
+                usage: ['input_tokens' => 1],
+                messagesJsonl: "{\"role\":\"assistant\"}\n",
+                rawFiles: [[
+                    'path' => $source,
+                    'archive_name' => $scenario === 'invalid-raw-archive-name' ? '../escaped.jsonl' : 'source.jsonl',
+                ]],
+                write: $write,
+                copy: $copy,
+            );
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        $tempEntries = [];
+
+        if (is_dir($temp)) {
+            $tempEntries = array_map('basename', glob("{$temp}/*") ?: []);
+            sort($tempEntries);
+        }
+
+        echo json_encode([
+            'temp_exists' => is_dir($temp),
+            'temp_link_exists' => is_link($temp),
+            'final_value' => file_get_contents("{$final}/sentinel.txt"),
+            'backup_value' => file_get_contents("{$backup}/sentinel.txt"),
+            'write_calls' => $writeCalls,
+            'copy_calls' => $copyCalls,
+            'error' => $error,
+            'temp_entries' => $tempEntries,
+            'raw_value' => is_file("{$temp}/raw/source.jsonl") ? file_get_contents("{$temp}/raw/source.jsonl") : null,
+            'escaped_raw_exists' => is_file("{$temp}/escaped.jsonl"),
+            'external_sentinel_exists' => is_file("{$externalTarget}/sentinel.txt"),
+            'external_sentinel_value' => is_file("{$externalTarget}/sentinel.txt")
+                ? file_get_contents("{$externalTarget}/sentinel.txt")
+                : null,
+        ], JSON_UNESCAPED_SLASHES);
+        PHP;
+    $process = new Process([PHP_BINARY, '-r', $code, $include, $root, $scenario], repo_path());
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+}
