@@ -64,7 +64,11 @@ if (array_key_exists('check', $options)) {
 $json = to_json($index);
 
 if (array_key_exists('write', $options)) {
-    if (! is_dir($sessionsDir) && ! mkdir($sessionsDir, permissions: 0o775, recursive: true) && ! is_dir($sessionsDir)) {
+    if (
+        ! is_dir($sessionsDir)
+        && ! mkdir($sessionsDir, permissions: 0o775, recursive: true)
+        && ! is_dir($sessionsDir)
+    ) {
         fwrite(STDERR, "Unable to create session index directory: {$sessionsDir}\n");
 
         exit(1);
@@ -119,7 +123,7 @@ function parse_archive(string $archiveDir, string $timestamp, string $slug): arr
     $loop = read_file_or_empty("{$archiveDir}/loop.md");
 
     $loopOutcomeRaw = parse_loop_outcome_raw($loop);
-    $analyzerVerdictRaw = parse_analyzer_verdict_raw($loop);
+    $analyzerVerdict = parse_analyzer_verdict($loop);
 
     return [
         'archive' => basename($archiveDir),
@@ -128,8 +132,10 @@ function parse_archive(string $archiveDir, string $timestamp, string $slug): arr
         'loop_outcome' => $loopOutcomeRaw !== null ? normalize_loop_outcome($loopOutcomeRaw) : 'unknown',
         'loop_outcome_raw' => $loopOutcomeRaw,
         'required_verification' => parse_required_verification($loop),
-        'fresh_analyzer_verdict' => $analyzerVerdictRaw !== null ? normalize_analyzer_verdict($analyzerVerdictRaw) : 'unknown',
-        'fresh_analyzer_verdict_raw' => $analyzerVerdictRaw,
+        'fresh_analyzer_verdict' => $analyzerVerdict !== null
+            ? normalize_analyzer_verdict($analyzerVerdict['value'], $analyzerVerdict['provenance'])
+            : 'unknown',
+        'fresh_analyzer_verdict_raw' => $analyzerVerdict['raw_value'] ?? null,
         'candidate_signals' => parse_candidate_signals($loop),
         'blockers_present' => blockers_present($loop),
         'token_usage' => token_usage($archiveDir),
@@ -144,7 +150,10 @@ function parse_required_verification(string $loop): array
 {
     $section = markdown_section($loop, 'Final Distillation');
 
-    if ($section === null || ! preg_match('/^- Required verification:\s*\R(.*?)(?=^- [A-Z`].*?:|\z)/ms', $section, $matches)) {
+    if (
+        $section === null
+        || ! preg_match('/^- Required verification:\s*\R(.*?)(?=^- [A-Z`].*?:|\z)/ms', $section, $matches)
+    ) {
         return [];
     }
 
@@ -184,7 +193,10 @@ function parse_loop_outcome_raw(string $loop): ?string
     return trim($matches[1]);
 }
 
-function parse_analyzer_verdict_raw(string $loop): ?string
+/**
+ * @return array{value: string, raw_value: string, provenance: string}|null
+ */
+function parse_analyzer_verdict(string $loop): ?array
 {
     $section = markdown_section($loop, 'Final Distillation');
 
@@ -192,21 +204,81 @@ function parse_analyzer_verdict_raw(string $loop): ?string
         return null;
     }
 
-    $value = extract_same_line_label_value($section, 'Fresh analyzer');
+    $lines = preg_split('/\R/', $section) ?: [];
+    $sameLineValue = null;
+    $insideFreshAnalyzer = false;
+    $freshAnalyzerBody = [];
 
-    if ($value !== null) {
-        return $value;
+    foreach ($lines as $line) {
+        if (str_starts_with($line, '- ')) {
+            $insideFreshAnalyzer = false;
+            $row = parse_markdown_label_row($line);
+
+            if ($row === null || strcasecmp($row[0], 'Fresh analyzer') !== 0) {
+                continue;
+            }
+
+            $insideFreshAnalyzer = true;
+            $value = trim($row[1]);
+
+            if ($value !== '') {
+                $sameLineValue = $value;
+            }
+
+            continue;
+        }
+
+        if (! $insideFreshAnalyzer) {
+            continue;
+        }
+
+        $freshAnalyzerBody[] = $line;
+
+        if (preg_match('/^ {2}-[ \t]+(.+)$/', $line, $matches) !== 1) {
+            continue;
+        }
+
+        $row = parse_markdown_label_row('- '.$matches[1]);
+
+        if ($row !== null && strcasecmp($row[0], 'Verdict') === 0 && trim($row[1]) !== '') {
+            $value = trim($row[1]);
+            $rawValue = $value;
+
+            if (
+                $sameLineValue !== null
+                && normalize_analyzer_verdict($sameLineValue, 'fresh-analyzer-row') === normalize_analyzer_verdict(
+                    $value,
+                    'explicit-verdict-row',
+                )
+            ) {
+                $rawValue = $sameLineValue;
+            }
+
+            return [
+                'value' => $value,
+                'raw_value' => $rawValue,
+                'provenance' => 'explicit-verdict-row',
+            ];
+        }
     }
 
-    if (! preg_match('/^- Fresh analyzer:[ \t]*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)) {
-        return null;
+    if ($sameLineValue === null) {
+        if (preg_match('/Verdict:[ \t]*(.+)$/mi', implode("\n", $freshAnalyzerBody), $matches) !== 1) {
+            return null;
+        }
+
+        return [
+            'value' => trim($matches[1]),
+            'raw_value' => trim($matches[1]),
+            'provenance' => 'fresh-analyzer-prose',
+        ];
     }
 
-    if (preg_match('/Verdict:[ \t]*(.+)$/mi', $matches[1], $verdict)) {
-        return trim($verdict[1]);
-    }
-
-    return null;
+    return [
+        'value' => $sameLineValue,
+        'raw_value' => $sameLineValue,
+        'provenance' => 'fresh-analyzer-row',
+    ];
 }
 
 /**
@@ -218,7 +290,10 @@ function parse_candidate_signals(string $loop): array
     $classifications = [];
     $total = 0;
 
-    if ($section === null || ! preg_match('/^- Candidate signals:\s*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)) {
+    if (
+        $section === null
+        || ! preg_match('/^- Candidate signals:\s*\R(.*?)(?=^- [A-Z].*?:|\z)/ms', $section, $matches)
+    ) {
         return [
             'total' => 0,
             'classifications' => [],
@@ -293,6 +368,8 @@ function blockers_present(string $loop): bool
 
         if (
             $text === 'none'
+            || $text === 'none currently'
+            || $text === 'no blocker currently'
             || preg_match('/^no blockers?$/', $text) === 1
             || preg_match('/^no blocker for solo todo #\d+$/', $text) === 1
             || preg_match(
@@ -367,7 +444,7 @@ function capture_status(string $archiveDir): string
         }
 
         $manifest = json_decode(read_file_or_empty($aggregate), true);
-        $sessions = is_array($manifest) ? ($manifest['sessions'] ?? []) : [];
+        $sessions = is_array($manifest) ? $manifest['sessions'] ?? [] : [];
 
         return $sessions === [] ? 'empty' : 'partial';
     }
@@ -498,14 +575,18 @@ function normalize_loop_outcome(string $value): string
 
     $normalized = normalize_whitespace(rtrim($value, '.,;:!?'));
 
-    if (preg_match('/^`?(complete \+ loop improvement|complete|blocked)`?(?=$|[ \t]+-[ \t]+)/i', $normalized, $matches)) {
+    if (preg_match(
+        '/^`?(complete \+ loop improvement|complete|blocked)`?(?=$|[ \t]+-[ \t]+)/i',
+        $normalized,
+        $matches,
+    )) {
         return strtolower($matches[1]);
     }
 
     return $normalized;
 }
 
-function normalize_analyzer_verdict(string $value): string
+function normalize_analyzer_verdict(string $value, string $provenance): string
 {
     $value = trim($value);
 
@@ -528,6 +609,13 @@ function normalize_analyzer_verdict(string $value): string
     }
 
     if (preg_match('/^`?(yes|no)(?:`|[.,;:!?])*\s*$/i', $verdictCandidate, $matches)) {
+        return strtolower($matches[1]);
+    }
+
+    if (
+        $provenance === 'explicit-verdict-row'
+        && preg_match('/^`?(yes|no)`?(?=[ \t]*(?:;|-[ \t]+))/i', $verdictCandidate, $matches) === 1
+    ) {
         return strtolower($matches[1]);
     }
 

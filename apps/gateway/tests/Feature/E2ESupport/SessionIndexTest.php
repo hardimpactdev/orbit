@@ -449,6 +449,8 @@ it('normalizes accepted same-line and nested packet shapes for facets', function
             'no-blocker-todo191' => '- No blocker for Solo todo #191.',
             'no-active-remains-resolved' => '- No active implementation or verification blocker remains. The earlier blocker is resolved.',
             'multiple-resolved-blockers' => "- No active implementation blocker remains.\n- The previous analyzer evidence blocker is resolved.",
+            'none-currently' => '- none currently',
+            'no-blocker-currently' => '- No blocker currently.',
         ] as $slug => $blockers) {
             $cases[$slug] = [
                 'blockers' => $blockers,
@@ -459,10 +461,8 @@ it('normalizes accepted same-line and nested packet shapes for facets', function
         }
 
         foreach ([
-            'none-currently' => '- none currently',
             'none-currently-reviewer' => '- None currently. The reviewer lane was replaced ...',
             'none-currently-future' => '- none currently. Possible future blocker: ...',
-            'no-blocker-currently' => '- No blocker currently.',
             'safety-control' => '- No blocker was resolved, but deployment remains blocked.',
             'safety-none-but' => '- None currently, but deployment remains blocked.',
             'mixed-blockers' => "- none\n- deployment remains blocked",
@@ -547,6 +547,178 @@ it('normalizes accepted same-line and nested packet shapes for facets', function
             ->toHaveKey('loop_outcome_raw', null)
             ->toHaveKey('fresh_analyzer_verdict', 'unknown')
             ->toHaveKey('fresh_analyzer_verdict_raw', null);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('uses explicit nested analyzer verdict provenance for precedence and rationale normalization', function (): void {
+    $workspace = session_index_workspace('analyzer-verdict-provenance');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $packetTemplate = <<<'MD'
+            # Orbit Current Slice State
+
+            ## Blockers
+
+            - none
+
+            ## Final Distillation
+
+            - Loop outcome: complete
+            - Fresh analyzer: %s
+              - Persona: .agents/review-personas/post-feature-analyzer.md
+              - Verdict: %s
+            MD;
+
+        $cases = [
+            'dash-rationale' => [
+                'same_line' => 'passed - Solo Codex process `956`, `VERDICT: yes`; capture retained.',
+                'verdict' => 'yes - no findings; analyzer confirmed no blocking packet gaps.',
+                'expected_raw' => 'yes - no findings; analyzer confirmed no blocking packet gaps.',
+                'expected' => 'yes',
+            ],
+            'semicolon-rationale' => [
+                'same_line' => 'completed with analyzer evidence',
+                'verdict' => '`yes`; no implementation, contract, verification, topology, evidence, packet, or guardrail correction required.',
+                'expected_raw' => '`yes`; no implementation, contract, verification, topology, evidence, packet, or guardrail correction required.',
+                'expected' => 'yes',
+            ],
+            'backticked-verdict-rationale' => [
+                'same_line' => 'initial blocked result before final reassessment `VERDICT: yes`',
+                'verdict' => '`VERDICT: yes` - no findings; worker correction accepted.',
+                'expected_raw' => '`VERDICT: yes` - no findings; worker correction accepted.',
+                'expected' => 'yes',
+            ],
+            'no-blockers-is-not-no' => [
+                'same_line' => 'completed with analyzer evidence',
+                'verdict' => 'No blockers',
+                'expected_raw' => 'No blockers',
+                'expected' => 'No blockers',
+            ],
+            'no-rationale' => [
+                'same_line' => 'completed with analyzer evidence',
+                'verdict' => 'no - documented reason',
+                'expected_raw' => 'no - documented reason',
+                'expected' => 'no',
+            ],
+            'equivalent-not-used-keeps-existing-raw-facet' => [
+                'same_line' => 'not used - no implementation diff existed to analyze; separately adjudicated.',
+                'verdict' => 'not used',
+                'expected_raw' => 'not used - no implementation diff existed to analyze; separately adjudicated.',
+                'expected' => 'not used',
+            ],
+            'equivalent-yes-keeps-existing-raw-facet' => [
+                'same_line' => 'Verdict: yes',
+                'verdict' => 'yes - final rationale',
+                'expected_raw' => 'Verdict: yes',
+                'expected' => 'yes',
+            ],
+        ];
+
+        foreach ($cases as $slug => $case) {
+            session_index_archive(
+                sessionsDir: $sessionsDir,
+                basename: "2026-07-10-110000-{$slug}",
+                loop: sprintf($packetTemplate, $case['same_line'], $case['verdict']),
+            );
+        }
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-110001-direct-child-verdict',
+            loop: <<<'MD'
+                # Orbit Current Slice State
+
+                ## Blockers
+
+                - none
+
+                ## Final Distillation
+
+                - Loop outcome: complete
+                - Fresh analyzer: completed with analyzer evidence
+                  - Prior review:
+                    - Verdict: no - stale
+                  - Verdict: yes - final
+                MD,
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-110002-same-line-prose',
+            loop: <<<'MD'
+                # Orbit Current Slice State
+
+                ## Blockers
+
+                - none
+
+                ## Final Distillation
+
+                - Loop outcome: complete
+                - Fresh analyzer: yes - explanation
+                MD,
+        );
+
+        expect(run_session_index($sessionsDir, ['--write'])->getExitCode())->toBe(0);
+
+        $index = session_index_json($sessionsDir);
+
+        foreach ($cases as $slug => $case) {
+            expect(session_index_record($index, $slug))
+                ->toHaveKey('fresh_analyzer_verdict_raw', $case['expected_raw'])
+                ->toHaveKey('fresh_analyzer_verdict', $case['expected']);
+        }
+
+        expect(session_index_record($index, 'direct-child-verdict'))
+            ->toHaveKey('fresh_analyzer_verdict_raw', 'yes - final')
+            ->toHaveKey('fresh_analyzer_verdict', 'yes');
+
+        expect(session_index_record($index, 'same-line-prose'))
+            ->toHaveKey('fresh_analyzer_verdict_raw', 'yes - explanation')
+            ->toHaveKey('fresh_analyzer_verdict', 'yes - explanation');
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('treats only exact current no-blocker entries as blocker free', function (): void {
+    $workspace = session_index_workspace('exact-current-no-blockers');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+        $cases = [
+            'none-currently' => ['None currently.', false],
+            'no-blocker-currently' => ['No blocker currently.', false],
+            'no-blocker-currently-without-punctuation' => ['No blocker currently', false],
+            'plural-no-blockers-currently' => ['No blockers currently.', true],
+            'none-currently-semicolon' => ['None currently; deployment remains blocked.', true],
+            'none-currently-dash' => ['None currently - verification is deferred.', true],
+            'none-currently-but' => ['None currently, but review remains blocked.', true],
+            'no-blocker-currently-qualified' => ['No blocker currently while implementation is deferred.', true],
+        ];
+
+        foreach ($cases as $slug => [$blocker, $expected]) {
+            session_index_archive(
+                sessionsDir: $sessionsDir,
+                basename: "2026-07-10-120000-{$slug}",
+                loop: session_index_loop(
+                    outcome: 'complete',
+                    analyzerVerdict: 'not used',
+                    blockers: [$blocker],
+                ),
+            );
+        }
+
+        expect(run_session_index($sessionsDir, ['--write'])->getExitCode())->toBe(0);
+
+        $index = session_index_json($sessionsDir);
+
+        foreach ($cases as $slug => [, $expected]) {
+            expect(session_index_record($index, $slug))->toHaveKey('blockers_present', $expected);
+        }
     } finally {
         session_index_remove($workspace);
     }
