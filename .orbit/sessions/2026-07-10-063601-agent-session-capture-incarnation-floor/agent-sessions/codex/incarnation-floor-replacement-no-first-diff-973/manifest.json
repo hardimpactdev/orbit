@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "incarnation-floor-replacement-no-first-diff-973",
+    "solo_process_id": 973,
+    "kind": "agent",
+    "started_at": "2026-07-10 03:40:33",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T05-40-33-019f4a1c-df19-7940-a9b6-b89e815b1072.jsonl",
+    "source": "codex_exact_marker"
+}

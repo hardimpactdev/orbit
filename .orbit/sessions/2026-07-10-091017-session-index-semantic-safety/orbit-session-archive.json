@@ -1,0 +1,23 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T07:13:07+00:00",
+    "mode": "refreshed",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/session-index-semantic-safety/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-091017-session-index-semantic-safety",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-091017-session-index-semantic-safety/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [
+        943,
+        979,
+        981,
+        983,
+        984,
+        985
+    ],
+    "agent_results": []
+}

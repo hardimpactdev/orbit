@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "ok",
+    "slug": "session-index-semantic-worker-979",
+    "solo_process_id": 979,
+    "kind": "agent",
+    "started_at": "2026-07-10 06:02:40",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit%2F.worktrees%2Fsession-index-semantic-safety/019f4a9f-cb7c-7842-a6b4-cb54c27171ee",
+    "source": "grok_exact_marker"
+}

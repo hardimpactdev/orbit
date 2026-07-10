@@ -1,0 +1,22 @@
+Question to Claude process 943:
+How can Stage 3 deterministically prove failure of the second same-directory
+rename without a public CLI/environment test flag, class abstraction, unsafe
+permission trick, or nondeterministic obstruction race?
+
+Advice and final adjudication:
+Accept a private procedural replaceStagedCaptureDirectory(temp, final, backup,
+?callable rename) helper. The callable replaces only the (from, to): bool rename
+syscall and defaults inside the helper to native rename. Reach it in tests via
+ORBIT_AGENT_SESSION_CAPTURE_TEST_NO_MAIN, a PHP require-time constant checked by
+a final-lines main guard. The constant is not configurable through CLI or env,
+so operator behavior remains unchanged. Keep exactly one production call site
+and pass no callable there.
+
+Required deterministic proof:
+1. final-to-backup failure leaves final untouched and temp retained/reported.
+2. temp-to-final failure restores backup, cleans temp, and fails loudly.
+3. rollback failure names all paths, deletes nothing, and leaves backup/temp.
+4. native same-filesystem success installs temp and removes backup afterward.
+Also reject non-direct-child transaction paths before rename or recursive delete.
+
+Product decisions: unaffected.

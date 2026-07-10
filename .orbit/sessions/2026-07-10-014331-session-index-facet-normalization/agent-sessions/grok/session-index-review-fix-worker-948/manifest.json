@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "ok",
+    "slug": "session-index-review-fix-worker-948",
+    "solo_process_id": 948,
+    "kind": "agent",
+    "started_at": "2026-07-09 22:55:54",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit%2F.worktrees%2Fsession-index-facet-normalization/019f4918-8fa5-7a03-bd87-5a8fcda4638e",
+    "source": "grok_exact_marker"
+}

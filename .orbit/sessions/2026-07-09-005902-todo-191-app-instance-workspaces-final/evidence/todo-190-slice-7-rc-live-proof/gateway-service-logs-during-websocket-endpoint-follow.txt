@@ -1,0 +1,96 @@
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5811582,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5811732,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3603964723,"previous":9223372036854775807}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5811765,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5811787,"msg":"adapted config to JSON","adapter":"caddyfile"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"warn","ts":1783543995.58118,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5818992,"logger":"admin","msg":"admin endpoint started","address":"localhost:2019","enforce_origin":false,"origins":["//127.0.0.1:2019","//localhost:2019","//[::1]:2019"]}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5820818,"logger":"http.auto_https","msg":"automatic HTTPS is completely disabled for server","server_name":"srv0"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5820842,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xf715622b380"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5982764,"logger":"frankenphp","msg":"FrankenPHP started 🐘","php_version":"8.5.7","num_threads":4,"max_threads":29,"max_requests":0}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"warn","ts":1783543995.598501,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"warn","ts":1783543995.5985713,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.5986054,"logger":"http.log","msg":"server running","name":"srv0","protocols":["h1","h2","h3"]}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.6011174,"msg":"autosaved config (load with --resume flag)","file":"/config/caddy/autosave.json"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.601213,"msg":"serving initial configuration"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.6040125,"logger":"tls","msg":"cleaning storage unit","storage":"FileStorage:/data/caddy"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783543995.6051302,"logger":"tls","msg":"finished cleaning storage units"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783544843.3065188,"msg":"shutting down apps, then terminating","signal":"SIGTERM"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"warn","ts":1783544843.3065717,"msg":"exiting; byeee!! 👋","signal":"SIGTERM"}
+orbit_orbit-gateway.1.9hs2086cbasu@gateway    | {"level":"info","ts":1783544843.3072112,"logger":"frankenphp","msg":"FrankenPHP stopped 🐘"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8552794,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8552976,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3603964723,"previous":9223372036854775807}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8553007,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.855303,"msg":"adapted config to JSON","adapter":"caddyfile"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"warn","ts":1783544834.855305,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.85579,"logger":"admin","msg":"admin endpoint started","address":"localhost:2019","enforce_origin":false,"origins":["//localhost:2019","//[::1]:2019","//127.0.0.1:2019"]}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8559127,"logger":"http.auto_https","msg":"automatic HTTPS is completely disabled for server","server_name":"srv0"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8563347,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x289b210b3000"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"warn","ts":1783544834.8572268,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"warn","ts":1783544834.8572354,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.857238,"logger":"http.log","msg":"server running","name":"srv0","protocols":["h1","h2","h3"]}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.862908,"logger":"tls","msg":"cleaning storage unit","storage":"FileStorage:/data/caddy"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8643632,"logger":"tls","msg":"finished cleaning storage units"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8750672,"logger":"frankenphp","msg":"FrankenPHP started 🐘","php_version":"8.5.7","num_threads":4,"max_threads":29,"max_requests":0}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.877026,"msg":"autosaved config (load with --resume flag)","file":"/config/caddy/autosave.json"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544834.8770363,"msg":"serving initial configuration"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544921.639192,"msg":"shutting down apps, then terminating","signal":"SIGTERM"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"warn","ts":1783544921.6392775,"msg":"exiting; byeee!! 👋","signal":"SIGTERM"}
+orbit_orbit-gateway.1.33q9nvdm61vf@gateway    | {"level":"info","ts":1783544921.639373,"logger":"frankenphp","msg":"FrankenPHP stopped 🐘"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.464149,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4642184,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3603964723,"previous":9223372036854775807}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4642336,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4642465,"msg":"adapted config to JSON","adapter":"caddyfile"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"warn","ts":1783543038.4642582,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4648585,"logger":"admin","msg":"admin endpoint started","address":"localhost:2019","enforce_origin":false,"origins":["//127.0.0.1:2019","//localhost:2019","//[::1]:2019"]}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4651353,"logger":"http.auto_https","msg":"automatic HTTPS is completely disabled for server","server_name":"srv0"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4652002,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x123668f9d800"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"warn","ts":1783543038.4654586,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"warn","ts":1783543038.4654868,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4654996,"logger":"http.log","msg":"server running","name":"srv0","protocols":["h1","h2","h3"]}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.469906,"logger":"tls","msg":"cleaning storage unit","storage":"FileStorage:/data/caddy"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4709806,"logger":"tls","msg":"finished cleaning storage units"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4851694,"logger":"frankenphp","msg":"FrankenPHP started 🐘","php_version":"8.5.7","num_threads":4,"max_threads":29,"max_requests":0}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4873986,"msg":"autosaved config (load with --resume flag)","file":"/config/caddy/autosave.json"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543038.4874144,"msg":"serving initial configuration"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543283.9017005,"logger":"frankenphp","msg":"upscaling regular thread","thread":4,"num_threads":1}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543293.5248256,"logger":"frankenphp","msg":"downscaling thread","thread":4,"wait_time":9623,"num_threads":0}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543314.574931,"logger":"frankenphp","msg":"upscaling regular thread","thread":4,"num_threads":1}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543323.5340757,"logger":"frankenphp","msg":"downscaling thread","thread":4,"wait_time":8959,"num_threads":0}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543926.6302521,"msg":"shutting down apps, then terminating","signal":"SIGTERM"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"warn","ts":1783543926.6302874,"msg":"exiting; byeee!! 👋","signal":"SIGTERM"}
+orbit_orbit-gateway.1.u0efpld1zvny@gateway    | {"level":"info","ts":1783543926.6303382,"logger":"frankenphp","msg":"FrankenPHP stopped 🐘"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.223117,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.223141,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3603964723,"previous":9223372036854775807}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.223145,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2231483,"msg":"adapted config to JSON","adapter":"caddyfile"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"warn","ts":1783543918.2231505,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.22403,"logger":"admin","msg":"admin endpoint started","address":"localhost:2019","enforce_origin":false,"origins":["//localhost:2019","//[::1]:2019","//127.0.0.1:2019"]}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.22433,"logger":"http.auto_https","msg":"automatic HTTPS is completely disabled for server","server_name":"srv0"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2250357,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x1408aa11e00"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.253261,"logger":"frankenphp","msg":"FrankenPHP started 🐘","php_version":"8.5.7","num_threads":4,"max_threads":29,"max_requests":0}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"warn","ts":1783543918.25348,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"warn","ts":1783543918.253771,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2538047,"logger":"http.log","msg":"server running","name":"srv0","protocols":["h1","h2","h3"]}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2591558,"msg":"autosaved config (load with --resume flag)","file":"/config/caddy/autosave.json"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2591805,"msg":"serving initial configuration"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2599072,"logger":"tls","msg":"cleaning storage unit","storage":"FileStorage:/data/caddy"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783543918.2615635,"logger":"tls","msg":"finished cleaning storage units"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783544004.06638,"msg":"shutting down apps, then terminating","signal":"SIGTERM"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"warn","ts":1783544004.0664194,"msg":"exiting; byeee!! 👋","signal":"SIGTERM"}
+orbit_orbit-gateway.1.tq4gk55pgj2k@gateway    | {"level":"info","ts":1783544004.0665128,"logger":"frankenphp","msg":"FrankenPHP stopped 🐘"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1362555,"msg":"maxprocs: Leaving GOMAXPROCS=2: CPU quota undefined"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1362724,"msg":"GOMEMLIMIT is updated","GOMEMLIMIT":3603964723,"previous":9223372036854775807}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1362758,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.136278,"msg":"adapted config to JSON","adapter":"caddyfile"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"warn","ts":1783544913.1362798,"msg":"Caddyfile input is not formatted; run 'caddy fmt --overwrite' to fix inconsistencies","adapter":"caddyfile","file":"/etc/caddy/Caddyfile","line":2}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1369388,"logger":"admin","msg":"admin endpoint started","address":"localhost:2019","enforce_origin":false,"origins":["//localhost:2019","//[::1]:2019","//127.0.0.1:2019"]}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1371424,"logger":"http.auto_https","msg":"automatic HTTPS is completely disabled for server","server_name":"srv0"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1373289,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0x2ad10dd44480"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1589935,"logger":"frankenphp","msg":"FrankenPHP started 🐘","php_version":"8.5.7","num_threads":4,"max_threads":29,"max_requests":0}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"warn","ts":1783544913.159086,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"warn","ts":1783544913.1590893,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":8080"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1590922,"logger":"http.log","msg":"server running","name":"srv0","protocols":["h1","h2","h3"]}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1613734,"msg":"autosaved config (load with --resume flag)","file":"/config/caddy/autosave.json"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.161386,"msg":"serving initial configuration"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.164981,"logger":"tls","msg":"cleaning storage unit","storage":"FileStorage:/data/caddy"}
+orbit_orbit-gateway.1.g8c6j2q3zf74@gateway    | {"level":"info","ts":1783544913.1663804,"logger":"tls","msg":"finished cleaning storage units"}

@@ -1,0 +1,1 @@
+bin/orbit-release-candidate verify --build-id=20260708T212747Z-fedb050dd --release-image=ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T212747Z-fedb050dd

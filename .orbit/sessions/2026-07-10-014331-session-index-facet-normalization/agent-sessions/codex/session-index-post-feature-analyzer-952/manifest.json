@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-post-feature-analyzer-952",
+    "solo_process_id": 952,
+    "kind": "agent",
+    "started_at": "2026-07-09 23:26:54",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T01-26-55-019f4934-a6b1-7ce1-8060-705dfb84d6e9.jsonl",
+    "source": "codex_exact_marker"
+}

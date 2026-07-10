@@ -1,0 +1,336 @@
+
+  [90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it aligns settled check-row status with node stage columns             
+[39;1m  Failed asserting that actual size 2 matches expected size 1.[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m88[39m
+    [90m 84[0m[90m▕ [0m
+    [90m 85[0m[90m▕ [0m[35;1m        [0m[39;1m$columns[0m[35;1m[] = [0m[39;1mstrpos[0m[35;1m([0m[39;1m$line[0m[35;1m, [0m[39;1m$statusNeedle[0m[35;1m);[0m
+    [90m 86[0m[90m▕ [0m[35;1m    }[0m
+    [90m 87[0m[90m▕ [0m
+[31;1m  ➜ [0m[3;1m 88[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1marray_values[0m[35;1m([0m[39;1marray_unique[0m[35;1m([0m[39;1m$columns[0m[35;1m)))->[0m[39;1mtoHaveCount[0m[35;1m([0m[39;1m1[0m[35;1m);[0m
+    [90m 89[0m[90m▕ [0m[35;1m});[0m
+    [90m 90[0m[90m▕ [0m
+    [90m 91[0m[90m▕ [0m[39;1mit[0m[35;1m([0m[37m'shows Checking on active check rows before they settle'[0m[35;1m, function (): [0m[39;1mvoid [0m[35;1m{[0m
+    [90m 92[0m[90m▕ [0m[35;1m    [0m[39;1m$output [0m[35;1m= new [0m[39;1mBufferedOutput[0m[35;1m([0m[39;1mdecorated[0m[35;1m: [0m[39;1mfalse[0m[35;1m);[0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m88[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it shows Checking on active check rows before they settle              
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[5A[2K\r
+  [36m○[39m  [97mChecking for updates   [39m  [38;5;242mChecking[39m[5B\r
+' matches PCRE pattern "/Checking for updates\s+Checking\b/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m104[39m
+    [90m100[0m[90m▕ [0m[35;1m    ]);[0m
+    [90m101[0m[90m▕ [0m
+    [90m102[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m103[0m[90m▕ [0m
+[31;1m  ➜ [0m[3;1m104[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/Checking for updates\s+Checking\b/'[0m[35;1m);[0m
+    [90m105[0m[90m▕ [0m[35;1m});[0m
+    [90m106[0m[90m▕ [0m
+    [90m107[0m[90m▕ [0m[39;1mit[0m[35;1m([0m[37m'renders a vertical spacer before every row and before the footer'[0m[35;1m, function (): [0m[39;1mvoid [0m[35;1m{[0m
+    [90m108[0m[90m▕ [0m[35;1m    [0m[39;1m$output [0m[35;1m= new [0m[39;1mBufferedOutput[0m[35;1m([0m[39;1mdecorated[0m[35;1m: [0m[39;1mfalse[0m[35;1m);[0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m104[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it reveals gateway, local, and workload rows as Waiting when outdat…   
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[3A[2K\r
+  [32m●[39m  [97mChecking fleet versions[39m  [38;5;242mDone: 2 outdated nodes found[39m[3B\r
+  │\n
+  ○  gateway                \n
+  │\n
+  ○  local                  \n
+[3A[2K\r
+[38;5;242m  ○  local                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  beast                  \n
+[3A[2K\r
+[38;5;242m  ○  beast                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  agent                  \n
+[3A[2K\r
+[38;5;242m  ○  agent                  [39m  [38;5;242mWaiting[39m[3B\r
+' matches PCRE pattern "/local\s+Waiting\b/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m153[39m
+    [90m149[0m[90m▕ [0m
+    [90m150[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m151[0m[90m▕ [0m
+    [90m152[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+[31;1m  ➜ [0m[3;1m153[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/local\s+Waiting\b/'[0m[35;1m)[0m
+    [90m154[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m155[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/beast\s+Waiting\b/'[0m[35;1m)[0m
+    [90m156[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m157[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/agent\s+Waiting\b/'[0m[35;1m)[0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m153[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it reveals local as Waiting while the gateway row is active            
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[5A[2K\r
+  [32m●[39m  [97mChecking for updates   [39m  [38;5;242mDone: latest version is 1.2.3[39m[5B\r
+[3A[2K\r
+  [32m●[39m  [97mChecking fleet versions[39m  [38;5;242mDone: 2 outdated nodes found[39m[3B\r
+  │\n
+  ○  gateway                \n
+  │\n
+  ○  local                  \n
+[3A[2K\r
+[38;5;242m  ○  local                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  agent                  \n
+[3A[2K\r
+[38;5;242m  ○  agent                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  beast                  \n
+[3A[2K\r
+[38;5;242m  ○  beast                  [39m  [38;5;242mWaiting[39m[3B\r
+[9A[2K\r
+  [36m○[39m  [97mgateway                  Downloading[39m [38;5;242m1.2.3 assets[39m[9B\r
+' matches PCRE pattern "/gateway\s+Downloading 1\.2\.3 assets/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m222[39m
+    [90m218[0m[90m▕ [0m
+    [90m219[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m220[0m[90m▕ [0m
+    [90m221[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+[31;1m  ➜ [0m[3;1m222[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/gateway\s+Downloading 1\.2\.3 assets/'[0m[35;1m)[0m
+    [90m223[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m224[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/local\s+Waiting\b/'[0m[35;1m)[0m
+    [90m225[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m226[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/agent\s+Waiting\b/'[0m[35;1m)[0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m222[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it keeps local and workload rows on Waiting when the gateway row fa…   
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[5A[2K\r
+  [32m●[39m  [97mChecking for updates   [39m  [38;5;242mDone: latest version is 1.2.3[39m[5B\r
+[3A[2K\r
+  [32m●[39m  [97mChecking fleet versions[39m  [38;5;242mDone: 2 outdated nodes found[39m[3B\r
+  │\n
+  ○  gateway                \n
+  │\n
+  ○  local                  \n
+[3A[2K\r
+[38;5;242m  ○  local                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  beast                  \n
+[3A[2K\r
+[38;5;242m  ○  beast                  [39m  [38;5;242mWaiting[39m[3B\r
+[7A[2K\r
+  [31m●[39m  [31mgateway                  Failed[39m [31mGateway health failed[39m[7B\r
+  └  Failed\n
+' matches PCRE pattern "/local\s+Waiting\b/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m333[39m
+    [90m329[0m[90m▕ [0m
+    [90m330[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m331[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/gateway\s+Failed\b.*Gateway health failed/'[0m[35;1m)[0m
+    [90m332[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+[31;1m  ➜ [0m[3;1m333[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/local\s+Waiting\b/'[0m[35;1m)[0m
+    [90m334[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m335[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/beast\s+Waiting\b/'[0m[35;1m)[0m
+    [90m336[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m337[0m[90m▕ [0m[35;1m        ->[0m[39;1mnot[0m[35;1m->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/beast\s+Downloading 1\.2\.3/'[0m[35;1m);[0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m333[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it can show multiple active fan-out rows with distinct sub-stages a…   
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[3A[2K\r
+  [32m●[39m  [97mChecking fleet versions[39m  [38;5;242mDone: 2 outdated nodes found[39m[3B\r
+  │\n
+  ○  gateway                \n
+  │\n
+  ○  local                  \n
+[3A[2K\r
+[38;5;242m  ○  local                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  agent                  \n
+[3A[2K\r
+[38;5;242m  ○  agent                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  beast                  \n
+[3A[2K\r
+[38;5;242m  ○  beast                  [39m  [38;5;242mWaiting[39m[3B\r
+[9A[2K\r
+  [32m●[39m  [97mgateway                  Done[39m[9B\r
+[5A[2K\r
+  [36m○[39m  [97magent                    Downloading[39m [38;5;242m1.2.3[39m[5B\r
+[3A[2K\r
+  [36m○[39m  [97mbeast                    Replacing cli binary[39m[3B\r
+' matches PCRE pattern "/agent\s+Downloading 1\.2\.3/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m369[39m
+    [90m365[0m[90m▕ [0m[35;1m    ]);[0m
+    [90m366[0m[90m▕ [0m
+    [90m367[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m368[0m[90m▕ [0m
+[31;1m  ➜ [0m[3;1m369[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/agent\s+Downloading 1\.2\.3/'[0m[35;1m)->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/beast\s+Replacing cli binary/'[0m[35;1m);[0m
+    [90m370[0m[90m▕ [0m[35;1m});[0m
+    [90m371[0m[90m▕ [0m
+    [90m372[0m[90m▕ [0m[39;1mit[0m[35;1m([0m[37m'preserves payload workload order before gateway succeeds and after out-of-order completion'[0m[35;1m, function (): [0m[39;1mvoid [0m[35;1m{[0m
+    [90m373[0m[90m▕ [0m[35;1m    [0m[39;1m$waitingOutput [0m[35;1m= new [0m[39;1mBufferedOutput[0m[35;1m([0m[39;1mdecorated[0m[35;1m: [0m[39;1mfalse[0m[35;1m);[0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m369[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it settles the gateway row with doctor issue counts without failing…   
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[3A[2K\r
+  [32m●[39m  [97mChecking fleet versions[39m  [38;5;242mDone: 1 outdated node found[39m[3B\r
+  │\n
+  ○  gateway                \n
+  │\n
+  ○  local                  \n
+[3A[2K\r
+[38;5;242m  ○  local                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  beast                  \n
+[3A[2K\r
+[38;5;242m  ○  beast                  [39m  [38;5;242mWaiting[39m[3B\r
+[7A[2K\r
+  [32m●[39m  [97mgateway                  Done[39m [38;5;242m(2 issues)[39m[7B\r
+[11A[2K\r
+  [32m●[39m  [97mChecking for updates     Done[39m[11B\r
+[5A[2K\r
+  [32m●[39m  [97mlocal                    Done[39m[5B\r
+[3A[2K\r
+  [32m●[39m  [97mbeast                    Done[39m[3B\r
+  └  Success: All nodes are running on version 1.2.3\n
+' matches PCRE pattern "/gateway\s+Done \(2 issues\)/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m437[39m
+    [90m433[0m[90m▕ [0m
+    [90m434[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m435[0m[90m▕ [0m
+    [90m436[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+[31;1m  ➜ [0m[3;1m437[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/gateway\s+Done \(2 issues\)/'[0m[35;1m)[0m
+    [90m438[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m439[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoContain[0m[35;1m([0m[37m'Success: All nodes are running on version 1.2.3'[0m[35;1m);[0m
+    [90m440[0m[90m▕ [0m[35;1m});[0m
+    [90m441[0m[90m▕ [0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m437[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it treats doctor issue counts as non-fatal row results with a succe…   
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[3A[2K\r
+  [32m●[39m  [97mChecking fleet versions[39m  [38;5;242mDone: 1 outdated node found[39m[3B\r
+  │\n
+  ○  gateway                \n
+  │\n
+  ○  local                  \n
+[3A[2K\r
+[38;5;242m  ○  local                  [39m  [38;5;242mWaiting[39m[3B\r
+  │\n
+  ○  beast                  \n
+[3A[2K\r
+[38;5;242m  ○  beast                  [39m  [38;5;242mWaiting[39m[3B\r
+[7A[2K\r
+  [32m●[39m  [97mgateway                  Done[39m[7B\r
+[3A[2K\r
+  [32m●[39m  [97mbeast                    Done[39m [38;5;242m(3 issues)[39m[3B\r
+[11A[2K\r
+  [32m●[39m  [97mChecking for updates     Done[39m[11B\r
+[5A[2K\r
+  [32m●[39m  [97mlocal                    Done[39m[5B\r
+  └  Success: All nodes are running on version 1.2.3\n
+' matches PCRE pattern "/beast\s+Done \(3 issues\)/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m468[39m
+    [90m464[0m[90m▕ [0m
+    [90m465[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m466[0m[90m▕ [0m
+    [90m467[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+[31;1m  ➜ [0m[3;1m468[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/beast\s+Done \(3 issues\)/'[0m[35;1m)[0m
+    [90m469[0m[90m▕ [0m[35;1m        ->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)[0m
+    [90m470[0m[90m▕ [0m[35;1m        ->[0m[39;1mtoContain[0m[35;1m([0m[37m'Success: All nodes are running on version 1.2.3'[0m[35;1m);[0m
+    [90m471[0m[90m▕ [0m[35;1m});[0m
+    [90m472[0m[90m▕ [0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m468[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\Services\Updates\UpdateAllHumanProgressRendererTest[22m [90m>[39m it does not emit ansi spinner noise or duplicate rows in non-decora…   
+[39;1m  Failed asserting that '  ┌  Updating Orbit nodes\n
+  │\n
+  ○  Checking for updates   \n
+  │\n
+  ○  Checking fleet versions\n
+  │\n
+  └  Working...\n
+[5A[2K\r
+  [36m○[39m  [97mChecking for updates   [39m  [38;5;242mChecking[39m[5B\r
+' matches PCRE pattern "/Checking for updates\s+Checking\b/".[39;22m
+
+  at [32mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39m:[32m539[39m
+    [90m535[0m[90m▕ [0m[35;1m    [0m[39;1m$renderer[0m[35;1m->[0m[39;1mtick[0m[35;1m();[0m
+    [90m536[0m[90m▕ [0m
+    [90m537[0m[90m▕ [0m[35;1m    [0m[39;1m$text [0m[35;1m= [0m[39;1m$output[0m[35;1m->[0m[39;1mfetch[0m[35;1m();[0m
+    [90m538[0m[90m▕ [0m
+[31;1m  ➜ [0m[3;1m539[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)->[0m[39;1mtoContain[0m[35;1m([0m[37m'Checking for updates'[0m[35;1m)->[0m[39;1mand[0m[35;1m([0m[39;1m$text[0m[35;1m)->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/Checking for updates\s+Checking\b/'[0m[35;1m);[0m
+    [90m540[0m[90m▕ [0m
+    [90m541[0m[90m▕ [0m[35;1m    [0m[39;1mexpect[0m[35;1m([0m[39;1m$text[0m[35;1m)->[0m[39;1mnot[0m[35;1m->[0m[39;1mtoMatch[0m[35;1m([0m[37m'/\e\[/'[0m[35;1m);[0m
+    [90m542[0m[90m▕ [0m[35;1m});[0m
+    [90m543[0m[90m▕ [0m
+
+  [33m1   [39m[39;1mtests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php[39;22m:[39;1m539[39;22m
+
+
+  [90mTests:[39m    [31;1m9 failed[39;22m[90m,[39m[39m [39m[32;1m10 passed[39;22m[90m (56 assertions)[39m
+  [90mDuration:[39m [39m0.39s[39m
+

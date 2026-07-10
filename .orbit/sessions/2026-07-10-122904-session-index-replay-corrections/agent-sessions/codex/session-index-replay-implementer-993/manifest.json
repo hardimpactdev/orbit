@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-replay-implementer-993",
+    "solo_process_id": 993,
+    "kind": "agent",
+    "started_at": "2026-07-10 09:05:34",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T11-05-34-019f4b46-6dc9-72a1-9988-fea4b33298db.jsonl",
+    "source": "codex_exact_marker",
+    "disambiguation_basis": "provider=codex; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none; timestamp_corroboration=corroborated",
+    "timestamp_corroboration": "corroborated"
+}

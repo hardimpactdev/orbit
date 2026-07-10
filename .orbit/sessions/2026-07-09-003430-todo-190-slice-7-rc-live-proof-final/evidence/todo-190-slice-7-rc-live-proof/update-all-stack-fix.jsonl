@@ -1,0 +1,26 @@
+{"event":"tree","data":{"title":"Update all","steps":[{"key":"plan","label":"Resolve update plan"},{"key":"runner","label":"Start update runner"},{"key":"gateway","label":"Update gateway"},{"key":"workloads","label":"Update workload nodes"},{"key":"verification","label":"Verify fleet"}]}}
+{"event":"step","data":{"key":"plan","status":"done","message":"Update plan persisted"}}
+{"event":"step","data":{"key":"runner","status":"running","message":"Update runner started"}}
+{"event":"step","data":{"key":"check-updates","status":"running","message":"Checking"}}
+{"event":"step","data":{"key":"check-updates","status":"done","message":"Done: latest version is 0.1.180"}}
+{"event":"step","data":{"key":"check-fleet-versions","status":"running","message":"Checking"}}
+{"event":"step","data":{"key":"check-fleet-versions","status":"done","message":"Done: 8 outdated nodes found","update_targets":["gateway","local","NMBP","agent","beast","database1","ingress1","main1","mini"]}}
+{"event":"step","data":{"key":"lease.fleet","status":"done","message":"Fleet update lease acquired"}}
+{"event":"step","data":{"key":"update-artifacts","status":"running","message":"Staging update artifacts on gateway"}}
+{"event":"step","data":{"key":"update-artifacts","status":"done","message":"Update artifacts staged on gateway"}}
+{"event":"step","data":{"key":"gateway","status":"running","message":"Updating gateway services"}}
+{"event":"step","data":{"key":"lease.gateway","status":"done","message":"Gateway and scheduler update leases acquired"}}
+{"event":"step","data":{"key":"scheduler.stop","status":"running","message":"Stopping orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.stop","status":"done","message":"orbit-scheduler service stopped"}}
+{"event":"step","data":{"key":"migrations","status":"running","message":"Running gateway migrations"}}
+{"event":"step","data":{"key":"migrations","status":"done","message":"Gateway migrations completed"}}
+{"event":"step","data":{"key":"gateway.service","status":"running","message":"Updating orbit-gateway service"}}
+{"event":"step","data":{"key":"gateway.service","status":"done","message":"orbit-gateway service healthy"}}
+{"event":"step","data":{"key":"scheduler.start","status":"running","message":"Starting orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.start","status":"done","message":"orbit-scheduler service running"}}
+{"event":"step","data":{"key":"gateway.stack","status":"running","message":"Converging gateway Swarm stack"}}
+{"event":"step","data":{"key":"gateway.stack","status":"fail","message":"Gateway Swarm service [orbit_orbit-operations-reverb] did not converge."}}
+{"event":"step","data":{"key":"scheduler.recovery","status":"running","message":"Restoring orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.recovery","status":"done","message":"orbit-scheduler service restored"}}
+{"event":"step","data":{"key":"gateway","status":"fail","message":"Gateway Swarm service [orbit_orbit-operations-reverb] did not converge."}}
+{"event":"error","error":{"code":"update_runner_failed","message":"Update runner failed.","meta":[]}}

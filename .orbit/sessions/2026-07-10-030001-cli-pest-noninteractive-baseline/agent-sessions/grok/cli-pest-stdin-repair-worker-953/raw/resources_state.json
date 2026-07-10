@@ -1,0 +1,67 @@
+{
+  "params": {
+    "grok_build.Bash": {
+      "timeout_secs": null,
+      "max_timeout_secs": 36000.0,
+      "output_byte_limit": null,
+      "cmd_prefix": null,
+      "enabled_background": true,
+      "auto_background_on_timeout": true,
+      "strip_competitor_branding": true,
+      "allow_background_operator": true,
+      "surface_bg_completion_reminders": true
+    },
+    "grok_build.ListDir": {
+      "max_output_chars": null
+    },
+    "grok_build.SearchReplace": {
+      "skip_read_before_edit": false,
+      "empty_old_string_does_not_override": false,
+      "unicode_normalized_fallback": false,
+      "include_user_edit_hint": false
+    },
+    "grok_build.UseTool": {
+      "native_tool_correction": true
+    },
+    "grok_build.ReadFile": {
+      "cursor_rules_on_read": false
+    },
+    "grok_build.WebFetch": {
+      "cache_ttl_secs": null,
+      "max_cache_entries": null,
+      "timeout_secs": null,
+      "max_content_length": null,
+      "max_markdown_length": null,
+      "context_window_tokens": 512000,
+      "allowed_domains": null,
+      "proxy_endpoint": null
+    },
+    "grok_build.AskUserQuestion": {
+      "timeout_enabled": true,
+      "timeout_secs": 1800
+    },
+    "grok_build.Grep": {
+      "max_output_bytes": null,
+      "max_chars_per_line": null
+    }
+  },
+  "state": {
+    "grok_build.ReportedTaskCompletions": {
+      "reported": [
+        "call-306d95bc-d85b-4f73-91eb-bcbf4924ec12-63",
+        "call-29b1c753-5327-4e4d-befa-e3a5947de0ab-56",
+        "call-bb16f963-f69d-4336-ab4b-4fa91d232e7b-48",
+        "call-6d0c78b2-c6b3-46b2-90ef-963a7c93ce61-42",
+        "call-c98020b3-048b-45e0-9410-bd92276eec2f-57",
+        "call-39545ef6-227d-486e-91ae-a07806cde519-110",
+        "call-510844d0-ca59-48a1-8d0f-633c8753a2b1-90",
+        "call-1452d855-fb25-42b5-91c0-69bf6a3dc591-111",
+        "call-d1de9b67-63e3-4835-8c36-8383786405ed-51",
+        "call-9df9ded1-8025-4552-ba8a-675bfd1966a8-84"
+      ]
+    },
+    "grok_build.Scheduler": {
+      "tasks": []
+    }
+  }
+}

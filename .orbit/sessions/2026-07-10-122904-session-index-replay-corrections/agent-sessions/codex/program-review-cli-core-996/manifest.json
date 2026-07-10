@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "program-review-cli-core-996",
+    "solo_process_id": 996,
+    "kind": "agent",
+    "started_at": "2026-07-10 09:38:48",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T11-38-48-019f4b64-db68-7ae0-98ec-8c42ad0b52df.jsonl",
+    "source": "codex_exact_marker",
+    "disambiguation_basis": "provider=codex; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none; timestamp_corroboration=corroborated",
+    "timestamp_corroboration": "corroborated"
+}

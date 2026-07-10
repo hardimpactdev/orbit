@@ -1,0 +1,18 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-08T15:57:11+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-08-175711-todo-190-slice-4-client-subscriber",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-08-175711-todo-190-slice-4-client-subscriber/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [
+        892,
+        893
+    ],
+    "agent_results": []
+}

@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+content-type: application/json
+content-length: 15
+date: Wed, 08 Jul 2026 17:55:42 GMT
+
+{"status":"ok"}

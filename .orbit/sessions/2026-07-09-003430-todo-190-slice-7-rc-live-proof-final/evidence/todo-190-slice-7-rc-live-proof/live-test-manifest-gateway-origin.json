@@ -1,0 +1,39 @@
+{
+    "schema_version": 1,
+    "version": "0.1.180",
+    "build_id": "20260708T212747Z-fedb050dd",
+    "source": "topology-candidate",
+    "images": {
+        "gateway": "ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T212747Z-fedb050dd@sha256:68a69c26a6e7a44dacbaa1fbcee1a05cbadc0fafdaa7066aa1a8171611bfd1b5"
+    },
+    "cli_artifacts": {
+        "darwin-arm64": {
+            "url": "https://s3.hardimpact.dev/orbit/candidates/20260708T212747Z-fedb050dd/orbit-macos-arm64",
+            "sha256": "2c48172e275436fe9521f6b82dca5292685c090160aa19c7811e2e1d0ca07498"
+        },
+        "linux-amd64": {
+            "url": "https://s3.hardimpact.dev/orbit/candidates/20260708T212747Z-fedb050dd/orbit-linux-x64",
+            "sha256": "cd183eb271be44e089ce3ea1545225007d5291710ab75541331140ac16bebd93"
+        }
+    },
+    "role_images": {
+        "orbit-caddy": "caddy:2-alpine",
+        "orbit-websocket": "ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T212747Z-fedb050dd@sha256:77a53161c2ff26e52e46a9a65315904521003a55942ccad177433a1810548ada"
+    },
+    "agent_artifacts": {
+        "darwin-arm64": {
+            "url": "https://s3.hardimpact.dev/orbit/candidates/20260708T212747Z-fedb050dd/orbit-agent-macos-arm64",
+            "sha256": "2cad32fa6279353de264d192006f3a70bbd1cc3ecd259c76651da77ce7d2eb7e"
+        },
+        "linux-amd64": {
+            "url": "https://s3.hardimpact.dev/orbit/candidates/20260708T212747Z-fedb050dd/orbit-agent-linux-x64",
+            "sha256": "0d3c4b577550eadc5f44dff4190a8cb3796fbe3281e074cf1a380c25b1640312"
+        }
+    },
+    "role_image_artifacts": {
+        "orbit-websocket": {
+            "url": "https://s3.hardimpact.dev/orbit/candidates/20260708T212747Z-fedb050dd/orbit-reverb-linux-amd64.tar",
+            "sha256": "d9f10c53704812aee57750ed0d303790a226820e1b140f4c68a6e0f594879e2b"
+        }
+    }
+}

@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-08T14:24:10Z",
+    "ended_at": "2026-07-08T14:24:17Z",
+    "duration_seconds": 7,
+    "exit_code": 0,
+    "git": {
+        "branch": "codex/operations-websocket-gateway-reverb",
+        "commit": "d3544892ceee64a2db5bb6c4d32049552806ca73"
+    },
+    "subgates": []
+}

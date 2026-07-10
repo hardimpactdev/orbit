@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "accepted-adjudication-handoff-guardrail-984",
+    "solo_process_id": 984,
+    "kind": "agent",
+    "started_at": "2026-07-10 06:47:02",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T08-47-03-019f4ac7-9a48-7e62-b816-2eac31f063d3.jsonl",
+    "source": "codex_exact_marker",
+    "incarnation_floor": "2026-07-10T06:47:15Z",
+    "incarnation_floor_source": "caller_attested",
+    "rollout_id": "019f4ac7-9a48-7e62-b816-2eac31f063d3",
+    "last_activity_at": "2026-07-10T06:53:08.405Z"
+}

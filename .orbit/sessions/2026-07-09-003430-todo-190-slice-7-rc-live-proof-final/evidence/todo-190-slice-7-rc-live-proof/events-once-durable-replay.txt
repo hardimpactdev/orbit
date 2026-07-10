@@ -1,0 +1,6 @@
+:  
+
+id: 1
+event: step
+data: {"frame":{"operation_uuid":"04f96d80-374d-4e09-86b9-8230b4d726f6","channel":"private-operations.04f96d80-374d-4e09-86b9-8230b4d726f6","sequence":1,"emitted_at":"2026-07-08T22:02:59+00:00","source_node":{"id":4,"name":"NMBP"},"type":"stderr","payload":{"data":"{\"level\":\"warn\",\"ts\":1783538472.7754462,\"logger\":\"http\",\"msg\":\"HTTP\/2 skipped because it requires TLS\",\"network\":\"tcp\",\"addr\":\":80\"}\n{\"level\":\"warn\",\"ts\":1783538472.7754478,\"logger\":\"http\",\"msg\":\"HTTP\/3 skipped because it requires TLS\",\"network\":\"tcp\",\"addr\":\":80\"}\n{\"level\":\"info\",\"ts\":1783538472.7754486,\"logger\":\"http.log\",\"msg\":\"server running\",\"name\":\"remaining_auto_https_redirects\",\"protocols\":[\"h1\",\"h2\",\"h3\"]}\n{\"level\":\"info\",\"ts\":1783538472.7757494,\"msg\":\"autosaved config (load with --resume flag)\",\"file\":\"\/tmp\/orbit-frankenphp\/config\/caddy\/autosave.json\"}\n{\"level\":\"info\",\"ts\":1783538472.775791,\"msg\":\"serving initial configuration\"}\n","encoding":"utf-8"},"durable_replay_cursor":{"operation_uuid":"04f96d80-374d-4e09-86b9-8230b4d726f6","event_sequence":1,"event_id":17361}},"event":"operation_stream.frame"}
+

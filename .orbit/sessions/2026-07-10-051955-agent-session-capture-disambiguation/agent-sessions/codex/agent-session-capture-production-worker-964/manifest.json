@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "agent-session-capture-production-worker-964",
+    "solo_process_id": 964,
+    "kind": "agent",
+    "started_at": "2026-07-10 02:10:50",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T04-10-50-019f49ca-bbb0-7420-a207-29201a857a14.jsonl",
+    "source": "codex_exact_marker"
+}

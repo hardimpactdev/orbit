@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-09T23:43:31+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/session-index-facet-normalization/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-014331-session-index-facet-normalization",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-014331-session-index-facet-normalization/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-semantic-final-analyzer-985",
+    "solo_process_id": 985,
+    "kind": "agent",
+    "started_at": "2026-07-10 06:57:42",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T08-57-43-019f4ad1-5f59-7ba2-8083-90be1f8b2212.jsonl",
+    "source": "codex_exact_marker",
+    "incarnation_floor": "2026-07-10T06:57:50Z",
+    "incarnation_floor_source": "caller_attested",
+    "rollout_id": "019f4ad1-5f59-7ba2-8083-90be1f8b2212",
+    "last_activity_at": "2026-07-10T07:05:02.283Z"
+}

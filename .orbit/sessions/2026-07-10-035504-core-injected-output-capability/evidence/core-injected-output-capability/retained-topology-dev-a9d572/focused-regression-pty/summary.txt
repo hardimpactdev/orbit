@@ -1,0 +1,8 @@
+command: ssh -tt beast 'incus exec orbit-e2e-dev-a9d572-operator -- sudo -u orbit bash -lc '"'"'cd /home/orbit/orbit-run/packages/core && vendor/bin/pest --compact --do-not-cache-result tests/Progress/LiveRepaintOutputTest.php --filter="respects injected non-stream BufferedOutput"'"'"''
+exit_code: 0
+duration: 1.051s
+max_delta_between_chunks: 0.001s
+timed_out: false
+idle_timed_out: false
+chunks: .orbit/evidence/core-injected-output-capability/retained-topology-dev-a9d572/focused-regression-pty/chunks.jsonl
+transcript: .orbit/evidence/core-injected-output-capability/retained-topology-dev-a9d572/focused-regression-pty/transcript.txt

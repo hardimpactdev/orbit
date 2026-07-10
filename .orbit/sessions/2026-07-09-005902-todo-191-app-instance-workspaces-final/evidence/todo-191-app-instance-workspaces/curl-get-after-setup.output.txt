@@ -1,0 +1,6 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 32941    0 32941    0     0   316k      0 --:--:-- --:--:-- --:--:--  318k
+http_code=200
+url_effective=https://todo191-smoke-0037.happie.nmbp/
+size_download=32941

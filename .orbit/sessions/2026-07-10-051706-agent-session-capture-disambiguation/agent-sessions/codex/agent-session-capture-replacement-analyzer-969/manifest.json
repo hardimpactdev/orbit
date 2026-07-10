@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "agent-session-capture-replacement-analyzer-969",
+    "solo_process_id": 969,
+    "kind": "agent",
+    "started_at": "2026-07-10 03:03:08",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T05-03-09-019f49fa-9e03-7510-9999-c2eddeb8cd5c.jsonl",
+    "source": "codex_exact_marker"
+}

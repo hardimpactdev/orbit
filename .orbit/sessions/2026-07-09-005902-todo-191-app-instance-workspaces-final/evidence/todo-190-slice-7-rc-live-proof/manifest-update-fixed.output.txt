@@ -1,0 +1,3 @@
+Release manifest URL updated.
+Source: custom
+URL: https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json

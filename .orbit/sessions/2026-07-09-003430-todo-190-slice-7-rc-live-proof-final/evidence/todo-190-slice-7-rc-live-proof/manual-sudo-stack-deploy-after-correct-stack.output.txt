@@ -1,0 +1,17 @@
+Since --detach=false was not specified, tasks will be created in the background.
+In a future release, --detach=false will become the default.
+Updating service orbit_orbit-operations-reverb (id: pys20kbft29tvpvdu7pdiq0tv)
+image ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15 could not be accessed on a registry to record
+its digest. Each node will access ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+Updating service orbit_orbit-gateway (id: 08i294a6cn3z4spf208456cz9)
+Updating service orbit_orbit-scheduler (id: ziaos3zb00hltsdid0iis2cxe)
+EXIT:0
+"ghcr.io/hardimpactdev/orbit-websocket:0.1.180" {"com.docker.stack.image":"ghcr.io/hardimpactdev/orbit-websocket:0.1.180","com.docker.stack.namespace":"orbit","orbit.managed":"true","orbit.service":"orbit-operations-reverb"}
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Preparing less than a second ago 
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15 Accepted less than a second ago 
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15 Rejected less than a second ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 1 second ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 6 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"

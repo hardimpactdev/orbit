@@ -1,0 +1,7 @@
+{"elapsed": 0.360256, "delta": 0.0, "bytes": 2, "text": "\r\n"}
+{"elapsed": 0.362966, "delta": 0.00271, "bytes": 239, "text": "  \u001b[38;5;242m┌\u001b[39m  \u001b[97mTopology TTY capability\u001b[39m\r\n  \u001b[38;5;242m│\u001b[39m\r\n  \u001b[38;5;242m○  Probe \u001b[39m\r\n  \u001b[38;5;242m│\u001b[39m\r\n  \u001b[38;5;242m└\u001b[39m  \u001b[38;5;242mWorking...\u001b[39m\r\n\u001b[?25l\u001b[3A\u001b[2K\r  \u001b[36m○\u001b[39m  \u001b[97mProbe \u001b[39m\u001b[3B\r"}
+{"elapsed": 0.66886, "delta": 0.305894, "bytes": 47, "text": "\u001b[3A\u001b[2K\r  \u001b[36m◉\u001b[39m  \u001b[97mProbe \u001b[39m\u001b[3B\r"}
+{"elapsed": 1.060005, "delta": 0.391145, "bytes": 47, "text": "\u001b[3A\u001b[2K\r  \u001b[36m○\u001b[39m  \u001b[97mProbe \u001b[39m\u001b[3B\r"}
+{"elapsed": 1.306753, "delta": 0.246748, "bytes": 47, "text": "\u001b[3A\u001b[2K\r  \u001b[36m◉\u001b[39m  \u001b[97mProbe \u001b[39m\u001b[3B\r"}
+{"elapsed": 1.567183, "delta": 0.26043, "bytes": 133, "text": "\u001b[3A\u001b[2K\r  \u001b[32m●\u001b[39m  \u001b[97mProbed\u001b[39m  \u001b[97mTTY path retained\u001b[39m\u001b[3B\r\u001b[1A\u001b[2K\r  \u001b[38;5;242m└\u001b[39m  \u001b[97mComplete\u001b[39m\u001b[1B\r\r\n"}
+{"elapsed": 1.593034, "delta": 0.025851, "bytes": 44, "text": "Shared connection to 192.168.6.20 closed.\r\r\n"}

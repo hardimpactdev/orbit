@@ -1,0 +1,1 @@
+awk: fatal: cannot open file `/home/orbit/.config/orbit/.env' for reading: Permission denied

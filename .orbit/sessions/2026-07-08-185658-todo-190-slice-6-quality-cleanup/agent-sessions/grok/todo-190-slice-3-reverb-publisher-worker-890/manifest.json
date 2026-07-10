@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "ok",
+    "slug": "todo-190-slice-3-reverb-publisher-worker-890",
+    "solo_process_id": 890,
+    "kind": "agent",
+    "started_at": "2026-07-08 15:25:44",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit/019f4256-2647-7513-838e-819d440b4f7b",
+    "source": "grok_exact_marker"
+}

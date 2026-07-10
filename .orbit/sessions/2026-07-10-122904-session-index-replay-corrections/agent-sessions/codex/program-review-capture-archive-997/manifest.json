@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "program-review-capture-archive-997",
+    "solo_process_id": 997,
+    "kind": "agent",
+    "started_at": "2026-07-10 09:38:49",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T11-38-49-019f4b64-df23-73f3-b49a-a417ced2563e.jsonl",
+    "source": "codex_exact_marker",
+    "disambiguation_basis": "provider=codex; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none; timestamp_corroboration=corroborated",
+    "timestamp_corroboration": "corroborated"
+}

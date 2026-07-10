@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f48fc-b3c8-7b70-8a5d-9cae986867bf",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/session-index-facet-normalization"
+  },
+  "session_summary": "Red Test for Same-Line Nested Packet Normalization",
+  "created_at": "2026-07-09T22:25:48.576926Z",
+  "updated_at": "2026-07-09T22:44:25.708197Z",
+  "num_messages": 679,
+  "num_chat_messages": 391,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 7,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/session-index-facet-normalization/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "b0641b619151758b28fb1a0ad194f0b987ac8443",
+  "head_branch": "session-index-facet-normalization",
+  "request_id": "e2d54ebb-0805-401d-a08d-753c824d7913",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-09T22:44:25.695575Z",
+  "generated_title": "Red Test for Same-Line Nested Packet Normalization",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

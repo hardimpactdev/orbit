@@ -1,0 +1,6 @@
+array (
+  'app_key_set' => true,
+  'operation_secret_set' => false,
+  'reverb_key_set' => true,
+  'reverb_secret_set' => true,
+)

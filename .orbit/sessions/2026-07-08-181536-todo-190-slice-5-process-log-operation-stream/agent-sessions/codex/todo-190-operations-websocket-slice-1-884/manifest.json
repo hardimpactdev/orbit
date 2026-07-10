@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "provider": "codex",
+  "status": "capture_failed",
+  "slug": "todo-190-operations-websocket-slice-1-884",
+  "solo_process_id": 884,
+  "kind": "agent",
+  "reason": "live_provider_session_extraction_memory_exhausted",
+  "command": "bin/orbit-session-archive --slug=todo-190-slice-1-operations-reverb-scaffold --solo-process-id=884",
+  "error_summary": "bin/orbit-agent-session-archive exhausted PHP memory while decoding Codex session JSONL during archive-time live extraction; Slice 1 loop packet, quality-gate artifact, and command evidence are preserved in the session archive."
+}

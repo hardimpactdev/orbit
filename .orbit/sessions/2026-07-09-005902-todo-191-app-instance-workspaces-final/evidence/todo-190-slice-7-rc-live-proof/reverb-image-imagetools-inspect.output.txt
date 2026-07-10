@@ -1,0 +1,15 @@
+Name:      ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15
+           
+Manifests: 
+  Name:        ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:de507e80e6accb90d3ad58ae10ec6c56b7453e881d075940b6ce0bc333b7e4d0
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/amd64
+               
+  Name:        ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7@sha256:ce69fcfb812e1fdf5707051676f0e470ae28dc9f1f3370f001088a5e7da20ebb
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    unknown/unknown
+  Annotations: 
+    vnd.docker.reference.digest: sha256:de507e80e6accb90d3ad58ae10ec6c56b7453e881d075940b6ce0bc333b7e4d0
+    vnd.docker.reference.type:   attestation-manifest

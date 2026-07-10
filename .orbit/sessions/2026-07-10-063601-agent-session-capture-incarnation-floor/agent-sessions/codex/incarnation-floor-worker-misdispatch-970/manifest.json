@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "incarnation-floor-worker-misdispatch-970",
+    "solo_process_id": 970,
+    "kind": "agent",
+    "started_at": "2026-07-10 03:31:41",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T05-31-41-019f4a14-bef5-76f1-bd9c-7c59cabe35ec.jsonl",
+    "source": "codex_exact_marker"
+}

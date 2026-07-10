@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "todo-190-slice-4-client-subscriber-codex-892",
+    "solo_process_id": 892,
+    "kind": "agent",
+    "started_at": "2026-07-08 15:41:53",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/08/rollout-2026-07-08T17-41-54-019f4264-90e9-7fa3-8740-96d1a29badce.jsonl",
+    "source": "codex_exact_marker"
+}

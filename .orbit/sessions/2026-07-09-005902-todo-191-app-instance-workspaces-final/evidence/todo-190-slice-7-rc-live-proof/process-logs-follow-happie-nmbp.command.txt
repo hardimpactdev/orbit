@@ -1,0 +1,1 @@
+command: ./apps/cli/orbit process:logs frankenphp-happie-nmbp --app=happie-nmbp --follow --lines=5

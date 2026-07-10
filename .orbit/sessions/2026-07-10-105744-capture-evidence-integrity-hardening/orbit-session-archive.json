@@ -1,0 +1,21 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T08:58:56+00:00",
+    "mode": "refreshed",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/capture-evidence-integrity-hardening/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-105744-capture-evidence-integrity-hardening",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-105744-capture-evidence-integrity-hardening/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [
+        942,
+        986,
+        990,
+        991
+    ],
+    "agent_results": []
+}

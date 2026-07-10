@@ -1,0 +1,8 @@
+command: composer test
+exit_code: 2
+duration: 15.824s
+max_delta_between_chunks: 3.175s
+timed_out: false
+idle_timed_out: false
+chunks: /tmp/orbit-cli-pest-stdin-before/chunks.jsonl
+transcript: /tmp/orbit-cli-pest-stdin-before/transcript.txt

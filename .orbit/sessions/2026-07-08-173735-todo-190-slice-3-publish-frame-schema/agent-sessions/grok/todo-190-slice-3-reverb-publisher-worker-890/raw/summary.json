@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f4256-2647-7513-838e-819d440b4f7b",
+    "cwd": "/Users/nckrtl/orbit"
+  },
+  "session_summary": "Implement Green Orbit 190 Slice 3 Reverb Broadcaster",
+  "created_at": "2026-07-08T15:26:10.088684Z",
+  "updated_at": "2026-07-08T15:29:40.045779Z",
+  "num_messages": 265,
+  "num_chat_messages": 122,
+  "current_model_id": "grok-composer-2.5-fast",
+  "next_trace_turn": 4,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "afd55769f220dadaba331c3ea7c2e03d985e8494",
+  "head_branch": "main",
+  "request_id": "25c47578-be75-44c6-a41a-2bb45d418512",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-08T15:29:40.032965Z",
+  "generated_title": "Implement Green Orbit 190 Slice 3 Reverb Broadcaster",
+  "agent_name": "cursor",
+  "sandbox_profile": "off"
+}

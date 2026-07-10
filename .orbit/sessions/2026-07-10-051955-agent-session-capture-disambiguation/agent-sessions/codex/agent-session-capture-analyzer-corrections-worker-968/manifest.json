@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "agent-session-capture-analyzer-corrections-worker-968",
+    "solo_process_id": 968,
+    "kind": "agent",
+    "started_at": "2026-07-10 02:56:01",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T04-56-01-019f49f4-194b-7932-aca6-e9d36b5a8b52.jsonl",
+    "source": "codex_exact_marker"
+}

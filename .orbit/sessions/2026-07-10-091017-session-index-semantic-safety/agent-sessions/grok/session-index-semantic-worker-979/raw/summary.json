@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f4a9f-cb7c-7842-a6b4-cb54c27171ee",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/session-index-semantic-safety"
+  },
+  "session_summary": "Fix session index analyzer verdict grammar and blockers",
+  "created_at": "2026-07-10T06:03:34.222285Z",
+  "updated_at": "2026-07-10T06:16:51.174037Z",
+  "num_messages": 601,
+  "num_chat_messages": 321,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 6,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/session-index-semantic-safety/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "7b69e16192d1f0b2a4215eaee442461df1cf998a",
+  "head_branch": "session-index-semantic-safety",
+  "request_id": "da0323a3-ee63-4d06-99c4-3da84abc062b",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-10T06:16:51.146258Z",
+  "generated_title": "Fix session index analyzer verdict grammar and blockers",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

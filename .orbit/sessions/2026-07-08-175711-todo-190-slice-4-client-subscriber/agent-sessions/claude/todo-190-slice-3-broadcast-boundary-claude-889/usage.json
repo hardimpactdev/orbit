@@ -1,0 +1,6 @@
+{
+    "input_tokens": 54924,
+    "output_tokens": 13778,
+    "cache_read_tokens": 83937,
+    "cache_write_tokens": 2408
+}

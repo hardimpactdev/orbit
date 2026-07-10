@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "ok",
+    "slug": "todo-190-slice-3-broadcast-boundary-claude-889",
+    "solo_process_id": 889,
+    "kind": "agent",
+    "started_at": "2026-07-08 15:19:42",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/b065f29c-47bc-4823-a2b8-7c1c68a6144f.jsonl",
+    "source": "claude_exact_marker"
+}

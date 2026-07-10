@@ -1,0 +1,11 @@
+HTTP/2 200 
+access-control-allow-origin: *
+alt-svc: h3=":443"; ma=2592000
+cache-control: no-cache, private
+content-type: application/json
+date: Wed, 08 Jul 2026 21:25:33 GMT
+server: FrankenPHP Caddy
+vary: Accept-Encoding
+via: 1.1 Caddy
+x-powered-by: PHP/8.5.7
+

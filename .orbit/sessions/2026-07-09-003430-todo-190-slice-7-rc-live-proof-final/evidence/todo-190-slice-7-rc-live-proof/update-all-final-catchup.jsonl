@@ -1,0 +1,79 @@
+{"event":"tree","data":{"title":"Update all","steps":[{"key":"plan","label":"Resolve update plan"},{"key":"runner","label":"Start update runner"},{"key":"gateway","label":"Update gateway"},{"key":"workloads","label":"Update workload nodes"},{"key":"verification","label":"Verify fleet"}]}}
+{"event":"step","data":{"key":"plan","status":"done","message":"Update plan persisted"}}
+{"event":"step","data":{"key":"runner","status":"running","message":"Update runner started"}}
+{"event":"step","data":{"key":"check-updates","status":"running","message":"Checking"}}
+{"event":"step","data":{"key":"check-updates","status":"done","message":"Done: latest version is 0.1.180"}}
+{"event":"step","data":{"key":"check-fleet-versions","status":"running","message":"Checking"}}
+{"event":"step","data":{"key":"check-fleet-versions","status":"done","message":"Done: 8 outdated nodes found","update_targets":["gateway","local","NMBP","agent","beast","database1","ingress1","main1","mini"]}}
+{"event":"step","data":{"key":"lease.fleet","status":"done","message":"Fleet update lease acquired"}}
+{"event":"step","data":{"key":"update-artifacts","status":"running","message":"Staging update artifacts on gateway"}}
+{"event":"step","data":{"key":"update-artifacts","status":"done","message":"Update artifacts staged on gateway"}}
+{"event":"step","data":{"key":"gateway","status":"running","message":"Updating gateway services"}}
+{"event":"step","data":{"key":"lease.gateway","status":"done","message":"Gateway and scheduler update leases acquired"}}
+{"event":"step","data":{"key":"scheduler.stop","status":"running","message":"Stopping orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.stop","status":"done","message":"orbit-scheduler service stopped"}}
+{"event":"step","data":{"key":"migrations","status":"running","message":"Running gateway migrations"}}
+{"event":"step","data":{"key":"migrations","status":"done","message":"Gateway migrations completed"}}
+{"event":"step","data":{"key":"gateway.service","status":"running","message":"Updating orbit-gateway service"}}
+{"event":"step","data":{"key":"gateway.service","status":"done","message":"orbit-gateway service healthy"}}
+{"event":"step","data":{"key":"scheduler.start","status":"running","message":"Starting orbit-scheduler service"}}
+{"event":"step","data":{"key":"scheduler.start","status":"done","message":"orbit-scheduler service running"}}
+{"event":"step","data":{"key":"gateway.stack","status":"running","message":"Converging gateway Swarm stack"}}
+{"event":"step","data":{"key":"gateway.stack","status":"done","message":"Gateway Swarm stack converged"}}
+{"event":"step","data":{"key":"gateway.agent-config","status":"running","message":"Writing gateway host agent config"}}
+{"event":"step","data":{"key":"gateway.agent-config","status":"done","message":"Gateway host agent config written"}}
+{"event":"step","data":{"key":"gateway.host-cli","status":"running","message":"Installing gateway host CLI"}}
+{"event":"step","data":{"key":"gateway.host-cli","status":"done","message":"Gateway host CLI installed"}}
+{"event":"step","data":{"key":"gateway.agent-service","status":"running","message":"Restarting gateway host Orbit Agent service"}}
+{"event":"step","data":{"key":"gateway.agent-service","status":"done","message":"Gateway host Orbit Agent service restarted"}}
+{"event":"step","data":{"key":"gateway","status":"done","message":"Gateway services updated"}}
+{"event":"step","data":{"key":"workload-nodes","status":"running","message":"Updating workload nodes"}}
+{"event":"step","data":{"key":"workload.NMBP","status":"running","message":"Updating workload node NMBP"}}
+{"event":"step","data":{"key":"workload.NMBP","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.NMBP","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.NMBP","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.NMBP","status":"done","message":"Workload node NMBP updated"}}
+{"event":"step","data":{"key":"workload.agent","status":"running","message":"Updating workload node agent"}}
+{"event":"step","data":{"key":"workload.agent","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.agent","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.agent","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.agent","status":"done","message":"Workload node agent updated"}}
+{"event":"step","data":{"key":"workload.beast","status":"running","message":"Updating workload node beast"}}
+{"event":"step","data":{"key":"workload.beast","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.beast","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.beast","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.beast","status":"done","message":"Workload node beast updated"}}
+{"event":"step","data":{"key":"workload.database1","status":"running","message":"Updating workload node database1"}}
+{"event":"step","data":{"key":"workload.database1","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.database1","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.database1","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.database1","status":"done","message":"Workload node database1 updated"}}
+{"event":"step","data":{"key":"workload.ingress1","status":"running","message":"Updating workload node ingress1"}}
+{"event":"step","data":{"key":"workload.ingress1","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.ingress1","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.ingress1","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.ingress1","status":"done","message":"Workload node ingress1 updated"}}
+{"event":"step","data":{"key":"workload.main1","status":"running","message":"Updating workload node main1"}}
+{"event":"step","data":{"key":"workload.main1","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.main1","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.main1","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.main1","status":"done","message":"Workload node main1 updated"}}
+{"event":"step","data":{"key":"workload.mini","status":"running","message":"Updating workload node mini"}}
+{"event":"step","data":{"key":"workload.mini","status":"running","message":"Installing CLI 0.1.180"}}
+{"event":"step","data":{"key":"workload.mini","status":"running","message":"Recording installed CLI"}}
+{"event":"step","data":{"key":"workload.mini","status":"running","message":"Running doctor"}}
+{"event":"step","data":{"key":"workload.mini","status":"done","message":"Workload node mini updated"}}
+{"event":"step","data":{"key":"workload-nodes","status":"done","message":"Workload nodes updated"}}
+{"event":"step","data":{"key":"verification","status":"running","message":"Verifying fleet update"}}
+{"event":"step","data":{"key":"verification.gateway","status":"running","message":"Verifying orbit-gateway service"}}
+{"event":"step","data":{"key":"verification.gateway","status":"done","message":"orbit-gateway service verified"}}
+{"event":"step","data":{"key":"verification.scheduler","status":"running","message":"Verifying orbit-scheduler service"}}
+{"event":"step","data":{"key":"verification.scheduler","status":"done","message":"orbit-scheduler service verified"}}
+{"event":"step","data":{"key":"verification.cli","status":"running","message":"Verifying workload CLI artifacts"}}
+{"event":"step","data":{"key":"verification.cli","status":"done","message":"Workload CLI artifacts verified"}}
+{"event":"step","data":{"key":"verification.agent","status":"running","message":"Verifying Orbit Agent artifacts"}}
+{"event":"step","data":{"key":"verification.agent","status":"done","message":"Orbit Agent artifacts verified"}}
+{"event":"step","data":{"key":"verification.role-images","status":"running","message":"Verifying required role images"}}
+{"event":"step","data":{"key":"verification.role-images","status":"done","message":"Required role images verified"}}
+{"event":"step","data":{"key":"verification","status":"done","message":"Fleet update verified"}}
+{"event":"complete","success":{"data":{"status":"succeeded","target_version":"0.1.180","manifest_source":"topology-candidate","manifest_version":"0.1.180","cli_artifacts":{"darwin-arm64":{"url":"https://s3.hardimpact.dev/orbit/candidates/20260708T220605Z-e858970a0/orbit-macos-arm64","sha256":"c17924f229ad69f4806e551efa1a4cfd8552fa843d2d145c2348c11e8c824834"},"linux-amd64":{"url":"https://s3.hardimpact.dev/orbit/candidates/20260708T220605Z-e858970a0/orbit-linux-x64","sha256":"e66086ce7661094f1bc31c2b5914404e508a5da2e828938862cd6cb3aae013fb"}},"agent_artifacts":{"darwin-arm64":{"url":"https://s3.hardimpact.dev/orbit/candidates/20260708T220605Z-e858970a0/orbit-agent-macos-arm64","sha256":"2cad32fa6279353de264d192006f3a70bbd1cc3ecd259c76651da77ce7d2eb7e"},"linux-amd64":{"url":"https://s3.hardimpact.dev/orbit/candidates/20260708T220605Z-e858970a0/orbit-agent-linux-x64","sha256":"0d3c4b577550eadc5f44dff4190a8cb3796fbe3281e074cf1a380c25b1640312"}}},"meta":[]}}

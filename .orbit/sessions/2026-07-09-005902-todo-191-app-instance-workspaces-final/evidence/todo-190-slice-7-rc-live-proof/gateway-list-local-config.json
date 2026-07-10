@@ -1,0 +1,1 @@
+{"success":{"data":{"active_gateway":"default","gateways":[{"name":"default","active":true,"url":"https://10.6.0.2","wireguard_ip":"10.6.0.2","ca_fingerprint":"sha256:d4c9703bc0243e0503fa0127e38fca96063f4ee87850f95930d7e2a4ec83faa7","timeout":30,"self_mode":"wireguard_https"}]},"meta":[]}}

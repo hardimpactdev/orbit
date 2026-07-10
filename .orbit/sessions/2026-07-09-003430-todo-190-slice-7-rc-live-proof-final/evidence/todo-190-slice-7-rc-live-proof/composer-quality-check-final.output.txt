@@ -1,0 +1,530 @@
+> Composer\Config::disableProcessTimeout
+bin/quality-check.sh: line 916: 55380 Terminated: 15          vendor/bin/pest --compact > "$LOG_DIR/core_pest.log" 2>&1
+─── gateway_pest (exit=0) ───
+{"tool":"pest","result":"passed","tests":4353,"passed":4353,"assertions":24870,"duration_ms":53265}
+
+─── docs_lint (exit=0) ───
+{"tool":"librarian","result":"passed","issues":84,"errors":0,"warnings":84,"findings":[{"path":"docs/domains/1_node/7_node-update/technical/1_node-update.md","severity":"warning","rule":"command_docs.command_contract_complexity","message":"Command contract complexity score is 110. Metrics: 9 input field(s), 1 conditional required field(s), 0 authorization path(s), 27 behavior item(s), 5 failure case(s), 5 doctor handoff(s), and 3 scope-boundary clause(s). Consider grouping behavior by path, extracting stable concepts, or adding stronger split-file test ownership.","line":158},{"path":"docs/domains/24_solo/10_solo-project-rename/technical/1_solo-project-rename.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/11_solo-project-select/technical/1_solo-project-select.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/12_solo-project-delete/technical/1_solo-project-delete.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/13_solo-process-list/technical/1_solo-process-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/14_solo-process-show/technical/1_solo-process-show.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/15_solo-process-output/technical/1_solo-process-output.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/16_solo-process-input/technical/1_solo-process-input.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/17_solo-process-spawn/technical/1_solo-process-spawn.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/18_solo-process-start/technical/1_solo-process-start.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/19_solo-process-stop/technical/1_solo-process-stop.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/20_solo-process-restart/technical/1_solo-process-restart.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/21_solo-process-clear-output/technical/1_solo-process-clear-output.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/22_solo-process-rename/technical/1_solo-process-rename.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/23_solo-process-close/technical/1_solo-process-close.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/24_solo-agent-tool-list/technical/1_solo-agent-tool-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/25_solo-scratchpad-list/technical/1_solo-scratchpad-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/26_solo-scratchpad-show/technical/1_solo-scratchpad-show.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/27_solo-scratchpad-find/technical/1_solo-scratchpad-find.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/28_solo-scratchpad-create/technical/1_solo-scratchpad-create.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/29_solo-scratchpad-write/technical/1_solo-scratchpad-write.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/30_solo-scratchpad-append/technical/1_solo-scratchpad-append.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/31_solo-scratchpad-append-section/technical/1_solo-scratchpad-append-section.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/32_solo-scratchpad-edit/technical/1_solo-scratchpad-edit.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/33_solo-scratchpad-rename/technical/1_solo-scratchpad-rename.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/34_solo-scratchpad-archive/technical/1_solo-scratchpad-archive.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/35_solo-scratchpad-clear/technical/1_solo-scratchpad-clear.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/36_solo-scratchpad-delete/technical/1_solo-scratchpad-delete.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/37_solo-todo-list/technical/1_solo-todo-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/38_solo-todo-show/technical/1_solo-todo-show.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/39_solo-todo-create/technical/1_solo-todo-create.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/40_solo-todo-update/technical/1_solo-todo-update.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/41_solo-todo-complete/technical/1_solo-todo-complete.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/42_solo-todo-reopen/technical/1_solo-todo-reopen.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/43_solo-todo-delete/technical/1_solo-todo-delete.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/44_solo-todo-lock/technical/1_solo-todo-lock.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/45_solo-todo-unlock/technical/1_solo-todo-unlock.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/46_solo-todo-comment-add/technical/1_solo-todo-comment-add.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/47_solo-todo-comment-update/technical/1_solo-todo-comment-update.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/48_solo-todo-comment-delete/technical/1_solo-todo-comment-delete.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/49_solo-service-list/technical/1_solo-service-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/4_solo-tools/technical/1_solo-tools.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/50_solo-timer-list/technical/1_solo-timer-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/51_solo-timer-set/technical/1_solo-timer-set.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/52_solo-timer-cancel/technical/1_solo-timer-cancel.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/53_solo-timer-pause/technical/1_solo-timer-pause.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/54_solo-timer-resume/technical/1_solo-timer-resume.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/55_solo-lock-status/technical/1_solo-lock-status.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/56_solo-lock-acquire/technical/1_solo-lock-acquire.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/57_solo-lock-release/technical/1_solo-lock-release.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/5_solo-project-list/technical/1_solo-project-list.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/6_solo-project-show/technical/1_solo-project-show.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/7_solo-project-status/technical/1_solo-project-status.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/8_solo-project-stats/technical/1_solo-project-stats.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/24_solo/9_solo-project-create/technical/1_solo-project-create.md","severity":"warning","rule":"librarian.bullet_complexity","message":"Bullet is multi-clause (contains an embedded conditional in 15 words). Split into separate bullets or rewrite as prose with explicit subordination.","line":12},{"path":"docs/domains/6_workspace/10_workspace-setup-step-remove/technical/1_workspace-setup-step-remove.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 31 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":33},{"path":"docs/domains/6_workspace/11_workspace-teardown-step-add/technical/1_workspace-teardown-step-add.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 31 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":34},{"path":"docs/domains/6_workspace/12_workspace-teardown-step-list/technical/1_workspace-teardown-step-list.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 39 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":28},{"path":"docs/domains/6_workspace/13_workspace-teardown-step-remove/technical/1_workspace-teardown-step-remove.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 31 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":34},{"path":"docs/domains/6_workspace/1_workspace-new/technical/1_workspace-new.md","severity":"warning","rule":"librarian.compound_noun_stack","message":"Compound noun phrase \"instance-bound workspace path resolves\" stacks 3 modifiers before the head noun. Decompose into a sentence (\"X that is Y by Z\") instead.","line":55},{"path":"docs/domains/6_workspace/1_workspace-new/technical/1_workspace-new.md","severity":"warning","rule":"librarian.compound_noun_stack","message":"Compound noun phrase \"App-instance selectors choose placement\" stacks 3 modifiers before the head noun. Decompose into a sentence (\"X that is Y by Z\") instead.","line":81},{"path":"docs/domains/6_workspace/1_workspace-new/technical/6.2_workspace-new_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 1 success.data.workspace contains non-canonical workspace field `app_instance`.","line":18},{"path":"docs/domains/6_workspace/1_workspace-new/technical/6.2_workspace-new_output-render_json.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":66},{"path":"docs/domains/6_workspace/1_workspace-new/technical/6.2_workspace-new_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 2 success.data.workspace contains non-canonical workspace field `app_instance`.","line":102},{"path":"docs/domains/6_workspace/2_workspace-setup/technical/6.2_workspace-setup_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 1 success.data.workspace contains non-canonical workspace field `app_instance`.","line":20},{"path":"docs/domains/6_workspace/2_workspace-setup/technical/6.2_workspace-setup_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 2 success.data.workspace contains non-canonical workspace field `app_instance`.","line":86},{"path":"docs/domains/6_workspace/2_workspace-setup/technical/6.2_workspace-setup_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 3 success.data.workspace contains non-canonical workspace field `app_instance`.","line":122},{"path":"docs/domains/6_workspace/3_workspace-list/technical/1_workspace-list.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 4 sentences, above threshold 3. Move long guidance out of the table.","line":29},{"path":"docs/domains/6_workspace/3_workspace-list/technical/1_workspace-list.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 42 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":29},{"path":"docs/domains/6_workspace/3_workspace-list/technical/6.2_workspace-list_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 1 success.data.workspaces[0] contains non-canonical workspace field `app_instance`.","line":34},{"path":"docs/domains/6_workspace/3_workspace-list/technical/6.2_workspace-list_output-render_json.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":58},{"path":"docs/domains/6_workspace/4_workspace-show/technical/6.2_workspace-show_output-render_json.md","severity":"warning","rule":"command_docs.json_renderer_examples","message":"JSON example 1 success.data.workspace contains non-canonical workspace field `app_instance`.","line":31},{"path":"docs/domains/6_workspace/5_workspace-remove/technical/1_workspace-remove.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":97},{"path":"docs/domains/6_workspace/5_workspace-remove/technical/6.2_workspace-remove_output-render_json.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":55},{"path":"docs/domains/6_workspace/8_workspace-setup-step-add/technical/1_workspace-setup-step-add.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 31 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":28},{"path":"docs/domains/6_workspace/9_workspace-setup-step-list/technical/1_workspace-setup-step-list.md","severity":"warning","rule":"librarian.table_prose_complexity","message":"Table cell has 39 prose words, above threshold 30. Split the cell, move guidance to surrounding prose, or use a nested list.","line":28},{"path":"docs/domains/6_workspace/README.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":14},{"path":"docs/domains/6_workspace/README.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":43},{"path":"docs/domains/6_workspace/README.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":143},{"path":"docs/domains/6_workspace/README.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":144},{"path":"docs/domains/6_workspace/workspace-doctor.md","severity":"warning","rule":"command_docs.no_legacy_narrative","message":"Legacy-narrative term \"legacy\" in docs. Describe present behavior only \u2014 what-was references add noise.","line":12},{"path":"docs/domains/8_proxy/2_proxy-add/technical/6.2_proxy-add_output-render_json.md","severity":"warning","rule":"command_docs.doctor_warning_coherence","message":"Warning code `firewall_rule.host_upstream_may_block` is not listed in the firewall_rule doctor issue codes. If this is a command-level handoff warning, document it as such; otherwise use a doctor issue code.","line":21},{"path":"docs/domains/8_proxy/2_proxy-add/technical/6.2_proxy-add_output-render_json.md","severity":"warning","rule":"command_docs.doctor_warning_coherence","message":"Warning code `proxy.enactment_deferred` is not listed in the proxy doctor issue codes. If this is a command-level handoff warning, document it as such; otherwise use a doctor issue code.","line":21},{"path":"docs/domains/8_proxy/2_proxy-add/technical/6.2_proxy-add_output-render_json.md","severity":"warning","rule":"command_docs.doctor_warning_coherence","message":"Warning code `proxy.enactment_deferred` is not listed in the proxy doctor issue codes. If this is a command-level handoff warning, document it as such; otherwise use a doctor issue code.","line":71}]}
+
+─── docs_testing (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── docs_references (exit=0) ───
+{"tool":"librarian","result":"passed","issues":0,"errors":0,"warnings":0}
+
+─── gateway_mago_analyze (exit=0) ───
+app/Services/Operations/OperationStreamSubscriberLeases.php:91:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:345:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:379:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:498:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:504:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:510:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:511:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/GatewayServiceUpdater.php:694:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/OperationStreamFrameBroadcaster.php:72:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Http/Controllers/Api/OperationStreamControlPlaneController.php:470:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/OperationStreamTokens.php:133:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/OperationStreamTokens.php:169:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/OperationStreamTokens.php:175:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/OperationStreamTokens.php:196:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+warning: found 14 issues: 14 warning(s)
+ INFO Your baseline file contains 58 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+ INFO Filtered out 2368 issues based on the baseline file.
+
+─── cli_mago_analyze (exit=0) ───
+app/Services/GatewayOperationStreamSubscriber.php:97:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:134:17: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:215:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:241:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:465:9: warning[mixed-assignment]: Assigning `nonnull` type to a variable may lead to unexpected behavior.
+ = Using `nonnull` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:468:13: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:486:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:502:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/GatewayOperationStreamSubscriber.php:522:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Services/Operations/RawOperationStreamWebSocketTransport.php:83:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Process/ProcessLogsCommand.php:194:28: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+app/Commands/Process/ProcessLogsCommand.php:213:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+warning: found 12 issues: 12 warning(s)
+ INFO Your baseline file contains 9 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+ INFO Filtered out 1088 issues based on the baseline file.
+
+─── docs_mago_analyze (exit=0) ───
+app/Librarian/CommandCatalogGatewayPermissionIndex.php:117:61: help[redundant-cast]: Redundant cast to `(string)`: the expression already has this type.
+ = Casting a value to a type it already possesses has no effect.
+ = Help: Remove the redundant `(string)` cast.
+app/Librarian/CommandCatalogGatewayPermissionIndex.php:118:65: help[redundant-cast]: Redundant cast to `(string)`: the expression already has this type.
+ = Casting a value to a type it already possesses has no effect.
+ = Help: Remove the redundant `(string)` cast.
+app/Librarian/CommandCatalogCliEndpointIndex.php:38:79: help[redundant-cast]: Redundant cast to `(string)`: the expression already has this type.
+ = Casting a value to a type it already possesses has no effect.
+ = Help: Remove the redundant `(string)` cast.
+help: found 3 issues: 3 help message(s)
+ = 3 issues contain auto-fix suggestions
+ INFO Your baseline file contains 2 entries not seen in this run. This was a scoped run, so they may simply be outside the analyzed set. Re-run an unscoped check before regenerating with `--generate-baseline`.
+ INFO Filtered out 90 issues based on the baseline file.
+
+─── reverb_mago_analyze (exit=0) ───
+ INFO Overriding workspace directory with ../reverb.
+ INFO Filtered out 3 issues based on the baseline file.
+ INFO No issues found.
+
+─── core_mago_analyze (exit=0) ───
+src/Security/OperationTokenVerifier.php:25:9: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+src/Progress/ForkedFrameTicker.php:160:47: help[reference-to-undefined-variable]: Reference created from a previously undefined variable `$status`.
+ = When a reference is taken from an undefined variable, PHP creates it with a `null` value.
+ = This is often used for output parameters but can hide typos if you intended to use an existing variable.
+ = Help: If this is intentional, consider initializing `$status` to `null` first for code clarity. Otherwise, check for typos.
+src/Security/OperationTokenCommandContext.php:113:27: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+src/Security/OperationTokenCommandContext.php:167:42: warning[mixed-assignment]: Assigning `mixed` type to a variable may lead to unexpected behavior.
+ = Using `mixed` can lead to runtime errors if the variable is used in a way that assumes a specific type.
+ = Help: Consider using a more specific type to avoid potential issues.
+warning: found 4 issues: 3 warning(s), 1 help message(s)
+ INFO Filtered out 17 issues based on the baseline file.
+
+─── sdk_mago_analyze (exit=0) ───
+src/GatewayStreamTransport.php:309:22: warning[possibly-null-operand]: Left operand in `>` comparison might be `null` (type `null|positive-int`).
+ = If this operand is `null` at runtime, PHP's specific comparison rules for `null` with `>` will apply.
+ = Help: Ensure this operand is non-null or that comparison with `null` is intended and handled safely.
+warning: found 1 issues: 1 warning(s)
+ INFO Filtered out 171 issues based on the baseline file.
+
+─── e2e_mago_analyze (exit=0) ───
+ INFO Filtered out 538 issues based on the baseline file.
+ INFO No issues found.
+
+─── gateway_mago_lint (exit=1) ───
+tests/Unit/Services/Apps/AppRuntimeContainerManagerAgentPushTest.php:459:13: warning[single-class-per-file]: File contains multiple class-like definitions; found class `AppRuntimeManagerRecordingTransport` but class `AppRuntimeManagerUnusedTransport` is already defined in this file.
+ = Help: Move each class-like definition into its own file.
+tests/Unit/Services/Apps/AppRuntimeContainerManagerAgentPushTest.php:441:4: warning[unfulfilled-expect]: This pragma was not used and may be removed.
+tests/Unit/Services/Apps/AppRuntimeContainerManagerAgentPushTest.php:457:4: warning[unfulfilled-expect]: This pragma was not used and may be removed.
+app/Services/Doctor/DoctorReportRunner.php:291:9: warning[inline-variable-return]: Variable assignment can be inlined into the return statement.
+ = Assigning to a variable just to return it immediately is redundant.
+ = Help: Return the expression directly: `return Node::query()
+               ->where('status', NodeStatus::Active->value)
+               ->whereHas('roleAssignments', fn ($query) => $query->where('status', NodeRoleStatus::Active->value))
+               ->with('roleAssignments')
+               ->orderBy('name')
+               ->get()
+               ->filter(fn (Node $node): bool => $this->nodeSupportsFamilies($node, $families))
+               ->values();`
+tests/Feature/Services/Gateway/GatewaySwarmInstallerTest.php:296:85: warning[halstead]: Closure has a high halstead volume and effort
+ = Halstead volume is 1172.61 (threshold 1000). Volume estimates the code's overall size/complexity.
+ = Halstead effort is 7545.09 (threshold 5000). Effort estimates the mental effort required to develop/maintain the code.
+ = Help: Consider breaking this into smaller, more focused functions.
+tests/Unit/Services/Gateway/GatewaySwarmStackRendererTest.php:100:23: warning[literal-named-argument]: Literal argument `'  orbit-operations-reverb:'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: '  orbit-operations-reverb:')`.
+tests/Unit/Services/Gateway/GatewaySwarmStackRendererTest.php:101:24: warning[literal-named-argument]: Literal argument `"\nnetworks:"` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: "\nnetworks:")`.
+tests/Unit/Services/Gateway/GatewaySwarmStackRendererTest.php:101:55: warning[literal-named-argument]: Literal argument `'  orbit-operations-reverb:'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: '  orbit-operations-reverb:')`.
+tests/Unit/Services/Doctor/DoctorReportRunnerTest.php:1856:25: warning[literal-named-argument]: Literal argument `'orbit-app-docs'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'orbit-app-docs')`.
+tests/Unit/Services/Doctor/DoctorReportRunnerTest.php:2096:29: warning[literal-named-argument]: Literal argument `'orbit-ws-docs-feature-a'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'orbit-ws-docs-feature-a')`.
+tests/Unit/Services/Doctor/DoctorReportRunnerTest.php:2187:25: warning[literal-named-argument]: Literal argument `'orbit-ws-happie-recipes'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'orbit-ws-happie-recipes')`.
+app/Services/Dashboard/RuntimeInventoryPayload.php:62:9: warning[inline-variable-return]: Variable assignment can be inlined into the return statement.
+ = Assigning to a variable just to return it immediately is redundant.
+ = Help: Return the expression directly: `return Node::query()
+               ->with('roleAssignments')
+               ->get()
+               ->sortBy(fn (Node $node): array => [
+                   $this->nodeRoleAssignments->assignmentRoleLabel($node),
+                   mb_strtolower($node->name),
+               ])
+               ->values();`
+app/Services/Dashboard/RuntimeInventoryPayload.php:92:9: warning[inline-variable-return]: Variable assignment can be inlined into the return statement.
+ = Assigning to a variable just to return it immediately is redundant.
+ = Help: Return the expression directly: `return $query
+               ->get()
+               ->sortBy(static fn (App $app): array => [
+                   mb_strtolower((string) $app->node?->name),
+                   mb_strtolower($app->name),
+               ])
+               ->values();`
+app/Services/Dashboard/RuntimeInventoryPayload.php:121:9: warning[inline-variable-return]: Variable assignment can be inlined into the return statement.
+ = Assigning to a variable just to return it immediately is redundant.
+ = Help: Return the expression directly: `return $query
+               ->get()
+               ->sortBy(static fn (Process $process): array => [
+                   mb_strtolower((string) $process->node?->name),
+                   mb_strtolower((string) $process->app?->name),
+                   $process->sort_order,
+                   mb_strtolower($process->name),
+               ])
+               ->values();`
+app/Services/Dashboard/RuntimeInventoryPayload.php:152:9: warning[inline-variable-return]: Variable assignment can be inlined into the return statement.
+ = Assigning to a variable just to return it immediately is redundant.
+ = Help: Return the expression directly: `return $tools
+               ->sortBy(static fn (NodeTool $tool): array => [
+                   mb_strtolower((string) $tool->node?->name),
+                   mb_strtolower($tool->name),
+               ])
+               ->values();`
+tests/Feature/Http/Api/OperationStreamControlPlaneControllerTest.php:98:54: warning[readable-literal]: Numeric literal could use underscore separators for readability.
+ = Underscore separators improve readability of large numeric literals.
+ = Help: For example, `18080` could be written as `18_080`.
+tests/Feature/Http/Api/OperationStreamControlPlaneControllerTest.php:198:54: warning[literal-named-argument]: Literal argument `'1234.5678'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: '1234.5678')`.
+tests/Feature/Http/Api/OperationStreamControlPlaneControllerTest.php:212:54: warning[literal-named-argument]: Literal argument `'8765.4321'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: '8765.4321')`.
+app/Http/Controllers/Api/OperationEventStreamController.php:18:16: error[cyclomatic-complexity]: Class has high complexity.
+tests/Feature/Http/Api/OperationStreamPublishControllerTest.php:114:49: warning[literal-named-argument]: Literal argument `true` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: true)`.
+error: found 20 issues: 1 error(s), 19 warning(s)
+ = 8 issues contain auto-fix suggestions
+ WARN Your baseline file contains 30 entries for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+ INFO Filtered out 6576 issues based on the baseline file.
+
+─── cli_mago_lint (exit=0) ───
+app/Services/GatewayOperationStreamSubscriber.php:117:14: help[no-boolean-flag-parameter]: Avoid boolean flag parameters.
+ = Boolean flags often indicate a function has more than one responsibility, making it harder to understand and test.
+ = Help: Refactor by splitting the function into two separate methods, each with a clear, descriptive name.
+tests/Feature/Services/GatewayOperationStreamSubscriberTest.php:662:7: warning[single-class-per-file]: File contains multiple class-like definitions; found class `FailingOperationStreamWebSocketTransport` but class `FakeOperationStreamWebSocketTransport` is already defined in this file.
+ = Help: Move each class-like definition into its own file.
+tests/Feature/Services/GatewayOperationStreamSubscriberTest.php:681:7: warning[single-class-per-file]: File contains multiple class-like definitions; found class `FakeOperationStreamBackfillClient` but class `FakeOperationStreamWebSocketTransport` is already defined in this file.
+ = Help: Move each class-like definition into its own file.
+tests/Feature/Services/GatewayOperationStreamSubscriberTest.php:14:92: warning[halstead]: Closure has a high halstead volume
+ = Halstead volume is 1301.11 (threshold 1000). Volume estimates the code's overall size/complexity.
+ = Help: Consider breaking this into smaller, more focused functions.
+app/Services/Operations/RawOperationStreamWebSocketTransport.php:180:11: help[no-else-clause]: Avoid `elseif` clauses.
+ = Complex conditional chains can often be simplified by using early returns or a `match` expression.
+ = Help: Refactor to use guard clauses (early returns) or a `match` expression for clarity.
+app/Services/Operations/RawOperationStreamWebSocketTransport.php:182:11: help[no-else-clause]: Avoid `else` clauses.
+ = Code is often clearer when the main logic is not nested inside an `if` statement.
+ = Help: Consider refactoring to use an early return (a guard clause) to simplify the control flow.
+app/Services/Operations/RawOperationStreamWebSocketTransport.php:198:42: warning[literal-named-argument]: Literal argument `2` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 2)`.
+tests/Feature/Commands/Process/ProcessLogsCommandTest.php:264:7: warning[file-name]: Class `ProcessLogsFakeOperationStreamSubscriber` should be in a file named `ProcessLogsFakeOperationStreamSubscriber.php`, found `ProcessLogsCommandTest.php`.
+ = Help: Rename the file to `ProcessLogsFakeOperationStreamSubscriber.php` or rename the class to match the file name.
+tests/Feature/Commands/Process/ProcessLogsCommandTest.php:252:50: warning[literal-named-argument]: Literal argument `'process:logs'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'process:logs')`.
+warning: found 9 issues: 6 warning(s), 3 help message(s)
+ INFO Filtered out 2946 issues based on the baseline file.
+
+─── docs_mago_lint (exit=0) ───
+tests/Feature/Librarian/LiveSurfaceRulesTest.php:323:9: warning[literal-named-argument]: Literal argument `"# Tool Concepts\n\n`tool:start`, `tool:stop`, and `tool:restart` are restored for lifecycle-capable tools.\n\n`tool:logs` and `tool:reload` remain outside the tool surface.\n"` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: "# Tool Concepts\n\n`tool:start`, `tool:stop`, and `tool:restart` are restored for lifecycle-capable tools.\n\n`tool:logs` and `tool:reload` remain outside the tool surface.\n")`.
+tests/Feature/Librarian/LiveSurfaceRulesTest.php:356:9: warning[literal-named-argument]: Literal argument `'content/domains/3_tool/tool-concepts.md'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'content/domains/3_tool/tool-concepts.md')`.
+tests/Feature/Librarian/LiveSurfaceRulesTest.php:384:42: warning[literal-named-argument]: Literal argument `'command_docs.banned_terms'` should be passed as a named argument for clarity.
+ = Passing literals positionally can make code less clear, especially with booleans, numbers, or `null`.
+ = Help: Consider using a named argument instead: `function_name(param: 'command_docs.banned_terms')`.
+warning: found 3 issues: 3 warning(s)
+ WARN Your baseline file contains 3 entries for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+ INFO Filtered out 679 issues based on the baseline file.
+
+─── reverb_mago_lint (exit=0) ───
+ INFO Overriding workspace directory with ../reverb.
+ INFO Filtered out 27 issues based on the baseline file.
+ INFO No issues found.
+
+─── core_mago_lint (exit=0) ───
+src/Extensions/OrbitExtensionRegistry.php:11:25: help[constant-name]: Constant name `SoloCommands` should be in constant case.
+ = The constant name `SoloCommands` does not follow constant naming convention.
+ = Help: Consider renaming it to `SOLO_COMMANDS` to adhere to the naming convention.
+src/Extensions/OrbitExtensionRegistry.php:97:25: help[constant-name]: Constant name `SoloPermissions` should be in constant case.
+ = The constant name `SoloPermissions` does not follow constant naming convention.
+ = Help: Consider renaming it to `SOLO_PERMISSIONS` to adhere to the naming convention.
+tests/Security/OperationTokenTest.php:202:41: warning[halstead]: Closure has a high halstead volume
+ = Halstead volume is 1064.65 (threshold 1000). Volume estimates the code's overall size/complexity.
+ = Help: Consider breaking this into smaller, more focused functions.
+warning: found 3 issues: 1 warning(s), 2 help message(s)
+ WARN Your baseline file contains 1 entry for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+ INFO Filtered out 98 issues based on the baseline file.
+
+─── sdk_mago_lint (exit=0) ───
+ WARN Your baseline file contains 1 entry for issues that no longer exist. Consider regenerating it with `--generate-baseline`.
+ INFO Filtered out 146 issues based on the baseline file.
+ INFO No issues found.
+
+─── e2e_mago_lint (exit=0) ───
+app/E2E/Support/E2ECurrentCheckout.php:1678:28: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/DockerTopologyBuilder.php:279:26: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:28:43: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:29:52: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:30:60: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:37:42: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:38:50: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:39:58: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:40:56: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:41:51: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:42:52: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:43:60: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:44:66: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:45:49: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2ETopologyKind.php:46:54: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2EPreparedTopology.php:148:28: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+app/E2E/Support/E2EPreparedTopology.php:264:32: note[no-duplicate-match-arm]: This `match` arm has the same result as an earlier arm.
+ = Help: Merge these arms by combining their conditions into a single arm.
+note: found 17 issues: 17 note(s)
+ INFO Filtered out 2260 issues based on the baseline file.
+
+─── gateway_rector (exit=0) ───
+{"tool":"rector","result":"passed","totals":{"changed_files":0,"errors":0},"changed_files":["app/Services/Doctor/DoctorReportRunner.php"]}
+
+─── cli_rector (exit=0) ───
+ 0/1 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%[1G[2K 1/1 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+ [OK] Rector is done!                                                           
+
+
+─── docs_rector (exit=0) ───
+{"tool":"rector","result":"passed","totals":{"changed_files":0,"errors":0}}
+
+─── core_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                           
+
+
+─── sdk_rector (exit=0) ───
+
+
+ [OK] Rector is done!                                                           
+
+
+─── e2e_rector (exit=0) ───
+ 0/2 [░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0%[1G[2K 2/2 [▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%
+
+ [OK] Rector is done!                                                           
+
+
+─── gateway_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── cli_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── docs_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── reverb_mago_format (exit=0) ───
+ INFO Overriding workspace directory with ../reverb.
+ INFO All files are already formatted.
+
+─── core_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── sdk_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── e2e_mago_format (exit=0) ───
+ INFO All files are already formatted.
+
+─── agent_cargo_test (exit=0) ───
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+     Running unittests src/lib.rs (target/debug/deps/orbit_agent-6ce5c7cb51d3d0ce)
+
+running 35 tests
+test http::tests::default_bind_addr_defaults_to_loopback_and_honors_override ... ok
+test http::tests::command_authorizer_rejects_non_orbit_binary ... ok
+test http::tests::command_binary_rejects_relative_request_orbit_bin_path ... ok
+test http::tests::command_binary_prefers_request_orbit_bin_path ... ok
+test http::tests::health_response_is_ok ... ok
+test http::tests::gateway_command_authorizer_forwards_execution_context_to_gateway_verifier ... ok
+test http::tests::orbit_binary_candidates_prefer_system_install_on_linux ... ok
+test http::tests::orbit_binary_candidates_keep_home_install_first_on_macos ... ok
+test http::tests::command_push_stream_endpoint_rejects_non_allowlisted_binaries ... ok
+test http::tests::command_push_endpoint_rejects_gateway_denied_operation_tokens ... ok
+test http::tests::command_push_endpoint_rejects_non_allowlisted_binaries ... ok
+test http::tests::command_push_stream_endpoint_returns_process_stream_v1_content_type ... ok
+test http::tests::execute_binary_does_not_quantize_fast_completion_to_scheduler_delay ... ok
+test http::tests::process_timeout_path_does_not_shell_out_to_kill ... ok
+test http::tests::execute_binary_writes_request_input_to_stdin ... ok
+test http::tests::retry_without_legacy_flags_handles_json_option_failures ... ok
+test http::tests::retry_without_legacy_flags_is_not_used_for_successful_execution ... ok
+test http::tests::retry_without_legacy_flags_is_used_for_stale_fleet_update_cli ... ok
+test http::tests::retry_without_legacy_flags_requires_fleet_update_command ... ok
+test tests::builds_gateway_status_request_for_menu_ping ... ok
+test tests::agent_source_has_no_job_claim_retrieval_surface ... ok
+test tests::parses_operation_token_verification_response_envelope ... ok
+test tests::builds_operation_token_verification_request ... ok
+test tests::launchd_safe_path_includes_macos_container_provider_paths ... ok
+test tests::missing_config_returns_operator_facing_error ... ok
+test tests::launchd_safe_process_path_hardens_minimal_launchd_path ... ok
+test http::tests::command_push_stream_endpoint_streams_allowlisted_binary_output ... ok
+test http::tests::command_push_endpoint_accepts_allowlisted_binary_argv_envelope ... ok
+test tests::loads_agent_config_from_explicit_path ... ok
+test http::tests::execute_binary_applies_request_cwd_and_environment ... ok
+test http::tests::command_push_stream_endpoint_emits_exit_frame_with_child_exit_code ... ok
+test http::tests::execute_binary_drains_large_stdout_while_child_runs ... ok
+test http::tests::execute_binary_times_out_with_bounded_wait_and_timeout_frame ... ok
+test http::tests::command_push_stream_endpoint_emits_agent_error_frame_on_timeout ... ok
+test http::tests::gateway_command_authorizer_reuses_client_factory ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.68s
+
+     Running unittests src/main.rs (target/debug/deps/orbit_agent-cc1371b699dd5d5f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests orbit_agent
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+─── agent_cargo_check (exit=0) ───
+    Blocking waiting for file lock on build directory
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.53s
+
+─── agent_cargo_clippy (exit=0) ───
+    Blocking waiting for file lock on build directory
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.48s
+
+─── macos_cargo_test (exit=0) ───
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling orbit-macos v0.1.0 (/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/macos)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.35s
+     Running unittests src/main.rs (target/debug/deps/orbit_macos-3a59c1c90db5368d)
+
+running 4 tests
+test tests::tray_click_refresh_does_not_replace_the_native_menu ... ok
+test tests::agent_service_base_url_defaults_to_local_headless_endpoint ... ok
+test tests::granted_node_rows_only_include_nodes_with_grants ... ok
+test tests::loads_orbit_tray_icon_asset ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+─── macos_cargo_check (exit=0) ───
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+   Compiling orbit-macos v0.1.0 (/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/macos)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.02s
+
+─── macos_cargo_clippy (exit=0) ───
+    Blocking waiting for file lock on build directory
+   Compiling orbit-macos v0.1.0 (/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/macos)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.82s
+
+─── cli_pest (exit=0) ───
+[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m2127 passed[39;22m[90m (8924 assertions)[39m
+  [90mDuration:[39m [39m124.63s[39m
+
+
+─── docs_pest (exit=0) ───
+{"tool":"pest","result":"passed","tests":128,"passed":128,"assertions":1034,"duration_ms":30515}
+
+─── core_pest (exit=143) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+─── sdk_pest (exit=0) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m128 passed[39;22m[90m (411 assertions)[39m
+  [90mDuration:[39m [39m1.10s[39m
+
+
+Quality gate FAILED (gateway_pest=0 docs_lint=0 docs_testing=0 docs_references=0 gateway_mago_analyze=0 cli_mago_analyze=0 docs_mago_analyze=0 reverb_mago_analyze=0 core_mago_analyze=0 sdk_mago_analyze=0 e2e_mago_analyze=0 gateway_mago_lint=1 cli_mago_lint=0 docs_mago_lint=0 reverb_mago_lint=0 core_mago_lint=0 sdk_mago_lint=0 e2e_mago_lint=0 gateway_rector=0 cli_rector=0 docs_rector=0 core_rector=0 sdk_rector=0 e2e_rector=0 gateway_mago_format=0 cli_mago_format=0 docs_mago_format=0 reverb_mago_format=0 core_mago_format=0 sdk_mago_format=0 e2e_mago_format=0 agent_cargo_test=0 agent_cargo_fmt=0 agent_cargo_check=0 agent_cargo_clippy=0 macos_cargo_test=0 macos_cargo_fmt=0 macos_cargo_check=0 macos_cargo_clippy=0 cli_pest=0 docs_pest=0 core_pest=143 sdk_pest=0)
+Script bin/quality-check.sh handling the quality-check event returned with error code 143

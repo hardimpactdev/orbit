@@ -1,0 +1,33 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "missing",
+    "slug": "program-review-claude-adjudication-943",
+    "solo_process_id": 943,
+    "kind": "agent",
+    "started_at": "2026-07-09 21:41:29",
+    "reason": "exact_marker_not_found",
+    "checked": [
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f/subagents/agent-aaf9b5bb94845f37b.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f/subagents/agent-a38c6644cad4bb8f6.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f/subagents/agent-af59b9aade315a72b.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f/subagents/agent-a1dd74be7a912052c.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f/subagents/agent-aa2b75b934697ab17.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-Library-Mobile-Documents-com-apple-CloudDocs-shared-knowledge/c1c58527-3d8a-4bd0-834a-da7812fdd61f/subagents/agent-a1c103457ed81afc3.jsonl",
+        "/Users/nckrtl/.claude/projects/ssh-ef367d7e-7102-45e9-8777-32e89ac2f3ae/ef367d7e-7102-45e9-8777-32e89ac2f3ae.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit--worktrees-quality-e2e-lane-timing-baseline/c26c1ed6-e1fa-475e-8877-c916ea8472aa.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit--worktrees-quality-e2e-lane-timing-baseline/c949d2dd-e9b6-44b7-8fd8-4ccf758e4425.jsonl",
+        "/Users/nckrtl/.claude/projects/-/1a963c69-dc92-499b-9990-38dd128f5552.jsonl",
+        "/Users/nckrtl/.claude/projects/-/17c494ef-0b7f-40ba-ac1c-0f64a71a4994.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit--worktrees-quality-gate-timing-optimization/70850f0a-b682-4059-bd33-28546001182c.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/a651b21c-0920-47d3-9279-a439ce96bf04.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/ae1aceba-caf6-45d4-84ed-4dc00291fb38.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/05a0a604-443c-41f0-90c0-6a30021cb7fb.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/46b813f6-8dc5-48f8-9464-90fa97f4a5da.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/962036ce-2b03-41be-855c-bcb46649fd4e.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/b00e1b6b-215a-45cb-8317-c824d56a0b81.jsonl",
+        "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/77035409-a10b-46b6-9219-2669a420afb2/subagents/agent-a71a1f0c55926987a.jsonl"
+    ],
+    "marker": "Solo process ID: 943"
+}

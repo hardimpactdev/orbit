@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T03:17:06+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/agent-session-capture-disambiguation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-051706-agent-session-capture-disambiguation",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-051706-agent-session-capture-disambiguation/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

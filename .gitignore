@@ -10,6 +10,7 @@
 /.orbit/agent-sessions/
 !/.orbit/sessions/
 !/.orbit/sessions/**
+/.orbit/sessions/*/release-candidates/
 .phpactor.json
 .phpunit.result.cache
 /.codex/*

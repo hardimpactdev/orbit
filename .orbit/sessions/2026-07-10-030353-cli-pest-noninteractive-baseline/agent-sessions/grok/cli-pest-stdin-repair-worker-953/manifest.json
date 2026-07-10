@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "ok",
+    "slug": "cli-pest-stdin-repair-worker-953",
+    "solo_process_id": 953,
+    "kind": "agent",
+    "started_at": "2026-07-10 00:20:23",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.grok/sessions/%2FUsers%2Fnckrtl%2Forbit%2F.worktrees%2Fcli-pest-noninteractive-baseline/019f4966-2c4f-7ff3-88f3-50aa8e44925b",
+    "source": "grok_exact_marker"
+}

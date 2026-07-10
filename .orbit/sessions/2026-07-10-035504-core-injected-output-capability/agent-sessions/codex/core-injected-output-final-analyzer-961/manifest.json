@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "core-injected-output-final-analyzer-961",
+    "solo_process_id": 961,
+    "kind": "agent",
+    "started_at": "2026-07-10 01:45:25",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T03-45-25-019f49b3-76cd-7c40-ba5d-77066da1da4c.jsonl",
+    "source": "codex_exact_marker"
+}

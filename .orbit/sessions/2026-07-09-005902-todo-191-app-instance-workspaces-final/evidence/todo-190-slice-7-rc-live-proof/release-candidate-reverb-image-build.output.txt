@@ -1,0 +1,1048 @@
+Installing dependencies from lock file
+Verifying lock file contents can be installed on current platform.
+Package operations: 86 installs, 0 updates, 0 removals
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 10/25 [===========🍺----------------]  40%
+ 16/25 [=================🍺----------]  64%
+ 19/25 [=====================🍺------]  76%
+ 20/25 [======================🍺-----]  80%
+ 23/25 [=========================🍺--]  92%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%
+ 29/29 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.lIfoR1/repo/apps/cli/builds/orbit.phar
+
+[32m Using config file at '/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/cli/phpacker.json'[39m
+
+
+[32m You're using the latest version: phpacker/php-bin:0.4.0[39m
+
+  mac - arm ·············································· ✅
+
+Installing dependencies from lock file
+Verifying lock file contents can be installed on current platform.
+Package operations: 86 installs, 0 updates, 0 removals
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 10/25 [===========🍺----------------]  40%
+ 16/25 [=================🍺----------]  64%
+ 19/25 [=====================🍺------]  76%
+ 20/25 [======================🍺-----]  80%
+ 23/25 [=========================🍺--]  92%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%
+ 29/29 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.FVtiI3/repo/apps/cli/builds/orbit.phar
+
+[32m Using config file at '/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/cli/phpacker.json'[39m
+
+
+[32m You're using the latest version: phpacker/php-bin:0.4.0[39m
+
+  linux - x64 ············································ ✅
+
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded futures-channel v0.3.32
+  Downloaded http-body v1.0.1
+  Downloaded httpdate v1.0.3
+  Downloaded webpki-roots v0.26.11
+  Downloaded percent-encoding v2.3.2
+  Downloaded form_urlencoded v1.2.2
+  Downloaded tokio-macros v2.7.0
+  Downloaded serde_spanned v0.6.9
+  Downloaded atomic-waker v1.1.2
+  Downloaded subtle v2.6.1
+  Downloaded serde_urlencoded v0.7.1
+  Downloaded potential_utf v0.1.5
+  Downloaded openssl-probe v0.1.6
+  Downloaded itoa v1.0.18
+  Downloaded idna_adapter v1.2.2
+  Downloaded http-body-util v0.1.3
+  Downloaded zerofrom-derive v0.1.7
+  Downloaded utf8_iter v1.0.4
+  Downloaded tower-layer v0.3.3
+  Downloaded zerofrom v0.1.8
+  Downloaded yoke-derive v0.8.2
+  Downloaded tower-service v0.3.3
+  Downloaded untrusted v0.9.0
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded mime v0.3.17
+  Downloaded futures-task v0.3.32
+  Downloaded axum-core v0.5.6
+  Downloaded adler2 v2.0.1
+  Downloaded futures-core v0.3.32
+  Downloaded find-msvc-tools v0.1.9
+  Downloaded equivalent v1.0.2
+  Downloaded cfg-if v1.0.4
+  Downloaded serde_path_to_error v0.1.20
+  Downloaded sync_wrapper v1.0.2
+  Downloaded shlex v2.0.1
+  Downloaded writeable v0.6.3
+  Downloaded displaydoc v0.2.6
+  Downloaded toml_write v0.1.2
+  Downloaded rustls-pki-types v1.15.0
+  Downloaded toml v0.8.23
+  Downloaded matchit v0.8.4
+  Downloaded litemap v0.8.2
+  Downloaded yoke v0.8.3
+  Downloaded httparse v1.10.1
+  Downloaded getrandom v0.2.17
+  Downloaded zmij v1.0.21
+  Downloaded crc32fast v1.5.0
+  Downloaded tracing-core v0.1.36
+  Downloaded proc-macro2 v1.0.106
+  Downloaded unicode-ident v1.0.24
+  Downloaded serde_derive v1.0.228
+  Downloaded cc v1.2.65
+  Downloaded serde_core v1.0.228
+  Downloaded icu_properties v2.2.0
+  Downloaded base64 v0.22.1
+  Downloaded icu_locale_core v2.2.0
+  Downloaded rustls-webpki v0.103.13
+  Downloaded url v2.5.8
+  Downloaded flate2 v1.1.9
+  Downloaded toml_edit v0.22.27
+  Downloaded zerotrie v0.2.4
+  Downloaded tower v0.5.3
+  Downloaded mio v1.2.1
+  Downloaded zerovec v0.11.6
+  Downloaded winnow v0.7.15
+  Downloaded icu_properties_data v2.2.0
+  Downloaded webpki-roots v1.0.8
+  Downloaded serde_json v1.0.150
+  Downloaded hashbrown v0.17.1
+  Downloaded futures-util v0.3.32
+  Downloaded axum v0.8.9
+  Downloaded idna v1.1.0
+  Downloaded hyper v1.10.1
+  Downloaded syn v2.0.118
+  Downloaded ureq v2.12.1
+  Downloaded memchr v2.8.2
+  Downloaded rustls v0.23.41
+  Downloaded indexmap v2.14.0
+  Downloaded http v1.4.2
+  Downloaded serde v1.0.228
+  Downloaded hyper-util v0.1.20
+  Downloaded icu_normalizer v2.2.0
+  Downloaded tracing v0.1.44
+  Downloaded icu_collections v2.2.0
+  Downloaded icu_normalizer_data v2.2.0
+  Downloaded miniz_oxide v0.8.9
+  Downloaded icu_provider v2.2.0
+  Downloaded bytes v1.12.0
+  Downloaded socket2 v0.6.4
+  Downloaded log v0.4.33
+  Downloaded ryu v1.0.23
+  Downloaded zerovec-derive v0.11.3
+  Downloaded zeroize v1.9.0
+  Downloaded toml_datetime v0.6.11
+  Downloaded synstructure v0.13.2
+  Downloaded smallvec v1.15.2
+  Downloaded once_cell v1.21.4
+  Downloaded tinystr v0.8.3
+  Downloaded slab v0.4.12
+  Downloaded rustls-pemfile v2.2.0
+  Downloaded rustls-native-certs v0.7.3
+  Downloaded libc v0.2.186
+  Downloaded pin-project-lite v0.2.17
+  Downloaded simd-adler32 v0.3.9
+  Downloaded tokio v1.52.3
+  Downloaded quote v1.0.46
+  Downloaded ring v0.17.14
+    Finished `release` profile [optimized] target(s) in 3.74s
+    Finished `release` profile [optimized] target(s) in 0.19s
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 6.57kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/dunglas/frankenphp:1-php8.5-bookworm
+#2 DONE 0.0s
+
+#3 [base 1/2] FROM docker.io/dunglas/frankenphp:1-php8.5-bookworm@sha256:a854aa1c4ee49969b8aa70c94c44da7b4f60f8756fa4521c20e4c0939124c31f
+#3 resolve docker.io/dunglas/frankenphp:1-php8.5-bookworm@sha256:a854aa1c4ee49969b8aa70c94c44da7b4f60f8756fa4521c20e4c0939124c31f 0.0s done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 108.62kB 0.0s done
+#4 DONE 0.1s
+
+#5 [dependencies 4/5] COPY packages/sdk/composer.json packages/sdk/composer.lock /srv/orbit/packages/sdk/
+#5 CACHED
+
+#6 [application 14/16] COPY packages/sdk/src /srv/orbit/packages/sdk/src
+#6 CACHED
+
+#7 [application 15/16] COPY VERSION /srv/orbit/VERSION
+#7 CACHED
+
+#8 [application  1/16] COPY apps/gateway/app /srv/orbit/apps/gateway/app
+#8 CACHED
+
+#9 [dependencies 2/5] COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/
+#9 CACHED
+
+#10 [application  7/16] COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+#10 CACHED
+
+#11 [gateway 1/6] COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit
+#11 CACHED
+
+#12 [dependencies 5/5] RUN install -d "/home/orbit/.config/orbit"     && cp .env.example "/home/orbit/.config/orbit/.env"     && touch "/home/orbit/.config/orbit/gateway.sqlite"     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite|" "/home/orbit/.config/orbit/.env"     && composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts     && rm -rf "/home/orbit/.config/orbit" /root/.composer/cache
+#12 CACHED
+
+#13 [application  9/16] COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+#13 CACHED
+
+#14 [application 12/16] COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
+#14 CACHED
+
+#15 [application  2/16] COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+#15 CACHED
+
+#16 [application  6/16] COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+#16 CACHED
+
+#17 [application 10/16] COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+#17 CACHED
+
+#18 [gateway 4/6] COPY docker/orbit-gateway/healthcheck.sh /usr/local/bin/orbit-gateway-healthcheck
+#18 CACHED
+
+#19 [application  8/16] COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+#19 CACHED
+
+#20 [application 11/16] COPY bin/install-orbit /srv/orbit/bin/install-orbit
+#20 CACHED
+
+#21 [dependencies 1/5] WORKDIR /srv/orbit/apps/gateway
+#21 CACHED
+
+#22 [gateway 2/6] COPY docker/orbit-gateway/Caddyfile /etc/caddy/Caddyfile
+#22 CACHED
+
+#23 [dependencies 3/5] COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/
+#23 CACHED
+
+#24 [application  4/16] COPY apps/gateway/database /srv/orbit/apps/gateway/database
+#24 CACHED
+
+#25 [gateway 3/6] COPY docker/orbit-gateway/entrypoint.sh /usr/local/bin/orbit-gateway-entrypoint
+#25 CACHED
+
+#26 [application  5/16] COPY apps/gateway/public /srv/orbit/apps/gateway/public
+#26 CACHED
+
+#27 [application 13/16] COPY packages/core/src /srv/orbit/packages/core/src
+#27 CACHED
+
+#28 [application 16/16] RUN install -d "/home/orbit/.config/orbit"     && chmod 755 /srv/orbit/bin/install-orbit     && install -d bootstrap/cache storage/app storage/framework/cache storage/framework/sessions storage/framework/views storage/logs     && rm -f bootstrap/cache/*.php     && cp .env.example "/home/orbit/.config/orbit/.env"     && touch "/home/orbit/.config/orbit/gateway.sqlite"     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite|" "/home/orbit/.config/orbit/.env"     && composer dump-autoload --no-dev --no-interaction --optimize --no-scripts     && php artisan package:discover --ansi     && rm -rf "/home/orbit/.config/orbit" /root/.composer/cache
+#28 CACHED
+
+#29 [base 2/2] RUN apt-get update     && apt-get install -y --no-install-recommends         bash         ca-certificates         curl         git         iputils-ping         openssh-client         procps         sudo         tini         unzip         zip         gnupg     && install -m 0755 -d /etc/apt/keyrings     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc     && chmod a+r /etc/apt/keyrings/docker.asc     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list     && apt-get update     && apt-get install -y --no-install-recommends         docker-ce-cli         docker-compose-plugin     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/bin/composer     && chmod 755 /usr/bin/composer     && install-php-extensions bcmath curl intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip     && groupadd --system orbit     && useradd --system --gid orbit --create-home --home-dir /home/orbit --shell /bin/bash orbit     && printf '%s\n' 'max_execution_time=0' > /usr/local/etc/php/conf.d/orbit-gateway.ini     && install -d -m 700 -o orbit -g orbit /home/orbit/.config/orbit     && rm -rf /var/lib/apt/lists/*
+#29 CACHED
+
+#30 [application  3/16] COPY apps/gateway/config /srv/orbit/apps/gateway/config
+#30 CACHED
+
+#31 [gateway 5/6] RUN chmod 755 /usr/local/bin/orbit-gateway-entrypoint /usr/local/bin/orbit-gateway-healthcheck     && ln -s /usr/local/bin/orbit-gateway-entrypoint /usr/local/bin/orbit     && install -d -m 700 -o orbit -g orbit "/home/orbit/.config/orbit" "/home/orbit/.config/orbit/certs"
+#31 CACHED
+
+#32 [gateway 6/6] WORKDIR /srv/orbit/apps/gateway
+#32 CACHED
+
+#33 exporting to image
+#33 exporting layers done
+#33 exporting manifest sha256:6930e97f3545e93a427b8725763533fd96a92293d8de8238d4b4b69ddd24a7c8 done
+#33 exporting config sha256:5ffae2a32f7531a4c14c1f1b8f4a25e478a3887b059014f1c6519f709b41f50a done
+#33 exporting attestation manifest sha256:7cc56fd6c13b31ba3610e689064936a6cda33dfaef62c53bc3b72c47c6f91cfd 0.0s done
+#33 exporting manifest list sha256:dac1094ab77738332702bb92b76cf06a40dea7898ad4c4e10918d5bebac0eedc 0.0s done
+#33 naming to ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T184139Z-5b33f7fd7 done
+#33 DONE 0.1s
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile:
+#1 transferring dockerfile: 1.91kB done
+#1 DONE 0.3s
+
+#2 [internal] load metadata for docker.io/library/ubuntu:26.04
+#2 DONE 1.5s
+
+#3 [1/5] FROM docker.io/library/ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e
+#3 resolve docker.io/library/ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e 0.0s done
+#3 ...
+
+#4 [internal] load build context
+#4 transferring context: 259.65kB 0.0s done
+#4 DONE 0.1s
+
+#3 [1/5] FROM docker.io/library/ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e
+#3 sha256:2c1ce1d0a589804cc5314c1325593106b364e9d700502a06de710671c7697220 393B / 393B 0.1s done
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 0B / 41.56MB 0.2s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 2.10MB / 41.56MB 0.5s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 7.34MB / 41.56MB 0.6s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 10.49MB / 41.56MB 0.8s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 15.73MB / 41.56MB 0.9s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 23.07MB / 41.56MB 1.1s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 30.41MB / 41.56MB 1.2s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 38.80MB / 41.56MB 1.4s
+#3 sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 41.56MB / 41.56MB 1.4s done
+#3 extracting sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61
+#3 extracting sha256:a9be9fd915e97ef977c92b5f9abe226548f0d6a4a013daef6d238708ccde9b61 0.8s done
+#3 DONE 2.3s
+
+#3 [1/5] FROM docker.io/library/ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e
+#3 extracting sha256:2c1ce1d0a589804cc5314c1325593106b364e9d700502a06de710671c7697220 0.0s done
+#3 DONE 2.4s
+
+#5 [2/5] RUN printf '%s\n' 'Acquire::ForceIPv4 "true";' 'Acquire::http::Timeout "10";' 'Acquire::https::Timeout "10";' 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99orbit-e2e-network     && apt-get update -qq     && apt-get install -y -qq --no-install-recommends         ca-certificates         curl         git         php8.5-bcmath         php8.5-cli         php8.5-common         php8.5-curl         php8.5-intl         php8.5-mbstring         php8.5-redis         php8.5-sqlite3         php8.5-xml         php8.5-zip         unzip     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer     && chmod 755 /usr/local/bin/composer     && apt-get clean     && rm -rf /var/lib/apt/lists/*
+#5 11.23 Preconfiguring packages ...
+#5 11.67 Selecting previously unselected package libexpat1:amd64.
+#5 11.67 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 7724 files and directories currently installed.)
+#5 11.68 Preparing to unpack .../00-libexpat1_2.7.4-1_amd64.deb ...
+#5 11.86 Unpacking libexpat1:amd64 (2.7.4-1) ...
+#5 11.98 Selecting previously unselected package psmisc.
+#5 11.98 Preparing to unpack .../01-psmisc_23.7-2ubuntu2_amd64.deb ...
+#5 11.98 Unpacking psmisc (23.7-2ubuntu2) ...
+#5 12.10 Selecting previously unselected package php-common.
+#5 12.10 Preparing to unpack .../02-php-common_2%3a99ubuntu1_all.deb ...
+#5 12.10 Unpacking php-common (2:99ubuntu1) ...
+#5 12.20 Selecting previously unselected package libtext-charwidth-perl:amd64.
+#5 12.20 Preparing to unpack .../03-libtext-charwidth-perl_0.04-11build4_amd64.deb ...
+#5 12.21 Unpacking libtext-charwidth-perl:amd64 (0.04-11build4) ...
+#5 12.32 Selecting previously unselected package libtext-wrapi18n-perl.
+#5 12.32 Preparing to unpack .../04-libtext-wrapi18n-perl_0.06-10_all.deb ...
+#5 12.33 Unpacking libtext-wrapi18n-perl (0.06-10) ...
+#5 12.44 Selecting previously unselected package ucf.
+#5 12.44 Preparing to unpack .../05-ucf_3.0052ubuntu1_all.deb ...
+#5 12.46 Moving old data out of the way
+#5 12.49 Unpacking ucf (3.0052ubuntu1) ...
+#5 12.61 Selecting previously unselected package libffi8:amd64.
+#5 12.61 Preparing to unpack .../06-libffi8_3.5.2-4_amd64.deb ...
+#5 12.61 Unpacking libffi8:amd64 (3.5.2-4) ...
+#5 12.73 Selecting previously unselected package php8.5-common.
+#5 12.73 Preparing to unpack .../07-php8.5-common_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 12.75 Unpacking php8.5-common (8.5.4-0ubuntu1.1) ...
+#5 12.91 Selecting previously unselected package libedit2:amd64.
+#5 12.91 Preparing to unpack .../08-libedit2_3.1-20251016-1_amd64.deb ...
+#5 12.92 Unpacking libedit2:amd64 (3.1-20251016-1) ...
+#5 13.02 Selecting previously unselected package media-types.
+#5 13.02 Preparing to unpack .../09-media-types_14.0.0build1_all.deb ...
+#5 13.02 Unpacking media-types (14.0.0build1) ...
+#5 13.14 Selecting previously unselected package php8.5-readline.
+#5 13.14 Preparing to unpack .../10-php8.5-readline_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 13.16 Unpacking php8.5-readline (8.5.4-0ubuntu1.1) ...
+#5 13.27 Selecting previously unselected package tzdata.
+#5 13.27 Preparing to unpack .../11-tzdata_2026a-3ubuntu1_all.deb ...
+#5 13.27 Unpacking tzdata (2026a-3ubuntu1) ...
+#5 13.43 Selecting previously unselected package libargon2-1:amd64.
+#5 13.43 Preparing to unpack .../12-libargon2-1_0~20190702+dfsg-5_amd64.deb ...
+#5 13.43 Unpacking libargon2-1:amd64 (0~20190702+dfsg-5) ...
+#5 13.54 Selecting previously unselected package libsodium23:amd64.
+#5 13.54 Preparing to unpack .../13-libsodium23_1.0.18-2_amd64.deb ...
+#5 13.54 Unpacking libsodium23:amd64 (1.0.18-2) ...
+#5 13.65 Selecting previously unselected package libxml2-16:amd64.
+#5 13.65 Preparing to unpack .../14-libxml2-16_2.15.2+dfsg-0.1ubuntu0.1_amd64.deb ...
+#5 13.66 Unpacking libxml2-16:amd64 (2.15.2+dfsg-0.1ubuntu0.1) ...
+#5 13.77 Selecting previously unselected package php8.5-cli.
+#5 13.77 Preparing to unpack .../15-php8.5-cli_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 13.78 Unpacking php8.5-cli (8.5.4-0ubuntu1.1) ...
+#5 13.92 Setting up psmisc (23.7-2ubuntu2) ...
+#5 13.94 Setting up php-common (2:99ubuntu1) ...
+#5 14.52 Selecting previously unselected package php8.5-igbinary.
+#5 14.52 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 8513 files and directories currently installed.)
+#5 14.53 Preparing to unpack .../00-php8.5-igbinary_3.2.16-4ubuntu1_amd64.deb ...
+#5 14.56 Unpacking php8.5-igbinary (3.2.16-4ubuntu1) ...
+#5 14.68 Selecting previously unselected package php8.5-redis.
+#5 14.68 Preparing to unpack .../01-php8.5-redis_6.2.0-1ubuntu1_amd64.deb ...
+#5 14.70 Unpacking php8.5-redis (6.2.0-1ubuntu1) ...
+#5 14.81 Selecting previously unselected package openssl.
+#5 14.81 Preparing to unpack .../02-openssl_3.5.5-1ubuntu3.2_amd64.deb ...
+#5 14.81 Unpacking openssl (3.5.5-1ubuntu3.2) ...
+#5 14.94 Selecting previously unselected package ca-certificates.
+#5 14.94 Preparing to unpack .../03-ca-certificates_20260601~26.04.1_all.deb ...
+#5 14.94 Unpacking ca-certificates (20260601~26.04.1) ...
+#5 15.07 Selecting previously unselected package libnettle8t64:amd64.
+#5 15.08 Preparing to unpack .../04-libnettle8t64_3.10.2-1_amd64.deb ...
+#5 15.08 Unpacking libnettle8t64:amd64 (3.10.2-1) ...
+#5 15.19 Selecting previously unselected package libhogweed6t64:amd64.
+#5 15.19 Preparing to unpack .../05-libhogweed6t64_3.10.2-1_amd64.deb ...
+#5 15.19 Unpacking libhogweed6t64:amd64 (3.10.2-1) ...
+#5 15.30 Selecting previously unselected package libunistring5:amd64.
+#5 15.30 Preparing to unpack .../06-libunistring5_1.3-2build1_amd64.deb ...
+#5 15.30 Unpacking libunistring5:amd64 (1.3-2build1) ...
+#5 15.42 Selecting previously unselected package libidn2-0:amd64.
+#5 15.42 Preparing to unpack .../07-libidn2-0_2.3.8-4build1_amd64.deb ...
+#5 15.43 Unpacking libidn2-0:amd64 (2.3.8-4build1) ...
+#5 15.54 Selecting previously unselected package libp11-kit0:amd64.
+#5 15.54 Preparing to unpack .../08-libp11-kit0_0.26.2-2_amd64.deb ...
+#5 15.54 Unpacking libp11-kit0:amd64 (0.26.2-2) ...
+#5 15.67 Selecting previously unselected package libtasn1-6:amd64.
+#5 15.67 Preparing to unpack .../09-libtasn1-6_4.21.0-2_amd64.deb ...
+#5 15.67 Unpacking libtasn1-6:amd64 (4.21.0-2) ...
+#5 15.78 Selecting previously unselected package libgnutls30t64:amd64.
+#5 15.78 Preparing to unpack .../10-libgnutls30t64_3.8.12-2ubuntu1.1_amd64.deb ...
+#5 15.78 Unpacking libgnutls30t64:amd64 (3.8.12-2ubuntu1.1) ...
+#5 15.90 Selecting previously unselected package libkrb5support0:amd64.
+#5 15.90 Preparing to unpack .../11-libkrb5support0_1.22.1-2ubuntu4_amd64.deb ...
+#5 15.90 Unpacking libkrb5support0:amd64 (1.22.1-2ubuntu4) ...
+#5 16.02 Selecting previously unselected package libk5crypto3:amd64.
+#5 16.02 Preparing to unpack .../12-libk5crypto3_1.22.1-2ubuntu4_amd64.deb ...
+#5 16.03 Unpacking libk5crypto3:amd64 (1.22.1-2ubuntu4) ...
+#5 16.13 Selecting previously unselected package libkeyutils1:amd64.
+#5 16.13 Preparing to unpack .../13-libkeyutils1_1.6.3-6ubuntu3_amd64.deb ...
+#5 16.14 Unpacking libkeyutils1:amd64 (1.6.3-6ubuntu3) ...
+#5 16.24 Selecting previously unselected package libkrb5-3:amd64.
+#5 16.24 Preparing to unpack .../14-libkrb5-3_1.22.1-2ubuntu4_amd64.deb ...
+#5 16.25 Unpacking libkrb5-3:amd64 (1.22.1-2ubuntu4) ...
+#5 16.37 Selecting previously unselected package libgssapi-krb5-2:amd64.
+#5 16.37 Preparing to unpack .../15-libgssapi-krb5-2_1.22.1-2ubuntu4_amd64.deb ...
+#5 16.37 Unpacking libgssapi-krb5-2:amd64 (1.22.1-2ubuntu4) ...
+#5 16.48 Selecting previously unselected package libsqlite3-0:amd64.
+#5 16.48 Preparing to unpack .../16-libsqlite3-0_3.46.1-9ubuntu0.1_amd64.deb ...
+#5 16.49 Unpacking libsqlite3-0:amd64 (3.46.1-9ubuntu0.1) ...
+#5 16.60 Selecting previously unselected package libgdbm6t64:amd64.
+#5 16.60 Preparing to unpack .../17-libgdbm6t64_1.26-1build1_amd64.deb ...
+#5 16.60 Unpacking libgdbm6t64:amd64 (1.26-1build1) ...
+#5 16.71 Selecting previously unselected package libnghttp2-14:amd64.
+#5 16.71 Preparing to unpack .../18-libnghttp2-14_1.68.0-2ubuntu0.2_amd64.deb ...
+#5 16.72 Unpacking libnghttp2-14:amd64 (1.68.0-2ubuntu0.2) ...
+#5 16.83 Selecting previously unselected package libpsl5t64:amd64.
+#5 16.83 Preparing to unpack .../19-libpsl5t64_0.21.2-1.1build2_amd64.deb ...
+#5 16.84 Unpacking libpsl5t64:amd64 (0.21.2-1.1build2) ...
+#5 16.94 Selecting previously unselected package libbrotli1:amd64.
+#5 16.94 Preparing to unpack .../20-libbrotli1_1.2.0-3build1_amd64.deb ...
+#5 16.94 Unpacking libbrotli1:amd64 (1.2.0-3build1) ...
+#5 17.05 Selecting previously unselected package libsasl2-modules-db:amd64.
+#5 17.05 Preparing to unpack .../21-libsasl2-modules-db_2.1.28+dfsg1-9ubuntu3_amd64.deb ...
+#5 17.05 Unpacking libsasl2-modules-db:amd64 (2.1.28+dfsg1-9ubuntu3) ...
+#5 17.16 Selecting previously unselected package libsasl2-2:amd64.
+#5 17.16 Preparing to unpack .../22-libsasl2-2_2.1.28+dfsg1-9ubuntu3_amd64.deb ...
+#5 17.16 Unpacking libsasl2-2:amd64 (2.1.28+dfsg1-9ubuntu3) ...
+#5 17.26 Selecting previously unselected package libldap-common.
+#5 17.26 Preparing to unpack .../23-libldap-common_2.6.10+dfsg-1ubuntu5_all.deb ...
+#5 17.26 Unpacking libldap-common (2.6.10+dfsg-1ubuntu5) ...
+#5 17.37 Selecting previously unselected package libldap2:amd64.
+#5 17.37 Preparing to unpack .../24-libldap2_2.6.10+dfsg-1ubuntu5_amd64.deb ...
+#5 17.37 Unpacking libldap2:amd64 (2.6.10+dfsg-1ubuntu5) ...
+#5 17.49 Selecting previously unselected package librtmp1:amd64.
+#5 17.49 Preparing to unpack .../25-librtmp1_2.4+20151223.gitfa8646d.1-3_amd64.deb ...
+#5 17.49 Unpacking librtmp1:amd64 (2.4+20151223.gitfa8646d.1-3) ...
+#5 17.61 Selecting previously unselected package libssh2-1t64:amd64.
+#5 17.61 Preparing to unpack .../26-libssh2-1t64_1.11.1-1ubuntu0.26.04.2_amd64.deb ...
+#5 17.61 Unpacking libssh2-1t64:amd64 (1.11.1-1ubuntu0.26.04.2) ...
+#5 17.72 Selecting previously unselected package libcurl4t64:amd64.
+#5 17.72 Preparing to unpack .../27-libcurl4t64_8.18.0-1ubuntu2.2_amd64.deb ...
+#5 17.72 Unpacking libcurl4t64:amd64 (8.18.0-1ubuntu2.2) ...
+#5 17.83 Selecting previously unselected package curl.
+#5 17.83 Preparing to unpack .../28-curl_8.18.0-1ubuntu2.2_amd64.deb ...
+#5 17.83 Unpacking curl (8.18.0-1ubuntu2.2) ...
+#5 17.94 Selecting previously unselected package libcurl3t64-gnutls:amd64.
+#5 17.94 Preparing to unpack .../29-libcurl3t64-gnutls_8.18.0-1ubuntu2.2_amd64.deb ...
+#5 17.94 Unpacking libcurl3t64-gnutls:amd64 (8.18.0-1ubuntu2.2) ...
+#5 18.05 Selecting previously unselected package perl-modules-5.40.
+#5 18.05 Preparing to unpack .../30-perl-modules-5.40_5.40.1-7ubuntu0.1_all.deb ...
+#5 18.05 Unpacking perl-modules-5.40 (5.40.1-7ubuntu0.1) ...
+#5 18.39 Selecting previously unselected package libgdbm-compat4t64:amd64.
+#5 18.39 Preparing to unpack .../31-libgdbm-compat4t64_1.26-1build1_amd64.deb ...
+#5 18.39 Unpacking libgdbm-compat4t64:amd64 (1.26-1build1) ...
+#5 18.50 Selecting previously unselected package libperl5.40:amd64.
+#5 18.50 Preparing to unpack .../32-libperl5.40_5.40.1-7ubuntu0.1_amd64.deb ...
+#5 18.50 Unpacking libperl5.40:amd64 (5.40.1-7ubuntu0.1) ...
+#5 18.77 Selecting previously unselected package perl.
+#5 18.77 Preparing to unpack .../33-perl_5.40.1-7ubuntu0.1_amd64.deb ...
+#5 18.78 Unpacking perl (5.40.1-7ubuntu0.1) ...
+#5 18.90 Selecting previously unselected package liberror-perl.
+#5 18.90 Preparing to unpack .../34-liberror-perl_0.17030-1_all.deb ...
+#5 18.90 Unpacking liberror-perl (0.17030-1) ...
+#5 19.00 Selecting previously unselected package git-man.
+#5 19.00 Preparing to unpack .../35-git-man_1%3a2.53.0-1ubuntu1_all.deb ...
+#5 19.01 Unpacking git-man (1:2.53.0-1ubuntu1) ...
+#5 19.12 Selecting previously unselected package git.
+#5 19.13 Preparing to unpack .../36-git_1%3a2.53.0-1ubuntu1_amd64.deb ...
+#5 19.21 Unpacking git (1:2.53.0-1ubuntu1) ...
+#5 19.43 Selecting previously unselected package libicu78:amd64.
+#5 19.43 Preparing to unpack .../37-libicu78_78.2-2ubuntu1_amd64.deb ...
+#5 19.43 Unpacking libicu78:amd64 (78.2-2ubuntu1) ...
+#5 19.72 Selecting previously unselected package libonig5:amd64.
+#5 19.72 Preparing to unpack .../38-libonig5_6.9.10-1build1_amd64.deb ...
+#5 19.73 Unpacking libonig5:amd64 (6.9.10-1build1) ...
+#5 19.84 Selecting previously unselected package libxslt1.1:amd64.
+#5 19.84 Preparing to unpack .../39-libxslt1.1_1.1.45-0.1_amd64.deb ...
+#5 19.84 Unpacking libxslt1.1:amd64 (1.1.45-0.1) ...
+#5 19.95 Selecting previously unselected package libzip5:amd64.
+#5 19.95 Preparing to unpack .../40-libzip5_1.11.4-2_amd64.deb ...
+#5 19.96 Unpacking libzip5:amd64 (1.11.4-2) ...
+#5 20.07 Selecting previously unselected package php8.5-bcmath.
+#5 20.07 Preparing to unpack .../41-php8.5-bcmath_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.09 Unpacking php8.5-bcmath (8.5.4-0ubuntu1.1) ...
+#5 20.20 Selecting previously unselected package php8.5-curl.
+#5 20.20 Preparing to unpack .../42-php8.5-curl_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.22 Unpacking php8.5-curl (8.5.4-0ubuntu1.1) ...
+#5 20.33 Selecting previously unselected package php8.5-intl.
+#5 20.33 Preparing to unpack .../43-php8.5-intl_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.35 Unpacking php8.5-intl (8.5.4-0ubuntu1.1) ...
+#5 20.47 Selecting previously unselected package php8.5-mbstring.
+#5 20.47 Preparing to unpack .../44-php8.5-mbstring_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.49 Unpacking php8.5-mbstring (8.5.4-0ubuntu1.1) ...
+#5 20.60 Selecting previously unselected package php8.5-sqlite3.
+#5 20.60 Preparing to unpack .../45-php8.5-sqlite3_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.62 Unpacking php8.5-sqlite3 (8.5.4-0ubuntu1.1) ...
+#5 20.73 Selecting previously unselected package php8.5-xml.
+#5 20.73 Preparing to unpack .../46-php8.5-xml_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.75 Unpacking php8.5-xml (8.5.4-0ubuntu1.1) ...
+#5 20.88 Selecting previously unselected package php8.5-zip.
+#5 20.88 Preparing to unpack .../47-php8.5-zip_8.5.4-0ubuntu1.1_amd64.deb ...
+#5 20.90 Unpacking php8.5-zip (8.5.4-0ubuntu1.1) ...
+#5 21.01 Selecting previously unselected package unzip.
+#5 21.01 Preparing to unpack .../48-unzip_6.0-29ubuntu1_amd64.deb ...
+#5 21.01 Unpacking unzip (6.0-29ubuntu1) ...
+#5 21.10 Setting up libexpat1:amd64 (2.7.4-1) ...
+#5 21.11 Setting up media-types (14.0.0build1) ...
+#5 21.12 Setting up libtext-charwidth-perl:amd64 (0.04-11build4) ...
+#5 21.14 Setting up libkeyutils1:amd64 (1.6.3-6ubuntu3) ...
+#5 21.15 Setting up libsodium23:amd64 (1.0.18-2) ...
+#5 21.16 Setting up libgdbm6t64:amd64 (1.26-1build1) ...
+#5 21.17 Setting up libgdbm-compat4t64:amd64 (1.26-1build1) ...
+#5 21.18 Setting up libzip5:amd64 (1.11.4-2) ...
+#5 21.19 Setting up libxml2-16:amd64 (2.15.2+dfsg-0.1ubuntu0.1) ...
+#5 21.21 Setting up libargon2-1:amd64 (0~20190702+dfsg-5) ...
+#5 21.22 Setting up unzip (6.0-29ubuntu1) ...
+#5 21.23 Setting up libbrotli1:amd64 (1.2.0-3build1) ...
+#5 21.24 Setting up libedit2:amd64 (3.1-20251016-1) ...
+#5 21.25 Setting up libsqlite3-0:amd64 (3.46.1-9ubuntu0.1) ...
+#5 21.26 Setting up libnghttp2-14:amd64 (1.68.0-2ubuntu0.2) ...
+#5 21.27 Setting up libldap-common (2.6.10+dfsg-1ubuntu5) ...
+#5 21.29 Setting up libtext-wrapi18n-perl (0.06-10) ...
+#5 21.30 Setting up libkrb5support0:amd64 (1.22.1-2ubuntu4) ...
+#5 21.31 Setting up libsasl2-modules-db:amd64 (2.1.28+dfsg1-9ubuntu3) ...
+#5 21.33 Setting up tzdata (2026a-3ubuntu1) ...
+#5 21.69 
+#5 21.69 Current default time zone: 'Etc/UTC'
+#5 21.79 Local time is now:      Wed Jul  8 18:42:40 UTC 2026.
+#5 21.79 Universal Time is now:  Wed Jul  8 18:42:40 UTC 2026.
+#5 21.79 Run 'dpkg-reconfigure tzdata' if you wish to change it.
+#5 21.79 
+#5 21.83 Setting up libicu78:amd64 (78.2-2ubuntu1) ...
+#5 21.84 Setting up libnettle8t64:amd64 (3.10.2-1) ...
+#5 21.86 Setting up libunistring5:amd64 (1.3-2build1) ...
+#5 21.87 Setting up ucf (3.0052ubuntu1) ...
+#5 21.95 Setting up libk5crypto3:amd64 (1.22.1-2ubuntu4) ...
+#5 21.96 Setting up libsasl2-2:amd64 (2.1.28+dfsg1-9ubuntu3) ...
+#5 21.97 Setting up libffi8:amd64 (3.5.2-4) ...
+#5 21.98 Setting up libhogweed6t64:amd64 (3.10.2-1) ...
+#5 21.98 Setting up perl-modules-5.40 (5.40.1-7ubuntu0.1) ...
+#5 21.99 Setting up libxslt1.1:amd64 (1.1.45-0.1) ...
+#5 22.00 Setting up libtasn1-6:amd64 (4.21.0-2) ...
+#5 22.01 Setting up git-man (1:2.53.0-1ubuntu1) ...
+#5 22.02 Setting up libkrb5-3:amd64 (1.22.1-2ubuntu4) ...
+#5 22.02 Setting up libssh2-1t64:amd64 (1.11.1-1ubuntu0.26.04.2) ...
+#5 22.03 Setting up openssl (3.5.5-1ubuntu3.2) ...
+#5 22.06 Setting up libldap2:amd64 (2.6.10+dfsg-1ubuntu5) ...
+#5 22.07 Setting up libonig5:amd64 (6.9.10-1build1) ...
+#5 22.08 Setting up php8.5-common (8.5.4-0ubuntu1.1) ...
+#5 23.11 Creating config file /etc/php/8.5/mods-available/calendar.ini with new version
+#5 25.48 Creating config file /etc/php/8.5/mods-available/ctype.ini with new version
+#5 27.68 Creating config file /etc/php/8.5/mods-available/exif.ini with new version
+#5 29.92 Creating config file /etc/php/8.5/mods-available/fileinfo.ini with new version
+#5 32.29 Creating config file /etc/php/8.5/mods-available/ffi.ini with new version
+#5 34.54 Creating config file /etc/php/8.5/mods-available/ftp.ini with new version
+#5 36.84 Creating config file /etc/php/8.5/mods-available/gettext.ini with new version
+#5 39.10 Creating config file /etc/php/8.5/mods-available/iconv.ini with new version
+#5 41.43 Creating config file /etc/php/8.5/mods-available/pdo.ini with new version
+#5 43.75 Creating config file /etc/php/8.5/mods-available/phar.ini with new version
+#5 46.05 Creating config file /etc/php/8.5/mods-available/posix.ini with new version
+#5 48.47 Creating config file /etc/php/8.5/mods-available/shmop.ini with new version
+#5 50.77 Creating config file /etc/php/8.5/mods-available/sockets.ini with new version
+#5 53.06 Creating config file /etc/php/8.5/mods-available/sysvmsg.ini with new version
+#5 55.35 Creating config file /etc/php/8.5/mods-available/sysvsem.ini with new version
+#5 57.69 Creating config file /etc/php/8.5/mods-available/sysvshm.ini with new version
+#5 59.96 Creating config file /etc/php/8.5/mods-available/tokenizer.ini with new version
+#5 61.28 Setting up php8.5-xml (8.5.4-0ubuntu1.1) ...
+#5 62.29 Creating config file /etc/php/8.5/mods-available/dom.ini with new version
+#5 64.59 Creating config file /etc/php/8.5/mods-available/simplexml.ini with new version
+#5 66.89 Creating config file /etc/php/8.5/mods-available/xml.ini with new version
+#5 69.21 Creating config file /etc/php/8.5/mods-available/xmlreader.ini with new version
+#5 71.51 Creating config file /etc/php/8.5/mods-available/xmlwriter.ini with new version
+#5 73.85 Creating config file /etc/php/8.5/mods-available/xsl.ini with new version
+#5 75.19 Setting up libidn2-0:amd64 (2.3.8-4build1) ...
+#5 75.20 Setting up libperl5.40:amd64 (5.40.1-7ubuntu0.1) ...
+#5 75.21 Setting up ca-certificates (20260601~26.04.1) ...
+#5 79.97 Updating certificates in /etc/ssl/certs...
+#5 91.57 121 added, 0 removed; done.
+#5 91.75 Setting up perl (5.40.1-7ubuntu0.1) ...
+#5 91.81 Setting up php8.5-mbstring (8.5.4-0ubuntu1.1) ...
+#5 92.81 Creating config file /etc/php/8.5/mods-available/mbstring.ini with new version
+#5 94.13 Setting up libp11-kit0:amd64 (0.26.2-2) ...
+#5 94.14 Setting up php8.5-zip (8.5.4-0ubuntu1.1) ...
+#5 95.15 Creating config file /etc/php/8.5/mods-available/zip.ini with new version
+#5 96.48 Setting up libgssapi-krb5-2:amd64 (1.22.1-2ubuntu4) ...
+#5 96.51 Setting up php8.5-intl (8.5.4-0ubuntu1.1) ...
+#5 97.52 Creating config file /etc/php/8.5/mods-available/intl.ini with new version
+#5 98.84 Setting up php8.5-readline (8.5.4-0ubuntu1.1) ...
+#5 99.84 Creating config file /etc/php/8.5/mods-available/readline.ini with new version
+#5 101.2 Setting up php8.5-bcmath (8.5.4-0ubuntu1.1) ...
+#5 102.2 Creating config file /etc/php/8.5/mods-available/bcmath.ini with new version
+#5 103.5 Setting up php8.5-sqlite3 (8.5.4-0ubuntu1.1) ...
+#5 104.5 Creating config file /etc/php/8.5/mods-available/sqlite3.ini with new version
+#5 106.8 Creating config file /etc/php/8.5/mods-available/pdo_sqlite.ini with new version
+#5 108.1 Setting up libgnutls30t64:amd64 (3.8.12-2ubuntu1.1) ...
+#5 108.2 Setting up libpsl5t64:amd64 (0.21.2-1.1build2) ...
+#5 108.2 Setting up liberror-perl (0.17030-1) ...
+#5 108.2 Setting up librtmp1:amd64 (2.4+20151223.gitfa8646d.1-3) ...
+#5 108.2 Setting up php8.5-cli (8.5.4-0ubuntu1.1) ...
+#5 108.2 update-alternatives: using /usr/bin/php8.5 to provide /usr/bin/php (php) in auto mode
+#5 108.2 update-alternatives: warning: skip creation of /usr/share/man/man1/php.1.gz because associated file /usr/share/man/man1/php8.5.1.gz (of link group php) does not exist
+#5 108.3 update-alternatives: using /usr/bin/phar8.5 to provide /usr/bin/phar (phar) in auto mode
+#5 108.3 update-alternatives: warning: skip creation of /usr/share/man/man1/phar.1.gz because associated file /usr/share/man/man1/phar8.5.1.gz (of link group phar) does not exist
+#5 108.3 update-alternatives: using /usr/bin/phar.phar8.5 to provide /usr/bin/phar.phar (phar.phar) in auto mode
+#5 108.3 update-alternatives: warning: skip creation of /usr/share/man/man1/phar.phar.1.gz because associated file /usr/share/man/man1/phar.phar8.5.1.gz (of link group phar.phar) does not exist
+#5 109.3 Creating config file /etc/php/8.5/cli/php.ini with new version
+#5 119.1 Setting up php8.5-igbinary (3.2.16-4ubuntu1) ...
+#5 119.9 Setting up libcurl4t64:amd64 (8.18.0-1ubuntu2.2) ...
+#5 119.9 Setting up libcurl3t64-gnutls:amd64 (8.18.0-1ubuntu2.2) ...
+#5 119.9 Setting up git (1:2.53.0-1ubuntu1) ...
+#5 120.0 Setting up curl (8.18.0-1ubuntu2.2) ...
+#5 120.0 Setting up php8.5-redis (6.2.0-1ubuntu1) ...
+#5 120.8 Setting up php8.5-curl (8.5.4-0ubuntu1.1) ...
+#5 121.8 Creating config file /etc/php/8.5/mods-available/curl.ini with new version
+#5 123.1 Processing triggers for libc-bin (2.43-2ubuntu2) ...
+#5 123.1 Processing triggers for ca-certificates (20260601~26.04.1) ...
+#5 123.2 Updating certificates in /etc/ssl/certs...
+#5 131.9 0 added, 0 removed; done.
+#5 131.9 Running hooks in /etc/ca-certificates/update.d...
+#5 131.9 done.
+#5 132.0 Processing triggers for php8.5-cli (8.5.4-0ubuntu1.1) ...
+#5 DONE 132.7s
+
+#6 [3/5] WORKDIR /app
+#6 DONE 0.1s
+
+#7 [4/5] COPY apps/reverb /app
+#7 DONE 0.1s
+
+#8 [5/5] RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts     && install -d bootstrap/cache storage/framework/cache storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs     && rm -rf /root/.composer/cache     && chmod 0755 /app/artisan
+#8 0.781 Installing dependencies from lock file
+#8 0.789 Verifying lock file contents can be installed on current platform.
+#8 1.076 Package operations: 86 installs, 0 updates, 0 removals
+#8 1.126   - Downloading clue/redis-protocol (v0.3.2)
+#8 1.127   - Downloading doctrine/inflector (2.1.0)
+#8 1.128   - Downloading doctrine/lexer (3.0.1)
+#8 1.128   - Downloading dragonmantank/cron-expression (v3.6.0)
+#8 1.129   - Downloading symfony/polyfill-mbstring (v1.38.2)
+#8 1.129   - Downloading symfony/deprecation-contracts (v3.7.0)
+#8 1.129   - Downloading symfony/http-foundation (v8.1.1)
+#8 1.130   - Downloading fruitcake/php-cors (v1.4.0)
+#8 1.130   - Downloading guzzlehttp/promises (2.5.0)
+#8 1.130   - Downloading symfony/polyfill-php80 (v1.37.0)
+#8 1.131   - Downloading guzzlehttp/uri-template (v1.0.8)
+#8 1.131   - Downloading symfony/polyfill-intl-normalizer (v1.38.0)
+#8 1.132   - Downloading symfony/polyfill-intl-grapheme (v1.38.1)
+#8 1.132   - Downloading symfony/polyfill-ctype (v1.37.0)
+#8 1.132   - Downloading symfony/string (v8.1.0)
+#8 1.132   - Downloading psr/container (2.0.2)
+#8 1.132   - Downloading symfony/service-contracts (v3.7.0)
+#8 1.133   - Downloading symfony/polyfill-php85 (v1.38.1)
+#8 1.134   - Downloading symfony/console (v8.1.1)
+#8 1.134   - Downloading react/event-loop (v1.6.0)
+#8 1.134   - Downloading evenement/evenement (v3.0.2)
+#8 1.134   - Downloading react/stream (v1.4.0)
+#8 1.134   - Downloading react/promise (v3.3.0)
+#8 1.134   - Downloading react/cache (v1.2.0)
+#8 1.134   - Downloading react/dns (v1.14.0)
+#8 1.134   - Downloading react/socket (v1.17.0)
+#8 1.134   - Downloading react/promise-timer (v1.11.0)
+#8 1.134   - Downloading ralouphie/getallheaders (3.0.3)
+#8 1.134   - Downloading psr/http-message (2.0)
+#8 1.135   - Downloading psr/http-factory (1.1.0)
+#8 1.135   - Downloading guzzlehttp/psr7 (2.12.3)
+#8 1.135   - Downloading ratchet/rfc6455 (v0.4.1)
+#8 1.135   - Downloading psr/log (3.0.2)
+#8 1.135   - Downloading psr/http-client (1.0.3)
+#8 1.135   - Downloading guzzlehttp/guzzle (7.12.3)
+#8 1.136   - Downloading pusher/pusher-php-server (7.2.8)
+#8 1.136   - Downloading laravel/prompts (v0.3.21)
+#8 1.136   - Downloading voku/portable-ascii (2.1.1)
+#8 1.136   - Downloading phpoption/phpoption (1.9.5)
+#8 1.137   - Downloading graham-campbell/result-type (v1.1.4)
+#8 1.137   - Downloading vlucas/phpdotenv (v5.6.3)
+#8 1.137   - Downloading symfony/css-selector (v8.1.0)
+#8 1.137   - Downloading tijsverkoyen/css-to-inline-styles (v2.4.0)
+#8 1.138   - Downloading symfony/var-dumper (v8.1.1)
+#8 1.138   - Downloading symfony/polyfill-uuid (v1.37.0)
+#8 1.138   - Downloading symfony/uid (v8.1.0)
+#8 1.138   - Downloading symfony/routing (v8.1.0)
+#8 1.138   - Downloading symfony/process (v8.1.0)
+#8 1.139   - Downloading symfony/polyfill-php86 (v1.38.0)
+#8 1.139   - Downloading symfony/polyfill-php84 (v1.38.1)
+#8 1.139   - Downloading symfony/polyfill-intl-idn (v1.38.1)
+#8 1.139   - Downloading symfony/mime (v8.1.0)
+#8 1.139   - Downloading psr/event-dispatcher (1.0.0)
+#8 1.140   - Downloading symfony/event-dispatcher-contracts (v3.7.0)
+#8 1.140   - Downloading symfony/event-dispatcher (v8.1.1)
+#8 1.140   - Downloading egulias/email-validator (4.0.4)
+#8 1.140   - Downloading symfony/mailer (v8.1.1)
+#8 1.140   - Downloading symfony/error-handler (v8.1.0)
+#8 1.141   - Downloading symfony/http-kernel (v8.1.1)
+#8 1.141   - Downloading symfony/finder (v8.1.1)
+#8 1.141   - Downloading ramsey/collection (2.1.1)
+#8 1.141   - Downloading brick/math (0.18.0)
+#8 1.141   - Downloading ramsey/uuid (4.9.3)
+#8 1.142   - Downloading psr/simple-cache (3.0.0)
+#8 1.142   - Downloading nunomaduro/termwind (v2.4.0)
+#8 1.142   - Downloading symfony/translation-contracts (v3.7.0)
+#8 1.142   - Downloading symfony/translation (v8.1.1)
+#8 1.142   - Downloading psr/clock (1.0.0)
+#8 1.143   - Downloading symfony/clock (v8.1.0)
+#8 1.143   - Downloading carbonphp/carbon-doctrine-types (3.2.0)
+#8 1.143   - Downloading nesbot/carbon (3.13.0)
+#8 1.143   - Downloading monolog/monolog (3.10.0)
+#8 1.144   - Downloading league/uri-interfaces (7.8.1)
+#8 1.144   - Downloading league/uri (7.8.1)
+#8 1.144   - Downloading league/mime-type-detection (1.16.0)
+#8 1.144   - Downloading league/flysystem-local (3.31.0)
+#8 1.144   - Downloading league/flysystem (3.35.1)
+#8 1.145   - Downloading nette/utils (v4.1.4)
+#8 1.145   - Downloading nette/schema (v1.3.5)
+#8 1.145   - Downloading dflydev/dot-access-data (v3.0.3)
+#8 1.145   - Downloading league/config (v1.2.0)
+#8 1.146   - Downloading league/commonmark (2.8.2)
+#8 1.146   - Downloading laravel/serializable-closure (v2.0.13)
+#8 1.146   - Downloading laravel/framework (v13.17.0)
+#8 1.146   - Downloading clue/redis-react (v2.8.0)
+#8 1.146   - Downloading laravel/reverb (v1.10.2)
+#8 1.158   0/86 [>---------------------------]   0%
+#8 1.684  11/86 [===>------------------------]  12%
+#8 1.956  23/86 [=======>--------------------]  26%
+#8 2.058  31/86 [==========>-----------------]  36%
+#8 2.275  41/86 [=============>--------------]  47%
+#8 2.395  47/86 [===============>------------]  54%
+#8 2.499  53/86 [=================>----------]  61%
+#8 2.733  65/86 [=====================>------]  75%
+#8 2.850  71/86 [=======================>----]  82%
+#8 3.007  78/86 [=========================>--]  90%
+#8 3.376  86/86 [============================] 100%
+#8 3.380   - Installing clue/redis-protocol (v0.3.2): Extracting archive
+#8 3.406   - Installing doctrine/inflector (2.1.0): Extracting archive
+#8 3.412   - Installing doctrine/lexer (3.0.1): Extracting archive
+#8 3.414   - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+#8 3.418   - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+#8 3.421   - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+#8 3.424   - Installing symfony/http-foundation (v8.1.1): Extracting archive
+#8 3.427   - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+#8 3.432   - Installing guzzlehttp/promises (2.5.0): Extracting archive
+#8 3.436   - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+#8 3.438   - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+#8 3.438   - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+#8 3.439   - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+#8 3.439   - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+#8 3.440   - Installing symfony/string (v8.1.0): Extracting archive
+#8 3.440   - Installing psr/container (2.0.2): Extracting archive
+#8 3.440   - Installing symfony/service-contracts (v3.7.0): Extracting archive
+#8 3.441   - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+#8 3.441   - Installing symfony/console (v8.1.1): Extracting archive
+#8 3.441   - Installing react/event-loop (v1.6.0): Extracting archive
+#8 3.441   - Installing evenement/evenement (v3.0.2): Extracting archive
+#8 3.441   - Installing react/stream (v1.4.0): Extracting archive
+#8 3.442   - Installing react/promise (v3.3.0): Extracting archive
+#8 3.442   - Installing react/cache (v1.2.0): Extracting archive
+#8 3.442   - Installing react/dns (v1.14.0): Extracting archive
+#8 3.442   - Installing react/socket (v1.17.0): Extracting archive
+#8 3.443   - Installing react/promise-timer (v1.11.0): Extracting archive
+#8 3.443   - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+#8 3.444   - Installing psr/http-message (2.0): Extracting archive
+#8 3.444   - Installing psr/http-factory (1.1.0): Extracting archive
+#8 3.445   - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+#8 3.445   - Installing ratchet/rfc6455 (v0.4.1): Extracting archive
+#8 3.445   - Installing psr/log (3.0.2): Extracting archive
+#8 3.445   - Installing psr/http-client (1.0.3): Extracting archive
+#8 3.446   - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+#8 3.446   - Installing pusher/pusher-php-server (7.2.8): Extracting archive
+#8 3.446   - Installing laravel/prompts (v0.3.21): Extracting archive
+#8 3.446   - Installing voku/portable-ascii (2.1.1): Extracting archive
+#8 3.447   - Installing phpoption/phpoption (1.9.5): Extracting archive
+#8 3.447   - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+#8 3.447   - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+#8 3.447   - Installing symfony/css-selector (v8.1.0): Extracting archive
+#8 3.448   - Installing tijsverkoyen/css-to-inline-styles (v2.4.0): Extracting archive
+#8 3.448   - Installing symfony/var-dumper (v8.1.1): Extracting archive
+#8 3.448   - Installing symfony/polyfill-uuid (v1.37.0): Extracting archive
+#8 3.448   - Installing symfony/uid (v8.1.0): Extracting archive
+#8 3.448   - Installing symfony/routing (v8.1.0): Extracting archive
+#8 3.449   - Installing symfony/process (v8.1.0): Extracting archive
+#8 3.449   - Installing symfony/polyfill-php86 (v1.38.0): Extracting archive
+#8 3.450   - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+#8 3.450   - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+#8 3.450   - Installing symfony/mime (v8.1.0): Extracting archive
+#8 3.450   - Installing psr/event-dispatcher (1.0.0): Extracting archive
+#8 3.451   - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+#8 3.452   - Installing symfony/event-dispatcher (v8.1.1): Extracting archive
+#8 3.452   - Installing egulias/email-validator (4.0.4): Extracting archive
+#8 3.452   - Installing symfony/mailer (v8.1.1): Extracting archive
+#8 3.453   - Installing symfony/error-handler (v8.1.0): Extracting archive
+#8 3.453   - Installing symfony/http-kernel (v8.1.1): Extracting archive
+#8 3.454   - Installing symfony/finder (v8.1.1): Extracting archive
+#8 3.454   - Installing ramsey/collection (2.1.1): Extracting archive
+#8 3.454   - Installing brick/math (0.18.0): Extracting archive
+#8 3.454   - Installing ramsey/uuid (4.9.3): Extracting archive
+#8 3.455   - Installing psr/simple-cache (3.0.0): Extracting archive
+#8 3.455   - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+#8 3.455   - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+#8 3.456   - Installing symfony/translation (v8.1.1): Extracting archive
+#8 3.457   - Installing psr/clock (1.0.0): Extracting archive
+#8 3.458   - Installing symfony/clock (v8.1.0): Extracting archive
+#8 3.459   - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+#8 3.460   - Installing nesbot/carbon (3.13.0): Extracting archive
+#8 3.460   - Installing monolog/monolog (3.10.0): Extracting archive
+#8 3.460   - Installing league/uri-interfaces (7.8.1): Extracting archive
+#8 3.460   - Installing league/uri (7.8.1): Extracting archive
+#8 3.460   - Installing league/mime-type-detection (1.16.0): Extracting archive
+#8 3.460   - Installing league/flysystem-local (3.31.0): Extracting archive
+#8 3.460   - Installing league/flysystem (3.35.1): Extracting archive
+#8 3.460   - Installing nette/utils (v4.1.4): Extracting archive
+#8 3.461   - Installing nette/schema (v1.3.5): Extracting archive
+#8 3.461   - Installing dflydev/dot-access-data (v3.0.3): Extracting archive
+#8 3.461   - Installing league/config (v1.2.0): Extracting archive
+#8 3.461   - Installing league/commonmark (2.8.2): Extracting archive
+#8 3.461   - Installing laravel/serializable-closure (v2.0.13): Extracting archive
+#8 3.462   - Installing laravel/framework (v13.17.0): Extracting archive
+#8 3.462   - Installing clue/redis-react (v2.8.0): Extracting archive
+#8 3.462   - Installing laravel/reverb (v1.10.2): Extracting archive
+#8 3.484   0/86 [>---------------------------]   0%
+#8 3.589  16/86 [=====>----------------------]  18%
+#8 3.705  29/86 [=========>------------------]  33%
+#8 3.807  37/86 [============>---------------]  43%
+#8 3.929  47/86 [===============>------------]  54%
+#8 4.033  55/86 [=================>----------]  63%
+#8 4.142  66/86 [=====================>------]  76%
+#8 4.249  73/86 [=======================>----]  84%
+#8 4.348  81/86 [==========================>-]  94%
+#8 4.562  86/86 [============================] 100%
+#8 4.694 Generating optimized autoload files
+#8 5.269 62 packages you are using are looking for funding.
+#8 5.269 Use the `composer fund` command to find out more!
+#8 DONE 5.8s
+
+#9 exporting to image
+#9 exporting layers
+#9 exporting layers 4.9s done
+#9 exporting manifest sha256:de507e80e6accb90d3ad58ae10ec6c56b7453e881d075940b6ce0bc333b7e4d0 0.0s done
+#9 exporting config sha256:9b005d393e54183e20a6bc7715cc32bdce50600674536c1b37e68e4845427512 0.0s done
+#9 exporting attestation manifest sha256:ce69fcfb812e1fdf5707051676f0e470ae28dc9f1f3370f001088a5e7da20ebb 0.0s done
+#9 exporting manifest list sha256:8d5af37f65f9836424fa501e66dd53ad646033907f81f050594fda3edfbe8d15 0.0s done
+#9 naming to ghcr.io/hardimpactdev/orbit-websocket:0.1.180-candidate-20260708T184139Z-5b33f7fd7 done
+#9 DONE 5.0s
+github.com
+  ✓ Logged in to github.com account nckrtl (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'read:org', 'repo', 'workflow', 'write:packages'
+Candidate channel manifest: https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+Release candidate state: /Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/.orbit/release-candidates/20260708T184139Z-5b33f7fd7

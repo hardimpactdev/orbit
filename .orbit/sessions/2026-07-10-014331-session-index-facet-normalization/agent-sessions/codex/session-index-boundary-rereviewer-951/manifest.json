@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-boundary-rereviewer-951",
+    "solo_process_id": 951,
+    "kind": "agent",
+    "started_at": "2026-07-09 23:20:24",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T01-20-25-019f492e-b2c7-7e43-abb0-d4e2a4d04fb4.jsonl",
+    "source": "codex_exact_marker"
+}

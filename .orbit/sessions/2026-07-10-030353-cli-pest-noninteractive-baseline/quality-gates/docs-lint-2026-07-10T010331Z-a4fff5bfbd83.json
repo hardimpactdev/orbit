@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-10T01:03:26Z",
+    "ended_at": "2026-07-10T01:03:31Z",
+    "duration_seconds": 5,
+    "exit_code": 0,
+    "git": {
+        "branch": "cli-pest-noninteractive-baseline",
+        "commit": "9ae08efd8fa33af780411cde176f5bcc9e436fdb"
+    },
+    "subgates": []
+}

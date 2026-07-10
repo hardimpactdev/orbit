@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-semantic-review-fix-981",
+    "solo_process_id": 981,
+    "kind": "agent",
+    "started_at": "2026-07-10 06:22:16",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T08-22-17-019f4ab0-eeb1-7f12-ac3b-627fb797b462.jsonl",
+    "source": "codex_exact_marker"
+}

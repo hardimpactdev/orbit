@@ -1,0 +1,30 @@
+{"event":"tree","data":{"title":"Setting Up Workspace","steps":[{"key":"apply_workspace_registration","label":"Apply and verify workspace registration","doneLabel":"Applied and verified workspace registration"},{"key":"register_proxy_routes","label":"Register proxy routes","doneLabel":"Registered proxy routes"},{"key":"install_workspace_runtime_container","label":"Install workspace runtime container","doneLabel":"Installed workspace runtime container"},{"key":"run_workspace_setup_steps","label":"Run workspace setup steps","doneLabel":"Ran workspace setup steps"},{"key":"check_workspace_readiness","label":"Check workspace readiness","doneLabel":"Checked workspace readiness"}]}}
+{"event":"step","data":{"key":"apply_workspace_registration","status":"start"}}
+{"event":"step","data":{"key":"apply_workspace_registration","status":"done","message":"todo191-final-bb453e"}}
+{"event":"step","data":{"key":"register_proxy_routes","status":"start"}}
+{"event":"step","data":{"key":"register_proxy_routes","status":"done","message":"ready"}}
+{"event":"step","data":{"key":"install_workspace_runtime_container","status":"start"}}
+{"event":"step","data":{"key":"install_workspace_runtime_container","status":"done","message":"ready"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"start"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 1/9: test -f .env || cp .env.example .env"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 1/9: test -f .env || cp .env.example .env"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 2/9: php -r '$u=getenv(\"ORBIT_URL\") ?: getenv(\"APP_URL\") ?: \"http://localhost\"; $h=pa..."}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 2/9: php -r '$u=getenv(\"ORBIT_URL\") ?: getenv(\"APP_URL\") ?: \"http://localhost\"; $h=pa..."}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 3/9: composer install --no-interaction --prefer-dist"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 3/9: composer install --no-interaction --prefer-dist"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 4/9: php artisan key:generate --force"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 4/9: php artisan key:generate --force"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 5/9: mkdir -p database"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 5/9: mkdir -p database"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 6/9: touch database/database.sqlite"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 6/9: touch database/database.sqlite"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 7/9: php artisan migrate --force"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 7/9: php artisan migrate --force"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 8/9: vp install"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 8/9: vp install"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Running setup step 9/9: vp build"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"progress","message":"Completed setup step 9/9: vp build"}}
+{"event":"step","data":{"key":"run_workspace_setup_steps","status":"done","message":"9 steps"}}
+{"event":"step","data":{"key":"check_workspace_readiness","status":"start"}}
+{"event":"step","data":{"key":"check_workspace_readiness","status":"done","message":"200"}}
+{"event":"complete","success":{"data":{"footer":"Workspace ready and available at: https://todo191-final-bb453e.happie.nmbp","result":{"app":"happie","app_instance":"nmbp","workspace":"todo191-final-bb453e","node":"NMBP","path":"/Users/nckrtl/.codex/worktrees/todo191-final-bb453e/happie","url":"https://todo191-final-bb453e.happie.nmbp","action":"adopted","warnings":[],"setup_steps":{"status":"completed","message":"9 steps","count":9},"processes":{"status":"started","count":0,"names":[],"message":"No processes"},"http_probe":{"reachable":true,"status":"200"}}},"meta":[]}}

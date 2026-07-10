@@ -1,0 +1,512 @@
+Installing dependencies from lock file
+Verifying lock file contents can be installed on current platform.
+Package operations: 86 installs, 0 updates, 0 removals
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 10/25 [===========🍺----------------]  40%
+ 17/25 [===================🍺--------]  68%
+ 20/25 [======================🍺-----]  80%
+ 23/25 [=========================🍺--]  92%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%
+ 29/29 [============================] 100%
+ 30/30 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.5hWALb/repo/apps/cli/builds/orbit.phar
+
+[32m Using config file at '/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/cli/phpacker.json'[39m
+
+
+[32m You're using the latest version: phpacker/php-bin:0.4.0[39m
+
+  mac - arm ·············································· ✅
+
+Installing dependencies from lock file
+Verifying lock file contents can be installed on current platform.
+Package operations: 86 installs, 0 updates, 0 removals
+  - Installing doctrine/inflector (2.1.0): Extracting archive
+  - Installing psr/http-message (2.0): Extracting archive
+  - Installing voku/portable-ascii (2.1.1): Extracting archive
+  - Installing symfony/polyfill-php85 (v1.38.1): Extracting archive
+  - Installing symfony/polyfill-php83 (v1.38.2): Extracting archive
+  - Installing symfony/translation-contracts (v3.7.0): Extracting archive
+  - Installing symfony/polyfill-mbstring (v1.38.2): Extracting archive
+  - Installing symfony/translation (v8.1.1): Extracting archive
+  - Installing psr/clock (1.0.0): Extracting archive
+  - Installing symfony/clock (v8.1.0): Extracting archive
+  - Installing carbonphp/carbon-doctrine-types (3.2.0): Extracting archive
+  - Installing nesbot/carbon (3.13.0): Extracting archive
+  - Installing psr/simple-cache (3.0.0): Extracting archive
+  - Installing psr/container (2.0.2): Extracting archive
+  - Installing illuminate/contracts (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php84 (v1.38.1): Extracting archive
+  - Installing illuminate/macroable (v12.62.0): Extracting archive
+  - Installing illuminate/conditionable (v12.62.0): Extracting archive
+  - Installing illuminate/collections (v12.62.0): Extracting archive
+  - Installing illuminate/reflection (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-ctype (v1.37.0): Extracting archive
+  - Installing illuminate/support (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-php80 (v1.37.0): Extracting archive
+  - Installing symfony/deprecation-contracts (v3.7.0): Extracting archive
+  - Installing ralouphie/getallheaders (3.0.3): Extracting archive
+  - Installing psr/http-factory (1.1.0): Extracting archive
+  - Installing guzzlehttp/psr7 (2.12.3): Extracting archive
+  - Installing hardimpactdev/orbit-core (dev-main 31c2b8e): Symlinking from ../../packages/core
+  - Installing guzzlehttp/promises (2.5.0): Extracting archive
+  - Installing psr/http-client (1.0.3): Extracting archive
+  - Installing guzzlehttp/guzzle (7.12.3): Extracting archive
+  - Installing saloonphp/saloon (v4.0.0): Extracting archive
+  - Installing hardimpactdev/orbit-sdk-laravel (dev-main 139a1b3): Symlinking from ../../packages/sdk
+  - Installing illuminate/pipeline (v12.62.0): Extracting archive
+  - Installing illuminate/bus (v12.62.0): Extracting archive
+  - Installing symfony/polyfill-intl-normalizer (v1.38.0): Extracting archive
+  - Installing symfony/polyfill-intl-idn (v1.38.1): Extracting archive
+  - Installing symfony/mime (v7.4.13): Extracting archive
+  - Installing symfony/http-foundation (v7.4.14): Extracting archive
+  - Installing psr/event-dispatcher (1.0.0): Extracting archive
+  - Installing symfony/event-dispatcher-contracts (v3.7.0): Extracting archive
+  - Installing symfony/event-dispatcher (v7.4.14): Extracting archive
+  - Installing symfony/var-dumper (v7.4.14): Extracting archive
+  - Installing psr/log (3.0.2): Extracting archive
+  - Installing symfony/error-handler (v7.4.14): Extracting archive
+  - Installing symfony/http-kernel (v7.4.14): Extracting archive
+  - Installing symfony/finder (v7.4.14): Extracting archive
+  - Installing illuminate/filesystem (v12.62.0): Extracting archive
+  - Installing illuminate/session (v12.62.0): Extracting archive
+  - Installing guzzlehttp/uri-template (v1.0.8): Extracting archive
+  - Installing fruitcake/php-cors (v1.4.0): Extracting archive
+  - Installing illuminate/http (v12.62.0): Extracting archive
+  - Installing illuminate/container (v12.62.0): Extracting archive
+  - Installing illuminate/events (v12.62.0): Extracting archive
+  - Installing illuminate/view (v12.62.0): Extracting archive
+  - Installing jolicode/php-os-helper (v0.1.0): Extracting archive
+  - Installing phpoption/phpoption (1.9.5): Extracting archive
+  - Installing graham-campbell/result-type (v1.1.4): Extracting archive
+  - Installing vlucas/phpdotenv (v5.6.3): Extracting archive
+  - Installing symfony/process (v7.4.13): Extracting archive
+  - Installing symfony/polyfill-intl-grapheme (v1.38.1): Extracting archive
+  - Installing symfony/string (v8.1.0): Extracting archive
+  - Installing symfony/service-contracts (v3.7.0): Extracting archive
+  - Installing symfony/console (v7.4.14): Extracting archive
+  - Installing ramsey/collection (2.1.1): Extracting archive
+  - Installing brick/math (0.18.0): Extracting archive
+  - Installing ramsey/uuid (4.9.3): Extracting archive
+  - Installing nunomaduro/termwind (v2.4.0): Extracting archive
+  - Installing jolicode/jolinotif (v2.7.3): Extracting archive
+  - Installing laravel/prompts (v0.3.21): Extracting archive
+  - Installing illuminate/console (v12.62.0): Extracting archive
+  - Installing nunomaduro/laravel-desktop-notifier (v2.10.0): Extracting archive
+  - Installing nunomaduro/laravel-console-task (v1.11.0): Extracting archive
+  - Installing nunomaduro/laravel-console-summary (v1.14.0): Extracting archive
+  - Installing filp/whoops (2.18.4): Extracting archive
+  - Installing nunomaduro/collision (v8.9.4): Extracting archive
+  - Installing league/mime-type-detection (1.16.0): Extracting archive
+  - Installing league/flysystem (3.35.1): Extracting archive
+  - Installing league/flysystem-local (3.31.0): Extracting archive
+  - Installing laravel-zero/foundation (v12.54.1): Extracting archive
+  - Installing illuminate/testing (v12.62.0): Extracting archive
+  - Installing illuminate/process (v12.62.0): Extracting archive
+  - Installing illuminate/config (v12.62.0): Extracting archive
+  - Installing illuminate/cache (v12.62.0): Extracting archive
+  - Installing dragonmantank/cron-expression (v3.6.0): Extracting archive
+  - Installing laravel-zero/framework (v12.1.0): Extracting archive
+Generating optimized autoload files
+47 packages you are using are looking for funding.
+Use the `composer fund` command to find out more!
+
+                                                
+                Building process                
+                                                
+
+   1. Moving application to production mode: loading...
+   1. Moving application to production mode: ✔
+
+  1/25 [=🍺--------------------------]   4%
+  8/25 [========🍺-------------------]  32%
+ 10/25 [===========🍺----------------]  40%
+ 16/25 [=================🍺----------]  64%
+ 19/25 [=====================🍺------]  76%
+ 20/25 [======================🍺-----]  80%
+ 23/25 [=========================🍺--]  92%
+ 25/25 [============================] 100%
+ 26/26 [============================] 100%
+ 27/27 [============================] 100%
+ 28/28 [============================] 100%
+ 29/29 [============================] 100%   2. Compile into a single file: loading...
+   2. Compile into a single file: ✔
+
+    Compiled successfully: /private/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-cli-build.QiopWH/repo/apps/cli/builds/orbit.phar
+
+[32m Using config file at '/Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/apps/cli/phpacker.json'[39m
+
+
+[32m You're using the latest version: phpacker/php-bin:0.4.0[39m
+
+  linux - x64 ············································ ✅
+
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded atomic-waker v1.1.2
+  Downloaded http-body-util v0.1.3
+  Downloaded percent-encoding v2.3.2
+  Downloaded potential_utf v0.1.5
+  Downloaded untrusted v0.9.0
+  Downloaded tokio-macros v2.7.0
+  Downloaded mime v0.3.17
+  Downloaded httpdate v1.0.3
+  Downloaded http-body v1.0.1
+  Downloaded axum-core v0.5.6
+  Downloaded adler2 v2.0.1
+  Downloaded futures-core v0.3.32
+  Downloaded idna_adapter v1.2.2
+  Downloaded toml_datetime v0.6.11
+  Downloaded futures-task v0.3.32
+  Downloaded form_urlencoded v1.2.2
+  Downloaded equivalent v1.0.2
+  Downloaded sync_wrapper v1.0.2
+  Downloaded zerofrom v0.1.8
+  Downloaded openssl-probe v0.1.6
+  Downloaded subtle v2.6.1
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded cfg-if v1.0.4
+  Downloaded webpki-roots v0.26.11
+  Downloaded serde_urlencoded v0.7.1
+  Downloaded serde_spanned v0.6.9
+  Downloaded tower-service v0.3.3
+  Downloaded tower-layer v0.3.3
+  Downloaded bytes v1.12.0
+  Downloaded yoke-derive v0.8.2
+  Downloaded utf8_iter v1.0.4
+  Downloaded zerofrom-derive v0.1.7
+  Downloaded itoa v1.0.18
+  Downloaded displaydoc v0.2.6
+  Downloaded serde_path_to_error v0.1.20
+  Downloaded rustls-native-certs v0.7.3
+  Downloaded toml_write v0.1.2
+  Downloaded tinystr v0.8.3
+  Downloaded writeable v0.6.3
+  Downloaded find-msvc-tools v0.1.9
+  Downloaded crc32fast v1.5.0
+  Downloaded simd-adler32 v0.3.9
+  Downloaded smallvec v1.15.2
+  Downloaded rustls-pki-types v1.15.0
+  Downloaded once_cell v1.21.4
+  Downloaded getrandom v0.2.17
+  Downloaded futures-channel v0.3.32
+  Downloaded slab v0.4.12
+  Downloaded shlex v2.0.1
+  Downloaded rustls-pemfile v2.2.0
+  Downloaded quote v1.0.46
+  Downloaded pin-project-lite v0.2.17
+  Downloaded toml v0.8.23
+  Downloaded litemap v0.8.2
+  Downloaded matchit v0.8.4
+  Downloaded synstructure v0.13.2
+  Downloaded zerovec-derive v0.11.3
+  Downloaded icu_provider v2.2.0
+  Downloaded httparse v1.10.1
+  Downloaded icu_properties v2.2.0
+  Downloaded serde_derive v1.0.228
+  Downloaded yoke v0.8.3
+  Downloaded tracing-core v0.1.36
+  Downloaded unicode-ident v1.0.24
+  Downloaded socket2 v0.6.4
+  Downloaded proc-macro2 v1.0.106
+  Downloaded zmij v1.0.21
+  Downloaded zeroize v1.9.0
+  Downloaded serde_core v1.0.228
+  Downloaded base64 v0.22.1
+  Downloaded icu_normalizer_data v2.2.0
+  Downloaded ryu v1.0.23
+  Downloaded icu_normalizer v2.2.0
+  Downloaded log v0.4.33
+  Downloaded flate2 v1.1.9
+  Downloaded miniz_oxide v0.8.9
+  Downloaded cc v1.2.65
+  Downloaded icu_locale_core v2.2.0
+  Downloaded toml_edit v0.22.27
+  Downloaded serde v1.0.228
+  Downloaded rustls-webpki v0.103.13
+  Downloaded icu_collections v2.2.0
+  Downloaded url v2.5.8
+  Downloaded zerotrie v0.2.4
+  Downloaded tower v0.5.3
+  Downloaded mio v1.2.1
+  Downloaded ureq v2.12.1
+  Downloaded hyper-util v0.1.20
+  Downloaded http v1.4.2
+  Downloaded indexmap v2.14.0
+  Downloaded memchr v2.8.2
+  Downloaded zerovec v0.11.6
+  Downloaded hashbrown v0.17.1
+  Downloaded icu_properties_data v2.2.0
+  Downloaded winnow v0.7.15
+  Downloaded futures-util v0.3.32
+  Downloaded webpki-roots v1.0.8
+  Downloaded hyper v1.10.1
+  Downloaded axum v0.8.9
+  Downloaded serde_json v1.0.150
+  Downloaded idna v1.1.0
+  Downloaded syn v2.0.118
+  Downloaded rustls v0.23.41
+  Downloaded tracing v0.1.44
+  Downloaded libc v0.2.186
+  Downloaded tokio v1.52.3
+  Downloaded ring v0.17.14
+    Finished `release` profile [optimized] target(s) in 2.08s
+    Finished `release` profile [optimized] target(s) in 0.06s
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 6.57kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/dunglas/frankenphp:1-php8.5-bookworm
+#2 DONE 0.0s
+
+#3 [base 1/2] FROM docker.io/dunglas/frankenphp:1-php8.5-bookworm@sha256:a854aa1c4ee49969b8aa70c94c44da7b4f60f8756fa4521c20e4c0939124c31f
+#3 resolve docker.io/dunglas/frankenphp:1-php8.5-bookworm@sha256:a854aa1c4ee49969b8aa70c94c44da7b4f60f8756fa4521c20e4c0939124c31f 0.0s done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 5.89MB 0.1s done
+#4 DONE 0.1s
+
+#5 [application  6/16] COPY apps/gateway/resources/css /srv/orbit/apps/gateway/resources/css
+#5 CACHED
+
+#6 [application 13/16] COPY packages/core/src /srv/orbit/packages/core/src
+#6 CACHED
+
+#7 [application 10/16] COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
+#7 CACHED
+
+#8 [application  3/16] COPY apps/gateway/config /srv/orbit/apps/gateway/config
+#8 CACHED
+
+#9 [application  7/16] COPY apps/gateway/resources/js /srv/orbit/apps/gateway/resources/js
+#9 CACHED
+
+#10 [application 15/16] COPY VERSION /srv/orbit/VERSION
+#10 CACHED
+
+#11 [application 16/16] RUN install -d "/home/orbit/.config/orbit"     && chmod 755 /srv/orbit/bin/install-orbit     && install -d bootstrap/cache storage/app storage/framework/cache storage/framework/sessions storage/framework/views storage/logs     && rm -f bootstrap/cache/*.php     && cp .env.example "/home/orbit/.config/orbit/.env"     && touch "/home/orbit/.config/orbit/gateway.sqlite"     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite|" "/home/orbit/.config/orbit/.env"     && composer dump-autoload --no-dev --no-interaction --optimize --no-scripts     && php artisan package:discover --ansi     && rm -rf "/home/orbit/.config/orbit" /root/.composer/cache
+#11 CACHED
+
+#12 [application  4/16] COPY apps/gateway/database /srv/orbit/apps/gateway/database
+#12 CACHED
+
+#13 [dependencies 1/5] WORKDIR /srv/orbit/apps/gateway
+#13 CACHED
+
+#14 [dependencies 4/5] COPY packages/sdk/composer.json packages/sdk/composer.lock /srv/orbit/packages/sdk/
+#14 CACHED
+
+#15 [base 2/2] RUN apt-get update     && apt-get install -y --no-install-recommends         bash         ca-certificates         curl         git         iputils-ping         openssh-client         procps         sudo         tini         unzip         zip         gnupg     && install -m 0755 -d /etc/apt/keyrings     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc     && chmod a+r /etc/apt/keyrings/docker.asc     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list     && apt-get update     && apt-get install -y --no-install-recommends         docker-ce-cli         docker-compose-plugin     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/bin/composer     && chmod 755 /usr/bin/composer     && install-php-extensions bcmath curl intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip     && groupadd --system orbit     && useradd --system --gid orbit --create-home --home-dir /home/orbit --shell /bin/bash orbit     && printf '%s\n' 'max_execution_time=0' > /usr/local/etc/php/conf.d/orbit-gateway.ini     && install -d -m 700 -o orbit -g orbit /home/orbit/.config/orbit     && rm -rf /var/lib/apt/lists/*
+#15 CACHED
+
+#16 [application  9/16] COPY apps/gateway/resources/views /srv/orbit/apps/gateway/resources/views
+#16 CACHED
+
+#17 [dependencies 5/5] RUN install -d "/home/orbit/.config/orbit"     && cp .env.example "/home/orbit/.config/orbit/.env"     && touch "/home/orbit/.config/orbit/gateway.sqlite"     && sed -i "s|^DB_DATABASE=.*|DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite|" "/home/orbit/.config/orbit/.env"     && composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts     && rm -rf "/home/orbit/.config/orbit" /root/.composer/cache
+#17 CACHED
+
+#18 [gateway 2/6] COPY docker/orbit-gateway/Caddyfile /etc/caddy/Caddyfile
+#18 CACHED
+
+#19 [application  2/16] COPY apps/gateway/bootstrap /srv/orbit/apps/gateway/bootstrap
+#19 CACHED
+
+#20 [application  8/16] COPY apps/gateway/resources/node-scripts /srv/orbit/apps/gateway/resources/node-scripts
+#20 CACHED
+
+#21 [application 11/16] COPY bin/install-orbit /srv/orbit/bin/install-orbit
+#21 CACHED
+
+#22 [dependencies 2/5] COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/
+#22 CACHED
+
+#23 [application  1/16] COPY apps/gateway/app /srv/orbit/apps/gateway/app
+#23 CACHED
+
+#24 [gateway 3/6] COPY docker/orbit-gateway/entrypoint.sh /usr/local/bin/orbit-gateway-entrypoint
+#24 CACHED
+
+#25 [gateway 5/6] RUN chmod 755 /usr/local/bin/orbit-gateway-entrypoint /usr/local/bin/orbit-gateway-healthcheck     && ln -s /usr/local/bin/orbit-gateway-entrypoint /usr/local/bin/orbit     && install -d -m 700 -o orbit -g orbit "/home/orbit/.config/orbit" "/home/orbit/.config/orbit/certs"
+#25 CACHED
+
+#26 [dependencies 3/5] COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/
+#26 CACHED
+
+#27 [application 14/16] COPY packages/sdk/src /srv/orbit/packages/sdk/src
+#27 CACHED
+
+#28 [gateway 1/6] COPY --from=application --chown=orbit:orbit /srv/orbit /srv/orbit
+#28 CACHED
+
+#29 [application 12/16] COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
+#29 CACHED
+
+#30 [gateway 4/6] COPY docker/orbit-gateway/healthcheck.sh /usr/local/bin/orbit-gateway-healthcheck
+#30 CACHED
+
+#31 [application  5/16] COPY apps/gateway/public /srv/orbit/apps/gateway/public
+#31 CACHED
+
+#32 [gateway 6/6] WORKDIR /srv/orbit/apps/gateway
+#32 CACHED
+
+#33 exporting to image
+#33 exporting layers done
+#33 exporting manifest sha256:9eed9c7aadcbf7888d162cca8cd98f3b18ceecbba12399d1b9e88834c43a450e done
+#33 exporting config sha256:f98d2e102315892bd0de644acae91c1eccd4e968b8f52d584d32117a292cb67c done
+#33 exporting attestation manifest sha256:dfc611c87f8daaa5f3c11bafd4d7f2fc9c75c89c7ab8a39e51a6e7f4ff85029f 0.0s done
+#33 exporting manifest list sha256:8557d44ac367b6028d90d98b27e14fa90b8c228c044b5f58e9bab000776afd72 0.0s done
+#33 naming to ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T203329Z-d025588bb done
+#33 DONE 0.1s
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.91kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/ubuntu:26.04
+#2 DONE 0.5s
+
+#3 [1/5] FROM docker.io/library/ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e
+#3 resolve docker.io/library/ubuntu:26.04@sha256:b7f48194d4d8b763a478a621cdc81c27be222ba2206ca3ca6bc42b49685f3d9e 0.0s done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 259.65kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/5] RUN printf '%s\n' 'Acquire::ForceIPv4 "true";' 'Acquire::http::Timeout "10";' 'Acquire::https::Timeout "10";' 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/99orbit-e2e-network     && apt-get update -qq     && apt-get install -y -qq --no-install-recommends         ca-certificates         curl         git         php8.5-bcmath         php8.5-cli         php8.5-common         php8.5-curl         php8.5-intl         php8.5-mbstring         php8.5-redis         php8.5-sqlite3         php8.5-xml         php8.5-zip         unzip     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/local/bin/composer     && chmod 755 /usr/local/bin/composer     && apt-get clean     && rm -rf /var/lib/apt/lists/*
+#5 CACHED
+
+#6 [3/5] WORKDIR /app
+#6 CACHED
+
+#7 [4/5] COPY apps/reverb /app
+#7 CACHED
+
+#8 [5/5] RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts     && install -d bootstrap/cache storage/framework/cache storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs     && rm -rf /root/.composer/cache     && chmod 0755 /app/artisan
+#8 CACHED
+
+#9 exporting to image
+#9 exporting layers done
+#9 exporting manifest sha256:de507e80e6accb90d3ad58ae10ec6c56b7453e881d075940b6ce0bc333b7e4d0 done
+#9 exporting config sha256:9b005d393e54183e20a6bc7715cc32bdce50600674536c1b37e68e4845427512 done
+#9 exporting attestation manifest sha256:7cb70efdae506e1ae8d961a5415a4cf3dd2de912ae6d366645b585f5e5cf6459 0.0s done
+#9 exporting manifest list sha256:151222aedd6fba7857cbea0dcfff54d0a01be75ca7992c6d8e01b85014ced6b1
+#9 exporting manifest list sha256:151222aedd6fba7857cbea0dcfff54d0a01be75ca7992c6d8e01b85014ced6b1 0.0s done
+#9 naming to ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T203329Z-d025588bb done
+#9 DONE 0.1s
+github.com
+  ✓ Logged in to github.com account nckrtl (keyring)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: gho_************************************
+  - Token scopes: 'gist', 'read:org', 'repo', 'workflow', 'write:packages'
+Candidate channel manifest: https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+Release candidate state: /Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb/.orbit/release-candidates/20260708T203329Z-d025588bb

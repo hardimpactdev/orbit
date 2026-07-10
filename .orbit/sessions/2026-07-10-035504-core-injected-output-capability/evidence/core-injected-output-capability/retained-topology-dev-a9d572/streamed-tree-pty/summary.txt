@@ -1,0 +1,8 @@
+command: ssh -tt beast 'incus exec orbit-e2e-dev-a9d572-operator -- sudo -u orbit php -r '"'"'require "/home/orbit/orbit-run/apps/cli/vendor/autoload.php"; $o = new Symfony\Component\Console\Output\ConsoleOutput; $t = new Orbit\Core\Progress\StreamedStepTree($o); $t->tree("Topology TTY capability", [["key" => "probe", "label" => "Probe", "doneLabel" => "Probed"]]); $t->step("probe", "start"); usleep(1200000); $t->step("probe", "done", "TTY path retained"); $t->finish("Complete");'"'"''
+exit_code: 0
+duration: 1.596s
+max_delta_between_chunks: 0.391s
+timed_out: false
+idle_timed_out: false
+chunks: .orbit/evidence/core-injected-output-capability/retained-topology-dev-a9d572/streamed-tree-pty/chunks.jsonl
+transcript: .orbit/evidence/core-injected-output-capability/retained-topology-dev-a9d572/streamed-tree-pty/transcript.txt

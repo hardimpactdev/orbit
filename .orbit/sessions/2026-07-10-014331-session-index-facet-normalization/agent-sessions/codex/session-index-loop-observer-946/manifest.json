@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "session-index-loop-observer-946",
+    "solo_process_id": 946,
+    "kind": "agent",
+    "started_at": "2026-07-09 22:25:52",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T00-25-52-019f48fc-c465-76d0-8d36-18a333221688.jsonl",
+    "source": "codex_exact_marker"
+}

@@ -1,0 +1,1 @@
+ORBIT_RELEASE_MANIFEST_URL=https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json ./apps/cli/orbit update:all --stream-json

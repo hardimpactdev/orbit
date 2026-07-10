@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f4918-8fa5-7a03-bd87-5a8fcda4638e",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/session-index-facet-normalization"
+  },
+  "session_summary": "Add SessionIndexTest Regression Fixtures for Facet Blockers",
+  "created_at": "2026-07-09T22:56:14.323195Z",
+  "updated_at": "2026-07-09T23:03:51.127214Z",
+  "num_messages": 279,
+  "num_chat_messages": 161,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 3,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/session-index-facet-normalization/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "b0641b619151758b28fb1a0ad194f0b987ac8443",
+  "head_branch": "session-index-facet-normalization",
+  "request_id": "26ae857a-0858-404d-97fe-054dc6ab689e",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-09T23:03:51.109931Z",
+  "generated_title": "Add SessionIndexTest Regression Fixtures for Facet Blockers",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

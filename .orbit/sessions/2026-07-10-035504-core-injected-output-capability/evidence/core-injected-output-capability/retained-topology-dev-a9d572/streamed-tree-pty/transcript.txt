@@ -1,0 +1,8 @@
+
+  [38;5;242m┌[39m  [97mTopology TTY capability[39m
+  [38;5;242m│[39m
+  [38;5;242m○  Probe [39m
+  [38;5;242m│[39m
+  [38;5;242m└[39m  [38;5;242mWorking...[39m
+[?25l[3A[2K  [36m○[39m  [97mProbe [39m[3B[3A[2K  [36m◉[39m  [97mProbe [39m[3B[3A[2K  [36m○[39m  [97mProbe [39m[3B[3A[2K  [36m◉[39m  [97mProbe [39m[3B[3A[2K  [32m●[39m  [97mProbed[39m  [97mTTY path retained[39m[3B[1A[2K  [38;5;242m└[39m  [97mComplete[39m[1B
+Shared connection to 192.168.6.20 closed.

@@ -1,0 +1,12 @@
+orbit_orbit-dns 4km3/dnsmasq:2.90-r3-alpine-latest 1/1
+orbit_orbit-gateway ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T170653Z-ff9309de7 1/1
+orbit_orbit-scheduler ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T170653Z-ff9309de7 1/1
+orbit_orbit-vpn ghcr.io/wg-easy/wg-easy:15 1/1
+---
+orbit_orbit-gateway.1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T170653Z-ff9309de7@sha256:67517c64fcdc3c63aa685fc9f05ac17e3fff0043ab4d9e46b8dc3ded8a275da4 Running 5 minutes ago 
+orbit_orbit-gateway.1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T170322Z-99369a04a@sha256:cbde98b0ce885186f1c5a403a7fed45d8beda7e04e0965a469f17ab0290ef668 Shutdown 5 minutes ago 
+orbit_orbit-gateway.1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T163125Z-f1ff9b0ae@sha256:0404acf443da8263df294d0d744a231191c8c5cbabef747109287411d7514e82 Shutdown 12 minutes ago 
+orbit_orbit-gateway.1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T160005Z-2f7d6c989@sha256:48b239a8d9f1e0442570e26e920f4cc22d359a5cd97ce90e8ce0392cc6c731d9 Shutdown 43 minutes ago 
+orbit_orbit-gateway.1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T152407Z-4088c535c@sha256:ecb288ac16d8c8dd46256b8861b9676deb35b0a2e3ac567762096de5f4555a90 Shutdown about an hour ago 
+---
+orbit_orbit-scheduler.1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T170653Z-ff9309de7@sha256:67517c64fcdc3c63aa685fc9f05ac17e3fff0043ab4d9e46b8dc3ded8a275da4 Running 2 minutes ago 

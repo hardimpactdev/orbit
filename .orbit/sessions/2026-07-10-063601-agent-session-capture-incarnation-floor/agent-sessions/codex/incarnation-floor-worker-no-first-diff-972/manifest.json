@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "incarnation-floor-worker-no-first-diff-972",
+    "solo_process_id": 972,
+    "kind": "agent",
+    "started_at": "2026-07-10 03:34:01",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T05-34-03-019f4a16-eb20-7480-bc32-7aacfb3e3e59.jsonl",
+    "source": "codex_exact_marker"
+}

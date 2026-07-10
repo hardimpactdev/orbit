@@ -1,0 +1,8 @@
+command: composer test
+exit_code: 0
+duration: 83.850s
+max_delta_between_chunks: 14.548s
+timed_out: false
+idle_timed_out: false
+chunks: .orbit/evidence/core-injected-output-capability/composer-test-pty/chunks.jsonl
+transcript: .orbit/evidence/core-injected-output-capability/composer-test-pty/transcript.txt

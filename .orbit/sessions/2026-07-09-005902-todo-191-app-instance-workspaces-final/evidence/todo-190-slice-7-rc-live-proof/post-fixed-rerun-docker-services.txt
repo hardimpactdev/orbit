@@ -1,0 +1,4 @@
+orbit_orbit-dns 4km3/dnsmasq:2.90-r3-alpine-latest 1/1
+orbit_orbit-gateway ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T175012Z-1a767100d 1/1
+orbit_orbit-scheduler ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T175012Z-1a767100d 1/1
+orbit_orbit-vpn ghcr.io/wg-easy/wg-easy:15 1/1

@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "cli-pest-stdin-post-feature-analyzer-956",
+    "solo_process_id": 956,
+    "kind": "agent",
+    "started_at": "2026-07-10 00:45:15",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/10/rollout-2026-07-10T02-45-15-019f497c-60c3-7213-ab2d-7cc6e4eca8cc.jsonl",
+    "source": "codex_exact_marker"
+}

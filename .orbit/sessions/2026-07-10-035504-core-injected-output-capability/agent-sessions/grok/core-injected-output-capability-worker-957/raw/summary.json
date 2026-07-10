@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f4994-33f7-7902-8a90-4a052b5814e3",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/core-injected-output-capability"
+  },
+  "session_summary": "LiveRepaintOutput honor injected BufferedOutput null stream",
+  "created_at": "2026-07-10T01:11:17.318888Z",
+  "updated_at": "2026-07-10T01:15:19.312611Z",
+  "num_messages": 316,
+  "num_chat_messages": 85,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 3,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/core-injected-output-capability/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "ab6d1c9e86e536d4ae1d06630b3c4d9d0b65bd37",
+  "head_branch": "core-injected-output-capability",
+  "request_id": "35f55c40-43d0-499b-ba05-70cc2ea9c3d8",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-10T01:15:19.302955Z",
+  "generated_title": "LiveRepaintOutput honor injected BufferedOutput null stream",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

@@ -1,0 +1,163 @@
+[
+    {
+        "id": 17521,
+        "operation_run_id": "b391acef-bc59-429d-84e9-9448ffdd5f6c",
+        "sequence": 1,
+        "event_type": "operation_stream.frame",
+        "payload": {
+            "frame": {
+                "operation_uuid": "b391acef-bc59-429d-84e9-9448ffdd5f6c",
+                "channel": "private-operations.b391acef-bc59-429d-84e9-9448ffdd5f6c",
+                "sequence": 1,
+                "emitted_at": "2026-07-08T22:30:35+00:00",
+                "source_node": {
+                    "id": 4,
+                    "name": "NMBP"
+                },
+                "type": "stderr",
+                "payload": {
+                    "data": "{\"level\":\"warn\",\"ts\":1783538472.7754462,\"logger\":\"http\",\"msg\":\"HTTP\/2 skipped because it requires TLS\",\"network\":\"tcp\",\"addr\":\":80\"}\n{\"level\":\"warn\",\"ts\":1783538472.7754478,\"logger\":\"http\",\"msg\":\"HTTP\/3 skipped because it requires TLS\",\"network\":\"tcp\",\"addr\":\":80\"}\n{\"level\":\"info\",\"ts\":1783538472.7754486,\"logger\":\"http.log\",\"msg\":\"server running\",\"name\":\"remaining_auto_https_redirects\",\"protocols\":[\"h1\",\"h2\",\"h3\"]}\n{\"level\":\"info\",\"ts\":1783538472.7757494,\"msg\":\"autosaved config (load with --resume flag)\",\"file\":\"\/tmp\/orbit-frankenphp\/config\/caddy\/autosave.json\"}\n{\"level\":\"info\",\"ts\":1783538472.775791,\"msg\":\"serving initial configuration\"}\n",
+                    "encoding": "utf-8"
+                },
+                "durable_replay_cursor": {
+                    "operation_uuid": "b391acef-bc59-429d-84e9-9448ffdd5f6c",
+                    "event_sequence": 1,
+                    "event_id": 17521
+                }
+            }
+        },
+        "created_at": "2026-07-08T22:30:35.000000Z"
+    },
+    {
+        "id": 17518,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 77,
+        "event_type": "step",
+        "payload": {
+            "key": "verification.role-images",
+            "status": "done",
+            "message": "Required role images verified"
+        },
+        "created_at": "2026-07-08T22:29:46.000000Z"
+    },
+    {
+        "id": 17519,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 78,
+        "event_type": "step",
+        "payload": {
+            "key": "verification",
+            "status": "done",
+            "message": "Fleet update verified"
+        },
+        "created_at": "2026-07-08T22:29:46.000000Z"
+    },
+    {
+        "id": 17520,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 79,
+        "event_type": "complete",
+        "payload": {
+            "exit_code": 0,
+            "data": {
+                "status": "succeeded",
+                "target_version": "0.1.180",
+                "manifest_source": "topology-candidate",
+                "manifest_version": "0.1.180",
+                "cli_artifacts": {
+                    "darwin-arm64": {
+                        "url": "https:\/\/s3.hardimpact.dev\/orbit\/candidates\/20260708T222351Z-8ec947683\/orbit-macos-arm64",
+                        "sha256": "1670b9e089bb526df0b27e35c473ff60328f36b01cb2a7defa7f69f35e227927"
+                    },
+                    "linux-amd64": {
+                        "url": "https:\/\/s3.hardimpact.dev\/orbit\/candidates\/20260708T222351Z-8ec947683\/orbit-linux-x64",
+                        "sha256": "85a9c6f0eb1fc47343e9ff5f3ec18b2337f3d845b311b7c3dffbd794bddf21cb"
+                    }
+                },
+                "agent_artifacts": {
+                    "darwin-arm64": {
+                        "url": "https:\/\/s3.hardimpact.dev\/orbit\/candidates\/20260708T222351Z-8ec947683\/orbit-agent-macos-arm64",
+                        "sha256": "2cad32fa6279353de264d192006f3a70bbd1cc3ecd259c76651da77ce7d2eb7e"
+                    },
+                    "linux-amd64": {
+                        "url": "https:\/\/s3.hardimpact.dev\/orbit\/candidates\/20260708T222351Z-8ec947683\/orbit-agent-linux-x64",
+                        "sha256": "0d3c4b577550eadc5f44dff4190a8cb3796fbe3281e074cf1a380c25b1640312"
+                    }
+                }
+            }
+        },
+        "created_at": "2026-07-08T22:29:46.000000Z"
+    },
+    {
+        "id": 17516,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 75,
+        "event_type": "step",
+        "payload": {
+            "key": "verification.agent",
+            "status": "done",
+            "message": "Orbit Agent artifacts verified"
+        },
+        "created_at": "2026-07-08T22:29:45.000000Z"
+    },
+    {
+        "id": 17517,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 76,
+        "event_type": "step",
+        "payload": {
+            "key": "verification.role-images",
+            "status": "running",
+            "message": "Verifying required role images"
+        },
+        "created_at": "2026-07-08T22:29:45.000000Z"
+    },
+    {
+        "id": 17514,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 73,
+        "event_type": "step",
+        "payload": {
+            "key": "verification.cli",
+            "status": "done",
+            "message": "Workload CLI artifacts verified"
+        },
+        "created_at": "2026-07-08T22:29:41.000000Z"
+    },
+    {
+        "id": 17515,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 74,
+        "event_type": "step",
+        "payload": {
+            "key": "verification.agent",
+            "status": "running",
+            "message": "Verifying Orbit Agent artifacts"
+        },
+        "created_at": "2026-07-08T22:29:41.000000Z"
+    },
+    {
+        "id": 17507,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 66,
+        "event_type": "step",
+        "payload": {
+            "key": "workload-nodes",
+            "status": "done",
+            "message": "Workload nodes updated"
+        },
+        "created_at": "2026-07-08T22:29:36.000000Z"
+    },
+    {
+        "id": 17508,
+        "operation_run_id": "de931ea8-4b85-41a3-9a4f-21eae71a2600",
+        "sequence": 67,
+        "event_type": "step",
+        "payload": {
+            "key": "verification",
+            "status": "running",
+            "message": "Verifying fleet update"
+        },
+        "created_at": "2026-07-08T22:29:36.000000Z"
+    }
+]

@@ -1,0 +1,8 @@
+command: /bin/zsh -lc 'php -d memory_limit=512M vendor/pestphp/pest/bin/pest --compact tests/Feature/Services/Updates/UpdateAllHumanProgressRendererTest.php | cat'
+exit_code: 0
+duration: 0.340s
+max_delta_between_chunks: 0.000s
+timed_out: false
+idle_timed_out: false
+chunks: /tmp/orbit-renderer-pty-piped/chunks.jsonl
+transcript: /tmp/orbit-renderer-pty-piped/transcript.txt

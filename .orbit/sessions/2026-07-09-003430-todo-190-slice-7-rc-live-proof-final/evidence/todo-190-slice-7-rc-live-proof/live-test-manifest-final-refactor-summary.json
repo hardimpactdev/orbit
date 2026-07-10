@@ -1,0 +1,12 @@
+{
+  "source": "topology-candidate",
+  "version": "0.1.180",
+  "build_id": "20260708T222351Z-8ec947683",
+  "gateway_image": "ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T222351Z-8ec947683@sha256:c04393ce58fb134eb6baa47dfc8c27c5c8204b1787a372b020d29bbbc3e9b84b",
+  "role_image_artifacts": {
+    "orbit-websocket": {
+      "url": "https://s3.hardimpact.dev/orbit/candidates/20260708T222351Z-8ec947683/orbit-reverb-linux-amd64.tar",
+      "sha256": "3e9347e8b4cd23b738fa37c1f531fe7a44d698cc09de68265595351b1e1ad26c"
+    }
+  }
+}

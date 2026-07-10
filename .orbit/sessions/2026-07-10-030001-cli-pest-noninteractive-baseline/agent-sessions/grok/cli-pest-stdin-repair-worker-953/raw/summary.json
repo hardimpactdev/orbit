@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "019f4966-2c4f-7ff3-88f3-50aa8e44925b",
+    "cwd": "/Users/nckrtl/orbit/.worktrees/cli-pest-noninteractive-baseline"
+  },
+  "session_summary": "Fix orbit-cli-pest stdin to /dev/null with TDD test",
+  "created_at": "2026-07-10T00:21:00.702810Z",
+  "updated_at": "2026-07-10T00:33:08.803420Z",
+  "num_messages": 811,
+  "num_chat_messages": 335,
+  "current_model_id": "grok-build",
+  "next_trace_turn": 12,
+  "chat_format_version": 1,
+  "git_root_dir": "/Users/nckrtl/orbit/.worktrees/cli-pest-noninteractive-baseline/",
+  "git_remotes": [
+    "https://github.com/hardimpactdev/orbit.git"
+  ],
+  "head_commit": "ded3b388a502e549b62b1e7059ebbc06f5f2ac91",
+  "head_branch": "cli-pest-noninteractive-baseline",
+  "request_id": "73e149b2-35c1-44ee-9582-665e6a731f8a",
+  "grok_home": "/Users/nckrtl/.grok",
+  "last_active_at": "2026-07-10T00:33:08.803420Z",
+  "generated_title": "Fix orbit-cli-pest stdin to /dev/null with TDD test",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off"
+}

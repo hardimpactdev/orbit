@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "terminal",
+    "status": "unsupported",
+    "slug": "agent-session-capture-independent-reviewer-965",
+    "solo_process_id": 965,
+    "kind": "terminal",
+    "started_at": "2026-07-10 02:29:37",
+    "reason": "terminal_kind_requires_waiver",
+    "checked": [],
+    "marker": "Solo process ID: 965"
+}

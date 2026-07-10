@@ -1,0 +1,5 @@
+{"level":"warn","ts":1783538472.7754462,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":80"}
+{"level":"warn","ts":1783538472.7754478,"logger":"http","msg":"HTTP/3 skipped because it requires TLS","network":"tcp","addr":":80"}
+{"level":"info","ts":1783538472.7754486,"logger":"http.log","msg":"server running","name":"remaining_auto_https_redirects","protocols":["h1","h2","h3"]}
+{"level":"info","ts":1783538472.7757494,"msg":"autosaved config (load with --resume flag)","file":"/tmp/orbit-frankenphp/config/caddy/autosave.json"}
+{"level":"info","ts":1783538472.775791,"msg":"serving initial configuration"}

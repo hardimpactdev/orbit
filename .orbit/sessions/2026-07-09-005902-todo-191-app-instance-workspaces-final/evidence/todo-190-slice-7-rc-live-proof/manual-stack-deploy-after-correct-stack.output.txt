@@ -1,0 +1,8 @@
+open /home/orbit/.config/orbit/swarm/orbit-gateway-stack.yml: permission denied
+EXIT:1
+"ghcr.io/hardimpactdev/orbit-websocket:0.1.180" {"com.docker.stack.image":"ghcr.io/hardimpactdev/orbit-websocket:0.1.180","com.docker.stack.namespace":"orbit","orbit.managed":"true","orbit.service":"orbit-operations-reverb"}
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 4 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 9 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 14 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 19 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 24 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"

@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "claude",
+    "status": "ok",
+    "slug": "todo-190-slice-4-auth-shape-claude-893",
+    "solo_process_id": 893,
+    "kind": "agent",
+    "started_at": "2026-07-08 15:43:40",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.claude/projects/-Users-nckrtl-orbit/1ebd45fb-88ad-4dc3-bf34-aca3d84fead7.jsonl",
+    "source": "claude_exact_marker"
+}

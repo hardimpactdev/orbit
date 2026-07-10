@@ -1,0 +1,21 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+HTTP/2 200 
+alt-svc: h3=":443"; ma=2592000
+cache-control: no-cache, private
+content-security-policy: base-uri 'self';connect-src 'self' wss://todo191-smoke-0037.happie.nmbp:* https://todo191-smoke-0037.happie.nmbp:*;default-src 'self';font-src 'self' https://todo191-smoke-0037.happie.nmbp:*;form-action 'self';frame-src 'self' https://todo191-smoke-0037.happie.nmbp:*;img-src 'self' data: https://todo191-smoke-0037.happie.nmbp:*;media-src 'self';object-src 'none';script-src 'self' 'unsafe-eval' https://todo191-smoke-0037.happie.nmbp:* 'unsafe-inline';style-src 'self' 'unsafe-inline' https://todo191-smoke-0037.happie.nmbp:*
+content-type: text/html; charset=utf-8
+date: Wed, 08 Jul 2026 22:39:15 GMT
+permissions-policy: camera=(), microphone=(), geolocation=()
+referrer-policy: strict-origin-when-cross-origin
+set-cookie: XSRF-TOKEN=[REDACTED_XSRF_TOKEN_1_LEN_342]; expires=Thu, 09 Jul 2026 00:39:15 GMT; Max-Age=7200; path=/; secure; samesite=lax
+set-cookie: happie-session=[REDACTED_SESSION_COOKIE_1_LEN_342]; expires=Thu, 09 Jul 2026 00:39:15 GMT; Max-Age=7200; path=/; secure; httponly; samesite=lax
+vary: X-Inertia
+via: 2.0 Caddy
+x-caddy-end: 1783550355707
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-powered-by: PHP/8.5.7
+x-xss-protection: 1; mode=block
+

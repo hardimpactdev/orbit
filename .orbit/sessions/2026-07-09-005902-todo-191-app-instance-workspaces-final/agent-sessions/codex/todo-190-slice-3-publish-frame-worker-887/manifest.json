@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "ok",
+    "slug": "todo-190-slice-3-publish-frame-worker-887",
+    "solo_process_id": 887,
+    "kind": "agent",
+    "started_at": "2026-07-08 15:11:04",
+    "marker_match": "exact",
+    "artifact": "/Users/nckrtl/.codex/sessions/2026/07/08/rollout-2026-07-08T17-11-04-019f4248-56d2-7b91-a063-1f1276fefd18.jsonl",
+    "source": "codex_exact_marker"
+}

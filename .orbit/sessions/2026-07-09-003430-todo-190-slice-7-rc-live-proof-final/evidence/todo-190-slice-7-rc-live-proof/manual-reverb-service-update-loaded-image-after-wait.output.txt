@@ -1,0 +1,10 @@
+{"State":"updating","StartedAt":"2026-07-08T19:12:11.479667498Z","Message":"update in progress"}
+orbit_orbit-operations-reverb ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T190416Z-ca477c705 0/1
+ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T190416Z-ca477c705@sha256:0c1968a0ee9042aefb1224e2b02b77cb906ef5527e3a9f33422324130cf04a58 Starting 39 seconds ago 
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 40 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 45 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 50 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+ghcr.io/hardimpactdev/orbit-websocket:0.1.180 Rejected 55 seconds ago "No such image: ghcr.io/hardimpactdev/orbit-websocket:0.1.180"
+orbit_orbit-operations-reverb.1.vb5exzzadjzr@gateway    | 
+orbit_orbit-operations-reverb.1.vb5exzzadjzr@gateway    |    INFO  Starting server on 0.0.0.0:8080 (orbit-operations-reverb).  
+orbit_orbit-operations-reverb.1.vb5exzzadjzr@gateway    | 

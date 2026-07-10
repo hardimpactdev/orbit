@@ -1,0 +1,29 @@
+{"role":"user","content":"[SOLO ORCHESTRATION CONTEXT]\nYou are running inside Solo (Solo process ID: 889, process: todo-190-slice-3-broadcast-boundary-claude, project: orbit, project ID: 4).\nSolo set `SOLO_PROCESS_ID=889` and `SOLO_PROJECT_ID=4` for this process.\n[END SOLO ORCHESTRATION CONTEXT]\n\nYou are a focused read-only reviewer for Orbit todo #190 Slice 3. Do not edit files.\n\nWorktree: /Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb\n\nFirst print CHECKOUT_PROOF after running:\ncd /Users/nckrtl/orbit/.worktrees/codex-operations-websocket-gateway-reverb\npwd\ngit branch --show-current\ngit status --short --branch\n\nQuestion to answer:\nSlice 3 Done Contract says gateway can validate/persist/broadcast operation stream frames submitted by trusted target agents, and broadcast is best-effort separate from durable persistence. Current implementation has OperationStreamControlPlaneController::publish validating/persisting frames and calling OperationStreamFrameBroadcaster, but OperationStreamFrameBroadcaster::broadcast is a no-op. The gateway app appears to have no config/broadcasting.php and no laravel/reverb/pusher client dependency; apps/reverb is a separate Reverb runtime image.\n\nPlease inspect only these files and immediate dependencies:\n- .orbit/loop.md\n- apps/gateway/app/Http/Controllers/Api/OperationStreamControlPlaneController.php\n- apps/gateway/app/Services/Operations/OperationStreamFrameBroadcaster.php\n- apps/gateway/app/Services/Operations/OperationStreamTokens.php\n- apps/gateway/config/orbit.php\n- apps/gateway/composer.json\n- apps/reverb/config/reverb.php\n- apps/gateway/app/Services/Gateway/GatewaySwarmStackRenderer.php\n\nReturn a concise verdict:\nVERDICT: accept-noop | require-real-broadcaster | defer-with-explicit-blocker\nThen 3-6 bullets explaining why, and if require-real-broadcaster, name the smallest implementation approach that stays isolated from app websocket bindings and avoids new broad dependencies unless already present."}
+{"role":"assistant","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"user","content":""}
+{"role":"assistant","content":""}
+{"role":"assistant","content":"All requested files inspected. Verdict below.\n\n**VERDICT: require-real-broadcaster**\n\n- The Slice 3 Done Contract (`.orbit/loop.md:38-44`) says \"Gateway can validate/persist/**broadcast** operation stream frames\" as its own bullet, separate from the best-effort bullet. A no-op satisfies \"separate from persistence\" trivially but fails the broadcast capability clause \u2014 nothing ever reaches the operations Reverb service that Slice 1 provisioned specifically for these frames.\n- The no-op actively misreports: `publish` returns `broadcast.delivered: true` (`OperationStreamControlPlaneController.php:196-220`) when no delivery was attempted. Target agents and later slices will treat that field as truth, and the feature tests (`RecordingOperationStreamFrameBroadcaster` / `FailingOperationStreamFrameBroadcaster`) only prove the try/catch seam, not the contract the field claims.\n- The \"Stop if\" escape hatch (app-facing websocket credentials or app websocket bindings required) does not trip. Slice 1's `GatewaySwarmStackRenderer` runs a gateway-owned Reverb with its own config-provider apps file at `/etc/orbit/operations-websocket/apps.php` \u2014 the operations app credentials are gateway infrastructure, distinct from any app websocket bindings, and `show()` already reads `broadcasting.connections.reverb.key` as a gateway-side value (tests set it via `Config::set`).\n- No new broad dependency is needed. Reverb speaks the Pusher REST protocol, so the smallest real broadcaster is an HMAC-SHA256-signed `POST /apps/{app_id}/events` via Laravel's built-in `Http` client (~30 lines): body `{name, channel, data}`, query `auth_key`, `auth_timestamp`, `auth_version=1.0`, `body_md5`, `auth_signature` over `POST\\n/apps/{id}/events\\n<sorted query>`. Throw on connection failure or non-2xx so the controller's existing catch keeps broadcast best-effort. No `laravel/reverb`, no `pusher/pusher-php-server`, no `config/broadcasting.php`, no Laravel broadcasting subsystem.\n- Config supports this cleanly: add an `orbit.operations.reverb` block (internal base URL to the `orbit-operations-reverb` service, app_id/key/secret) in `apps/gateway/config/orbit.php` next to the existing `operation_token_*` keys, and consider pointing `show()` at it too \u2014 today `Config::string('broadcasting.connections.reverb.key')` has no default and no backing config file in the gateway, so `show()` only works because tests inject the value; it would throw on a real gateway.\n- Testing stays within the slice boundary: `Http::fake()` asserts the signed request shape and that a faked 500/timeout yields `delivered: false` \u2014 no client subscriber migration, no live Reverb needed, consistent with \"first publish contract is test-covered without migrating `process:logs --follow`.\""}

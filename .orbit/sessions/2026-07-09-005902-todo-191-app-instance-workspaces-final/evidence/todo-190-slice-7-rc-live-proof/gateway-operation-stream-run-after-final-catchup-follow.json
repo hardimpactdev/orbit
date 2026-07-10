@@ -1,0 +1,28 @@
+{
+    "run": {
+        "id": "07a0a30e-efa4-483a-a833-90b1966e904f",
+        "status": "running",
+        "target_node_id": 4,
+        "created_at": "2026-07-08T22:13:39+00:00"
+    },
+    "events": [
+        {
+            "id": 17441,
+            "sequence": 1,
+            "event_type": "operation_stream.frame",
+            "frame_type": "stderr",
+            "payload_keys": [
+                "data",
+                "encoding"
+            ],
+            "data_length": 647
+        }
+    ],
+    "leases": [
+        {
+            "subscriber": "448463162.836754094",
+            "left_at": "2026-07-08T22:14:10+00:00",
+            "expires_at": "2026-07-08T22:14:40+00:00"
+        }
+    ]
+}

@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T01:00:47+00:00",
+    "mode": "refreshed",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/cli-pest-noninteractive-baseline/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-030001-cli-pest-noninteractive-baseline",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-030001-cli-pest-noninteractive-baseline/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

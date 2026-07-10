@@ -1,0 +1,5 @@
+{"level":"info","ts":1783505595.578309,"logger":"frankenphp","msg":"downscaling thread","thread":1,"wait_time":3601915,"num_threads":0}
+{"level":"info","ts":1783517796.0447063,"logger":"frankenphp","msg":"upscaling regular thread","thread":1,"num_threads":1}
+{"level":"info","ts":1783522318.60973,"logger":"frankenphp","msg":"downscaling thread","thread":1,"wait_time":3602338,"num_threads":0}
+{"level":"info","ts":1783523791.3202372,"logger":"frankenphp","msg":"upscaling regular thread","thread":1,"num_threads":1}
+{"level":"info","ts":1783527391.672911,"logger":"frankenphp","msg":"downscaling thread","thread":1,"wait_time":3600298,"num_threads":0}

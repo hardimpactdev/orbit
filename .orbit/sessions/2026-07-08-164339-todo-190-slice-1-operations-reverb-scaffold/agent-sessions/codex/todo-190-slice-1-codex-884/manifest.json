@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "provider": "codex",
+  "status": "extraction_failed",
+  "slug": "todo-190-slice-1-codex-884",
+  "solo_process_id": 884,
+  "kind": "agent",
+  "reason": "bin/orbit-session-archive live provider extraction exhausted PHP memory while reading Codex session JSONL; Slice 1 loop packet and command evidence are preserved in the session archive."
+}

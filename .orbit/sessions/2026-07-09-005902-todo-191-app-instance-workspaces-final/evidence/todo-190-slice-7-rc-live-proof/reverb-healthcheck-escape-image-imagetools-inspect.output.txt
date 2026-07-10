@@ -1,0 +1,15 @@
+Name:      ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T203329Z-d025588bb
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:151222aedd6fba7857cbea0dcfff54d0a01be75ca7992c6d8e01b85014ced6b1
+           
+Manifests: 
+  Name:        ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T203329Z-d025588bb@sha256:de507e80e6accb90d3ad58ae10ec6c56b7453e881d075940b6ce0bc333b7e4d0
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/amd64
+               
+  Name:        ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T203329Z-d025588bb@sha256:7cb70efdae506e1ae8d961a5415a4cf3dd2de912ae6d366645b585f5e5cf6459
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    unknown/unknown
+  Annotations: 
+    vnd.docker.reference.digest: sha256:de507e80e6accb90d3ad58ae10ec6c56b7453e881d075940b6ce0bc333b7e4d0
+    vnd.docker.reference.type:   attestation-manifest

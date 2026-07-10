@@ -1,0 +1,15 @@
+{
+    "schema_version": 1,
+    "gate": "docs-lint",
+    "command": "composer docs-lint",
+    "mode": "check",
+    "started_at": "2026-07-10T08:41:47Z",
+    "ended_at": "2026-07-10T08:41:54Z",
+    "duration_seconds": 7,
+    "exit_code": 0,
+    "git": {
+        "branch": "capture-evidence-integrity-hardening",
+        "commit": "b6832b747ab568942b234c84c6ca29e5e2926430"
+    },
+    "subgates": []
+}

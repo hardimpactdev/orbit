@@ -1,0 +1,5 @@
+candidate: 20260708T182432Z-389438699
+commit: 38943869978ed4eae481df6cbc7075b198bea7a7
+manifest: https://s3.hardimpact.dev/orbit/channels/live-test/orbit-release-manifest.json
+gateway_image: ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T182432Z-389438699
+gateway_digest: sha256:fa6f917e65942b95f4a285c9cd1fe55bae0b413922ff6cdd4731d73df2774af1

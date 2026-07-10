@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "terminal",
+    "status": "unsupported",
+    "slug": "cli-pest-stdin-repair-reviewer-955",
+    "solo_process_id": 955,
+    "kind": "terminal",
+    "started_at": "2026-07-10 00:40:11",
+    "reason": "terminal_kind_requires_waiver",
+    "checked": [],
+    "marker": "Solo process ID: 955"
+}

@@ -1,0 +1,14 @@
+array (
+  'run' => '9272d0a5-0b02-43d0-8105-e9c8aebb5481',
+  'status' => 'running',
+  'frame_type' => 'stderr',
+  'data_length' => 647,
+  'data_preview' => '{"level":"warn","ts":1783538472.7754462,"logger":"http","msg":"HTTP/2 skipped because it requires TLS","network":"tcp","addr":":80"}
+{"level":"warn","ts":1783538472.7754478,"logger":"http","msg":"HTTP',
+  'cursor' => 
+  array (
+    'operation_uuid' => '9272d0a5-0b02-43d0-8105-e9c8aebb5481',
+    'event_sequence' => 1,
+    'event_id' => 16961,
+  ),
+)

@@ -1,0 +1,8 @@
+command: ssh -tt beast 'incus exec orbit-e2e-dev-a9d572-operator -- sudo -iu orbit bash -lc '"'"'cd /home/orbit/orbit-run && ./apps/cli/orbit doctor --self --no-interaction'"'"''
+exit_code: 1
+duration: 3.053s
+max_delta_between_chunks: 0.015s
+timed_out: false
+idle_timed_out: false
+chunks: .orbit/evidence/core-injected-output-capability/retained-topology-dev-a9d572/doctor-pty/chunks.jsonl
+transcript: .orbit/evidence/core-injected-output-capability/retained-topology-dev-a9d572/doctor-pty/transcript.txt

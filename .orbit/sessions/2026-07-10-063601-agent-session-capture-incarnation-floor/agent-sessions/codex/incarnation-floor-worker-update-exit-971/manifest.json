@@ -1,0 +1,33 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "missing",
+    "slug": "incarnation-floor-worker-update-exit-971",
+    "solo_process_id": 971,
+    "kind": "agent",
+    "started_at": "2026-07-10 03:32:52",
+    "reason": "exact_marker_not_found",
+    "checked": [
+        "/Users/nckrtl/.codex/sessions/2026/03/27/rollout-2026-03-27T12-50-24-019d2f21-9a31-7452-b4b9-9a9c0e148dad.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/27/rollout-2026-03-27T20-05-19-019d30af-c908-7803-9cd2-955847ea9b6f.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/11/rollout-2026-03-11T16-19-25-019cdd7b-3605-72d1-8a80-874f143503da.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/10/rollout-2026-03-10T22-37-04-019cd9ae-98bd-7b11-89f3-3582e84c7510.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/10/rollout-2026-03-10T22-36-27-019cd9ae-0a0c-7a81-8e26-857883cd5369.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T16-11-54-019d2ab3-ba40-7f62-93b6-05c151fc1014.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T08-43-28-019d2919-2ada-7980-a819-780ccb3e64aa.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T08-43-47-019d2919-742b-7ba3-a6fa-df0f8c1a0e4d.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T08-44-49-019d291a-68dd-77e2-83cd-7395cb31c9ef.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T18-38-12-019d2b39-ab09-77e0-912d-6b6b9ab6f42c.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T08-42-09-019d2917-f569-7142-9761-ab056782a2a4.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/26/rollout-2026-03-26T16-34-04-019d2ac8-0424-73d0-bf51-c9717252bb9c.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T20-56-18-019d4540-f5ed-70d1-8c54-6047b56554da.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T23-08-30-019d45b9-fd00-7402-9d30-b361cf7f63cc.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T20-39-42-019d4531-c35d-7991-abbe-1171e2f5c841.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T22-36-31-019d459c-b649-7151-97e9-1ec1eaa21e93.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T20-20-17-019d451f-fda5-7ec0-854f-8ea1ca070250.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T20-33-49-019d452c-5fc3-7c62-a71c-196b9b4d377e.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T23-18-16-019d45c2-f0ce-78c1-ba08-9527a72ca396.jsonl",
+        "/Users/nckrtl/.codex/sessions/2026/03/31/rollout-2026-03-31T23-07-06-019d45b8-b492-7de1-959a-960cc1e7b8e2.jsonl"
+    ],
+    "marker": "Solo process ID: 971"
+}

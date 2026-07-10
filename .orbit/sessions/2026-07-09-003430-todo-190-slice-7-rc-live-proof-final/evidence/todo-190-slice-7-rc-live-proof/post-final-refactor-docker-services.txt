@@ -1,0 +1,7 @@
+orbit-grafana 1/1 grafana/grafana:13.0.2
+orbit-prometheus 1/1 prom/prometheus:v3.12.0
+orbit_orbit-dns 1/1 4km3/dnsmasq:2.90-r3-alpine-latest
+orbit_orbit-gateway 1/1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T222351Z-8ec947683
+orbit_orbit-operations-reverb 1/1 ghcr.io/hardimpactdev/orbit-reverb:0.1.180-candidate-20260708T222351Z-8ec947683
+orbit_orbit-scheduler 1/1 ghcr.io/hardimpactdev/orbit-gateway:0.1.180-candidate-20260708T222351Z-8ec947683
+orbit_orbit-vpn 1/1 ghcr.io/wg-easy/wg-easy:15

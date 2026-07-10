@@ -1,0 +1,1 @@
+command: ./apps/cli/orbit doctor --all --stream-json
