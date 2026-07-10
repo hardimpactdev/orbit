@@ -628,6 +628,10 @@ function run_internal_caddy_config_command(array $parameters = [], string $stdin
 
 function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool $networkAlreadyExists = false): string
 {
+    $realUtilities = [
+        '__REAL_CAT__' => escapeshellarg(caddy_config_real_utility_path('cat')),
+        '__REAL_RM__' => escapeshellarg(caddy_config_real_utility_path('rm')),
+    ];
     $dir = sys_get_temp_dir().'/orbit-caddy-config-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
     file_put_contents("{$dir}/required-docker-host.txt", $requiredDockerHost ?? '');
@@ -635,13 +639,13 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
     if ($networkAlreadyExists) {
         touch("{$dir}/network-already-exists");
     }
-    file_put_contents("{$dir}/sudo", <<<'BASH'
+    file_put_contents("{$dir}/sudo", strtr(<<<'BASH'
         #!/usr/bin/env bash
         dir="$(cd "$(dirname "$0")" && pwd)"
         printf 'sudo %s\n' "$*" >>"$dir/calls.log"
-        cat >"$dir/stdin.current"
-        [ ! -s "$dir/stdin.current" ] || cat "$dir/stdin.current" >>"$dir/stdin.log"
-        rm -f "$dir/stdin.current"
+        __REAL_CAT__ >"$dir/stdin.current"
+        [ ! -s "$dir/stdin.current" ] || __REAL_CAT__ "$dir/stdin.current" >>"$dir/stdin.log"
+        __REAL_RM__ -f "$dir/stdin.current"
 
         [ "${1:-}" != -n ] || shift
 
@@ -656,19 +660,19 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
                 *":${3:-}:"*) exit 1 ;;
             esac
         fi
-        BASH);
+        BASH, $realUtilities));
     foreach (['cat', 'chmod', 'install', 'rm', 'tee', 'test'] as $command) {
-        file_put_contents("{$dir}/{$command}", <<<'BASH'
+        file_put_contents("{$dir}/{$command}", strtr(<<<'BASH'
             #!/usr/bin/env bash
             dir="$(cd "$(dirname "$0")" && pwd)"
             command="$(basename "$0")"
             printf '%s %s\n' "$command" "$*" >>"$dir/calls.log"
-            cat >"$dir/stdin.current"
-            [ ! -s "$dir/stdin.current" ] || cat "$dir/stdin.current" >>"$dir/stdin.log"
-            rm -f "$dir/stdin.current"
+            __REAL_CAT__ >"$dir/stdin.current"
+            [ ! -s "$dir/stdin.current" ] || __REAL_CAT__ "$dir/stdin.current" >>"$dir/stdin.log"
+            __REAL_RM__ -f "$dir/stdin.current"
 
             if [ "$command" = cat ] && [ -f "$dir/read-global.txt" ]; then
-                cat "$dir/read-global.txt"
+                __REAL_CAT__ "$dir/read-global.txt"
             fi
 
             if [ "$command" = test ] && [ "${1:-}" = -d ]; then
@@ -682,14 +686,14 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
                     *":${2:-}:"*) exit 1 ;;
                 esac
             fi
-            BASH);
+            BASH, $realUtilities));
         chmod(filename: "{$dir}/{$command}", permissions: 0o755);
     }
-    file_put_contents("{$dir}/docker", <<<'BASH'
+    file_put_contents("{$dir}/docker", strtr(<<<'BASH'
         #!/usr/bin/env bash
         dir="$(cd "$(dirname "$0")" && pwd)"
         docker_host="${DOCKER_HOST:-}"
-        required_docker_host="$(cat "$dir/required-docker-host.txt")"
+        required_docker_host="$(__REAL_CAT__ "$dir/required-docker-host.txt")"
         printf 'DOCKER_HOST=%s docker %s\n' "$docker_host" "$*" >>"$dir/calls.log"
 
         if [ -n "$required_docker_host" ] && [ "$docker_host" != "$required_docker_host" ]; then
@@ -708,9 +712,9 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
         fi
 
         if [ "${1:-}" = container ] && [ "${2:-}" = inspect ] && [ -f "$dir/container-inspect.json" ]; then
-            cat "$dir/container-inspect.json"
+            __REAL_CAT__ "$dir/container-inspect.json"
         fi
-        BASH);
+        BASH, $realUtilities));
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
     chmod(filename: "{$dir}/docker", permissions: 0o755);
 
@@ -718,6 +722,29 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
     putenv("PATH={$dir}:".($path === false ? '' : $path));
 
     return $dir;
+}
+
+function caddy_config_real_utility_path(string $utility): string
+{
+    $path = getenv('PATH');
+
+    foreach (explode(PATH_SEPARATOR, is_string($path) ? $path : '') as $directory) {
+        if ($directory === '') {
+            $directory = getcwd();
+        }
+
+        if (! is_string($directory)) {
+            continue;
+        }
+
+        $candidate = rtrim($directory, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$utility;
+
+        if (is_file($candidate) && is_executable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    throw new RuntimeException("Unable to resolve the real {$utility} utility.");
 }
 
 /**
