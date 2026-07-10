@@ -2160,8 +2160,8 @@
                 "Live topology proof": "passed",
                 "Retained topology proof": "passed"
             },
-            "fresh_analyzer_verdict": "yes",
-            "fresh_analyzer_verdict_raw": "yes`.",
+            "fresh_analyzer_verdict": "unknown",
+            "fresh_analyzer_verdict_raw": null,
             "candidate_signals": {
                 "total": 1,
                 "classifications": {
