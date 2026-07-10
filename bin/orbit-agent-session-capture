@@ -3,6 +3,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-agent-session-capture-filesystem.php';
+
 /**
  * Lane-close agent session capture.
  *
@@ -14,7 +16,7 @@ declare(strict_types=1);
  * session candidate. Ambiguity or zero matches = loud failure with diagnostics.
  */
 
-function main(array $argv): int
+function orbitAgentSessionCaptureMain(array $argv): int
 {
     // Robust arg parsing for mixed positional id + long options (works under test Process exec too)
     $rawArgv = $argv;
@@ -63,6 +65,14 @@ function main(array $argv): int
     $explicitSlug = $options['slug'] ?? null;
     $incarnationFloor = null;
     $incarnationFloorTimestamp = null;
+
+    if (array_key_exists('provider', $options)) {
+        if (! is_string($explicitProvider) || ! in_array($explicitProvider, ['codex', 'claude', 'grok', 'terminal'], true)) {
+            fwrite(STDERR, "invalid_explicit_provider\n");
+
+            return 2;
+        }
+    }
 
     if (array_key_exists('slug', $options)) {
         if (! is_string($explicitSlug) || $explicitSlug === '' || slugify($explicitSlug) !== $explicitSlug) {
@@ -125,12 +135,51 @@ function main(array $argv): int
     ));
 
     $slug = is_string($explicitSlug) ? $explicitSlug : slugify($name ?: 'process-'.$soloProcessId).'-'.$soloProcessId;
-    $providerRoot = rtrim($orbitDir, '/').'/agent-sessions/'.$provider;
+    $agentSessionsRoot = rtrim($orbitDir, '/').'/agent-sessions';
+
+    if (is_link($agentSessionsRoot)) {
+        fwrite(STDERR, "symlinked_agent_sessions_root path={$agentSessionsRoot}\n");
+
+        return 1;
+    }
+
+    orbitAgentSessionCaptureEnsureDirectory($agentSessionsRoot);
+
+    if (is_link($agentSessionsRoot) || ($canonicalAgentSessionsRoot = realpath($agentSessionsRoot)) === false) {
+        fwrite(STDERR, "symlinked_agent_sessions_root path={$agentSessionsRoot}\n");
+
+        return 1;
+    }
+
+    $providerPath = "{$canonicalAgentSessionsRoot}/{$provider}";
+
+    if (is_link($providerPath)) {
+        fwrite(STDERR, "symlinked_provider_root path={$providerPath}\n");
+
+        return 1;
+    }
+
+    orbitAgentSessionCaptureEnsureDirectory($providerPath);
+
+    if (is_link($providerPath) || ($providerRoot = realpath($providerPath)) === false) {
+        fwrite(STDERR, "symlinked_provider_root path={$providerPath}\n");
+
+        return 1;
+    }
+
+    if (dirname($providerRoot) !== $canonicalAgentSessionsRoot || basename($providerRoot) !== $provider) {
+        fwrite(
+            STDERR,
+            "provider_root_not_direct_child provider_root={$providerRoot} agent_sessions_root={$canonicalAgentSessionsRoot}\n",
+        );
+
+        return 1;
+    }
+
     $stagingBase = $providerRoot.'/'.$slug;
+    $reportedStagingBase = rtrim($orbitDir, '/').'/agent-sessions/'.$provider.'/'.$slug;
     $temporaryStaging = uniqueStagingSiblingPath($providerRoot, $slug, 'tmp');
     $backupStaging = uniqueStagingSiblingPath($providerRoot, $slug, 'backup');
-    ensureDirectory($providerRoot);
-    ensureDirectory($temporaryStaging);
 
     $markerNeedle = "Solo process ID: {$soloProcessId}";
 
@@ -182,21 +231,9 @@ function main(array $argv): int
             $manifest['last_activity_at'] = $extract['last_activity_at'];
         }
 
-        ensureDirectory($temporaryStaging.'/raw');
-        writeJsonFile($temporaryStaging.'/manifest.json', $manifest);
-        writeJsonFile($temporaryStaging.'/usage.json', $extract['usage'] ?? []);
-        file_put_contents($temporaryStaging.'/messages.jsonl', ($extract['messages_jsonl'] ?? '')."\n");
-
-        if (!empty($extract['raw_files'])) {
-            foreach ($extract['raw_files'] as $rf) {
-                $src = $rf['path'];
-                $dest = $temporaryStaging.'/raw/'.$rf['archive_name'];
-                if (is_file($src)) {
-                    copyFileOrFail($src, $dest);
-                }
-            }
-        }
-
+        $usage = $extract['usage'] ?? [];
+        $messagesJsonl = ($extract['messages_jsonl'] ?? '')."\n";
+        $rawFiles = $extract['raw_files'] ?? [];
     } else {
         // Failure or unsupported path: write explicit manifest entry (supports waiver later)
         $manifest = [
@@ -219,11 +256,39 @@ function main(array $argv): int
             $manifest['last_activity_at'] = $extract['last_activity_at'];
         }
 
-        writeJsonFile($temporaryStaging.'/manifest.json', $manifest);
+        foreach (['matched_candidates', 'owned_candidates'] as $diagnosticKey) {
+            if (array_key_exists($diagnosticKey, $extract)) {
+                $manifest[$diagnosticKey] = $extract[$diagnosticKey];
+            }
+        }
+
+        $usage = null;
+        $messagesJsonl = null;
+        $rawFiles = [];
     }
 
     try {
-        replaceStagedCaptureDirectory($temporaryStaging, $stagingBase, $backupStaging);
+        orbitAgentSessionCaptureBuildStagingDirectory(
+            canonicalProviderRoot: $providerRoot,
+            temporaryStaging: $temporaryStaging,
+            manifest: $manifest,
+            usage: $usage,
+            messagesJsonl: $messagesJsonl,
+            rawFiles: $rawFiles,
+        );
+    } catch (Throwable $throwable) {
+        fwrite(STDERR, "capture staging construction failed: {$throwable->getMessage()}\n");
+
+        return 1;
+    }
+
+    try {
+        orbitAgentSessionCaptureReplaceStagedDirectory(
+            $providerRoot,
+            $temporaryStaging,
+            $stagingBase,
+            $backupStaging,
+        );
     } catch (Throwable $throwable) {
         fwrite(STDERR, "capture staging replacement failed: {$throwable->getMessage()}\n");
 
@@ -237,7 +302,7 @@ function main(array $argv): int
             'solo_process_id' => $soloProcessId,
             'slug' => $slug,
             'started_at' => $startedAt,
-            'staging_dir' => $stagingBase,
+            'staging_dir' => $reportedStagingBase,
         ];
         echo json_encode($result, JSON_UNESCAPED_SLASHES)."\n";
 
@@ -256,8 +321,16 @@ function main(array $argv): int
     if (!empty($extract['checked'])) {
         fwrite(STDERR, "candidates checked:\n".json_encode($extract['checked'], JSON_PRETTY_PRINT)."\n");
     }
+    foreach (['matched_candidates', 'owned_candidates'] as $diagnosticKey) {
+        if (array_key_exists($diagnosticKey, $extract)) {
+            fwrite(
+                STDERR,
+                "{$diagnosticKey}:\n".json_encode($extract[$diagnosticKey], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n",
+            );
+        }
+    }
     if (($extract['status'] ?? '') === 'ambiguous') {
-        fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect checked list above.\n");
+        fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect matched_candidates and owned_candidates above.\n");
     }
     return 1;
 }
@@ -416,131 +489,6 @@ function uniqueStagingSiblingPath(string $providerRoot, string $slug, string $ki
     return $path;
 }
 
-function assertDirectChildPath(string $path, string $providerRoot): void
-{
-    $normalizedRoot = rtrim($providerRoot, '/');
-
-    if ($normalizedRoot === '') {
-        $normalizedRoot = '/';
-    }
-
-    if (dirname($path) !== $normalizedRoot || in_array(basename($path), ['', '.', '..'], true)) {
-        throw new RuntimeException("not_direct_child path={$path} provider_root={$normalizedRoot}");
-    }
-}
-
-function replaceStagedCaptureDirectory(
-    string $temp,
-    string $final,
-    string $backup,
-    ?callable $rename = null,
-): void {
-    $providerRoot = dirname($final);
-    assertDirectChildPath($temp, $providerRoot);
-    assertDirectChildPath($final, $providerRoot);
-    assertDirectChildPath($backup, $providerRoot);
-
-    $rename ??= static fn (string $from, string $to): bool => @rename($from, $to);
-    $hadFinal = file_exists($final) || is_link($final);
-
-    if ($hadFinal) {
-        assertDirectChildPath($final, $providerRoot);
-        assertDirectChildPath($backup, $providerRoot);
-
-        if (! $rename($final, $backup)) {
-            throw new RuntimeException("final_to_backup_failed temp={$temp} final={$final} backup={$backup}");
-        }
-    }
-
-    assertDirectChildPath($temp, $providerRoot);
-    assertDirectChildPath($final, $providerRoot);
-
-    if (! $rename($temp, $final)) {
-        if (! $hadFinal) {
-            throw new RuntimeException("temp_to_final_failed_no_backup temp={$temp} final={$final} backup={$backup}");
-        }
-
-        assertDirectChildPath($backup, $providerRoot);
-        assertDirectChildPath($final, $providerRoot);
-
-        if (! $rename($backup, $final)) {
-            throw new RuntimeException("temp_to_final_and_rollback_failed temp={$temp} final={$final} backup={$backup}");
-        }
-
-        assertDirectChildPath($temp, $providerRoot);
-        removePathRecursively($temp);
-
-        throw new RuntimeException("temp_to_final_failed_rolled_back temp={$temp} final={$final} backup={$backup}");
-    }
-
-    if ($hadFinal) {
-        assertDirectChildPath($backup, $providerRoot);
-        removePathRecursively($backup);
-    }
-}
-
-function removePathRecursively(string $path): void
-{
-    if (is_link($path) || is_file($path)) {
-        if (! unlink($path)) {
-            throw new RuntimeException("Unable to remove path: {$path}");
-        }
-
-        return;
-    }
-
-    if (! is_dir($path)) {
-        return;
-    }
-
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($path, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST,
-    );
-
-    foreach ($iterator as $entry) {
-        if ($entry->isLink() || $entry->isFile()) {
-            if (! unlink($entry->getPathname())) {
-                throw new RuntimeException("Unable to remove path: {$entry->getPathname()}");
-            }
-
-            continue;
-        }
-
-        if (! rmdir($entry->getPathname())) {
-            throw new RuntimeException("Unable to remove directory: {$entry->getPathname()}");
-        }
-    }
-
-    if (! rmdir($path)) {
-        throw new RuntimeException("Unable to remove directory: {$path}");
-    }
-}
-
-function ensureDirectory(string $directory): void
-{
-    if (is_dir($directory)) {
-        return;
-    }
-    if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
-        throw new RuntimeException("Unable to create directory: {$directory}");
-    }
-}
-
-function writeJsonFile(string $path, array $payload): void
-{
-    ensureDirectory(dirname($path));
-    file_put_contents($path, json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL);
-}
-
-function copyFileOrFail(string $src, string $dest): void
-{
-    ensureDirectory(dirname($dest));
-    if (!copy($src, $dest)) {
-        throw new RuntimeException("copy failed: {$src} -> {$dest}");
-    }
-}
-
 function fileContains(string $path, string $needle): bool
 {
     if (!is_file($path)) {
@@ -613,27 +561,44 @@ function captureCodexExact(
     $normalizedCwd = normalizeCodexCwd($cwd);
     $fullOwners = [];
     $partialOwners = [];
+    $matchedCandidates = [];
+    $ownedCandidates = [];
 
     foreach ($candidates as $candidate) {
         $context = codexCandidateContext($candidate);
+        $ownershipClass = match (true) {
+            $context['normalized_cwd'] !== $normalizedCwd => 'foreign_cwd',
+            $context['primary_solo_process_id'] === $soloProcessId => 'full',
+            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            default => 'foreign_primary_identity',
+        };
+        $diagnostic = [
+            'path' => $candidate,
+            'ownership_class' => $ownershipClass,
+            'normalized_cwd' => $context['normalized_cwd'],
+            'primary_solo_process_id' => $context['primary_solo_process_id'],
+        ];
+        $matchedCandidates[] = $diagnostic;
 
         if ($context['normalized_cwd'] !== $normalizedCwd) {
             continue;
         }
 
         $owner = [
-            'path' => $candidate,
+            ...$diagnostic,
             'timestamp' => $context['timestamp'],
         ];
 
         if ($context['primary_solo_process_id'] === $soloProcessId) {
             $fullOwners[] = $owner;
+            $ownedCandidates[] = $diagnostic;
 
             continue;
         }
 
         if ($context['primary_solo_process_id'] === null) {
             $partialOwners[] = $owner;
+            $ownedCandidates[] = $diagnostic;
         }
     }
 
@@ -642,6 +607,8 @@ function captureCodexExact(
             'status' => 'ambiguous',
             'reason' => 'ambiguous_duplicate_markers',
             'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => array_slice($ownedCandidates, 0, 20),
         ];
     }
 
@@ -650,6 +617,8 @@ function captureCodexExact(
             'status' => 'missing',
             'reason' => 'no_owned_marker_transcript',
             'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => [],
         ];
     }
 
@@ -1224,6 +1193,4 @@ function extractGrokMessages(string $sessionDir): array
     return $messages;
 }
 
-if (! defined('ORBIT_AGENT_SESSION_CAPTURE_TEST_NO_MAIN')) {
-    exit(main($GLOBALS['argv'] ?? $_SERVER['argv'] ?? []));
-}
+exit(orbitAgentSessionCaptureMain($GLOBALS['argv'] ?? $_SERVER['argv'] ?? []));

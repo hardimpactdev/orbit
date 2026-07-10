@@ -408,8 +408,12 @@ function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): arr
         $source = $entry->getPathname();
         $target = "{$archiveDir}/{$name}";
 
+        if ($entry->isLink() && $entry->isDir()) {
+            continue;
+        }
+
         if ($entry->isDir()) {
-            copyDirectory($source, $target);
+            copyDirectory($source, $target, $name === 'agent-sessions' ? 0 : null);
         } elseif ($entry->isFile()) {
             ensureDirectory(dirname($target));
             copyFileOrFail($source, $target);
@@ -425,20 +429,38 @@ function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): arr
     return $copiedEntries;
 }
 
-function copyDirectory(string $source, string $target): void
+function copyDirectory(string $source, string $target, ?int $agentSessionsDepth = null): void
 {
     ensureDirectory($target);
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST,
-    );
+    $iterator = new DirectoryIterator($source);
 
     foreach ($iterator as $entry) {
-        $relativePath = substr($entry->getPathname(), strlen($source) + 1);
-        $destination = "{$target}/{$relativePath}";
+        if ($entry->isDot()) {
+            continue;
+        }
+
+        if ($entry->isLink() && $entry->isDir()) {
+            continue;
+        }
+
+        if (
+            $agentSessionsDepth === 1
+            && $entry->isDir()
+            && isForeignTemporaryCaptureDirectory($entry->getPathname())
+        ) {
+            fwrite(STDERR, "WARNING: excluding foreign temporary capture directory: {$entry->getPathname()}\n");
+
+            continue;
+        }
+
+        $destination = "{$target}/{$entry->getFilename()}";
 
         if ($entry->isDir()) {
-            ensureDirectory($destination);
+            copyDirectory(
+                $entry->getPathname(),
+                $destination,
+                $agentSessionsDepth === null ? null : $agentSessionsDepth + 1,
+            );
 
             continue;
         }
@@ -660,22 +682,44 @@ function ensureDirectory(string $directory): void
  * Returns true only when the active staging tree contains manifest-backed
  * captures. Malformed or empty staging should not suppress fallback extraction.
  */
-function hasStagedCaptures(string $dir): bool
+function hasStagedCaptures(string $dir, int $agentSessionsDepth = 0): bool
 {
-    if (!is_dir($dir)) {
+    if (! is_dir($dir) || is_link($dir)) {
         return false;
     }
 
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::LEAVES_ONLY,
-    );
+    $iterator = new DirectoryIterator($dir);
 
     foreach ($iterator as $entry) {
+        if ($entry->isDot()) {
+            continue;
+        }
+
+        if ($entry->isLink() && $entry->isDir()) {
+            continue;
+        }
+
+        if ($entry->isDir()) {
+            if ($agentSessionsDepth === 1 && isForeignTemporaryCaptureDirectory($entry->getPathname())) {
+                continue;
+            }
+
+            if (hasStagedCaptures($entry->getPathname(), $agentSessionsDepth + 1)) {
+                return true;
+            }
+
+            continue;
+        }
+
         if ($entry->isFile() && $entry->getFilename() === 'manifest.json') {
             return true;
         }
     }
 
     return false;
+}
+
+function isForeignTemporaryCaptureDirectory(string $path): bool
+{
+    return preg_match('/^\..+\.tmp-[^\/]+$/', basename($path)) === 1;
 }

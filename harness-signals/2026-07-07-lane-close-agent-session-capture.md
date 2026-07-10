@@ -8,7 +8,7 @@ Source worktree: agent-session-capture-disambiguation
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: reject non-Codex incarnation floors before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; stage each coherent result in a unique sibling and atomically replace the final slug directory with rollback
+Guardrail change: reject non-Codex incarnation floors and invalid explicit providers before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; expose bounded matched/owned diagnostics; construct each capture from validated raw declarations with checked writes/copies inside a canonical direct-child temp; atomically replace the final slug directory with rollback; exclude only direct foreign temp siblings from session archives without following directory symlinks or dropping backups
 Related signals: harness-signals/2026-06-25-required-verification-finalization-gap.md
 Superseded by: none
 Tags: finalization, agent-sessions, solo, loop-engineering
@@ -35,6 +35,12 @@ process incarnation.
 The same review found numeric-prefix marker matches, unowned Codex singletons,
 and direct writes into reused slug directories. Those paths could select the
 wrong transcript or mix stale success artifacts into a later success or failure.
+
+The high-model review then found that provider containment remained lexical,
+pre-replacement writes could fail without cleanup, ambiguity evidence named
+arbitrary scan-order files, the private seam collided with generic globals, and
+session archiving copied incomplete foreign temp siblings. Those defects made
+the claimed transaction and retained evidence weaker than the signal record.
 
 ## Prior Occurrences
 
@@ -69,6 +75,12 @@ ownership or selection evidence.
 The helper also silently canonicalized explicit slugs and wrote captures
 directly into the final directory, so reruns could retain files from a previous
 capture and had no rollback boundary for replacement failure.
+
+The replacement boundary did not yet cover construction failures or canonical
+provider-root containment, and recursive delete re-derived its boundary from
+the target path. Failure manifests retained `checked` but omitted the actual
+matched and owned candidates. Archive discovery also treated manifest-bearing
+`.tmp-*` siblings as valid staged captures.
 
 ## Guardrail Change
 
@@ -106,6 +118,29 @@ capture and had no rollback boundary for replacement failure.
   rollback steps. Direct-child assertions guard every rename and recursive
   delete, successful replacement removes the backup, and coherent failure
   replacement cannot retain stale success artifacts.
+- Explicit `--provider` accepts only the closed `codex`, `claude`, `grok`, and
+  `terminal` set before Solo DB or staging access. The helper creates and
+  canonicalizes `.orbit/agent-sessions`, rejects symlinked agent-session and
+  provider roots, and proves the canonical provider directory is exactly one
+  child below the canonical agent-session root before deriving staging paths.
+- Filesystem construction and replacement live in one bin-local procedural
+  include with project-prefixed functions. Checked manifest, usage, messages,
+  and raw-copy syscalls clean only the direct-child temp on construction
+  failure and leave final/backup state untouched. Declared raw sources must
+  exist and archive names must be basenames within `raw/`. Recursive deletion
+  receives and reasserts the canonical non-symlinked provider root, its real
+  path, and the candidate parent real path at the delete operation itself. A
+  temp symlink is rejected and unlinked without following its target.
+- Codex ambiguity and no-owned failures retain legacy `checked` and add bounded
+  `matched_candidates` and `owned_candidates` records with actual paths,
+  ownership class, normalized cwd, and primary Solo identity in both the
+  manifest and stderr. These diagnostics never rank or select candidates.
+- `bin/orbit-session-archive` warns about and excludes foreign `.tmp-*` capture
+  siblings only when they are direct slug siblings under
+  `.orbit/agent-sessions/<provider>/`, without deleting them. A lone temp does
+  not suppress archive-time fallback, `.backup-*` evidence is copied, unrelated
+  temp-shaped `.orbit/evidence/` directories remain byte-identical, and copy or
+  staged discovery never follows directory symlinks.
 
 ## Verification
 
@@ -119,6 +154,7 @@ bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTes
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter=incarnation
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 2 exact identity'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 3 staging replacement'
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php tests/Feature/E2ESupport/SessionArchiveTest.php --filter='review corrections|session archive excludes|session archive does not treat'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php
 php -l bin/orbit-agent-session-capture
 bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/AgentSessionArchiveTest.php
@@ -140,6 +176,13 @@ PHP syntax and the gateway-test-only Mago format check passed. The new `main()`
 boundary is structurally indented and the replacement transaction follows
 project style; unrelated legacy statements inside and after `main()` retain the
 pre-existing baseline and are not claimed Mago-clean.
+
+The high-model correction red is retained at
+`.orbit/evidence/capture-review-corrections-red.txt`. It covers invalid
+providers, symlinked roots, construction write/copy failures, native false-write
+checking and native success, delete-site containment, actionable ambiguity and
+no-owned diagnostics, include idempotence beside a generic `main`, and foreign
+temp archive hygiene before production changes.
 
 ## Reappearance Check
 
@@ -163,6 +206,12 @@ check for lingering sibling temp or backup directories. Never restore direct
 in-place writes or delete the previous final before a complete sibling capture
 is ready; replacement failure must preserve or roll back the prior coherent
 capture and report the exact involved paths.
+
+For construction or containment failures, inspect the canonical
+agent-session/provider roots, the direct-child temp cleanup result, and the
+bounded matched/owned diagnostics. Never derive recursive-delete authority from
+the deletion target itself, accept a symlinked capture root, ignore a false
+write/copy result, or archive a foreign `.tmp-*` sibling as completed evidence.
 
 For a deliberate Codex process restart, prefer a fresh process id. If the id is
 reused, record the restart time and pass the caller-attested floor; a stale

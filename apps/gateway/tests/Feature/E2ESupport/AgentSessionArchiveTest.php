@@ -2829,12 +2829,11 @@ it('stage 3 staging replacement rejects non-sibling paths before any rename', fu
 
 function run_staged_capture_replacement_scenario(string $root, string $scenario): Process
 {
-    $script = repo_path('bin/orbit-agent-session-capture');
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
     $code = <<<'PHP'
-        define('ORBIT_AGENT_SESSION_CAPTURE_TEST_NO_MAIN', true);
-        require $argv[1];
+        require_once $argv[1];
 
-        $root = $argv[2];
+        $root = realpath($argv[2]) ?: $argv[2];
         $scenario = $argv[3];
         $temp = $scenario === 'non-sibling' ? "{$root}/nested/temp" : "{$root}/temp";
         $final = "{$root}/final";
@@ -2871,7 +2870,7 @@ function run_staged_capture_replacement_scenario(string $root, string $scenario)
         $error = null;
 
         try {
-            replaceStagedCaptureDirectory($temp, $final, $backup, $rename);
+            orbitAgentSessionCaptureReplaceStagedDirectory($root, $temp, $final, $backup, $rename);
         } catch (Throwable $throwable) {
             $error = $throwable->getMessage();
         }
@@ -2887,8 +2886,588 @@ function run_staged_capture_replacement_scenario(string $root, string $scenario)
         ], JSON_UNESCAPED_SLASHES);
         PHP;
 
-    $process = new Process([PHP_BINARY, '-r', $code, $script, $root, $scenario], repo_path());
+    $process = new Process([PHP_BINARY, '-r', $code, $include, $root, $scenario], repo_path());
     $process->run();
 
     return $process;
+}
+
+it('review corrections reject invalid explicit providers before DB access or staging', function (string $provider): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-invalid-provider');
+    $orbitDir = "{$temp}/.orbit";
+
+    try {
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            '979911',
+            "--home={$temp}/home",
+            "--cwd={$temp}/worktree",
+            "--solo-db={$temp}/missing-solo.db",
+            "--orbit-dir={$orbitDir}",
+            "--provider={$provider}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("invalid_explicit_provider\n")
+            ->not->toContain('solo db not found')->and("{$orbitDir}/agent-sessions")
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+})->with([
+    'parent traversal' => '../x',
+    'nested path' => 'a/b',
+]);
+
+it('review corrections reject a symlinked provider directory without touching its target', function (): void {
+    $soloProcessId = 979_912;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-provider-symlink', soloProcessId: $soloProcessId);
+    $agentSessionsRoot = "{$fixture['orbit_dir']}/agent-sessions";
+    $external = "{$fixture['temp']}/external-provider";
+    $sentinel = "{$external}/sentinel.txt";
+
+    try {
+        mkdir($agentSessionsRoot, recursive: true);
+        mkdir($external, recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        symlink($external, "{$agentSessionsRoot}/codex");
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: 'review-provider-symlink',
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput())
+            ->toContain('symlinked_provider_root')
+            ->and($sentinel)
+            ->toBeFile()
+            ->and(file_get_contents($sentinel))
+            ->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('review corrections reject a symlinked agent sessions root without touching its target', function (): void {
+    $soloProcessId = 979_913;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'review-root-symlink', soloProcessId: $soloProcessId);
+    $external = "{$fixture['temp']}/external-agent-sessions";
+    $sentinel = "{$external}/sentinel.txt";
+
+    try {
+        mkdir($external, recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        symlink($external, "{$fixture['orbit_dir']}/agent-sessions");
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: 'review-root-symlink',
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput())
+            ->toContain('symlinked_agent_sessions_root')
+            ->and($sentinel)
+            ->toBeFile()
+            ->and(file_get_contents($sentinel))
+            ->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('review corrections clean an incomplete temp when a write callable fails mid build', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-write-failure');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'write-fails-mid-build');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 2,
+                'copy_calls' => 0,
+            ])
+            ->and($result['error'])
+            ->toContain('write_failed')
+            ->toContain('/temp/usage.json');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections clean an incomplete temp when a copy callable fails', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-copy-failure');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'copy-fails');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 3,
+                'copy_calls' => 1,
+            ])
+            ->and($result['error'])
+            ->toContain('copy_failed')
+            ->toContain('/source.jsonl')
+            ->toContain('/temp/raw/source.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects a declared missing raw source and cleans the incomplete temp', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-missing-raw');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'missing-raw-source');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'escaped_raw_exists' => false,
+            ])
+            ->and($result['error'])
+            ->toContain('raw_source_missing')
+            ->toContain('/source.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects a non-basename raw archive name before it can escape raw', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-raw-name');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'invalid-raw-archive-name');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'escaped_raw_exists' => false,
+            ])
+            ->and($result['error'])
+            ->toContain('invalid_raw_archive_name')
+            ->toContain('../escaped.jsonl');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections check a false native write and never install an incomplete capture', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-native-write-false');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'native-write-false');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 0,
+                'copy_calls' => 0,
+            ])
+            ->and($result['error'])
+            ->toContain('write_failed')
+            ->toContain('/temp/manifest.json');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections build a complete capture with native writes and copies', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-native-success');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'native-success');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => true,
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+                'write_calls' => 0,
+                'copy_calls' => 0,
+                'error' => null,
+                'temp_entries' => ['manifest.json', 'messages.jsonl', 'raw', 'usage.json'],
+                'raw_value' => "raw\n",
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections reassert canonical containment at recursive delete without touching an external sentinel', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'review-delete-containment');
+    $providerRoot = "{$temp}/agent-sessions/codex";
+    $external = "{$temp}/external/nested";
+    $sentinel = "{$external}/sentinel.txt";
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $path = $argv[2];
+        $canonicalProviderRoot = $argv[3];
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureRemovePathRecursively($path, $canonicalProviderRoot);
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        echo json_encode([
+            'error' => $error,
+            'sentinel_exists' => is_file("{$path}/sentinel.txt"),
+            'sentinel_value' => file_get_contents("{$path}/sentinel.txt"),
+        ], JSON_UNESCAPED_SLASHES);
+        PHP;
+
+    try {
+        mkdir($providerRoot, recursive: true);
+        mkdir($external, recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        $providerRoot = realpath($providerRoot) ?: $providerRoot;
+        $external = realpath($external) ?: $external;
+        $sentinel = "{$external}/sentinel.txt";
+
+        $process = new Process([PHP_BINARY, '-r', $code, $include, $external, $providerRoot], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result)
+            ->toMatchArray([
+                'sentinel_exists' => true,
+                'sentinel_value' => "preserve\n",
+            ])
+            ->and($result['error'])
+            ->toContain('not_direct_child')
+            ->toContain($external)
+            ->toContain($providerRoot);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects a noncanonical symlinked provider root without touching its target', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-provider-root-canonical');
+    $realProviderRoot = "{$temp}/real-provider";
+    $symlinkedProviderRoot = "{$temp}/provider-link";
+    $candidate = "{$symlinkedProviderRoot}/candidate";
+    $sentinel = "{$realProviderRoot}/candidate/sentinel.txt";
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureRemovePathRecursively($argv[2], $argv[3]);
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        echo json_encode(['error' => $error], JSON_UNESCAPED_SLASHES);
+        PHP;
+
+    try {
+        mkdir("{$realProviderRoot}/candidate", recursive: true);
+        file_put_contents($sentinel, "preserve\n");
+        symlink($realProviderRoot, $symlinkedProviderRoot);
+
+        $process = new Process([
+            PHP_BINARY,
+            '-r',
+            $code,
+            $include,
+            $candidate,
+            $symlinkedProviderRoot,
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect((string) ($result['error'] ?? ''))->toContain('provider_root_not_canonical');
+        expect($sentinel)->toBeFile();
+        expect(file_get_contents($sentinel))->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('root review rejects and unlinks a temp symlink without touching its target', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'root-review-temp-symlink');
+
+    try {
+        $result = run_capture_build_scenario(root: $temp, scenario: 'temp-symlink');
+
+        expect($result)
+            ->toMatchArray([
+                'temp_exists' => false,
+                'temp_link_exists' => false,
+                'external_sentinel_exists' => true,
+                'external_sentinel_value' => "preserve\n",
+                'final_value' => "final-old\n",
+                'backup_value' => "backup-old\n",
+            ])
+            ->and($result['error'])
+            ->toContain('symlinked_temporary_staging');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('review corrections expose bounded actual Codex ownership diagnostics while retaining checked', function (string $scenario): void {
+    $soloProcessId = 979_914;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: "review-diagnostics-{$scenario}",
+        soloProcessId: $soloProcessId,
+    );
+    $slug = "review-diagnostics-{$scenario}";
+
+    try {
+        foreach (range(1, 25) as $index) {
+            write_jsonl("{$fixture['codex_dir']}/noise-{$index}.jsonl", [[
+                'type' => 'session_meta',
+                'payload' => ['id' => "noise-{$index}", 'cwd' => $fixture['cwd']],
+            ]]);
+        }
+
+        $candidateCwd = $scenario === 'ambiguous' ? $fixture['cwd'] : "{$fixture['temp']}/foreign-worktree";
+        $candidatePaths = [];
+
+        $rolloutIds = $scenario === 'ambiguous'
+            ? array_map(static fn (int $index): string => "actual-{$index}", range(1, 22))
+            : ['actual-a', 'actual-b'];
+
+        foreach ($rolloutIds as $rolloutId) {
+            $candidatePath = "{$fixture['codex_dir']}/rollout-{$rolloutId}.jsonl";
+            $candidatePaths[] = $candidatePath;
+            write_jsonl($candidatePath, [[
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => $rolloutId,
+                    'cwd' => $candidateCwd,
+                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                ],
+            ]]);
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($manifest)
+            ->toHaveKey('checked')
+            ->toHaveKey('matched_candidates')
+            ->toHaveKey('owned_candidates')
+            ->and($manifest['matched_candidates'])
+            ->toHaveCount($scenario === 'ambiguous' ? 20 : 2)
+            ->and($manifest['owned_candidates'])
+            ->toHaveCount($scenario === 'ambiguous' ? 20 : 0)
+            ->and(count($manifest['matched_candidates']))
+            ->toBeLessThanOrEqual(20)
+            ->and(count($manifest['owned_candidates']))
+            ->toBeLessThanOrEqual(20);
+
+        foreach ($manifest['matched_candidates'] as $candidate) {
+            expect($candidate)
+                ->toHaveKeys(['path', 'ownership_class', 'normalized_cwd', 'primary_solo_process_id'])
+                ->and($candidate['path'])
+                ->toBeIn($candidatePaths);
+        }
+
+        foreach ($manifest['owned_candidates'] as $candidate) {
+            expect($candidate['ownership_class'])->toBe('full');
+        }
+
+        $diagnostics = $process->getErrorOutput().$process->getOutput();
+
+        foreach ($manifest['matched_candidates'] as $candidate) {
+            $candidatePath = $candidate['path'];
+            expect($diagnostics)->toContain($candidatePath);
+        }
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with([
+    'ambiguous owned candidates' => 'ambiguous',
+    'no owned candidates' => 'no-owned',
+]);
+
+it('review corrections include is idempotent beside a predeclared generic main without executing the CLI', function (): void {
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        function main(): string
+        {
+            return 'generic-main';
+        }
+
+        require_once $argv[1];
+        require_once $argv[1];
+
+        echo main().'|'.(function_exists('orbitAgentSessionCaptureBuildStagingDirectory') ? 'loaded' : 'missing');
+        PHP;
+    $process = new Process([PHP_BINARY, '-r', $code, $include], repo_path());
+
+    $process->run();
+
+    expect($process->getExitCode())
+        ->toBe(0, $process->getErrorOutput().$process->getOutput())
+        ->and($process->getOutput())
+        ->toBe('generic-main|loaded');
+});
+
+/** @return array<string, mixed> */
+function run_capture_build_scenario(string $root, string $scenario): array
+{
+    $include = repo_path('bin/orbit-agent-session-capture-filesystem.php');
+    $code = <<<'PHP'
+        require_once $argv[1];
+
+        $root = realpath($argv[2]) ?: $argv[2];
+        $scenario = $argv[3];
+        $providerRoot = "{$root}/provider";
+        $temp = "{$providerRoot}/temp";
+        $final = "{$providerRoot}/final";
+        $backup = "{$providerRoot}/backup";
+        $source = "{$root}/source.jsonl";
+
+        mkdir($final, recursive: true);
+        mkdir($backup, recursive: true);
+        $providerRoot = realpath($providerRoot) ?: $providerRoot;
+        $temp = "{$providerRoot}/temp";
+        $final = "{$providerRoot}/final";
+        $backup = "{$providerRoot}/backup";
+        file_put_contents("{$final}/sentinel.txt", "final-old\n");
+        file_put_contents("{$backup}/sentinel.txt", "backup-old\n");
+        file_put_contents($source, "raw\n");
+
+        if ($scenario === 'missing-raw-source') {
+            unlink($source);
+        }
+
+        $externalTarget = "{$root}/external-target";
+
+        if ($scenario === 'temp-symlink') {
+            mkdir($externalTarget, recursive: true);
+            file_put_contents("{$externalTarget}/sentinel.txt", "preserve\n");
+            symlink($externalTarget, $temp);
+        }
+
+        if ($scenario === 'native-write-false') {
+            mkdir("{$temp}/manifest.json", recursive: true);
+        }
+
+        $writeCalls = 0;
+        $copyCalls = 0;
+        $write = null;
+        $copy = null;
+
+        if ($scenario === 'write-fails-mid-build') {
+            $write = function (string $path, string $contents) use (&$writeCalls): int|false {
+                $writeCalls++;
+
+                if ($writeCalls === 2) {
+                    return false;
+                }
+
+                return file_put_contents($path, $contents);
+            };
+        }
+
+        if ($scenario === 'copy-fails') {
+            $write = function (string $path, string $contents) use (&$writeCalls): int|false {
+                $writeCalls++;
+
+                return file_put_contents($path, $contents);
+            };
+            $copy = function (string $source, string $destination) use (&$copyCalls): bool {
+                $copyCalls++;
+
+                return false;
+            };
+        }
+
+        $error = null;
+
+        try {
+            orbitAgentSessionCaptureBuildStagingDirectory(
+                canonicalProviderRoot: $providerRoot,
+                temporaryStaging: $temp,
+                manifest: ['status' => 'ok'],
+                usage: ['input_tokens' => 1],
+                messagesJsonl: "{\"role\":\"assistant\"}\n",
+                rawFiles: [[
+                    'path' => $source,
+                    'archive_name' => $scenario === 'invalid-raw-archive-name' ? '../escaped.jsonl' : 'source.jsonl',
+                ]],
+                write: $write,
+                copy: $copy,
+            );
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        $tempEntries = [];
+
+        if (is_dir($temp)) {
+            $tempEntries = array_map('basename', glob("{$temp}/*") ?: []);
+            sort($tempEntries);
+        }
+
+        echo json_encode([
+            'temp_exists' => is_dir($temp),
+            'temp_link_exists' => is_link($temp),
+            'final_value' => file_get_contents("{$final}/sentinel.txt"),
+            'backup_value' => file_get_contents("{$backup}/sentinel.txt"),
+            'write_calls' => $writeCalls,
+            'copy_calls' => $copyCalls,
+            'error' => $error,
+            'temp_entries' => $tempEntries,
+            'raw_value' => is_file("{$temp}/raw/source.jsonl") ? file_get_contents("{$temp}/raw/source.jsonl") : null,
+            'escaped_raw_exists' => is_file("{$temp}/escaped.jsonl"),
+            'external_sentinel_exists' => is_file("{$externalTarget}/sentinel.txt"),
+            'external_sentinel_value' => is_file("{$externalTarget}/sentinel.txt")
+                ? file_get_contents("{$externalTarget}/sentinel.txt")
+                : null,
+        ], JSON_UNESCAPED_SLASHES);
+        PHP;
+    $process = new Process([PHP_BINARY, '-r', $code, $include, $root, $scenario], repo_path());
+    $process->run();
+
+    expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+    return json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
 }
