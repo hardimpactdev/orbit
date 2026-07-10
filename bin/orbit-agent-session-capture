@@ -36,7 +36,7 @@ foreach ($rawArgv as $a) {
 if (array_key_exists('help', $options) || $soloProcessId === null) {
     fwrite(STDOUT, <<<'EOF'
 Usage:
-  bin/orbit-agent-session-capture <solo-process-id> [--home=...] [--cwd=...] [--solo-db=...] [--orbit-dir=...]
+  bin/orbit-agent-session-capture <solo-process-id> [--home=...] [--cwd=...] [--solo-db=...] [--orbit-dir=...] [--incarnation-started-at=<ISO8601>]
 
 Extracts the provider session for the given live Solo process id using exact marker match
 "Solo process ID: <id>" (and close variants). Writes staged capture under
@@ -59,6 +59,17 @@ $soloDb = (string) ($options['solo_db'] ?? $options['solo-db'] ?? "{$home}/.conf
 $orbitDir = (string) ($options['orbit_dir'] ?? $options['orbit-dir'] ?? ($cwd.'/.orbit'));
 $explicitProvider = $options['provider'] ?? null;
 $explicitSlug = $options['slug'] ?? null;
+$incarnationFloor = null;
+$incarnationFloorTimestamp = null;
+
+if (array_key_exists('incarnation_started_at', $options)) {
+    $incarnationFloor = $options['incarnation_started_at'];
+
+    if (! is_string($incarnationFloor) || ($incarnationFloorTimestamp = parseIso8601Timestamp($incarnationFloor)) === null) {
+        fwrite(STDERR, "incarnation-started-at must be a valid ISO-8601 timestamp\n");
+        exit(2);
+    }
+}
 
 if (! is_file($soloDb)) {
     fwrite(STDERR, "solo db not found: {$soloDb}\n");
@@ -107,7 +118,15 @@ ensureDirectory($stagingBase.'/raw');
 $markerNeedle = "Solo process ID: {$soloProcessId}";
 
 $extract = match ($provider) {
-    'codex' => captureCodexExact($home, $workingDir, $soloProcessId, $markerNeedle, $startedAt),
+    'codex' => captureCodexExact(
+        $home,
+        $workingDir,
+        $soloProcessId,
+        $markerNeedle,
+        $startedAt,
+        $incarnationFloor,
+        $incarnationFloorTimestamp,
+    ),
     'claude' => captureClaudeExact($home, $workingDir, $soloProcessId, $markerNeedle),
     'grok' => captureGrokExact($home, $workingDir, $soloProcessId, $markerNeedle),
     default => [
@@ -138,6 +157,13 @@ if (($extract['status'] ?? null) === 'ok') {
 
     if (isset($extract['timestamp_corroboration'])) {
         $manifest['timestamp_corroboration'] = $extract['timestamp_corroboration'];
+    }
+
+    if (array_key_exists('incarnation_floor', $extract)) {
+        $manifest['incarnation_floor'] = $extract['incarnation_floor'];
+        $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
+        $manifest['rollout_id'] = $extract['rollout_id'];
+        $manifest['last_activity_at'] = $extract['last_activity_at'];
     }
 
     writeJsonFile($stagingBase.'/manifest.json', $manifest);
@@ -179,9 +205,25 @@ $manifest = [
     'checked' => $extract['checked'] ?? [],
     'marker' => $markerNeedle,
 ];
+
+if (($extract['status'] ?? null) === 'stale') {
+    $manifest['incarnation_floor'] = $extract['incarnation_floor'];
+    $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
+    $manifest['rollout_id'] = $extract['rollout_id'];
+    $manifest['last_activity_at'] = $extract['last_activity_at'];
+}
+
 writeJsonFile($stagingBase.'/manifest.json', $manifest);
 
 fwrite(STDERR, "capture failed for solo_process_id={$soloProcessId} provider={$provider}: ".($extract['reason'] ?? 'unknown')."\n");
+if (($extract['status'] ?? null) === 'stale') {
+    fwrite(STDERR, 'stale diagnostics: '.json_encode([
+        'incarnation_floor' => $extract['incarnation_floor'],
+        'incarnation_floor_source' => $extract['incarnation_floor_source'],
+        'rollout_id' => $extract['rollout_id'],
+        'last_activity_at' => $extract['last_activity_at'],
+    ], JSON_UNESCAPED_SLASHES)."\n");
+}
 if (!empty($extract['checked'])) {
     fwrite(STDERR, "candidates checked:\n".json_encode($extract['checked'], JSON_PRETTY_PRINT)."\n");
 }
@@ -398,7 +440,15 @@ function findFiles(string $root, string $glob): array
     return $files;
 }
 
-function captureCodexExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle, mixed $startedAt): array
+function captureCodexExact(
+    string $home,
+    string $cwd,
+    int $soloProcessId,
+    string $markerNeedle,
+    mixed $startedAt,
+    ?string $incarnationFloor,
+    ?DateTimeImmutable $incarnationFloorTimestamp,
+): array
 {
     $root = "{$home}/.codex/sessions";
     $candidates = [];
@@ -463,6 +513,27 @@ function captureCodexExact(string $home, string $cwd, int $soloProcessId, string
         );
     }
 
+    $incarnationActivity = null;
+
+    if ($incarnationFloor !== null && $incarnationFloorTimestamp !== null) {
+        $incarnationActivity = codexIncarnationActivity($chosen);
+
+        if (
+            $incarnationActivity['last_activity_timestamp'] === null
+            || $incarnationActivity['last_activity_timestamp'] < $incarnationFloorTimestamp
+        ) {
+            return [
+                'status' => 'stale',
+                'reason' => 'stale_pre_restart_session',
+                'checked' => array_slice($checked, 0, 20),
+                'incarnation_floor' => $incarnationFloor,
+                'incarnation_floor_source' => 'caller_attested',
+                'rollout_id' => $incarnationActivity['rollout_id'],
+                'last_activity_at' => $incarnationActivity['last_activity_at'],
+            ];
+        }
+    }
+
     // Parse minimal usage + messages from the rollout (reuse light logic)
     $messages = [];
     $usage = ['input_tokens' => 0, 'output_tokens' => 0, 'total_tokens' => 0];
@@ -500,7 +571,56 @@ function captureCodexExact(string $home, string $cwd, int $soloProcessId, string
         $result['timestamp_corroboration'] = $timestampCorroboration;
     }
 
+    if ($incarnationFloor !== null && $incarnationActivity !== null) {
+        $result['incarnation_floor'] = $incarnationFloor;
+        $result['incarnation_floor_source'] = 'caller_attested';
+        $result['rollout_id'] = $incarnationActivity['rollout_id'];
+        $result['last_activity_at'] = $incarnationActivity['last_activity_at'];
+    }
+
     return $result;
+}
+
+/**
+ * @return array{
+ *     rollout_id: ?string,
+ *     last_activity_at: ?string,
+ *     last_activity_timestamp: ?DateTimeImmutable,
+ * }
+ */
+function codexIncarnationActivity(string $path): array
+{
+    $rolloutId = null;
+    $lastActivityAt = null;
+    $lastActivityTimestamp = null;
+
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) === 'session_meta') {
+            if ($rolloutId === null && is_string($row['payload']['id'] ?? null)) {
+                $rolloutId = $row['payload']['id'];
+            }
+
+            continue;
+        }
+
+        $timestamp = $row['timestamp'] ?? null;
+        $parsedTimestamp = parseCodexTimestamp($timestamp);
+
+        if ($parsedTimestamp === null) {
+            continue;
+        }
+
+        if ($lastActivityTimestamp === null || $parsedTimestamp > $lastActivityTimestamp) {
+            $lastActivityAt = $timestamp;
+            $lastActivityTimestamp = $parsedTimestamp;
+        }
+    }
+
+    return [
+        'rollout_id' => $rolloutId,
+        'last_activity_at' => $lastActivityAt,
+        'last_activity_timestamp' => $lastActivityTimestamp,
+    ];
 }
 
 /**
@@ -677,6 +797,31 @@ function parseCodexTimestamp(mixed $timestamp): ?DateTimeImmutable
     } catch (Throwable) {
         return null;
     }
+}
+
+function parseIso8601Timestamp(mixed $timestamp): ?DateTimeImmutable
+{
+    if (! is_string($timestamp)) {
+        return null;
+    }
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/', $timestamp) !== 1) {
+        return null;
+    }
+
+    try {
+        $parsed = new DateTimeImmutable($timestamp);
+    } catch (Throwable) {
+        return null;
+    }
+
+    $errors = DateTimeImmutable::getLastErrors();
+
+    if (is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
+        return null;
+    }
+
+    return $parsed;
 }
 
 function codexFileHasScopedMarker(string $path, string $markerNeedle): bool

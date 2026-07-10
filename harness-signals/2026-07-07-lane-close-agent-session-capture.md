@@ -8,7 +8,7 @@ Source worktree: agent-session-capture-disambiguation
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: after exact-marker discovery, disambiguate duplicate Codex candidates only by provider context, exact normalized cwd, and the transcript's primary Solo identity; record timestamp as non-selecting manifest corroboration and retain loud ambiguity when multiple candidates survive
+Guardrail change: after exact-marker discovery, disambiguate duplicate Codex candidates only by provider context, exact normalized cwd, and the transcript's primary Solo identity; retain loud ambiguity when multiple candidates survive; after one candidate remains, an optional caller-attested incarnation floor validates canonical activity without selecting or ranking candidates
 Related signals: harness-signals/2026-06-25-required-verification-finalization-gap.md
 Superseded by: none
 Tags: finalization, agent-sessions, solo, loop-engineering
@@ -26,6 +26,11 @@ target Codex session and either a foreign session carrying an inherited target
 marker or a stale session from the wrong cwd. The helper treated both cases as
 indistinguishable even though the transcripts exposed deterministic provider,
 cwd, and primary-identity context.
+
+It recurred again when a deliberately restarted Codex process retained the same
+marker and lane-close capture accepted the sole pre-restart rollout. The marker
+still proved session ownership, but not that the rollout belonged to the active
+process incarnation.
 
 ## Prior Occurrences
 
@@ -53,6 +58,10 @@ foreign primary identity or mismatched normalized cwd, and it had no manifest
 vocabulary that kept timestamps explicitly corroborative rather than
 selection-capable.
 
+After disambiguation, the Codex path also lacked a caller-attested restart floor
+that could reject a stale singleton without turning timestamps into candidate
+ownership or selection evidence.
+
 ## Guardrail Change
 
 - `bin/orbit-agent-session-capture` stages provider artifacts by exact
@@ -70,6 +79,13 @@ selection-capable.
   preserves `ambiguous_duplicate_markers` otherwise, and records both a stable
   `disambiguation_basis` and non-selecting timestamp corroboration in successful
   manifests.
+- `--incarnation-started-at=<ISO8601>` is a Codex-only, caller-attested
+  validate-after-selection floor. Its syntax is checked before Solo DB access or
+  staging; ambiguity returns before activity validation; and a unique candidate
+  must have a parseable top-level timestamp at or after the floor on a
+  non-`session_meta` row. Before-floor, missing, or unparseable activity returns
+  `stale_pre_restart_session` with the floor, source, rollout id, and observed
+  last activity, while no-flag captures retain their prior output and manifest.
 
 ## Verification
 
@@ -80,6 +96,7 @@ bin/orbit-gateway-pest --compact --filter=FeatureFinalizationGate
 bin/orbit-agent-session-capture 801 --orbit-dir=.orbit --cwd=/Users/nckrtl/orbit/.worktrees/lane-close-agent-session-capture --slug=lane-close-capture-worker-801
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='(inherited marker|wrong cwd)'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='duplicate markers'
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter=incarnation
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php
 php -l bin/orbit-agent-session-capture
 bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/AgentSessionArchiveTest.php
@@ -89,9 +106,10 @@ The live capture command staged a real Solo-spawned Grok worker session with
 `status: ok` under `.orbit/agent-sessions/grok/lane-close-capture-worker-801/`.
 The 2026-07-10 recurrence verification passed with 2 focused disambiguation
 tests / 9 assertions, 1 duplicate-marker safety test / 3 assertions, and the
-full archive file at 15 tests / 285 assertions; PHP syntax and the freshly
-rerun gateway-test-only Mago format check passed. The root helper retains its
-pre-existing baseline style and is not claimed Mago-clean.
+incarnation-floor filter at 7 tests / 74 assertions, including the non-Codex
+compatibility case. The full archive file passed at 22 tests / 359 assertions;
+PHP syntax and the gateway-test-only Mago format check passed. The root helper
+retains its pre-existing baseline style and is not claimed Mago-clean.
 
 ## Reappearance Check
 
@@ -103,8 +121,14 @@ capture helper and add a provider fixture before weakening finalization.
 
 For duplicate Codex markers, also inspect whether provider context, exact
 normalized cwd, and primary Solo identity leave exactly one candidate. Never
-use timestamp, file order, mtime, or newest-file selection to rescue or
-tie-break the match; timestamp remains manifest corroboration only.
+use session-meta timestamp, file order, mtime, or newest-file selection to
+rescue or tie-break the match; session-meta timestamp remains manifest
+corroboration only, while the caller floor validates non-session-meta activity
+only after one candidate remains.
+
+For a deliberate process restart, prefer a fresh process id. If the id is
+reused, record the restart time and pass the caller-attested floor; a stale
+result requires an explicit lane-close waiver rather than capture acceptance.
 
 ## Curation Notes
 

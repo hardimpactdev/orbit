@@ -4,7 +4,7 @@ Status: recurring
 First seen: 2026-06-23
 Last seen: 2026-07-10
 Last reviewed: 2026-07-10
-Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline; quality-gate-baseline-seeding; agent-session-capture-disambiguation
+Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline; quality-gate-baseline-seeding; agent-session-capture-disambiguation; agent-session-capture-incarnation-floor
 Source commit: pending
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
@@ -80,6 +80,16 @@ for more than two minutes without a diff after its execution correction. Its
 session was captured and stopped; the same exception bounded the feature owner
 to the analyzer's known fixture/signal/index corrections.
 
+This signal reappeared in `agent-session-capture-incarnation-floor`: cwd-pinned
+Solo Codex worker 972 completed the exact identity gate and required reads but
+produced no diff or blocker after the one permitted first-diff correction.
+Replacement process 973 received the already-adjudicated patch shape and an
+explicit three-minute gate, yet also completed the named reads without a diff
+or blocker. Both sessions were captured and closed. The feature owner then
+applied only the focused Pest contract under the existing documented exception;
+the six-test incarnation filter produced four expected behavioral failures and
+two safety-case passes before production code changed.
+
 ## Missing Guardrail
 
 The reusable worker prompt required narrow ownership and TDD, but it did not
@@ -120,6 +130,12 @@ test diff directly as a documented loop exception. The existing implementation
 skill already authorized and bounded that recovery, so this recurrence tightens
 the canonical signal record without duplicating the guardrail.
 
+The later `agent-session-capture-incarnation-floor` recurrence exercised that
+same recovery without additional prompt churn: one correction, one replacement,
+then the bounded feature-owner test diff. The operational guardrail worked as
+written, so this occurrence is evidence for retaining and measuring it rather
+than adding another worker-prompt clause.
+
 ## Verification
 
 `rg -n "test-only first diff|short timer|replace the worker|first narrow diff|broad discovery without a first diff|stand down the worker" .agents/skills/implementing-features/SKILL.md harness-signals/2026-06-23-worker-first-diff-checkpoint.md`
@@ -142,6 +158,12 @@ full `AgentSessionArchiveTest.php` pass. After analyzer correction, the true
 duplicate fixture still failed loudly despite unequal candidate timestamps and
 a real Solo start time; the focused duplicate test passed at 1 / 3 and the full
 archive file at 15 / 285.
+
+In `agent-session-capture-incarnation-floor`, Codex workers 972 and 973 were
+captured and stopped with zero owned diff. The direct test-only exception then
+ran `bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter=incarnation`:
+6 tests executed, 2 existing safety cases passed, and 4 failed for the intended
+missing malformed-input, stale-session, and successful-manifest behaviors.
 
 ## Reappearance Check
 

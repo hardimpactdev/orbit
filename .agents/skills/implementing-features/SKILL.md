@@ -565,6 +565,7 @@ below preserve when to invoke that gate and what evidence to record.
    `.orbit/loop.md`. If a provider is unsupported or cannot be captured, add
    the explicit `- Agent session capture waivers:` row naming the provider and
    reason; do not rely on archive-time lookup as the primary capture path.
+   Prefer a fresh process id; after a deliberate restart, record the restart time, pass it as `--incarnation-started-at=<ISO8601>`, and require an explicit waiver if capture fails.
 11. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Codex documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that

@@ -859,6 +859,124 @@ function write_jsonl(string $path, array $rows): void
 }
 
 /**
+ * @return array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * }
+ */
+function make_incarnation_floor_capture_fixture(string $suffix, int $soloProcessId, string $command = 'codex'): array
+{
+    $temp = make_agent_session_archive_temp_dir(suffix: "incarnation-floor-{$suffix}");
+    $home = "{$temp}/home";
+    $cwd = "{$temp}/worktree";
+    $orbitDir = "{$temp}/.orbit";
+    $codexDir = "{$home}/.codex/sessions/2026/07/09";
+
+    mkdir($cwd, recursive: true);
+    mkdir($orbitDir, recursive: true);
+    mkdir($codexDir, recursive: true);
+
+    $soloDb = "{$temp}/solo.db";
+    $db = new PDO('sqlite:'.$soloDb);
+    $db->exec(
+        'CREATE TABLE processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
+    );
+    $statement = $db->prepare(
+        'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
+    );
+    $statement->execute([
+        $soloProcessId,
+        "incarnation-floor-{$suffix}",
+        $command,
+        $cwd,
+        'agent',
+        '2026-07-09T09:00:00Z',
+    ]);
+
+    return [
+        'temp' => $temp,
+        'home' => $home,
+        'cwd' => $cwd,
+        'orbit_dir' => $orbitDir,
+        'solo_db' => $soloDb,
+        'codex_dir' => $codexDir,
+    ];
+}
+
+/**
+ * @param array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * } $fixture
+ * @param list<array<string, mixed>> $activityRows
+ */
+function write_incarnation_floor_rollout(
+    array $fixture,
+    string $rolloutId,
+    int $soloProcessId,
+    array $activityRows,
+    string $sessionMetaTimestamp = '2026-07-09T09:00:00Z',
+): void {
+    write_jsonl("{$fixture['codex_dir']}/rollout-{$rolloutId}.jsonl", [
+        [
+            'timestamp' => $sessionMetaTimestamp,
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => $rolloutId,
+                'cwd' => $fixture['cwd'],
+                'timestamp' => $sessionMetaTimestamp,
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ],
+        ...$activityRows,
+    ]);
+}
+
+/**
+ * @param array{
+ *     temp: string,
+ *     home: string,
+ *     cwd: string,
+ *     orbit_dir: string,
+ *     solo_db: string,
+ *     codex_dir: string,
+ * } $fixture
+ */
+function run_incarnation_floor_capture(
+    array $fixture,
+    int $soloProcessId,
+    string $slug,
+    ?string $incarnationStartedAt = null,
+): Process {
+    $command = [
+        repo_path('bin/orbit-agent-session-capture'),
+        (string) $soloProcessId,
+        "--home={$fixture['home']}",
+        "--cwd={$fixture['cwd']}",
+        "--solo-db={$fixture['solo_db']}",
+        "--orbit-dir={$fixture['orbit_dir']}",
+        "--slug={$slug}",
+    ];
+
+    if ($incarnationStartedAt !== null) {
+        $command[] = "--incarnation-started-at={$incarnationStartedAt}";
+    }
+
+    $process = new Process($command, repo_path());
+    $process->run();
+
+    return $process;
+}
+
+/**
  * @param list<array<string, mixed>> $results
  */
 function provider_status(array $results, string $provider): ?string
@@ -1580,3 +1698,310 @@ it(
         }
     },
 );
+
+it('rejects malformed caller-attested incarnation floors before capture staging', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-incarnation-floor-invalid');
+    $orbitDir = "{$temp}/.orbit";
+
+    try {
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            '979797',
+            "--home={$temp}/home",
+            "--cwd={$temp}/worktree",
+            "--solo-db={$temp}/missing-solo.db",
+            "--orbit-dir={$orbitDir}",
+            '--incarnation-started-at=2026-07-09 10:00:00',
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('incarnation-started-at')
+            ->toContain('ISO-8601')
+            ->not->toContain('solo db not found')->and("{$orbitDir}/agent-sessions")
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('keeps incarnation floor metadata Codex-only for successful Grok capture', function (): void {
+    $soloProcessId = 979_799;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'grok',
+        soloProcessId: $soloProcessId,
+        command: 'grok',
+    );
+    $slug = 'incarnation-floor-grok';
+
+    try {
+        write_grok_fixture(
+            home: $fixture['home'],
+            cwd: $fixture['cwd'],
+            marker: "Solo process ID: {$soloProcessId}",
+        );
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+            incarnationStartedAt: '2026-07-09T10:10:00Z',
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->not->toHaveKey('incarnation_floor')
+            ->not->toHaveKey('incarnation_floor_source')
+            ->not->toHaveKey('rollout_id')
+            ->not->toHaveKey('last_activity_at');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it(
+    'rejects Codex sessions without caller-attested incarnation activity at the floor',
+    function (array $activityRows, ?string $expectedLastActivityAt, string $suffix): void {
+        $soloProcessId = 979_800;
+        $fixture = make_incarnation_floor_capture_fixture(suffix: $suffix, soloProcessId: $soloProcessId);
+        $slug = "incarnation-floor-stale-{$suffix}";
+        $floor = '2026-07-09T10:10:00Z';
+        $rolloutId = "stale-{$suffix}";
+
+        try {
+            write_incarnation_floor_rollout(
+                fixture: $fixture,
+                rolloutId: $rolloutId,
+                soloProcessId: $soloProcessId,
+                activityRows: $activityRows,
+                sessionMetaTimestamp: '2026-07-09T10:30:00Z',
+            );
+
+            $process = run_incarnation_floor_capture(
+                fixture: $fixture,
+                soloProcessId: $soloProcessId,
+                slug: $slug,
+                incarnationStartedAt: $floor,
+            );
+
+            expect($process->getExitCode())
+                ->toBeGreaterThan(0)
+                ->and($process->getErrorOutput().$process->getOutput())
+                ->toContain('stale_pre_restart_session')
+                ->toContain($floor)
+                ->toContain($rolloutId)
+                ->toContain('last_activity_at');
+
+            $manifest = read_agent_session_archive_json(
+                path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+            );
+
+            expect($manifest)
+                ->toMatchArray([
+                    'status' => 'stale',
+                    'reason' => 'stale_pre_restart_session',
+                    'incarnation_floor' => $floor,
+                    'incarnation_floor_source' => 'caller_attested',
+                    'rollout_id' => $rolloutId,
+                    'last_activity_at' => $expectedLastActivityAt,
+                ]);
+        } finally {
+            remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+        }
+    },
+)->with([
+    'canonical activity before floor' => [
+        [[
+            'timestamp' => '2026-07-09T10:05:00Z',
+            'type' => 'response_item',
+            'payload' => [
+                'timestamp' => '2026-07-09T10:40:00Z',
+                'type' => 'message',
+                'role' => 'assistant',
+                'content' => [['type' => 'output_text', 'text' => 'Before the restart.']],
+            ],
+        ]],
+        '2026-07-09T10:05:00Z',
+        'before',
+    ],
+    'only session meta nested and malformed timestamps' => [
+        [
+            [
+                'timestamp' => 'not-a-timestamp',
+                'type' => 'response_item',
+                'payload' => [
+                    'timestamp' => '2026-07-09T10:40:00Z',
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'Nested timestamps do not count.']],
+                ],
+            ],
+            [
+                'type' => 'event_msg',
+                'payload' => [
+                    'timestamp' => '2026-07-09T10:50:00Z',
+                    'type' => 'turn_aborted',
+                ],
+            ],
+        ],
+        null,
+        'excluded',
+    ],
+]);
+
+it('accepts a unique Codex session with caller-attested incarnation activity at or after the floor', function (): void {
+    $soloProcessId = 979_801;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'fresh', soloProcessId: $soloProcessId);
+    $slug = 'incarnation-floor-fresh';
+    $floor = '2026-07-09T10:10:00Z';
+    $rolloutId = 'fresh-rollout';
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: $rolloutId,
+            soloProcessId: $soloProcessId,
+            activityRows: [
+                [
+                    'timestamp' => '2026-07-09T10:09:00Z',
+                    'type' => 'response_item',
+                    'payload' => ['type' => 'message', 'role' => 'assistant', 'content' => []],
+                ],
+                [
+                    'timestamp' => '2026-07-09T10:11:00Z',
+                    'type' => 'event_msg',
+                    'payload' => ['timestamp' => '2026-07-09T11:00:00Z', 'type' => 'turn_aborted'],
+                ],
+            ],
+        );
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+            incarnationStartedAt: $floor,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'ok',
+                'incarnation_floor' => $floor,
+                'incarnation_floor_source' => 'caller_attested',
+                'rollout_id' => $rolloutId,
+                'last_activity_at' => '2026-07-09T10:11:00Z',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('preserves lane-close capture output and manifest shape when no incarnation floor is supplied', function (): void {
+    $soloProcessId = 979_802;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy', soloProcessId: $soloProcessId);
+    $slug = 'incarnation-floor-legacy';
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'legacy-rollout',
+            soloProcessId: $soloProcessId,
+            activityRows: [],
+        );
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        $expectedOutput =
+            json_encode([
+                'status' => 'ok',
+                'provider' => 'codex',
+                'solo_process_id' => $soloProcessId,
+                'slug' => $slug,
+                'started_at' => '2026-07-09T09:00:00Z',
+                'staging_dir' => "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}",
+            ], JSON_UNESCAPED_SLASHES)."\n";
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput())
+            ->and($process->getOutput())
+            ->toBe($expectedOutput);
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->not->toHaveKey('incarnation_floor')
+            ->not->toHaveKey('incarnation_floor_source')
+            ->not->toHaveKey('rollout_id')
+            ->not->toHaveKey('last_activity_at');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('keeps duplicate owned Codex sessions ambiguous when an incarnation floor is supplied', function (): void {
+    $soloProcessId = 979_803;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'duplicate', soloProcessId: $soloProcessId);
+    $slug = 'incarnation-floor-duplicate';
+
+    try {
+        foreach ([
+            'stale' => '2026-07-09T10:05:00Z',
+            'fresh' => '2026-07-09T10:15:00Z',
+        ] as $rolloutId => $timestamp) {
+            write_incarnation_floor_rollout(
+                fixture: $fixture,
+                rolloutId: $rolloutId,
+                soloProcessId: $soloProcessId,
+                activityRows: [[
+                    'timestamp' => $timestamp,
+                    'type' => 'event_msg',
+                    'payload' => ['type' => 'turn_aborted'],
+                ]],
+            );
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+            incarnationStartedAt: '2026-07-09T10:10:00Z',
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('ambiguous_duplicate_markers')
+            ->not->toContain('stale_pre_restart_session');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'ambiguous',
+                'reason' => 'ambiguous_duplicate_markers',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
