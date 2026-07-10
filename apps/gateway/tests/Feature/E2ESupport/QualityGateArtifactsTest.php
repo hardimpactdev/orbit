@@ -1136,7 +1136,7 @@ it('documents quality gate artifact and analyzer commands', function (): void {
         ->toContain('composer quality-gate:analyze')
         ->toContain('composer quality-gate:final-check')
         ->toContain('composer quality-check:fix')
-        ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
+        ->toContain('ORBIT_QUALITY_CHECK_CPU_BUDGET')
         ->toContain('Queue time is reflected in the aggregate gate')
         ->toContain('.orbit/quality-gates/e2e-timings/')
         ->toContain('different Git commit than the current worktree')
@@ -1146,7 +1146,7 @@ it('documents quality gate artifact and analyzer commands', function (): void {
 
     expect($qualityGatesProse)
         ->toContain(
-            'In the tree, every row for an area starts as queued. It changes to running when the scheduler starts the first real subgate for that area, then remains running while later owned subgates are still pending. A row never returns to queued after running; it settles only to passed or failed. Package rows are admitted after the fast app checks have passed, while the long gateway and CLI Pest lanes may still be running. Core Pest still waits until other Pest lanes finish before it runs.',
+            'In the tree, every row for an area starts as queued. It changes to running only after the CPU scheduler admits that component, then remains running while the component runs its owned subgates. A row never returns to queued after running; it settles only to passed or failed. Components that do not fit the remaining CPU budget stay visibly queued instead of appearing to run while they wait.',
         )
         ->toContain(
             'Without explicit `--gate` arguments, it analyzes only default gates that are not E2E, such as `docs-lint` and `quality-check`. E2E artifacts are reviewed only when their gates are passed explicitly, so stale Docker or Incus artifacts do not create default final-check warnings.',

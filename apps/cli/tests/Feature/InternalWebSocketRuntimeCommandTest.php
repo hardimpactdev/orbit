@@ -416,122 +416,103 @@ function install_websocket_runtime_fake_bin(array $options = []): string
     file_put_contents("{$dir}/source-hash", $sourceHash);
     file_put_contents("{$dir}/source.tar", '');
 
-    file_put_contents("{$dir}/docker", <<<'PHP'
-        #!/usr/bin/env php
-        <?php
-        file_put_contents(__DIR__.'/calls.log', basename($argv[0]).' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-        $args = array_slice($argv, 1);
-        if ($args === ['network', 'inspect', 'orbit-network']) {
-            exit(trim(file_get_contents(__DIR__.'/network-exists')) === '1' ? 0 : 1);
-        }
-        if ($args === ['network', 'create', '--label', 'orbit.managed=true', '--label', 'orbit.network.kind=runtime', 'orbit-network']) {
-            file_put_contents(__DIR__.'/network-exists', '1');
-            exit(0);
-        }
-        if ($args === ['container', 'inspect', 'orbit-websocket-app-dev-1']) {
-            exit(trim(file_get_contents(__DIR__.'/container-exists')) === '1' ? 0 : 1);
-        }
-        if ($args === ['container', 'inspect', '--format', '{{json .}}', 'orbit-websocket-app-dev-1']) {
-            if (trim(file_get_contents(__DIR__.'/container-exists')) !== '1') {
-                fwrite(STDERR, 'Error: No such container');
-                exit(1);
-            }
-            echo json_encode([
-                'Config' => [
-                    'Labels' => [
-                        'orbit.websocket.spec_hash' => str_repeat('b', 64),
-                    ],
-                ],
-                'State' => [
-                    'Running' => true,
-                ],
-            ]);
-            exit(0);
-        }
-        if ($args === ['container', 'inspect', '--format', '{{.State.Running}}', 'orbit-websocket-app-dev-1']) {
-            echo file_get_contents(__DIR__.'/container-running');
-            exit(0);
-        }
-        if ($args === ['container', 'inspect', '--format', '{{range .Config.Env}}{{println .}}{{end}}', 'orbit-websocket-app-dev-1']) {
-            $host = trim(file_get_contents(__DIR__.'/env-host'));
-            echo $host === '' ? '' : "REVERB_SERVER_HOST={$host}\n";
-            exit(0);
-        }
-        if ($args === ['container', 'inspect', '--format', '{{range .Config.Cmd}}{{print . " "}}{{end}}', 'orbit-websocket-app-dev-1']) {
-            echo file_get_contents(__DIR__.'/cmd');
-            exit(0);
-        }
-        if ($args === ['exec', '-i', 'orbit-websocket-app-dev-1', 'php']) {
-            file_put_contents(__DIR__.'/redis-probe.php', stream_get_contents(STDIN));
-            exit(0);
-        }
-        if ($args === ['restart', 'orbit-websocket-app-dev-1']) {
-            exit(0);
-        }
-        if (($args[0] ?? null) === 'run' && in_array('orbit-websocket-app-dev-1', $args, true)) {
-            file_put_contents(__DIR__.'/container-exists', '1');
-            exit(0);
-        }
-        echo file_get_contents(__DIR__.'/self-contained-image');
-        PHP);
+    file_put_contents("{$dir}/docker", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        printf 'docker %s\n' "$*" >>"$dir/calls.log"
+
+        case "$*" in
+            'network inspect orbit-network')
+                [ "$(cat "$dir/network-exists")" = 1 ]
+                ;;
+            'network create --label orbit.managed=true --label orbit.network.kind=runtime orbit-network')
+                printf 1 >"$dir/network-exists"
+                ;;
+            'container inspect orbit-websocket-app-dev-1')
+                [ "$(cat "$dir/container-exists")" = 1 ]
+                ;;
+            'container inspect --format {{json .}} orbit-websocket-app-dev-1')
+                if [ "$(cat "$dir/container-exists")" != 1 ]; then
+                    printf 'Error: No such container' >&2
+                    exit 1
+                fi
+                printf '{"Config":{"Labels":{"orbit.websocket.spec_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}},"State":{"Running":true}}'
+                ;;
+            'container inspect --format {{.State.Running}} orbit-websocket-app-dev-1')
+                cat "$dir/container-running"
+                ;;
+            'container inspect --format {{range .Config.Env}}{{println .}}{{end}} orbit-websocket-app-dev-1')
+                host="$(cat "$dir/env-host")"
+                [ -z "$host" ] || printf 'REVERB_SERVER_HOST=%s\n' "$host"
+                ;;
+            'container inspect --format {{range .Config.Cmd}}{{print . " "}}{{end}} orbit-websocket-app-dev-1')
+                cat "$dir/cmd"
+                ;;
+            'exec -i orbit-websocket-app-dev-1 php')
+                cat >"$dir/redis-probe.php"
+                ;;
+            'restart orbit-websocket-app-dev-1')
+                ;;
+            run*'orbit-websocket-app-dev-1'*)
+                printf 1 >"$dir/container-exists"
+                ;;
+            *)
+                cat "$dir/self-contained-image"
+                ;;
+        esac
+        BASH);
     chmod(filename: "{$dir}/docker", permissions: 0o755);
 
-    file_put_contents("{$dir}/sudo", <<<'PHP'
-        #!/usr/bin/env php
-        <?php
-        file_put_contents(__DIR__.'/calls.log', basename($argv[0]).' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-        $args = array_slice($argv, 1);
-        $sourceHash = trim(file_get_contents(__DIR__.'/source-hash'));
-        if ($args === ['test', '-f', '/etc/orbit/websocket/app.key']) {
-            exit(trim(file_get_contents(__DIR__.'/app-key-exists')) === '1' ? 0 : 1);
-        }
-        if ($args === ['test', '-f', '/etc/orbit/websocket/apps.php']) {
-            exit(trim(file_get_contents(__DIR__.'/apps.php')) === '' ? 1 : 0);
-        }
-        if ($args === ['test', '-f', '/opt/orbit/websocket/shared/.env']) {
-            exit(is_file(__DIR__.'/shared.env') ? 0 : 1);
-        }
-        if ($args === ['test', '-f', "/opt/orbit/websocket/releases/{$sourceHash}/vendor/autoload.php"]) {
-            exit(1);
-        }
-        if ($args === ['cat', '/etc/orbit/websocket/app.key']) {
-            echo file_get_contents(__DIR__.'/app-key');
-            exit(0);
-        }
-        if ($args === ['cat', "/opt/orbit/websocket/releases/{$sourceHash}/.orbit-websocket-source-hash"]) {
-            exit(1);
-        }
-        if ($args === ['tee', '/etc/orbit/websocket/app.key']) {
-            file_put_contents(__DIR__.'/app-key', stream_get_contents(STDIN));
-            file_put_contents(__DIR__.'/app-key-exists', '1');
-            exit(0);
-        }
-        if ($args === ['tee', '/etc/orbit/websocket/apps.php']) {
-            file_put_contents(__DIR__.'/apps.php', stream_get_contents(STDIN));
-            exit(0);
-        }
-        if ($args === ['tee', '/opt/orbit/websocket/shared/.env']) {
-            file_put_contents(__DIR__.'/shared.env', stream_get_contents(STDIN));
-            exit(0);
-        }
-        if ($args === ['tee', "/opt/orbit/websocket/releases/{$sourceHash}/.orbit-websocket-source-hash"]) {
-            file_put_contents(__DIR__.'/installed-source-hash', stream_get_contents(STDIN));
-            exit(0);
-        }
-        if ($args === ['tar', '-xf', '-', '-C', "/opt/orbit/websocket/releases/{$sourceHash}"]) {
-            file_put_contents(__DIR__.'/source.tar', stream_get_contents(STDIN));
-            exit(0);
-        }
-        exit(0);
-        PHP);
+    file_put_contents("{$dir}/sudo", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        source_hash="$(cat "$dir/source-hash")"
+        printf 'sudo %s\n' "$*" >>"$dir/calls.log"
+
+        case "$*" in
+            'test -f /etc/orbit/websocket/app.key')
+                [ "$(cat "$dir/app-key-exists")" = 1 ]
+                ;;
+            'test -f /etc/orbit/websocket/apps.php')
+                [ -s "$dir/apps.php" ]
+                ;;
+            'test -f /opt/orbit/websocket/shared/.env')
+                [ -f "$dir/shared.env" ]
+                ;;
+            "test -f /opt/orbit/websocket/releases/$source_hash/vendor/autoload.php")
+                exit 1
+                ;;
+            'cat /etc/orbit/websocket/app.key')
+                cat "$dir/app-key"
+                ;;
+            "cat /opt/orbit/websocket/releases/$source_hash/.orbit-websocket-source-hash")
+                exit 1
+                ;;
+            'tee /etc/orbit/websocket/app.key')
+                cat >"$dir/app-key"
+                printf 1 >"$dir/app-key-exists"
+                ;;
+            'tee /etc/orbit/websocket/apps.php')
+                cat >"$dir/apps.php"
+                ;;
+            'tee /opt/orbit/websocket/shared/.env')
+                cat >"$dir/shared.env"
+                ;;
+            "tee /opt/orbit/websocket/releases/$source_hash/.orbit-websocket-source-hash")
+                cat >"$dir/installed-source-hash"
+                ;;
+            "tar -xf - -C /opt/orbit/websocket/releases/$source_hash")
+                cat >"$dir/source.tar"
+                ;;
+        esac
+        BASH);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
 
-    file_put_contents("{$dir}/composer", <<<'PHP'
-        #!/usr/bin/env php
-        <?php
-        file_put_contents(__DIR__.'/calls.log', basename($argv[0]).' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-        exit(0);
-        PHP);
+    file_put_contents("{$dir}/composer", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        printf 'composer %s\n' "$*" >>"$dir/calls.log"
+        BASH);
     chmod(filename: "{$dir}/composer", permissions: 0o755);
 
     $path = getenv('PATH');

@@ -9,24 +9,98 @@ PEST_BIN="${APP_ROOT}/vendor/pestphp/pest/bin/pest"
 cd "$APP_ROOT"
 
 PEST_ARGS=("$@")
-LOG_DIR="$(mktemp -d)"
-trap 'rm -rf "$LOG_DIR"' EXIT
+PROFILE_OUTPUT=0
 
-GROUP_LABELS=(root commands services support)
-PARALLEL_GROUP_LABELS=(root commands support)
-SERIAL_GROUP_LABELS=(services)
-
-root_files=()
-while IFS= read -r file; do
-    root_files+=("$file")
-done < <(find tests/Feature -maxdepth 1 -type f -name '*Test.php' | sort)
-
-command_dirs=()
-for directory in tests/Feature/Commands; do
-    if [ -d "$directory" ]; then
-        command_dirs+=("$directory")
+for argument in "${PEST_ARGS[@]}"; do
+    if [ "$argument" = "--profile" ]; then
+        PROFILE_OUTPUT=1
+        break
     fi
 done
+
+LOG_DIR="$(mktemp -d)"
+GROUP_WORKERS=()
+
+terminate_process_tree() {
+    local parent_pid="$1"
+    local signal="${2:-TERM}"
+    local child_pid
+    local child_pids
+
+    child_pids="$(pgrep -P "$parent_pid" 2>/dev/null || true)"
+    kill -"$signal" "$parent_pid" 2>/dev/null || true
+
+    for child_pid in $child_pids; do
+        terminate_process_tree "$child_pid" "$signal"
+    done
+}
+
+cleanup() {
+    local pid
+
+    for pid in "${GROUP_WORKERS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            terminate_process_tree "$pid"
+        fi
+    done
+
+    for pid in "${GROUP_WORKERS[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+
+    rm -rf "$LOG_DIR"
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5)
+PARALLEL_GROUP_LABELS=(mixed_1 mixed_2 mixed_3 mixed_4 mixed_5)
+
+mixed_1_files=()
+mixed_2_files=()
+mixed_3_files=()
+mixed_4_files=()
+mixed_5_files=()
+
+assign_mixed_file() {
+    local group="$1"
+    local file="$2"
+
+    case "$group" in
+        0) mixed_1_files+=("$file") ;;
+        1) mixed_2_files+=("$file") ;;
+        2) mixed_3_files+=("$file") ;;
+        3) mixed_4_files+=("$file") ;;
+        4) mixed_5_files+=("$file") ;;
+    esac
+}
+
+assign_surface_round_robin() {
+    local file
+    local file_index=0
+
+    while IFS= read -r file; do
+        assign_mixed_file "$((file_index % 5))" "$file"
+        file_index=$((file_index + 1))
+    done
+}
+
+assign_surface_round_robin < <(find tests/Feature -maxdepth 1 -type f -name '*Test.php' | sort)
+
+mixed_surface_files=()
+for directory in tests/Feature/Commands tests/Feature/Architecture tests/Feature/Support; do
+    if [ -d "$directory" ]; then
+        while IFS= read -r file; do
+            mixed_surface_files+=("$file")
+        done < <(find "$directory" -type f -name '*Test.php' | sort)
+    fi
+done
+
+if [ "${#mixed_surface_files[@]}" -gt 0 ]; then
+    assign_surface_round_robin < <(printf '%s\n' "${mixed_surface_files[@]}")
+fi
 
 service_dirs=()
 for directory in tests/Feature/Services tests/Unit/Services; do
@@ -35,17 +109,22 @@ for directory in tests/Feature/Services tests/Unit/Services; do
     fi
 done
 
-support_dirs=()
-for directory in tests/Feature/Architecture tests/Feature/Support; do
-    if [ -d "$directory" ]; then
-        support_dirs+=("$directory")
-    fi
-done
+if [ "${#service_dirs[@]}" -gt 0 ]; then
+    for directory in "${service_dirs[@]}"; do
+        while IFS= read -r file; do
+            mixed_3_files+=("$file")
+        done < <(find "$directory" -type f -name '*Test.php' | sort)
+    done
+fi
 
 top_level_files=()
 while IFS= read -r file; do
     top_level_files+=("$file")
 done < <(find tests -maxdepth 1 -type f -name '*Test.php' | sort)
+
+if [ "${#top_level_files[@]}" -gt 0 ]; then
+    assign_surface_round_robin < <(printf '%s\n' "${top_level_files[@]}")
+fi
 
 validate_coverage() {
     local all_tests_file="$LOG_DIR/all-tests.txt"
@@ -55,31 +134,12 @@ validate_coverage() {
     find tests -type f -name '*Test.php' | sort >"$all_tests_file"
 
     {
-        if [ "${#root_files[@]}" -gt 0 ]; then
-            printf '%s\n' "${root_files[@]}"
-        fi
+        [ "${#mixed_1_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_1_files[@]}"
+        [ "${#mixed_2_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_2_files[@]}"
+        [ "${#mixed_3_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_3_files[@]}"
+        [ "${#mixed_4_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_4_files[@]}"
+        [ "${#mixed_5_files[@]}" -eq 0 ] || printf '%s\n' "${mixed_5_files[@]}"
 
-        if [ "${#command_dirs[@]}" -gt 0 ]; then
-            for directory in "${command_dirs[@]}"; do
-                find "$directory" -type f -name '*Test.php'
-            done
-        fi
-
-        if [ "${#service_dirs[@]}" -gt 0 ]; then
-            for directory in "${service_dirs[@]}"; do
-                find "$directory" -type f -name '*Test.php'
-            done
-        fi
-
-        if [ "${#support_dirs[@]}" -gt 0 ]; then
-            for directory in "${support_dirs[@]}"; do
-                find "$directory" -type f -name '*Test.php'
-            done
-        fi
-
-        if [ "${#top_level_files[@]}" -gt 0 ]; then
-            printf '%s\n' "${top_level_files[@]}"
-        fi
     } | sort >"$covered_tests_file"
 
     sort "$covered_tests_file" | uniq -d >"$duplicate_tests_file"
@@ -129,6 +189,7 @@ run_group() {
         ) &
 
         echo "$!" >"$LOG_DIR/$label.pid"
+        GROUP_WORKERS+=("$!")
 
         return
     fi
@@ -151,6 +212,7 @@ run_group() {
     ) &
 
     echo "$!" >"$LOG_DIR/$label.pid"
+    GROUP_WORKERS+=("$!")
 }
 
 validate_coverage
@@ -158,27 +220,17 @@ validate_coverage
 overall_start="$LOG_DIR/overall.start"
 record_now "$overall_start"
 
-if [ "${#root_files[@]}" -gt 0 ]; then
-    run_group root "${root_files[@]}"
-else
-    run_group root
-fi
+for group_number in 1 2 3 4 5; do
+    group_label="mixed_${group_number}"
 
-if [ "${#command_dirs[@]}" -gt 0 ]; then
-    run_group commands "${command_dirs[@]}"
-else
-    run_group commands
-fi
-
-if [ "${#support_dirs[@]}" -gt 0 ] && [ "${#top_level_files[@]}" -gt 0 ]; then
-    run_group support "${support_dirs[@]}" "${top_level_files[@]}"
-elif [ "${#support_dirs[@]}" -gt 0 ]; then
-    run_group support "${support_dirs[@]}"
-elif [ "${#top_level_files[@]}" -gt 0 ]; then
-    run_group support "${top_level_files[@]}"
-else
-    run_group support
-fi
+    case "$group_number" in
+        1) run_group "$group_label" "${mixed_1_files[@]}" ;;
+        2) run_group "$group_label" "${mixed_2_files[@]}" ;;
+        3) run_group "$group_label" "${mixed_3_files[@]}" ;;
+        4) run_group "$group_label" "${mixed_4_files[@]}" ;;
+        5) run_group "$group_label" "${mixed_5_files[@]}" ;;
+    esac
+done
 
 overall_exit=0
 
@@ -199,19 +251,6 @@ for label in "${PARALLEL_GROUP_LABELS[@]}"; do
     collect_group_exit "$label"
 done
 
-# The services surface exercises the CLI's process/service helpers and has
-# proven sensitive to nested runner contention. Keep it split for visibility,
-# but run it after the other CLI surfaces finish.
-if [ "${#service_dirs[@]}" -gt 0 ]; then
-    run_group services "${service_dirs[@]}"
-else
-    run_group services
-fi
-
-for label in "${SERIAL_GROUP_LABELS[@]}"; do
-    collect_group_exit "$label"
-done
-
 elapsed_seconds "$overall_start" >"$LOG_DIR/overall.duration"
 
 if [ "$overall_exit" -ne 0 ]; then
@@ -226,9 +265,20 @@ if [ "$overall_exit" -ne 0 ]; then
     done
 fi
 
+# Pest writes the slow-test profile into each process log. On successful
+# aggregate runs, keep those reports visible before the final machine-readable
+# JSON line so quality-check evidence includes the actionable timings.
+if [ "$overall_exit" -eq 0 ] && [ "$PROFILE_OUTPUT" -eq 1 ]; then
+    for label in "${GROUP_LABELS[@]}"; do
+        echo "─── cli_pest_${label}_profile ───"
+        cat "$LOG_DIR/$label.log"
+        echo
+    done
+fi
+
 php -r '
 $directory = $argv[1];
-$labels = ["root", "commands", "services", "support"];
+$labels = ["mixed_1", "mixed_2", "mixed_3", "mixed_4", "mixed_5"];
 $groups = [];
 $tests = 0;
 $assertions = 0;

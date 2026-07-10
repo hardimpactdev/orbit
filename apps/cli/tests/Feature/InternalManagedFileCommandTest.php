@@ -101,7 +101,8 @@ describe('internal managed file command', function (): void {
     ]);
 
     it('probes managed file state through fixed argv commands', function (): void {
-        fake_managed_file_sudo_binary(fileExists: true);
+        $path = '/etc/orbit/managed-file-probe-'.bin2hex(random_bytes(8));
+        $log = fake_managed_file_sudo_binary(fileExists: true, path: $path);
 
         [$exitCode, $output] = run_internal_managed_file_command(
             [
@@ -109,8 +110,12 @@ describe('internal managed file command', function (): void {
                 '--operation-token' => managed_file_signed_operation_token(),
                 '--json' => true,
             ],
-            json_encode(['path' => '/etc/apt/apt.conf.d/20auto-upgrades'], JSON_THROW_ON_ERROR),
+            json_encode(['path' => $path], JSON_THROW_ON_ERROR),
         );
+
+        $commands = file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        expect(is_array($commands))->toBeTrue();
+        /** @var list<string> $commands */
 
         expect($exitCode)
             ->toBe(0)
@@ -119,7 +124,11 @@ describe('internal managed file command', function (): void {
             ->and($output)
             ->toContain('"hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"')
             ->and($output)
-            ->toContain('"mode":"644"');
+            ->toContain('"mode":"644"')
+            ->and($commands)
+            ->toContain("-n test -f {$path}")
+            ->toContain("-n sha256sum {$path}")
+            ->toContain("-n stat -c %a {$path}");
     });
 
     it('writes managed file content through fixed argv commands', function (): void {
@@ -205,8 +214,10 @@ function run_internal_managed_file_command(array $parameters = [], string $stdin
     return [$exitCode, trim($output->fetch())];
 }
 
-function fake_managed_file_sudo_binary(bool $fileExists = true): string
-{
+function fake_managed_file_sudo_binary(
+    bool $fileExists = true,
+    string $path = '/etc/apt/apt.conf.d/20auto-upgrades',
+): string {
     $directory = sys_get_temp_dir().'/orbit-managed-file-'.bin2hex(random_bytes(8));
     mkdir("{$directory}/bin", recursive: true);
     $log = "{$directory}/commands.log";
@@ -226,7 +237,7 @@ function fake_managed_file_sudo_binary(bool $fileExists = true): string
         fi
 
         if [ "\$1" = "sha256sum" ]; then
-          echo 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  /etc/apt/apt.conf.d/20auto-upgrades'
+          echo 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  {$path}'
           exit 0
         fi
 

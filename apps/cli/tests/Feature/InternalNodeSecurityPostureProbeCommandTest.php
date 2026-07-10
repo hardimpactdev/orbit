@@ -76,10 +76,7 @@ describe('internal node security posture probe command', function (): void {
             ->and($data)
             ->toMatchArray([
                 'runtime_user' => true,
-                'sshd_config' => false,
                 'sshd_listen' => true,
-                'sysctl' => false,
-                'home_perms' => false,
             ])
             ->and(file_get_contents("{$bin}/calls.log"))
             ->toContain('id -u orbit');

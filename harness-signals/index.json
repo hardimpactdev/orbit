@@ -427,7 +427,7 @@
                 "bin/quality-check.sh",
                 "apps/docs/content/testing/quality-gates.md"
             ],
-            "guardrail_change": "quality-e2e-lane-timing-baseline",
+            "guardrail_change": "codex/quality-check-performance",
             "related_signals": [],
             "superseded_by": null,
             "tags": [
