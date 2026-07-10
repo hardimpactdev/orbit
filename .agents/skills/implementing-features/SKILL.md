@@ -50,6 +50,9 @@ Responsibilities:
   them in `.orbit/loop.md`, the feature scratchpad, or the worker prompt. When
   decomposing into slices, explicitly mark which parts are in scope now, which
   are deferred, and why the deferral is compatible with acceptance.
+- Preserve accepted design or panel adjudications verbatim or by a precise
+  pointer in feature-owner and worker handoffs, and name them in the active Done
+  Contract Reviewer checks when they exist.
 - Prepare and own the dedicated Orbit worktree. `bin/orbit-prepare-worktree`
   seeds `.orbit/loop.md` when it is missing; the feature owner enriches that
   seeded packet with source context and the active Done Contract before worker
@@ -247,9 +250,10 @@ Read and follow:
 Feature handoff:
 <paste the crystallized handoff or owned slice>
 
-Raw acceptance examples and explicit deferrals:
+Raw acceptance examples, accepted design/panel adjudications, and explicit deferrals:
 <paste the concrete user-provided output samples, transcripts, failure text,
-negative examples, or state `none`; list deferred parts with reason and owner>
+negative examples, and accepted adjudication lines or precise pointer, or state
+`none`; list deferred parts with reason and owner>
 
 Rules:
 - Edit only inside the assigned worktree.
@@ -263,6 +267,9 @@ Rules:
 - Do not silently drop a user-provided sample, transcript, or negative example
   when turning the request into a slice. If an example cannot be implemented in
   the current slice, report the exact deferred part before editing.
+- Do not silently drop an accepted design or panel adjudication. Carry its lines
+  or precise pointer through the handoff and compare implementation evidence
+  against it in the Done Contract Reviewer checks when one exists.
 - The feature orchestrator owns the Done Contract in `.orbit/loop.md`. You may
   challenge or propose changes to it, but do not silently weaken scope,
   evidence, reviewer checks, stop conditions, or pivot conditions.
@@ -634,8 +641,10 @@ below preserve when to invoke that gate and what evidence to record.
     selected reviewer has no provider-session archive support.
     Resolve or explicitly report findings before commit.
     If the reviewer finds a mismatch between implementation evidence and the
-    raw user examples, treat it as a contract mismatch first; only downgrade it
-    to a follow-up when the Done Contract already names the deferral.
+    raw user examples or an accepted design/panel adjudication named by the Done
+    Contract Reviewer checks, treat it as a contract mismatch first; only
+    downgrade it to a follow-up when the Done Contract already names the
+    deferral.
     For small changed-files-only reviews, prompt the reviewer for a
     blockers-first verdict (`No blockers` or file/line blockers) before optional
     suggestions. Every reviewer prompt must begin with the same checkout-proof

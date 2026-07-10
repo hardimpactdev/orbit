@@ -937,11 +937,14 @@ evidence, reviewer checks, stop conditions, or pivot conditions.
 
 When a request includes concrete output samples, command transcripts, UI
 examples, or negative examples, the Done Contract keeps those raw examples or a
-precise pointer to them. Any decomposition into slices must name which parts of
-the raw request are in the current slice, which are deferred, and why deferral
-does not invalidate the acceptance contract. A reviewer finding that matches
-the original raw request is a contract gap, not an optional enhancement, unless
-the feature owner had explicitly deferred it before implementation began.
+precise pointer to them. Accepted design or panel adjudications must likewise be
+preserved verbatim or by a precise pointer alongside the raw examples and
+deferrals. Any decomposition into slices must name which parts of the raw
+request are in the current slice, which are deferred, and why deferral does not
+invalidate the acceptance contract. A reviewer finding that matches the
+original raw request or an accepted adjudication is a contract gap, not an
+optional enhancement, unless the feature owner had explicitly deferred it
+before implementation began.
 
 ```markdown
 Current slice:
