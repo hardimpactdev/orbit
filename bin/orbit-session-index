@@ -291,23 +291,16 @@ function blockers_present(string $loop): bool
         $text = strtolower(normalize_whitespace($entry));
         $text = rtrim($text, '.,;:!?');
 
-        if (str_contains($text, ' but ')) {
-            return true;
-        }
-
-        if ($text === '' || $text === 'none' || preg_match('/^none\b/', $text)) {
-            continue;
-        }
-
-        if (preg_match('/^no blockers?(?:\s+(?:for|currently|present|remain(?:s|ing)?)\b|$)/', $text)) {
-            continue;
-        }
-
-        if (preg_match('/^no active\b.*blockers?\s+remain(?:s|ing)?/', $text)) {
-            continue;
-        }
-
-        if (preg_match('/^the (?:previous|earlier)\b.*\bblockers?\s+(?:is|are)\s+resolved\b/', $text)) {
+        if (
+            $text === 'none'
+            || preg_match('/^no blockers?$/', $text) === 1
+            || preg_match('/^no blocker for solo todo #\d+$/', $text) === 1
+            || preg_match(
+                '/^no active (?:correctness|implementation(?: or verification)?) blocker remains(?:\. the earlier blocker is resolved)?$/',
+                $text,
+            ) === 1
+            || preg_match('/^the (?:previous analyzer evidence|earlier) blocker is resolved$/', $text) === 1
+        ) {
             continue;
         }
 
@@ -520,26 +513,36 @@ function normalize_analyzer_verdict(string $value): string
         return 'unknown';
     }
 
-    if (preg_match('/^`?(not used|not applicable|skipped|deferred)`?(?=$|[.,;:!?]|[ \t]+(?:-[ \t]+|because\b|for\b))/i', $value, $matches)) {
+    $verdictCandidate = $value;
+
+    if (preg_match('/^`?Verdict:\s*/i', $verdictCandidate, $matches) === 1) {
+        $verdictCandidate = substr($verdictCandidate, strlen($matches[0]));
+    }
+
+    if (preg_match(
+        '/^`?(not used|not applicable|skipped|deferred)`?(?=$|[.,;:!?]|[ \t]+(?:-[ \t]+|because\b|for\b))/i',
+        $verdictCandidate,
+        $matches,
+    )) {
         return strtolower($matches[1]) === 'deferred' ? 'deferred' : 'not used';
     }
 
-    $lower = strtolower($value);
-
-    if (str_contains($lower, 'verdict: yes') || preg_match('/\byes\b/', $lower) === 1) {
-        return 'yes';
+    if (preg_match('/^`?(yes|no)(?:`|[.,;:!?])*\s*$/i', $verdictCandidate, $matches)) {
+        return strtolower($matches[1]);
     }
 
-    if (preg_match('/\bno\b/', $lower) === 1) {
-        return 'no';
-    }
+    if (preg_match(
+        '/^`?(proper|flawed|blocked-by-missing-evidence|blocked by missing evidence)`?(?=$|[.,;:!?]|[ \t]+(?:-[ \t]+|because\b|for\b))/i',
+        $verdictCandidate,
+        $matches,
+    )) {
+        $normalizedVerdict = strtolower($matches[1]);
 
-    if (str_contains($lower, 'blocked')) {
-        return 'blocked';
-    }
+        if ($normalizedVerdict === 'blocked by missing evidence') {
+            $normalizedVerdict = 'blocked-by-missing-evidence';
+        }
 
-    if (str_contains($lower, 'defer')) {
-        return 'deferred';
+        return $normalizedVerdict;
     }
 
     return normalize_value($value);

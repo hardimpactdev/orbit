@@ -130,7 +130,7 @@ it('writes and checks deterministic facets for heterogeneous session archives', 
         expect($ok)
             ->toHaveKey('capture_status', 'ok')
             ->toHaveKey('loop_outcome', 'complete + loop improvement')
-            ->toHaveKey('fresh_analyzer_verdict', 'yes')
+            ->toHaveKey('fresh_analyzer_verdict', 'final reassessment VERDICT: yes')
             ->toHaveKey('blockers_present', false)
             ->and($ok['required_verification']['`composer quality-gate:final-check`'])
             ->toBe('blocked')
@@ -260,15 +260,193 @@ it('normalizes accepted same-line and nested packet shapes for facets', function
                     'fresh_analyzer_verdict_raw' => 'Verdict: yes',
                 ],
             ],
+            'bare-yes' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'yes',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'yes',
+                    'fresh_analyzer_verdict_raw' => 'yes',
+                ],
+            ],
+            'verdict-yes-trailing-punctuation' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: yes.',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'yes',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: yes.',
+                ],
+            ],
+            'verdict-proper-rationale' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: proper; no missed verification',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'proper',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: proper; no missed verification',
+                ],
+            ],
+            'verdict-flawed-rationale' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: flawed - partial evidence',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'flawed',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: flawed - partial evidence',
+                ],
+            ],
+            'verdict-blocked-missing' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: blocked-by-missing-evidence',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'blocked-by-missing-evidence',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: blocked-by-missing-evidence',
+                ],
+            ],
+            'verdict-spaced-blocked-missing-rationale' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: blocked by missing evidence because capture is absent',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'blocked-by-missing-evidence',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: blocked by missing evidence because capture is absent',
+                ],
+            ],
+            'yes-comma-rationale-prose' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'yes, because the loop was complete',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'yes, because the loop was complete',
+                    'fresh_analyzer_verdict_raw' => 'yes, because the loop was complete',
+                ],
+            ],
+            'verdict-no-semicolon-rationale-prose' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'Verdict: no; documented reason',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'Verdict: no; documented reason',
+                    'fresh_analyzer_verdict_raw' => 'Verdict: no; documented reason',
+                ],
+            ],
+            'whole-proper' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'proper',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'proper',
+                    'fresh_analyzer_verdict_raw' => 'proper',
+                ],
+            ],
+            'whole-no' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'no',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'no',
+                    'fresh_analyzer_verdict_raw' => 'no',
+                ],
+            ],
+            'spaced-blocked-missing' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'blocked by missing evidence',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'blocked-by-missing-evidence',
+                    'fresh_analyzer_verdict_raw' => 'blocked by missing evidence',
+                ],
+            ],
+            'head-flawed' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'flawed - partial evidence',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'flawed',
+                    'fresh_analyzer_verdict_raw' => 'flawed - partial evidence',
+                ],
+            ],
+            'head-blocked-missing' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'blocked-by-missing-evidence',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'blocked-by-missing-evidence',
+                    'fresh_analyzer_verdict_raw' => 'blocked-by-missing-evidence',
+                ],
+            ],
+            'embedded-yes-prose' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'final reassessment VERDICT: yes - loop quality proper',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'final reassessment VERDICT: yes - loop quality proper',
+                    'fresh_analyzer_verdict_raw' => 'final reassessment VERDICT: yes - loop quality proper',
+                ],
+            ],
+            'verdict-no-with-rationale-prose' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'VERDICT: no - documented reason',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'VERDICT: no - documented reason',
+                    'fresh_analyzer_verdict_raw' => 'VERDICT: no - documented reason',
+                ],
+            ],
+            'replay-proper-no-new' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'loop quality proper; no new signal',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'loop quality proper; no new signal',
+                    'fresh_analyzer_verdict_raw' => 'loop quality proper; no new signal',
+                ],
+            ],
+            'replay-no-sensible' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'no sensible actionable findings; all previous findings verified fixed.',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'no sensible actionable findings; all previous findings verified fixed.',
+                    'fresh_analyzer_verdict_raw' => 'no sensible actionable findings; all previous findings verified fixed.',
+                ],
+            ],
+            'replay-no-blockers' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'No blockers.',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'No blockers.',
+                    'fresh_analyzer_verdict_raw' => 'No blockers.',
+                ],
+            ],
+            'replay-accept-no-missed' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'accept; no missed verification; no durable signal worth capturing; app-first scheduling is separate deferred work',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'accept; no missed verification; no durable signal worth capturing; app-first scheduling is separate deferred work',
+                    'fresh_analyzer_verdict_raw' => 'accept; no missed verification; no durable signal worth capturing; app-first scheduling is separate deferred work',
+                ],
+            ],
+            'replay-no-analyzer-verdict' => [
+                'blockers' => '- none',
+                'outcome' => 'complete',
+                'analyzer' => 'no analyzer verdict',
+                'expected' => [
+                    'fresh_analyzer_verdict' => 'no analyzer verdict',
+                    'fresh_analyzer_verdict_raw' => 'no analyzer verdict',
+                ],
+            ],
         ];
 
         foreach ([
             'none-dot' => '- None.',
-            'none-currently' => '- none currently',
-            'none-currently-reviewer' => '- None currently. The reviewer lane was replaced ...',
-            'none-currently-future' => '- none currently. Possible future blocker: ...',
+            'no-blockers-bare' => '- No blockers.',
             'no-blocker-todo190' => '- No blocker for Solo todo #190.',
-            'no-blocker-currently' => '- No blocker currently.',
+            'no-blocker-todo191' => '- No blocker for Solo todo #191.',
             'no-active-remains-resolved' => '- No active implementation or verification blocker remains. The earlier blocker is resolved.',
             'multiple-resolved-blockers' => "- No active implementation blocker remains.\n- The previous analyzer evidence blocker is resolved.",
         ] as $slug => $blockers) {
@@ -281,9 +459,17 @@ it('normalizes accepted same-line and nested packet shapes for facets', function
         }
 
         foreach ([
+            'none-currently' => '- none currently',
+            'none-currently-reviewer' => '- None currently. The reviewer lane was replaced ...',
+            'none-currently-future' => '- none currently. Possible future blocker: ...',
+            'no-blocker-currently' => '- No blocker currently.',
             'safety-control' => '- No blocker was resolved, but deployment remains blocked.',
             'safety-none-but' => '- None currently, but deployment remains blocked.',
             'mixed-blockers' => "- none\n- deployment remains blocked",
+            'none-semi-however' => '- none; however a latent risk remains.',
+            'none-period-yet' => '- none. Yet follow-up work is required.',
+            'none-emdash-block' => '- none — deployment still gated on prior finding.',
+            'no-blockers-but-continuation' => '- No blockers. However the prior signal was not addressed.',
         ] as $slug => $blockers) {
             $cases[$slug] = [
                 'blockers' => $blockers,
