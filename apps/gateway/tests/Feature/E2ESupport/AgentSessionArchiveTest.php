@@ -1248,13 +1248,16 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
         // Two rollouts both containing the exact marker -> ambiguity
         $codexDir = "{$home}/.codex/sessions/2026/07/07";
         mkdir($codexDir, recursive: true);
-        foreach (['a', 'b'] as $suffix) {
+        foreach ([
+            'a' => '2026-07-07T11:00:01Z',
+            'b' => '2026-07-07T11:25:00Z',
+        ] as $suffix => $timestamp) {
             write_jsonl("{$codexDir}/rollout-2026-07-07-dupe-{$suffix}.jsonl", [[
                 'type' => 'session_meta',
                 'payload' => [
                     'id' => "dupe-{$suffix}",
                     'cwd' => $cwd,
-                    'timestamp' => '2026-07-07T11:00:00Z',
+                    'timestamp' => $timestamp,
                     'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
                 ],
             ]]);
@@ -1263,12 +1266,19 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
         $soloDb = "{$temp}/solo.db";
         $db = new PDO('sqlite:'.$soloDb);
         $db->exec(
-            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
         );
         $stmt = $db->prepare(
-            'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+            'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
         );
-        $stmt->execute([$soloProcessId, 'dupe-worker', 'codex', $cwd, 'agent']);
+        $stmt->execute([
+            $soloProcessId,
+            'dupe-worker',
+            'codex',
+            $cwd,
+            'agent',
+            '2026-07-07T11:00:00Z',
+        ]);
         $db = null; // close to flush
 
         $process = new Process([
@@ -1287,6 +1297,126 @@ it('lane-close capture fails loudly with diagnostics on duplicate markers for sa
             ->and($process->getErrorOutput().$process->getOutput())
             ->toContain('ambiguous_duplicate_markers')
             ->toContain((string) $soloProcessId);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+it('lane-close capture disambiguates an inherited marker by primary Solo identity', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'capture-inherited-marker');
+
+    try {
+        $home = "{$temp}/home";
+        $cwd = "{$temp}/worktree";
+        $orbitDir = "{$temp}/.orbit";
+        $soloProcessId = 919191;
+
+        mkdir($home, recursive: true);
+        mkdir($cwd, recursive: true);
+        mkdir($orbitDir, recursive: true);
+
+        $codexDir = "{$home}/.codex/sessions/2026/07/09";
+        mkdir($codexDir, recursive: true);
+
+        write_jsonl("{$codexDir}/rollout-child-{$soloProcessId}.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'target-child',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-09T10:00:05Z',
+                    'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "Solo process ID: {$soloProcessId}\nImplement the feature.",
+                    ]],
+                ],
+            ],
+        ]);
+
+        write_jsonl("{$codexDir}/rollout-foreign-inherited-{$soloProcessId}.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'foreign-parent',
+                    'cwd' => $cwd,
+                    'timestamp' => '2026-07-09T10:00:06Z',
+                    'base_instructions' => ['text' => 'Parent orchestrator instructions.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => 'Coordinate the child handoff.',
+                    ]],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "Solo process ID: {$soloProcessId}\nInherited child handoff.",
+                    ]],
+                ],
+            ],
+        ]);
+
+        $soloDb = "{$temp}/solo.db";
+        $db = new PDO('sqlite:'.$soloDb);
+        $db->exec(
+            'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
+        );
+        $stmt = $db->prepare(
+            'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
+        );
+        $stmt->execute([
+            $soloProcessId,
+            'target-child-worker',
+            'codex',
+            $cwd,
+            'agent',
+            '2026-07-09 10:00:00',
+        ]);
+
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            (string) $soloProcessId,
+            "--home={$home}",
+            "--cwd={$cwd}",
+            "--solo-db={$soloDb}",
+            "--orbit-dir={$orbitDir}",
+            "--slug=inherited-marker-{$soloProcessId}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifestPath = "{$orbitDir}/agent-sessions/codex/inherited-marker-{$soloProcessId}/manifest.json";
+        $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
+
+        expect($manifest['status'])
+            ->toBe('ok')
+            ->and($manifest['artifact'])
+            ->toContain("rollout-child-{$soloProcessId}")
+            ->and($manifest['timestamp_corroboration'] ?? null)
+            ->toBe('corroborated')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->not->toBeEmpty();
     } finally {
         remove_agent_session_archive_temp_dir(path: $temp);
     }
@@ -1366,7 +1496,7 @@ it('exact marker join ignores parent-orchestrator transcript containing child ma
 });
 
 it(
-    'exact marker join with wrong cwd, stale start, or resumed session still requires exact marker and loud failure on ambiguity',
+    'exact marker join disambiguates wrong cwd and stale starts with Solo metadata',
     function (): void {
         $temp = make_agent_session_archive_temp_dir(suffix: 'capture-edge');
 
@@ -1408,12 +1538,19 @@ it(
             $soloDb = "{$temp}/solo.db";
             $db = new PDO('sqlite:'.$soloDb);
             $db->exec(
-                'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT)',
+                'CREATE TABLE IF NOT EXISTS processes (id INTEGER PRIMARY KEY, project_id INTEGER, name TEXT, command TEXT, working_dir TEXT, kind TEXT, started_at TEXT)',
             );
             $stmt = $db->prepare(
-                'INSERT INTO processes (id, project_id, name, command, working_dir, kind) VALUES (?, 4, ?, ?, ?, ?)',
+                'INSERT INTO processes (id, project_id, name, command, working_dir, kind, started_at) VALUES (?, 4, ?, ?, ?, ?, ?)',
             );
-            $stmt->execute([$soloProcessId, 'edge-worker', 'codex', $cwd, 'agent']);
+            $stmt->execute([
+                $soloProcessId,
+                'edge-worker',
+                'codex',
+                $cwd,
+                'agent',
+                '2026-07-07T12:59:55Z',
+            ]);
 
             $process = new Process([
                 repo_path('bin/orbit-agent-session-capture'),
@@ -1427,12 +1564,17 @@ it(
 
             $process->run();
 
-            // With current marker-exact (no time/cwd filter yet in capture for uniqueness), two files have marker -> ambiguous
-            // This documents the required loud failure for non-unique even across stale/resumed/wrong-cwd
-            expect($process->getExitCode())
-                ->toBeGreaterThan(0)
-                ->and($process->getErrorOutput().$process->getOutput())
-                ->toContain('ambiguous');
+            expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+            $manifestPath = "{$orbitDir}/agent-sessions/codex/edge-{$soloProcessId}/manifest.json";
+            $manifest = json_decode((string) file_get_contents($manifestPath), true, JSON_THROW_ON_ERROR);
+
+            expect($manifest['status'])
+                ->toBe('ok')
+                ->and($manifest['artifact'])
+                ->toContain('rollout-resumed')
+                ->and($manifest['disambiguation_basis'] ?? null)
+                ->not->toBeEmpty();
         } finally {
             remove_agent_session_archive_temp_dir(path: $temp);
         }

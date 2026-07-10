@@ -2,9 +2,9 @@
 
 Status: recurring
 First seen: 2026-06-23
-Last seen: 2026-06-24
-Last reviewed: 2026-06-24
-Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline; quality-gate-baseline-seeding
+Last seen: 2026-07-10
+Last reviewed: 2026-07-10
+Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline; quality-gate-baseline-seeding; agent-session-capture-disambiguation
 Source commit: pending
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
@@ -68,6 +68,18 @@ proved the worktree and branch, then repeated the no-diff pattern after a
 tighter checkpoint prompt. The feature owner stopped both workers and applied
 the known tiny test-first patch directly as a documented loop exception.
 
+This signal reappeared again in `agent-session-capture-disambiguation`: Solo
+Grok worker 962 received a tiny test-only first-diff checkpoint and produced no
+diff after correction. Replacement worker 963 repeated the same failure. Both
+sessions were captured before the workers were stopped. The documented
+orchestrator exception then fired: the feature owner applied only the known red
+test diff, and that red enabled delegated production completion without
+widening the slice. Later in the same slice, Codex correction worker 968 proved
+the exact checkout and process identity but again read already-supplied guidance
+for more than two minutes without a diff after its execution correction. Its
+session was captured and stopped; the same exception bounded the feature owner
+to the analyzer's known fixture/signal/index corrections.
+
 ## Missing Guardrail
 
 The reusable worker prompt required narrow ownership and TDD, but it did not
@@ -101,11 +113,12 @@ operational gate rather than just prompt wording: the feature owner should set a
 short Solo timer for the first diff and treat any extra discovery after that
 timer as failure unless the worker reports an exact missing-context blocker.
 
-After the next recurrence, replacement alone is not enough for tiny known patch
-shapes. If one replacement worker also fails to produce the first diff or an
-exact blocker, the feature owner may apply the first test diff directly as a
-documented loop exception, then tighten this signal and the implementation
-skill in the same worktree.
+The 2026-07-10 recurrence confirmed that replacement alone is not enough for
+tiny known patch shapes. When worker 962 and replacement 963 both failed to
+produce the first diff or an exact blocker, the feature owner applied the first
+test diff directly as a documented loop exception. The existing implementation
+skill already authorized and bounded that recovery, so this recurrence tightens
+the canonical signal record without duplicating the guardrail.
 
 ## Verification
 
@@ -120,6 +133,15 @@ In `quality-check-updateall-pty-structure`, the replacement worker eventually
 produced the intended two-line test diff. The feature owner reran the focused
 quiet PTY test, the full `UpdateAllCommandTest.php` profile, `composer test`,
 `composer quality-check`, and `composer quality-gate:final-check`.
+
+In `agent-session-capture-disambiguation`, workers 962, 963, and 968 were
+captured and stopped after their no-diff checkpoint failures. The orchestrator's
+test-only red subsequently failed for the intended duplicate-marker behavior,
+and the delegated production worker made the focused disambiguation tests and
+full `AgentSessionArchiveTest.php` pass. After analyzer correction, the true
+duplicate fixture still failed loudly despite unequal candidate timestamps and
+a real Solo start time; the focused duplicate test passed at 1 / 3 and the full
+archive file at 15 / 285.
 
 ## Reappearance Check
 
