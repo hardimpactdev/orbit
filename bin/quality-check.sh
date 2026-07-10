@@ -67,23 +67,25 @@ quality_check_cleanup() {
         wait "$PROGRESS_TICKER_PID" 2>/dev/null || true
     fi
 
-    for key in "${COMPONENT_WORKERS[@]}"; do
-        pid_var="${key}_COMPONENT_PID"
-        pid="${!pid_var:-}"
+    if [ "${#COMPONENT_WORKERS[@]}" -gt 0 ]; then
+        for key in "${COMPONENT_WORKERS[@]}"; do
+            pid_var="${key}_COMPONENT_PID"
+            pid="${!pid_var:-}"
 
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            terminate_process_tree "$pid"
-        fi
-    done
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                terminate_process_tree "$pid"
+            fi
+        done
 
-    for key in "${COMPONENT_WORKERS[@]}"; do
-        pid_var="${key}_COMPONENT_PID"
-        pid="${!pid_var:-}"
+        for key in "${COMPONENT_WORKERS[@]}"; do
+            pid_var="${key}_COMPONENT_PID"
+            pid="${!pid_var:-}"
 
-        if [ -n "$pid" ]; then
-            wait "$pid" 2>/dev/null || true
-        fi
-    done
+            if [ -n "$pid" ]; then
+                wait "$pid" 2>/dev/null || true
+            fi
+        done
+    fi
 
     if [ "${PROGRESS_CURSOR_HIDDEN:-0}" -eq 1 ]; then
         printf '\e[?25h'
@@ -900,6 +902,11 @@ component_cpu_in_use() {
     local pid
     local demand
 
+    if [ "${#COMPONENT_WORKERS[@]}" -eq 0 ]; then
+        echo 0
+        return
+    fi
+
     for key in "${COMPONENT_WORKERS[@]}"; do
         pid_var="${key}_COMPONENT_PID"
         demand_var="${key}_COMPONENT_CPU"
@@ -1014,11 +1021,11 @@ gateway_mago_lint_subgate() {
 }
 
 gateway_rector_subgate() {
-    run_subgate gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
+    run_subgate gateway_rector bin/orbit-gateway-vendor-bin rector process ${RECTOR_ARGS[@]+"${RECTOR_ARGS[@]}"}
 }
 
 gateway_mago_format_subgate() {
-    run_subgate gateway_mago_format env RAYON_NUM_THREADS="$GATEWAY_STATIC_MAGO_THREADS" bin/orbit-gateway-vendor-bin mago format "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate gateway_mago_format env RAYON_NUM_THREADS="$GATEWAY_STATIC_MAGO_THREADS" bin/orbit-gateway-vendor-bin mago format ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
 }
 
 gateway_component() {
@@ -1027,7 +1034,7 @@ gateway_component() {
     bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
 
     if [ "$HEAVY_PEST_PHASE_COORDINATION" -eq 1 ]; then
-        run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" "${QUALITY_CHECK_ARGS[@]}" &
+        run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" ${QUALITY_CHECK_ARGS[@]+"${QUALITY_CHECK_ARGS[@]}"} &
         gateway_pest_pid=$!
 
         while [ ! -f "$LOG_DIR/cli_heavy_phase_released" ]; do
@@ -1050,7 +1057,7 @@ gateway_component() {
     else
         run_static_subgates gateway_mago_analyze_subgate gateway_mago_lint_subgate gateway_rector_subgate gateway_mago_format_subgate
     fi
-    run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" "${QUALITY_CHECK_ARGS[@]}"
+    run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" ${QUALITY_CHECK_ARGS[@]+"${QUALITY_CHECK_ARGS[@]}"}
     append_gateway_pest_profile
 }
 
@@ -1114,11 +1121,11 @@ cli_mago_lint_subgate() {
 }
 
 cli_rector_subgate() {
-    run_subgate cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+    run_subgate cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash ${RECTOR_ARGS[@]+"${RECTOR_ARGS[@]}"}
 }
 
 cli_mago_format_subgate() {
-    run_subgate cli_mago_format env RAYON_NUM_THREADS="$CLI_STATIC_MAGO_THREADS" bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate cli_mago_format env RAYON_NUM_THREADS="$CLI_STATIC_MAGO_THREADS" bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
 }
 
 cli_component() {
@@ -1152,22 +1159,22 @@ docs_component() {
     run_subgate docs_references bin/orbit-docs-artisan librarian:lint --format=agent --group=references
     run_subgate docs_mago_analyze env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium'
     run_subgate docs_mago_lint env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-    run_subgate docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-    run_subgate docs_mago_format env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash ${RECTOR_ARGS[@]+"${RECTOR_ARGS[@]}"}
+    run_subgate docs_mago_format env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
     run_subgate docs_pest bin/orbit-docs-pest --profile --compact
 }
 
 e2e_component() {
     run_subgate e2e_mago_analyze env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium'
     run_subgate e2e_mago_lint env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-    run_subgate e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-    run_subgate e2e_mago_format env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash ${RECTOR_ARGS[@]+"${RECTOR_ARGS[@]}"}
+    run_subgate e2e_mago_format env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
 }
 
 reverb_component() {
     run_subgate reverb_mago_analyze env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
     run_subgate reverb_mago_lint env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
-    run_subgate reverb_mago_format env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate reverb_mago_format env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb format ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
 }
 
 agent_component() {
@@ -1195,16 +1202,16 @@ macos_component() {
 sdk_component() {
     run_subgate sdk_mago_analyze env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium'
     run_subgate sdk_mago_lint env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-    run_subgate sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-    run_subgate sdk_mago_format env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash ${RECTOR_ARGS[@]+"${RECTOR_ARGS[@]}"}
+    run_subgate sdk_mago_format env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
     run_subgate sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --profile --compact'
 }
 
 core_component() {
     run_subgate core_mago_analyze env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
     run_subgate core_mago_lint env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-    run_subgate core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-    run_subgate core_mago_format env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash ${RECTOR_ARGS[@]+"${RECTOR_ARGS[@]}"}
+    run_subgate core_mago_format env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash ${MAGO_FORMAT_ARGS[@]+"${MAGO_FORMAT_ARGS[@]}"}
     wait_for_subgate_labels gateway_pest cli_pest docs_pest sdk_pest
     run_subgate core_pest bash -lc 'cd packages/core && vendor/bin/pest --profile --compact'
 }

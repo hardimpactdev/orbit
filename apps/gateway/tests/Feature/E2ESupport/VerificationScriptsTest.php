@@ -321,6 +321,43 @@ it('budgets aggregate quality gate CPU pressure by host size', function (): void
         ->toContain('CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND"');
 });
 
+it('handles an empty aggregate quality-check worker set under nounset', function (): void {
+    $script = quality_check_script_source();
+    $matches = [];
+
+    expect(preg_match('/^component_cpu_in_use\(\) \{\R.*?^\}/ms', $script, $matches))->toBe(1);
+
+    $process = new Process([
+        'bash',
+        '-c',
+        implode(PHP_EOL, [
+            'set -uo pipefail',
+            'LOG_DIR="$(mktemp -d)"',
+            'trap \'rm -rf "$LOG_DIR"\' EXIT',
+            'COMPONENT_WORKERS=()',
+            $matches[0],
+            'component_cpu_in_use',
+        ]),
+    ]);
+    $process->run();
+
+    expect($process->isSuccessful())
+        ->toBeTrue($process->getErrorOutput())
+        ->and(trim($process->getOutput()))
+        ->toBe('0');
+});
+
+it('uses Bash 3.2-safe expansion for optional aggregate quality-check arguments', function (): void {
+    $script = quality_check_script_source();
+
+    foreach (['QUALITY_CHECK_ARGS', 'RECTOR_ARGS', 'MAGO_FORMAT_ARGS'] as $array) {
+        expect(preg_match('/(?<!\+)"\$\{'.preg_quote($array, '/').'\[@\]\}"/', $script))
+            ->toBe(0)
+            ->and($script)
+            ->toContain('${'.$array.'[@]+"${'.$array.'[@]}"}');
+    }
+});
+
 it('keeps the aggregate quality gate static subgates complete', function (): void {
     $script = quality_check_script_source();
 
