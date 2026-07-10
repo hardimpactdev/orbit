@@ -3,12 +3,26 @@
 
 declare(strict_types=1);
 
+require_once __DIR__.'/orbit-session-archive-filesystem.php';
+
 /**
  * Archive a completed active .orbit session and preserve related provider
  * session files under the same persisted session directory.
  */
 
 const ARCHIVE_BASENAME_PATTERN = '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{6}-[a-z0-9-]+$';
+const STAGED_CAPTURE_STATUSES = [
+    'ok',
+    'partial',
+    'ambiguous',
+    'capture_failed',
+    'extraction_failed',
+    'invalid',
+    'missing',
+    'solo_process_not_found',
+    'stale',
+    'unsupported',
+];
 
 $options = getopt('', [
     'source-orbit-dir:',
@@ -71,126 +85,260 @@ if (array_key_exists('help', $options)) {
     exit(0);
 }
 
-$cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
-$sourceOrbitDir = isset($options['source-orbit-dir'])
+$cwdInput = (string) ($options['cwd'] ?? getcwd());
+$cwd = realpath($cwdInput) ?: $cwdInput;
+$sourceOrbitDirInput = isset($options['source-orbit-dir'])
     ? rtrim((string) $options['source-orbit-dir'], '/')
     : "{$cwd}/.orbit";
-$sourceOrbitDir = realpath($sourceOrbitDir) ?: $sourceOrbitDir;
+$sourceOrbitLinkCandidate = normalizedAbsolutePath($sourceOrbitDirInput, $cwd);
 
-if (!is_dir($sourceOrbitDir)) {
+if (is_link($sourceOrbitLinkCandidate)) {
+    fwrite(STDERR, "Source .orbit directory must not be a symlink: {$sourceOrbitDirInput}\n");
+    exit(2);
+}
+
+$sourceOrbitDir = realpath($sourceOrbitDirInput) ?: $sourceOrbitDirInput;
+
+if (! is_dir($sourceOrbitDir)) {
     fwrite(STDERR, "Source .orbit directory does not exist: {$sourceOrbitDir}\n");
     exit(2);
 }
 
 $activeLoopPath = "{$sourceOrbitDir}/loop.md";
 
-if (!is_file($activeLoopPath)) {
+if (! is_file($activeLoopPath) || is_link($activeLoopPath)) {
     fwrite(STDERR, "Active loop.md is missing, refusing to archive: {$activeLoopPath}\n");
     exit(2);
 }
 
-[$archiveDir, $mode] = resolveArchiveDirectory($options, $cwd, $sourceOrbitDir, $activeLoopPath);
+try {
+    [$archiveDir, $archiveRoot, $mode] = resolveArchiveDirectory($options, $cwd, $sourceOrbitDir, $activeLoopPath);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
+}
+
+if (is_link($archiveDir)) {
+    fwrite(STDERR, "Archive directory must not be a symlink: {$archiveDir}\n");
+    exit(2);
+}
 
 if ($mode === 'refreshed') {
     fwrite(STDERR, "Refreshing existing session archive with identical loop.md instead of minting a duplicate: {$archiveDir}\n");
-    clearDirectoryEntries($archiveDir);
 } elseif (directoryHasEntries($archiveDir)) {
     fwrite(STDERR, "Archive directory already exists and is not empty: {$archiveDir}\n");
     exit(2);
 }
 
-$copiedEntries = copyActiveOrbitEntries($sourceOrbitDir, $archiveDir);
-
-if ($copiedEntries === []) {
-    fwrite(STDERR, "No .orbit entries were copied from {$sourceOrbitDir} into {$archiveDir}.\n");
+try {
+    $expectedArchiveIdentity = orbitSessionArchivePathIdentity($archiveDir);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
     exit(2);
 }
 
 $loopDiscoveryAttempted = shouldDiscoverLoopProcessIds($options);
 $loopProcessIds = $loopDiscoveryAttempted ? loopSoloProcessIds($activeLoopPath) : [];
 
-if ($loopDiscoveryAttempted && $loopProcessIds === []) {
-    fwrite(
-        STDERR,
-        'WARNING: no Solo process context available — no --processes-json/--solo-process-id/--solo-project-id/'
-        . '--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, and no Solo process ids found in '
-        . "{$activeLoopPath}; agent-sessions will contain an empty manifest.\n",
+$temporaryArchiveDir = uniqueSiblingPath($archiveDir, 'tmp');
+$backupDir = uniqueSiblingPath($archiveDir, 'backup');
+$updatedLoop = sessionArchiveLinkedLoopContent($activeLoopPath, basename($archiveDir));
+
+try {
+    orbitSessionArchiveEnsureDirectory($temporaryArchiveDir);
+    $copiedEntries = copyActiveOrbitEntries($sourceOrbitDir, $temporaryArchiveDir);
+
+    if ($copiedEntries === []) {
+        throw new RuntimeException(
+            "No .orbit entries were copied from {$sourceOrbitDir} into {$temporaryArchiveDir}.",
+        );
+    }
+
+    $hasStagedCaptures = validateStagedCaptures("{$temporaryArchiveDir}/agent-sessions");
+
+    if ($hasStagedCaptures) {
+        fwrite(
+            STDERR,
+            "Preferring validated staged captures from active .orbit/agent-sessions; skipping live extraction.\n",
+        );
+        $agentResults = [];
+    } else {
+        if ($loopDiscoveryAttempted && $loopProcessIds === []) {
+            fwrite(
+                STDERR,
+                'WARNING: no Solo process context available — no --processes-json/--solo-process-id/'
+                . '--solo-project-id/--discover-by-cwd option, no SOLO_PROCESS_ID/SOLO_PROJECT_ID environment, '
+                ."and no Solo process ids found in {$activeLoopPath}; agent-sessions will contain an empty manifest.\n",
+            );
+        }
+
+        $agentResults = runAgentSessionArchive($options, $cwd, $temporaryArchiveDir, $loopProcessIds);
+        normalizeFallbackManifestArchiveDirectory($temporaryArchiveDir, $archiveDir);
+    }
+
+    orbitSessionArchiveWriteFile("{$temporaryArchiveDir}/loop.md", $updatedLoop);
+
+    $summary = [
+        'schema_version' => 1,
+        'generated_at' => gmdate('c'),
+        'mode' => $mode,
+        'source_orbit_dir' => $sourceOrbitDir,
+        'archive_dir' => $archiveDir,
+        'agent_sessions_dir' => "{$archiveDir}/agent-sessions",
+        'copied_entries' => $copiedEntries,
+        'discovered_solo_process_ids' => $loopProcessIds,
+        'agent_results' => $agentResults,
+    ];
+
+    writeJsonFile("{$temporaryArchiveDir}/orbit-session-archive.json", $summary);
+} catch (Throwable $exception) {
+    cleanupConstructionFailure($temporaryArchiveDir, $exception);
+    exit(2);
+}
+
+try {
+    swapArchiveDirectories(
+        $temporaryArchiveDir,
+        $archiveDir,
+        $backupDir,
+        expectedArchiveIdentity: $expectedArchiveIdentity,
     );
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(2);
 }
 
-// Staged precedence (lane-close capture contract):
-// If the active source .orbit/agent-sessions contains staged provider/session captures,
-// prefer the copied tree byte-for-byte and do NOT invoke live fallback extraction
-// (which would add top-level manifest or other files into archive/agent-sessions).
-// No-staging loops still fall back to live extraction.
-$sourceStaged = rtrim($sourceOrbitDir, '/') . '/agent-sessions';
-if (is_dir($sourceStaged) && hasStagedCaptures($sourceStaged)) {
-    fwrite(STDERR, "Preferring validated staged captures from active .orbit/agent-sessions; skipping live extraction.\n");
-    $agentResults = [];
-} else {
-    $agentResults = runAgentSessionArchive($options, $cwd, $archiveDir, $loopProcessIds);
+try {
+    orbitSessionArchiveWriteFileAtomically($activeLoopPath, $updatedLoop);
+} catch (Throwable $exception) {
+    reportActiveLoopWriteFailure($exception, $archiveDir, $backupDir);
+    exit(2);
 }
 
-writeSessionArchiveLink($activeLoopPath, basename($archiveDir));
-copyFileOrFail($activeLoopPath, "{$archiveDir}/loop.md");
+try {
+    refreshSessionIndex($archiveRoot);
+} catch (Throwable $exception) {
+    reportIndexRefreshFailure($exception, $archiveDir, $backupDir, $archiveRoot);
+    exit(2);
+}
 
-$summary = [
-    'schema_version' => 1,
-    'generated_at' => gmdate('c'),
-    'mode' => $mode,
-    'source_orbit_dir' => $sourceOrbitDir,
-    'archive_dir' => $archiveDir,
-    'agent_sessions_dir' => "{$archiveDir}/agent-sessions",
-    'copied_entries' => $copiedEntries,
-    'discovered_solo_process_ids' => $loopProcessIds,
-    'agent_results' => $agentResults,
-];
-
-writeJsonFile("{$archiveDir}/orbit-session-archive.json", $summary);
-refreshSessionIndex(dirname($archiveDir));
+try {
+    if (file_exists($backupDir) || is_link($backupDir)) {
+        orbitSessionArchiveRemovePath($backupDir);
+    }
+} catch (Throwable $exception) {
+    reportBackupCleanupFailure($exception, $archiveDir, $backupDir);
+    exit(2);
+}
 
 echo json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL;
 
 /**
  * @param array<string, mixed> $options
  *
- * @return array{0: string, 1: string}
+ * @return array{0: string, 1: string, 2: string}
  */
 function resolveArchiveDirectory(array $options, string $cwd, string $sourceOrbitDir, string $activeLoopPath): array
 {
     if (isset($options['archive-dir'])) {
-        $archiveDir = rtrim((string) $options['archive-dir'], '/');
+        $requestedArchiveDir = rtrim((string) $options['archive-dir'], '/');
+        $archiveDir = normalizedAbsolutePath($requestedArchiveDir, $cwd);
         $basename = basename($archiveDir);
 
         if (preg_match('/' . ARCHIVE_BASENAME_PATTERN . '/', $basename) !== 1) {
-            fwrite(
-                STDERR,
+            throw new RuntimeException(
                 'Archive directory basename must match ' . ARCHIVE_BASENAME_PATTERN
-                . " (YYYY-MM-DD-HHMMSS-<feature-slug> in local time): {$basename}\n",
+                . " (YYYY-MM-DD-HHMMSS-<feature-slug> in local time): {$basename}",
             );
-            exit(2);
+        }
+
+        if (is_link($archiveDir)) {
+            throw new RuntimeException("Archive directory must not be a symlink: {$archiveDir}");
+        }
+
+        if (file_exists($archiveDir) && ! is_dir($archiveDir)) {
+            throw new RuntimeException("Archive directory must be a directory: {$archiveDir}");
+        }
+
+        $archiveRoot = isset($options['archive-root'])
+            ? canonicalArchiveRoot((string) $options['archive-root'], $cwd)
+            : canonicalArchiveRoot(dirname($archiveDir), $cwd);
+        $canonicalArchiveParent = realpath(dirname($archiveDir));
+
+        if ($canonicalArchiveParent === false || rtrim($canonicalArchiveParent, '/') !== $archiveRoot) {
+            throw new RuntimeException(
+                "Explicit archive directory must be a direct child of the archive root: {$archiveDir}; "
+                ."archive root={$archiveRoot}",
+            );
         }
 
         $mode = directoryHasEntries($archiveDir) && archiveLoopMatchesActive($archiveDir, $activeLoopPath)
             ? 'refreshed'
             : 'created';
 
-        return [$archiveDir, $mode];
+        return [$archiveDir, $archiveRoot, $mode];
     }
 
-    $archiveRoot = isset($options['archive-root'])
-        ? rtrim((string) $options['archive-root'], '/')
-        : defaultArchiveRoot($cwd, $sourceOrbitDir);
+    $archiveRoot = canonicalArchiveRoot(
+        isset($options['archive-root'])
+            ? (string) $options['archive-root']
+            : defaultArchiveRoot($cwd, $sourceOrbitDir),
+        $cwd,
+    );
     $slug = slugify(isset($options['slug']) ? (string) $options['slug'] : defaultArchiveSlug($cwd));
     $existingArchiveDir = newestArchiveForSlug($archiveRoot, $slug);
 
     if ($existingArchiveDir !== null && archiveLoopMatchesActive($existingArchiveDir, $activeLoopPath)) {
-        return [$existingArchiveDir, 'refreshed'];
+        return [$existingArchiveDir, $archiveRoot, 'refreshed'];
     }
 
     $timestamp = archiveTimestamp($options);
 
-    return ["{$archiveRoot}/{$timestamp}-{$slug}", 'created'];
+    return ["{$archiveRoot}/{$timestamp}-{$slug}", $archiveRoot, 'created'];
+}
+
+function canonicalArchiveRoot(string $path, string $cwd): string
+{
+    $archiveRoot = normalizedAbsolutePath(rtrim($path, '/'), $cwd);
+
+    if (is_link($archiveRoot)) {
+        throw new RuntimeException("Archive root must not be a symlink: {$archiveRoot}");
+    }
+
+    if (file_exists($archiveRoot) && ! is_dir($archiveRoot)) {
+        throw new RuntimeException("Archive root must be a directory: {$archiveRoot}");
+    }
+
+    orbitSessionArchiveEnsureDirectory($archiveRoot);
+    $canonicalArchiveRoot = realpath($archiveRoot);
+
+    if ($canonicalArchiveRoot === false) {
+        throw new RuntimeException("Unable to resolve archive root: {$archiveRoot}");
+    }
+
+    return rtrim($canonicalArchiveRoot, '/');
+}
+
+function normalizedAbsolutePath(string $path, string $cwd): string
+{
+    $absolutePath = str_starts_with($path, '/') ? $path : rtrim($cwd, '/').'/'.$path;
+    $parts = [];
+
+    foreach (explode('/', $absolutePath) as $part) {
+        if ($part === '' || $part === '.') {
+            continue;
+        }
+
+        if ($part === '..') {
+            array_pop($parts);
+
+            continue;
+        }
+
+        $parts[] = $part;
+    }
+
+    return '/'.implode('/', $parts);
 }
 
 /**
@@ -204,8 +352,7 @@ function archiveTimestamp(array $options): string
         return $timestamp;
     }
 
-    fwrite(STDERR, "Archive timestamp must use YYYY-MM-DD-HHMMSS in local time: {$timestamp}\n");
-    exit(2);
+    throw new RuntimeException("Archive timestamp must use YYYY-MM-DD-HHMMSS in local time: {$timestamp}");
 }
 
 /**
@@ -233,7 +380,7 @@ function newestArchiveForSlug(string $archiveRoot, string $slug): ?string
     $matches = [];
 
     foreach (new FilesystemIterator($archiveRoot, FilesystemIterator::SKIP_DOTS) as $entry) {
-        if (!$entry->isDir()) {
+        if ($entry->isLink() || ! $entry->isDir()) {
             continue;
         }
 
@@ -259,27 +406,23 @@ function archiveLoopMatchesActive(string $archiveDir, string $activeLoopPath): b
 {
     $archivedLoopPath = "{$archiveDir}/loop.md";
 
-    if (!is_file($archivedLoopPath)) {
+    if (! is_file($archivedLoopPath) || is_link($archivedLoopPath)) {
         return false;
     }
 
     return file_get_contents($archivedLoopPath) === file_get_contents($activeLoopPath);
 }
 
-function writeSessionArchiveLink(string $loopPath, string $archiveBasename): void
+function sessionArchiveLinkedLoopContent(string $loopPath, string $archiveBasename): string
 {
     $bullet = "- Session archive: .orbit/sessions/{$archiveBasename}";
-    $content = (string) file_get_contents($loopPath);
-    $updated = upsertEvidenceLinkBullet($content, $bullet);
+    $content = file_get_contents($loopPath);
 
-    if ($updated === $content) {
-        return;
+    if ($content === false) {
+        throw new RuntimeException("Unable to read active loop.md: {$loopPath}");
     }
 
-    if (file_put_contents($loopPath, $updated) === false) {
-        fwrite(STDERR, "Failed to write session archive link into active loop.md: {$loopPath}\n");
-        exit(2);
-    }
+    return upsertEvidenceLinkBullet($content, $bullet);
 }
 
 function upsertEvidenceLinkBullet(string $content, string $bullet): string
@@ -363,26 +506,13 @@ function directoryHasEntries(string $directory): bool
     return $iterator->valid();
 }
 
-function clearDirectoryEntries(string $directory): void
+function uniqueSiblingPath(string $archiveDir, string $kind): string
 {
-    foreach (new FilesystemIterator($directory, FilesystemIterator::SKIP_DOTS) as $entry) {
-        removePath($entry->getPathname());
-    }
-}
+    do {
+        $path = dirname($archiveDir).'/.'.basename($archiveDir).".{$kind}-".bin2hex(random_bytes(8));
+    } while (file_exists($path) || is_link($path));
 
-function removePath(string $path): void
-{
-    if (is_dir($path) && !is_link($path)) {
-        foreach (new FilesystemIterator($path, FilesystemIterator::SKIP_DOTS) as $child) {
-            removePath($child->getPathname());
-        }
-
-        rmdir($path);
-
-        return;
-    }
-
-    unlink($path);
+    return $path;
 }
 
 /**
@@ -390,7 +520,7 @@ function removePath(string $path): void
  */
 function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): array
 {
-    ensureDirectory($archiveDir);
+    orbitSessionArchiveEnsureDirectory($archiveDir);
     $copiedEntries = [];
     $iterator = new DirectoryIterator($sourceOrbitDir);
 
@@ -401,22 +531,23 @@ function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): arr
 
         $name = $entry->getFilename();
 
-        if ($name === 'sessions') {
+        if ($name === 'sessions' || $name === 'release-candidates') {
             continue;
         }
 
         $source = $entry->getPathname();
         $target = "{$archiveDir}/{$name}";
 
-        if ($entry->isLink() && $entry->isDir()) {
+        if ($entry->isLink()) {
+            warnSkippedSourceSymlink($source);
+
             continue;
         }
 
         if ($entry->isDir()) {
             copyDirectory($source, $target, $name === 'agent-sessions' ? 0 : null);
         } elseif ($entry->isFile()) {
-            ensureDirectory(dirname($target));
-            copyFileOrFail($source, $target);
+            orbitSessionArchiveCopyFile($source, $target);
         } else {
             continue;
         }
@@ -431,7 +562,7 @@ function copyActiveOrbitEntries(string $sourceOrbitDir, string $archiveDir): arr
 
 function copyDirectory(string $source, string $target, ?int $agentSessionsDepth = null): void
 {
-    ensureDirectory($target);
+    orbitSessionArchiveEnsureDirectory($target);
     $iterator = new DirectoryIterator($source);
 
     foreach ($iterator as $entry) {
@@ -439,16 +570,18 @@ function copyDirectory(string $source, string $target, ?int $agentSessionsDepth 
             continue;
         }
 
-        if ($entry->isLink() && $entry->isDir()) {
+        if ($entry->isLink()) {
+            warnSkippedSourceSymlink($entry->getPathname());
+
             continue;
         }
 
         if (
             $agentSessionsDepth === 1
             && $entry->isDir()
-            && isForeignTemporaryCaptureDirectory($entry->getPathname())
+            && isProviderTransactionDirectory($entry->getFilename())
         ) {
-            fwrite(STDERR, "WARNING: excluding foreign temporary capture directory: {$entry->getPathname()}\n");
+            fwrite(STDERR, "WARNING: excluding provider transaction directory: {$entry->getPathname()}\n");
 
             continue;
         }
@@ -466,20 +599,19 @@ function copyDirectory(string $source, string $target, ?int $agentSessionsDepth 
         }
 
         if ($entry->isFile()) {
-            ensureDirectory(dirname($destination));
-            copyFileOrFail($entry->getPathname(), $destination);
+            orbitSessionArchiveCopyFile($entry->getPathname(), $destination);
         }
     }
 }
 
-function copyFileOrFail(string $source, string $target): void
+function warnSkippedSourceSymlink(string $path): void
 {
-    if (@copy($source, $target)) {
-        return;
-    }
+    fwrite(STDERR, "WARNING: skipping source symlink without following it: {$path}\n");
+}
 
-    fwrite(STDERR, "Failed to copy .orbit entry: {$source} -> {$target}\n");
-    exit(2);
+function isProviderTransactionDirectory(string $name): bool
+{
+    return preg_match('/^\..+\.(?:tmp|backup)-[^\/]+$/', $name) === 1;
 }
 
 /**
@@ -581,13 +713,33 @@ function runAgentSessionArchive(array $options, string $cwd, string $archiveDir,
     }
 
     if ($exitCode !== 0) {
-        fwrite(STDERR, $stdout . PHP_EOL);
-        exit($exitCode);
+        throw new RuntimeException(
+            "Agent session archive failed with exit code {$exitCode}: ".trim($stdout),
+        );
     }
 
-    $payload = json_decode($stdout, true);
+    $payload = json_decode($stdout, true, flags: JSON_THROW_ON_ERROR);
 
     return is_array($payload) ? $payload : [];
+}
+
+function normalizeFallbackManifestArchiveDirectory(string $temporaryArchiveDir, string $archiveDir): void
+{
+    $manifestPath = "{$temporaryArchiveDir}/agent-sessions/manifest.json";
+    $contents = file_get_contents($manifestPath);
+
+    if ($contents === false) {
+        throw new RuntimeException("Fallback extraction did not write its top-level manifest: {$manifestPath}");
+    }
+
+    $manifest = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+
+    if (! is_array($manifest)) {
+        throw new RuntimeException("Fallback extraction wrote an invalid top-level manifest: {$manifestPath}");
+    }
+
+    $manifest['archive_dir'] = "{$archiveDir}/agent-sessions";
+    writeJsonFile($manifestPath, $manifest);
 }
 
 /**
@@ -623,10 +775,12 @@ function slugify(string $value): string
     return $slug === '' ? 'session' : $slug;
 }
 
+/**
+ * @param array<string, mixed> $payload
+ */
 function writeJsonFile(string $path, array $payload): void
 {
-    ensureDirectory(dirname($path));
-    file_put_contents(
+    orbitSessionArchiveWriteFile(
         $path,
         json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . PHP_EOL,
     );
@@ -639,7 +793,6 @@ function refreshSessionIndex(string $sessionsDir): void
             PHP_BINARY,
             __DIR__ . '/orbit-session-index',
             "--sessions-dir={$sessionsDir}",
-            '--write',
         ],
         [
             1 => ['pipe', 'w'],
@@ -650,8 +803,7 @@ function refreshSessionIndex(string $sessionsDir): void
     );
 
     if (! is_resource($process)) {
-        fwrite(STDERR, "Unable to refresh session index for {$sessionsDir}.\n");
-        exit(2);
+        throw new RuntimeException("Unable to refresh session index for {$sessionsDir}.");
     }
 
     $stdout = stream_get_contents($pipes[1]);
@@ -662,56 +814,162 @@ function refreshSessionIndex(string $sessionsDir): void
     $exitCode = proc_close($process);
 
     if ($exitCode !== 0) {
-        fwrite(STDERR, $stderr ?: $stdout ?: "Unable to refresh session index for {$sessionsDir}.\n");
-        exit(2);
+        throw new RuntimeException(
+            trim($stderr ?: $stdout ?: "Unable to refresh session index for {$sessionsDir}."),
+        );
     }
+
+    if ($stdout === false || $stdout === '') {
+        throw new RuntimeException("Session index generation returned no content for {$sessionsDir}.");
+    }
+
+    orbitSessionArchiveWriteFileAtomically("{$sessionsDir}/index.json", $stdout);
 }
 
-function ensureDirectory(string $directory): void
+function validateStagedCaptures(string $agentSessionsDir): bool
 {
-    if (is_dir($directory)) {
-        return;
-    }
-
-    if (!mkdir($directory, 0o775, true) && !is_dir($directory)) {
-        throw new RuntimeException("Unable to create directory: {$directory}");
-    }
-}
-
-/**
- * Returns true only when the active staging tree contains manifest-backed
- * captures. Malformed or empty staging should not suppress fallback extraction.
- */
-function hasStagedCaptures(string $dir, int $agentSessionsDepth = 0): bool
-{
-    if (! is_dir($dir) || is_link($dir)) {
+    if (! file_exists($agentSessionsDir) && ! is_link($agentSessionsDir)) {
         return false;
     }
 
-    $iterator = new DirectoryIterator($dir);
+    if (is_link($agentSessionsDir)) {
+        warnSkippedSourceSymlink($agentSessionsDir);
 
-    foreach ($iterator as $entry) {
-        if ($entry->isDot()) {
+        return false;
+    }
+
+    if (! is_dir($agentSessionsDir)) {
+        return false;
+    }
+
+    $hasValidatedCapture = false;
+
+    foreach (new DirectoryIterator($agentSessionsDir) as $providerEntry) {
+        if ($providerEntry->isDot() || $providerEntry->isLink() || ! $providerEntry->isDir()) {
+            if ($providerEntry->isLink()) {
+                warnSkippedSourceSymlink($providerEntry->getPathname());
+            }
+
             continue;
         }
 
-        if ($entry->isLink() && $entry->isDir()) {
-            continue;
-        }
+        $provider = $providerEntry->getFilename();
 
-        if ($entry->isDir()) {
-            if ($agentSessionsDepth === 1 && isForeignTemporaryCaptureDirectory($entry->getPathname())) {
+        foreach (new DirectoryIterator($providerEntry->getPathname()) as $captureEntry) {
+            if ($captureEntry->isDot()) {
                 continue;
             }
 
-            if (hasStagedCaptures($entry->getPathname(), $agentSessionsDepth + 1)) {
-                return true;
+            if ($captureEntry->isLink()) {
+                warnSkippedSourceSymlink($captureEntry->getPathname());
+
+                continue;
             }
 
+            if (! $captureEntry->isDir() || isProviderTransactionDirectory($captureEntry->getFilename())) {
+                continue;
+            }
+
+            $manifestPath = $captureEntry->getPathname().'/manifest.json';
+
+            if (is_link($manifestPath) || ! is_file($manifestPath)) {
+                throw new RuntimeException(
+                    "Staged capture manifest.json is required and must be a non-symlink regular file: {$manifestPath}",
+                );
+            }
+
+            validateStagedCaptureManifest($manifestPath, $provider, $captureEntry->getFilename());
+            $hasValidatedCapture = true;
+        }
+    }
+
+    return $hasValidatedCapture;
+}
+
+function validateStagedCaptureManifest(string $manifestPath, string $provider, string $slug): void
+{
+    $contents = file_get_contents($manifestPath);
+
+    if ($contents === false) {
+        throw new RuntimeException("Unable to read staged manifest: {$manifestPath}");
+    }
+
+    try {
+        $manifest = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RuntimeException("Staged manifest must contain valid JSON: {$manifestPath}");
+    }
+
+    if (! is_array($manifest)) {
+        throw new RuntimeException("Staged manifest must contain a JSON object: {$manifestPath}");
+    }
+
+    if (($manifest['schema_version'] ?? null) !== 1) {
+        throw new RuntimeException("Staged manifest schema_version must be 1: {$manifestPath}");
+    }
+
+    if (($manifest['provider'] ?? null) !== $provider) {
+        throw new RuntimeException(
+            "Staged manifest provider must match directory '{$provider}': {$manifestPath}",
+        );
+    }
+
+    if (($manifest['slug'] ?? null) !== $slug) {
+        throw new RuntimeException("Staged manifest slug must match directory '{$slug}': {$manifestPath}");
+    }
+
+    if (! is_int($manifest['solo_process_id'] ?? null) || $manifest['solo_process_id'] <= 0) {
+        throw new RuntimeException("Staged manifest solo_process_id must be a positive integer: {$manifestPath}");
+    }
+
+    $status = $manifest['status'] ?? null;
+
+    if (! is_string($status) || $status === '') {
+        throw new RuntimeException("Staged manifest status is required: {$manifestPath}");
+    }
+
+    if (! in_array($status, STAGED_CAPTURE_STATUSES, true)) {
+        throw new RuntimeException("Staged manifest has unknown status '{$status}': {$manifestPath}");
+    }
+
+    if ($status !== 'ok' && (! is_string($manifest['reason'] ?? null) || trim($manifest['reason']) === '')) {
+        throw new RuntimeException("A non-ok staged manifest requires a non-empty reason: {$manifestPath}");
+    }
+
+    if ($status === 'ok') {
+        validateCompleteStagedCapture(dirname($manifestPath));
+    }
+}
+
+function validateCompleteStagedCapture(string $captureDir): void
+{
+    foreach (['usage.json', 'messages.jsonl'] as $filename) {
+        $path = "{$captureDir}/{$filename}";
+
+        if (is_link($path) || ! is_file($path) || filesize($path) === 0) {
+            throw new RuntimeException("Staged {$filename} must be non-empty: {$path}");
+        }
+    }
+
+    $rawDir = "{$captureDir}/raw";
+
+    if (is_link($rawDir) || ! is_dir($rawDir) || ! directoryContainsNonEmptyRegularFile($rawDir)) {
+        throw new RuntimeException("Staged raw must contain a non-empty regular file: {$rawDir}");
+    }
+}
+
+function directoryContainsNonEmptyRegularFile(string $directory): bool
+{
+    foreach (new DirectoryIterator($directory) as $entry) {
+        if ($entry->isDot() || $entry->isLink()) {
             continue;
         }
 
-        if ($entry->isFile() && $entry->getFilename() === 'manifest.json') {
+        if ($entry->isFile() && $entry->getSize() > 0) {
+            return true;
+        }
+
+        if ($entry->isDir() && directoryContainsNonEmptyRegularFile($entry->getPathname())) {
             return true;
         }
     }
@@ -719,7 +977,78 @@ function hasStagedCaptures(string $dir, int $agentSessionsDepth = 0): bool
     return false;
 }
 
-function isForeignTemporaryCaptureDirectory(string $path): bool
+function cleanupConstructionFailure(string $temporaryArchiveDir, Throwable $exception): void
 {
-    return preg_match('/^\..+\.tmp-[^\/]+$/', basename($path)) === 1;
+    $cleanupFailure = null;
+
+    try {
+        orbitSessionArchiveRemovePath($temporaryArchiveDir);
+    } catch (Throwable $cleanupException) {
+        $cleanupFailure = $cleanupException->getMessage();
+    }
+
+    fwrite(STDERR, "Archive construction failed: {$exception->getMessage()}\n");
+
+    if ($cleanupFailure !== null) {
+        fwrite(STDERR, "Temporary archive cleanup also failed: {$cleanupFailure}\n");
+    }
+}
+
+function reportActiveLoopWriteFailure(
+    Throwable $exception,
+    string $archiveDir,
+    string $backupDir,
+): void {
+    fwrite(STDERR, "Active loop bookkeeping failed: {$exception->getMessage()}\n");
+    fwrite(STDERR, "Coherent new archive retained at: {$archiveDir}\n");
+
+    if (file_exists($backupDir) || is_link($backupDir)) {
+        fwrite(STDERR, "Previous archive retained at: {$backupDir}\n");
+        fwrite(
+            STDERR,
+            'Recovery: remove '.escapeshellarg($archiveDir).' and run mv '
+            .escapeshellarg($backupDir).' '.escapeshellarg($archiveDir)."\n",
+        );
+
+        return;
+    }
+
+    fwrite(STDERR, 'Recovery: repair bookkeeping, or remove '.escapeshellarg($archiveDir)." before retrying.\n");
+}
+
+function reportIndexRefreshFailure(
+    Throwable $exception,
+    string $archiveDir,
+    string $backupDir,
+    string $archiveRoot,
+): void {
+    fwrite(STDERR, "Session index bookkeeping failed: {$exception->getMessage()}\n");
+    fwrite(STDERR, "Coherent new archive and active loop retained at: {$archiveDir}\n");
+
+    if (file_exists($backupDir) || is_link($backupDir)) {
+        fwrite(STDERR, "Previous archive backup retained at: {$backupDir}\n");
+    }
+
+    fwrite(
+        STDERR,
+        'Index recovery: keep the coherent new archive and active loop; repair the index with bin/orbit-session-index '
+        .'--sessions-dir='.escapeshellarg($archiveRoot)." --write.\n",
+    );
+
+    if (file_exists($backupDir) || is_link($backupDir)) {
+        fwrite(STDERR, 'After index repair, remove the retained backup at '.escapeshellarg($backupDir).".\n");
+    }
+}
+
+function reportBackupCleanupFailure(
+    Throwable $exception,
+    string $archiveDir,
+    string $backupDir,
+): void {
+    fwrite(STDERR, "Archive backup cleanup failed: {$exception->getMessage()}\n");
+    fwrite(STDERR, "The new archive, active loop, and session index remain coherent at: {$archiveDir}\n");
+    fwrite(
+        STDERR,
+        'Cleanup recovery: inspect and remove any retained backup residue at '.escapeshellarg($backupDir).".\n",
+    );
 }

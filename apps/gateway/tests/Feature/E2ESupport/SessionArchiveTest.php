@@ -153,6 +153,8 @@ it('session archive refreshes the newest slug archive instead of minting duplica
             ->toContain('Refresh')
             ->and(session_archive_directories(archiveRoot: $paths['archiveRoot']))
             ->toBe(['2026-07-01-100000-idempotent-slice'])
+            ->and(session_archive_transaction_residue($firstArchiveDir))
+            ->toBe([])
             ->and("{$firstArchiveDir}/agent-sessions/manifest.json")
             ->toBeFile();
 
@@ -284,6 +286,8 @@ it('session archive warns loudly when no solo process context exists', function 
         expect($process->getErrorOutput())
             ->toContain('WARNING')
             ->toContain("{$paths['sourceOrbitDir']}/loop.md")
+            ->and($manifest['archive_dir'])
+            ->toBe($summary['archive_dir'].'/agent-sessions')
             ->and($manifest['sessions'])
             ->toBe([]);
     } finally {
@@ -431,6 +435,288 @@ function run_session_archive(array $arguments): Process
     return $process;
 }
 
+function run_session_archive_swap_harness(string $workspace): Process
+{
+    $harness = <<<'PHP'
+        declare(strict_types=1);
+
+        $helperPath = $argv[1];
+        $workspace = $argv[2];
+
+        if (! is_file($helperPath)) {
+            fwrite(STDERR, "Archive filesystem helper is missing: {$helperPath}\n");
+            exit(86);
+        }
+
+        require $helperPath;
+
+        if (! function_exists('swapArchiveDirectories')) {
+            fwrite(STDERR, "Archive filesystem helper must define swapArchiveDirectories().\n");
+            exit(87);
+        }
+
+        $archiveDir = "{$workspace}/archive-final";
+        $temporaryArchiveDir = "{$workspace}/.archive-final.tmp-test";
+        $backupDir = "{$workspace}/.archive-final.backup-test";
+        mkdir($archiveDir);
+        mkdir($temporaryArchiveDir);
+        file_put_contents("{$archiveDir}/previous-final.txt", "old final\n");
+        file_put_contents("{$temporaryArchiveDir}/new-final.txt", "new final\n");
+
+        $renameCalls = [];
+        $rename = static function (string $source, string $destination) use (&$renameCalls): bool {
+            $renameCalls[] = [$source, $destination];
+
+            if (count($renameCalls) === 2) {
+                return false;
+            }
+
+            return rename($source, $destination);
+        };
+        $failureObserved = false;
+
+        try {
+            swapArchiveDirectories($temporaryArchiveDir, $archiveDir, $backupDir, $rename);
+        } catch (RuntimeException) {
+            $failureObserved = true;
+        }
+
+        if (! $failureObserved) {
+            fwrite(STDERR, "Second rename failure was not reported.\n");
+            exit(88);
+        }
+
+        if (count($renameCalls) !== 3) {
+            fwrite(STDERR, 'Expected final-to-backup, failed temp-to-final, and backup-to-final renames.\n');
+            exit(89);
+        }
+
+        if (! is_file("{$archiveDir}/previous-final.txt") || is_file("{$archiveDir}/new-final.txt")) {
+            fwrite(STDERR, "Old final was not restored exactly.\n");
+            exit(90);
+        }
+
+        if (file_exists($temporaryArchiveDir) || file_exists($backupDir)) {
+            fwrite(STDERR, "Swap rollback left temporary or backup residue.\n");
+            exit(91);
+        }
+        PHP;
+    $process = new Process([
+        PHP_BINARY,
+        '-r',
+        $harness,
+        repo_path('bin/orbit-session-archive-filesystem.php'),
+        $workspace,
+    ], repo_path());
+    $process->run();
+
+    return $process;
+}
+
+function run_session_archive_unexpected_final_harness(string $workspace): Process
+{
+    $harness = <<<'PHP'
+        declare(strict_types=1);
+
+        require $argv[1];
+
+        $workspace = $argv[2];
+        $archiveDir = "{$workspace}/archive-final";
+        $temporaryArchiveDir = "{$workspace}/.archive-final.tmp-test";
+        $backupDir = "{$workspace}/.archive-final.backup-test";
+        mkdir($temporaryArchiveDir);
+        file_put_contents("{$temporaryArchiveDir}/new-final.txt", "new final\n");
+        $expectedArchiveIdentity = function_exists('orbitSessionArchivePathIdentity')
+            ? orbitSessionArchivePathIdentity($archiveDir)
+            : 'absent';
+
+        mkdir($archiveDir);
+        file_put_contents("{$archiveDir}/unexpected-sentinel.txt", "unexpected final\n");
+        $failure = null;
+
+        try {
+            swapArchiveDirectories(
+                $temporaryArchiveDir,
+                $archiveDir,
+                $backupDir,
+                null,
+                $expectedArchiveIdentity,
+            );
+        } catch (RuntimeException $exception) {
+            $failure = $exception->getMessage();
+        }
+
+        if ($failure === null || ! str_contains(strtolower($failure), 'unexpected')) {
+            fwrite(STDERR, "Unexpected final was not rejected explicitly.\n");
+            exit(92);
+        }
+
+        if (file_get_contents("{$archiveDir}/unexpected-sentinel.txt") !== "unexpected final\n") {
+            fwrite(STDERR, "Unexpected final was mutated.\n");
+            exit(93);
+        }
+
+        if (file_exists($temporaryArchiveDir) || file_exists($backupDir)) {
+            fwrite(STDERR, "Unexpected-final rejection did not clean only the completed temp.\n");
+            exit(94);
+        }
+        PHP;
+    $process = new Process([
+        PHP_BINARY,
+        '-r',
+        $harness,
+        repo_path('bin/orbit-session-archive-filesystem.php'),
+        $workspace,
+    ], repo_path());
+    $process->run();
+
+    return $process;
+}
+
+function run_session_archive_rollback_failure_harness(string $workspace): Process
+{
+    $harness = <<<'PHP'
+        declare(strict_types=1);
+
+        require $argv[1];
+
+        $workspace = $argv[2];
+        $archiveDir = "{$workspace}/archive-final";
+        $temporaryArchiveDir = "{$workspace}/.archive-final.tmp-test";
+        $backupDir = "{$workspace}/.archive-final.backup-test";
+        mkdir($archiveDir);
+        mkdir($temporaryArchiveDir);
+        file_put_contents("{$archiveDir}/previous-final.txt", "old final\n");
+        file_put_contents("{$temporaryArchiveDir}/new-final.txt", "new final\n");
+
+        $renameCalls = [];
+        $rename = static function (string $source, string $destination) use (&$renameCalls): bool {
+            $renameCalls[] = [$source, $destination];
+
+            if (count($renameCalls) > 1) {
+                return false;
+            }
+
+            return rename($source, $destination);
+        };
+        $failure = null;
+
+        try {
+            swapArchiveDirectories($temporaryArchiveDir, $archiveDir, $backupDir, $rename);
+        } catch (RuntimeException $exception) {
+            $failure = $exception->getMessage();
+        }
+
+        if (count($renameCalls) !== 3 || $failure === null) {
+            fwrite(STDERR, "Activation and rollback failures were not both exercised.\n");
+            exit(95);
+        }
+
+        if (file_exists($archiveDir)) {
+            fwrite(STDERR, "Failed rollback unexpectedly restored a final archive.\n");
+            exit(96);
+        }
+
+        if (
+            ! is_file("{$temporaryArchiveDir}/new-final.txt")
+            || ! is_file("{$backupDir}/previous-final.txt")
+        ) {
+            fwrite(STDERR, "Failed rollback did not retain complete temp and old backup.\n");
+            exit(97);
+        }
+
+        if (! str_contains($failure, $temporaryArchiveDir) || ! str_contains($failure, $backupDir)) {
+            fwrite(STDERR, "Failed rollback did not report both retained recovery paths.\n");
+            exit(98);
+        }
+        PHP;
+    $process = new Process([
+        PHP_BINARY,
+        '-r',
+        $harness,
+        repo_path('bin/orbit-session-archive-filesystem.php'),
+        $workspace,
+    ], repo_path());
+    $process->run();
+
+    return $process;
+}
+
+function run_session_archive_no_final_activation_failure_harness(string $workspace): Process
+{
+    $harness = <<<'PHP'
+        declare(strict_types=1);
+
+        require $argv[1];
+
+        $workspace = $argv[2];
+        $archiveDir = "{$workspace}/archive-final";
+        $temporaryArchiveDir = "{$workspace}/.archive-final.tmp-test";
+        $backupDir = "{$workspace}/.archive-final.backup-test";
+        mkdir($temporaryArchiveDir);
+        file_put_contents("{$temporaryArchiveDir}/new-final.txt", "new final\n");
+        $expectedArchiveIdentity = orbitSessionArchivePathIdentity($archiveDir);
+        $renameCalls = 0;
+        $rename = static function () use (&$renameCalls): bool {
+            $renameCalls++;
+
+            return false;
+        };
+        $failure = null;
+
+        try {
+            swapArchiveDirectories(
+                $temporaryArchiveDir,
+                $archiveDir,
+                $backupDir,
+                $rename,
+                $expectedArchiveIdentity,
+            );
+        } catch (RuntimeException $exception) {
+            $failure = $exception->getMessage();
+        }
+
+        if ($expectedArchiveIdentity !== 'absent' || $renameCalls !== 1 || $failure === null) {
+            fwrite(STDERR, "Absent-final activation failure was not isolated.\n");
+            exit(99);
+        }
+
+        if (! is_file("{$temporaryArchiveDir}/new-final.txt")) {
+            fwrite(STDERR, "Absent-final activation failure deleted the complete temp.\n");
+            exit(100);
+        }
+
+        if (file_exists($archiveDir) || file_exists($backupDir)) {
+            fwrite(STDERR, "Absent-final activation failure created final or backup state.\n");
+            exit(101);
+        }
+
+        $lowerFailure = strtolower($failure);
+
+        if (
+            ! str_contains($failure, $temporaryArchiveDir)
+            || str_contains($failure, $backupDir)
+            || ! str_contains($lowerFailure, 'no previous final or backup existed')
+            || str_contains($lowerFailure, 'rollback')
+            || str_contains($lowerFailure, 'rolled back')
+            || str_contains($lowerFailure, 'restor')
+        ) {
+            fwrite(STDERR, "Absent-final recovery message was inaccurate: {$failure}\n");
+            exit(102);
+        }
+        PHP;
+    $process = new Process([
+        PHP_BINARY,
+        '-r',
+        $harness,
+        repo_path('bin/orbit-session-archive-filesystem.php'),
+        $workspace,
+    ], repo_path());
+    $process->run();
+
+    return $process;
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -566,7 +852,7 @@ it(
     },
 );
 
-it('session archive excludes and warns about foreign temp capture siblings without deleting them', function (): void {
+it('session archive excludes direct provider temp and backup residue without deleting it', function (): void {
     $workspace = session_archive_workspace(suffix: 'foreign-temp-excluded');
 
     try {
@@ -586,6 +872,10 @@ it('session archive excludes and warns about foreign temp capture siblings witho
             'solo_process_id' => 801,
         ], JSON_THROW_ON_ERROR)
             .PHP_EOL);
+        file_put_contents("{$stagedProvider}/usage.json", "{}\n");
+        file_put_contents("{$stagedProvider}/messages.jsonl", "{}\n");
+        mkdir("{$stagedProvider}/raw", recursive: true);
+        file_put_contents("{$stagedProvider}/raw/rollout.jsonl", "{}\n");
         file_put_contents("{$foreignTemp}/manifest.json", json_encode([
             'status' => 'ok',
             'slug' => 'foreign-temp',
@@ -608,8 +898,7 @@ it('session archive excludes and warns about foreign temp capture siblings witho
             ->and($process->getErrorOutput())
             ->toContain('WARNING')
             ->toContain($foreignTemp)
-            ->not
-            ->toContain("excluding foreign temporary capture directory: {$retainedBackup}")
+            ->toContain(basename($retainedBackup))
             ->and("{$foreignTemp}/sentinel.txt")
             ->toBeFile()
             ->and(file_get_contents("{$foreignTemp}/sentinel.txt"))
@@ -624,14 +913,10 @@ it('session archive excludes and warns about foreign temp capture siblings witho
         expect("{$summary['archive_dir']}/agent-sessions/codex/valid-lane-801/manifest.json")
             ->toBeFile()
             ->and("{$summary['archive_dir']}/agent-sessions/codex/.valid-lane-801.tmp-foreign")
-            ->not
-            ->toBeDirectory()
-            ->and("{$summary['archive_dir']}/agent-sessions/codex/.valid-lane-801.backup-retained/sentinel.txt")
-            ->toBeFile()
-            ->and(file_get_contents(
+            ->not->toBeDirectory()->and(
                 "{$summary['archive_dir']}/agent-sessions/codex/.valid-lane-801.backup-retained/sentinel.txt",
-            ))
-            ->toBe("backup preserve\n");
+            )
+            ->not->toBeFile();
     } finally {
         remove_session_archive_workspace(path: $workspace);
     }
@@ -681,14 +966,17 @@ it('session archive does not treat a lone foreign temp capture as valid staging'
     }
 });
 
-it('root review preserves unrelated temp-shaped evidence directories byte for byte', function (): void {
+it('root review preserves unrelated temp and backup shaped evidence directories byte for byte', function (): void {
     $workspace = session_archive_workspace(suffix: 'unrelated-temp-evidence');
 
     try {
         $paths = session_archive_paths(workspace: $workspace);
         $evidenceTemp = $paths['sourceOrbitDir'].'/evidence/.report.tmp-kept';
+        $evidenceBackup = $paths['sourceOrbitDir'].'/evidence/.report.backup-kept';
         mkdir($evidenceTemp, recursive: true);
+        mkdir($evidenceBackup, recursive: true);
         file_put_contents("{$evidenceTemp}/sentinel.txt", "preserve evidence\n");
+        file_put_contents("{$evidenceBackup}/sentinel.txt", "preserve backup evidence\n");
 
         $process = run_session_archive(arguments: [
             "--source-orbit-dir={$paths['sourceOrbitDir']}",
@@ -706,12 +994,19 @@ it('root review preserves unrelated temp-shaped evidence directories byte for by
 
         $summary = session_archive_summary(process: $process);
         $archivedSentinel = "{$summary['archive_dir']}/evidence/.report.tmp-kept/sentinel.txt";
+        $archivedBackup = "{$summary['archive_dir']}/evidence/.report.backup-kept/sentinel.txt";
 
         expect($archivedSentinel)
             ->toBeFile()
             ->and(file_get_contents($archivedSentinel))
             ->toBe("preserve evidence\n")
             ->and("{$evidenceTemp}/sentinel.txt")
+            ->toBeFile()
+            ->and($archivedBackup)
+            ->toBeFile()
+            ->and(file_get_contents($archivedBackup))
+            ->toBe("preserve backup evidence\n")
+            ->and("{$evidenceBackup}/sentinel.txt")
             ->toBeFile();
     } finally {
         remove_session_archive_workspace(path: $workspace);
@@ -815,3 +1110,777 @@ it('late re-review never follows a root agent sessions symlink for copy or stage
         remove_session_archive_workspace(path: $workspace);
     }
 });
+
+it('session archive rejects a symlinked archive root before mutating its target', function (): void {
+    $workspace = session_archive_workspace(suffix: 'symlinked-archive-root');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $archiveRootTarget = "{$workspace}/archive-root-target";
+        mkdir($archiveRootTarget);
+        file_put_contents("{$archiveRootTarget}/sentinel.txt", "preserve\n");
+        symlink($archiveRootTarget, $paths['archiveRoot']);
+
+        $beforeSnapshot = snapshot_session_archive_tree($archiveRootTarget);
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100000',
+            '--slug=symlinked-archive-root',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('archive root')
+            ->toContain('symlink')
+            ->and(snapshot_session_archive_tree($archiveRootTarget))
+            ->toBe($beforeSnapshot);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive rejects a symlinked explicit destination before mutating its target', function (): void {
+    $workspace = session_archive_workspace(suffix: 'symlinked-archive-destination');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $archiveDir = "{$paths['archiveRoot']}/2026-07-10-100001-symlinked-destination";
+        $archiveTarget = "{$workspace}/archive-target";
+        mkdir($paths['archiveRoot']);
+        mkdir($archiveTarget);
+        file_put_contents("{$archiveTarget}/sentinel.txt", "preserve\n");
+        symlink($archiveTarget, $archiveDir);
+
+        $beforeSnapshot = snapshot_session_archive_tree($archiveTarget);
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            "--archive-dir={$archiveDir}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('archive directory')
+            ->toContain('must not be a symlink')
+            ->and(snapshot_session_archive_tree($archiveTarget))
+            ->toBe($beforeSnapshot);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive rejects a symlinked source orbit root before archive construction: :dataset', function (
+    string $sourceSuffix,
+): void {
+    $workspace = session_archive_workspace(suffix: 'symlinked-source-root');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $sourceOrbitTarget = "{$paths['cwd']}/.orbit-real";
+        rename($paths['sourceOrbitDir'], $sourceOrbitTarget);
+        mkdir("{$sourceOrbitTarget}/sub");
+        symlink($sourceOrbitTarget, $paths['sourceOrbitDir']);
+        $sourceOrbitArgument = $paths['sourceOrbitDir'].$sourceSuffix;
+        $activeLoopBefore = file_get_contents("{$sourceOrbitTarget}/loop.md");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$sourceOrbitArgument}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100002',
+            '--slug=symlinked-source-root',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and(strtolower($process->getErrorOutput()))->toContain('source .orbit')->toContain(
+                'symlink',
+            )->and($paths['archiveRoot'])
+            ->not->toBeDirectory()->and("{$sourceOrbitTarget}/evidence/proof.txt")->toBeFile()->and(file_get_contents(
+                "{$sourceOrbitTarget}/loop.md",
+            ))->toBe($activeLoopBefore);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+})->with([
+    'direct symlink spelling' => [''],
+    'dot-suffix symlink spelling' => ['/.'],
+    'nested parent spelling' => ['/sub/..'],
+]);
+
+it('session archive requires an explicit destination to be a direct child of the explicit archive root', function (): void {
+    $workspace = session_archive_workspace(suffix: 'explicit-containment');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $outsideArchiveDir = "{$workspace}/outside/2026-07-10-100003-containment";
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            "--archive-dir={$outsideArchiveDir}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and(strtolower($process->getErrorOutput()))->toContain('direct child')->toContain(
+                'archive root',
+            )->and($outsideArchiveDir)
+            ->not->toBeDirectory();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive uses the canonical parent of an explicit destination when no archive root is supplied', function (): void {
+    $workspace = session_archive_workspace(suffix: 'explicit-parent');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $archiveDir = "{$workspace}/explicit-parent/2026-07-10-100004-explicit-parent";
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-dir={$archiveDir}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(session_archive_summary(process: $process))
+            ->toHaveKey('archive_dir', $archiveDir)
+            ->and($archiveDir)
+            ->toBeDirectory()
+            ->and(dirname($archiveDir).'/index.json')
+            ->toBeFile();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive construction failure preserves the old final and leaves no transaction residue', function (): void {
+    $workspace = session_archive_workspace(suffix: 'construction-rollback');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $archiveDir = seed_existing_session_archive(
+            paths: $paths,
+            basename: '2026-07-10-100005-construction-rollback',
+        );
+        mkdir("{$paths['sourceOrbitDir']}/orbit-session-archive.json");
+        file_put_contents("{$paths['sourceOrbitDir']}/orbit-session-archive.json/collision.txt", "collision\n");
+
+        $oldFinalSnapshot = snapshot_session_archive_tree($archiveDir);
+        $activeLoopBefore = (string) file_get_contents($paths['loopPath']);
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-dir={$archiveDir}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($process->getErrorOutput())
+            ->toContain('orbit-session-archive.json')
+            ->and(snapshot_session_archive_tree($archiveDir))
+            ->toBe($oldFinalSnapshot)
+            ->and(session_archive_transaction_residue($archiveDir))
+            ->toBe([])
+            ->and(file_get_contents($paths['loopPath']))
+            ->toBe($activeLoopBefore);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive filesystem helper rolls the old final back when the second rename fails', function (): void {
+    $workspace = session_archive_workspace(suffix: 'swap-rollback');
+
+    try {
+        $process = run_session_archive_swap_harness(workspace: $workspace);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive filesystem helper rejects an unexpected final without mutating it', function (): void {
+    $workspace = session_archive_workspace(suffix: 'unexpected-final');
+
+    try {
+        $process = run_session_archive_unexpected_final_harness(workspace: $workspace);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive filesystem helper retains temp and backup when activation rollback fails', function (): void {
+    $workspace = session_archive_workspace(suffix: 'rollback-failure');
+
+    try {
+        $process = run_session_archive_rollback_failure_harness(workspace: $workspace);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive filesystem helper retains temp when activation fails without a prior final', function (): void {
+    $workspace = session_archive_workspace(suffix: 'no-final-activation-failure');
+
+    try {
+        $process = run_session_archive_no_final_activation_failure_harness(workspace: $workspace);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput().$process->getOutput());
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive retains the coherent new final and old backup when index refresh fails after swap', function (): void {
+    $workspace = session_archive_workspace(suffix: 'post-swap-index-failure');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $archiveDir = seed_existing_session_archive(
+            paths: $paths,
+            basename: '2026-07-10-100007-post-swap-index-failure',
+        );
+        $oldFinalSnapshot = snapshot_session_archive_tree($archiveDir);
+        mkdir("{$paths['archiveRoot']}/index.json");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-dir={$archiveDir}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+        $backupDirectories = session_archive_backup_directories($archiveDir);
+        $errorOutput = $process->getErrorOutput();
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and($backupDirectories)->toHaveCount(1)->and(snapshot_session_archive_tree(
+                $backupDirectories[0],
+            ))->toBe($oldFinalSnapshot)->and("{$archiveDir}/evidence/proof.txt")->toBeFile()->and(
+                "{$archiveDir}/previous-final.txt",
+            )
+            ->not->toBeFile()->and("{$archiveDir}/orbit-session-archive.json")->toBeFile()->and(file_get_contents(
+                "{$archiveDir}/loop.md",
+            ))->toBe(file_get_contents($paths['loopPath']))->and(strtolower($process->getErrorOutput()))->toContain(
+                'index recovery',
+            )->and($errorOutput)->toContain($archiveDir)->toContain($backupDirectories[0])->toContain(
+                'bin/orbit-session-index',
+            )->toContain('--write')
+            ->not->toContain(' mv ')
+            ->not->toContain('restore')->and(
+                session_archive_temp_directories($archiveDir),
+            )->toBe([]);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive retains recovery state when the active loop write fails after swap', function (): void {
+    $workspace = session_archive_workspace(suffix: 'post-swap-loop-failure');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $archiveDir = seed_existing_session_archive(
+            paths: $paths,
+            basename: '2026-07-10-100008-post-swap-loop-failure',
+        );
+        $oldFinalSnapshot = snapshot_session_archive_tree($archiveDir);
+        $activeLoopBefore = (string) file_get_contents($paths['loopPath']);
+
+        chmod($paths['loopPath'], 0o444);
+        chmod($paths['sourceOrbitDir'], 0o555);
+
+        try {
+            $process = run_session_archive(arguments: [
+                "--source-orbit-dir={$paths['sourceOrbitDir']}",
+                "--archive-dir={$archiveDir}",
+                "--cwd={$paths['cwd']}",
+                "--home={$paths['home']}",
+            ]);
+        } finally {
+            chmod($paths['sourceOrbitDir'], 0o775);
+            chmod($paths['loopPath'], 0o664);
+        }
+
+        $backupDirectories = session_archive_backup_directories($archiveDir);
+
+        expect($process->getExitCode())
+            ->not
+            ->toBe(0)
+            ->and($backupDirectories)
+            ->toHaveCount(1)
+            ->and(snapshot_session_archive_tree($backupDirectories[0]))
+            ->toBe($oldFinalSnapshot)
+            ->and("{$archiveDir}/evidence/proof.txt")
+            ->toBeFile()
+            ->and("{$archiveDir}/orbit-session-archive.json")
+            ->toBeFile()
+            ->and(file_get_contents($paths['loopPath']))
+            ->toBe($activeLoopBefore)
+            ->and(strtolower($process->getErrorOutput()))
+            ->toContain('recovery')
+            ->and($process->getErrorOutput())
+            ->toContain($archiveDir)
+            ->toContain($backupDirectories[0])
+            ->toContain('mv');
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive rejects invalid staged manifests without falling back: :dataset', function (
+    array $manifestOverrides,
+    ?string $rawManifest,
+    string $expectedError,
+    array $missingKeys = [],
+): void {
+    $workspace = session_archive_workspace(suffix: 'invalid-staged-manifest');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $manifest = array_replace(valid_staged_manifest(), $manifestOverrides);
+
+        foreach ($missingKeys as $missingKey) {
+            unset($manifest[$missingKey]);
+        }
+
+        $captureDir = stage_session_archive_capture(
+            paths: $paths,
+            manifest: $rawManifest ?? $manifest,
+        );
+        $sourceManifestPath = realpath("{$captureDir}/manifest.json");
+        $activeLoopBefore = (string) file_get_contents($paths['loopPath']);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100009',
+            '--slug=invalid-staged-manifest',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        $canonicalArchiveRoot = realpath($paths['archiveRoot']);
+
+        expect($sourceManifestPath)->toBeString()->and($canonicalArchiveRoot)->toBeString();
+
+        $temporaryManifestPattern =
+            '#'
+            .preg_quote($canonicalArchiveRoot, '#')
+            .'/\.2026-07-10-100009-invalid-staged-manifest\.tmp-[a-f0-9]{16}'
+            .'/agent-sessions/codex/lane-801/manifest\.json#';
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and($process->getErrorOutput())->toContain($expectedError)->toMatch(
+                $temporaryManifestPattern,
+            )
+            ->not->toContain($sourceManifestPath)
+            ->not->toContain(
+                'agent-sessions will contain an empty manifest',
+            )->and(session_archive_transaction_directories($paths['archiveRoot']))->toBe([])->and(file_get_contents(
+                $paths['loopPath'],
+            ))->toBe($activeLoopBefore);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+})->with([
+    'invalid JSON' => [[], '{invalid-json', 'valid JSON'],
+    'unknown failed status' => [['status' => 'failed', 'reason' => 'generic failure'], null, "unknown status 'failed'"],
+    'missing status' => [[], null, 'status is required', ['status']],
+    'missing failure reason' => [['status' => 'capture_failed'], null, 'non-empty reason'],
+    'schema v2' => [['schema_version' => 2], null, 'schema_version must be 1'],
+    'zero process id' => [['solo_process_id' => 0], null, 'positive integer'],
+    'negative process id' => [['solo_process_id' => -1], null, 'positive integer'],
+    'string process id' => [['solo_process_id' => '801'], null, 'positive integer'],
+    'whitespace failure reason' => [['status' => 'capture_failed', 'reason' => " \t\n"], null, 'non-empty reason'],
+    'provider path mismatch' => [['provider' => 'claude'], null, "provider must match directory 'codex'"],
+    'slug path mismatch' => [['slug' => 'other-lane'], null, "slug must match directory 'lane-801'"],
+]);
+
+it('session archive rejects a manifestless direct staged capture before fallback', function (): void {
+    $workspace = session_archive_workspace(suffix: 'manifestless-staged-capture');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $captureDir = "{$paths['sourceOrbitDir']}/agent-sessions/codex/lane-801";
+        mkdir($captureDir, recursive: true);
+        file_put_contents("{$captureDir}/sentinel.txt", "source capture preserved\n");
+        $activeLoopBefore = file_get_contents($paths['loopPath']);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100014',
+            '--slug=manifestless-staged-capture',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and($process->getErrorOutput())->toContain('manifest.json')->toContain('required')
+            ->not->toContain('agent-sessions will contain an empty manifest')->and(
+                "{$captureDir}/sentinel.txt",
+            )->toBeFile()->and(file_get_contents("{$captureDir}/sentinel.txt"))->toBe(
+                "source capture preserved\n",
+            )->and(file_get_contents($paths['loopPath']))->toBe($activeLoopBefore)->and(
+                session_archive_directories($paths['archiveRoot']),
+            )->toBe([])->and(session_archive_transaction_directories($paths['archiveRoot']))->toBe([]);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+it('session archive rejects incomplete ok staged artifacts: :dataset', function (
+    string $artifactState,
+    string $expectedError,
+): void {
+    $workspace = session_archive_workspace(suffix: "incomplete-ok-{$artifactState}");
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        stage_session_archive_capture(
+            paths: $paths,
+            manifest: valid_staged_manifest(),
+            artifactState: $artifactState,
+        );
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100010',
+            "--slug=incomplete-ok-{$artifactState}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->not->toBe(0)->and($process->getErrorOutput())->toContain($expectedError)
+            ->not->toContain(
+                'agent-sessions will contain an empty manifest',
+            )->and(session_archive_transaction_directories($paths['archiveRoot']))->toBe([]);
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+})->with([
+    'empty usage' => ['empty-usage', 'usage.json must be non-empty'],
+    'empty messages' => ['empty-messages', 'messages.jsonl must be non-empty'],
+    'empty raw tree' => ['empty-raw', 'raw must contain a non-empty regular file'],
+    'symlink-only raw tree' => ['raw-symlink-only', 'raw must contain a non-empty regular file'],
+]);
+
+it('session archive accepts closed staged failure evidence: :dataset', function (string $status): void {
+    $workspace = session_archive_workspace(suffix: "accepted-staged-{$status}");
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $manifest = array_replace(valid_staged_manifest(), [
+            'status' => $status,
+            'reason' => "{$status} evidence retained",
+        ]);
+        $captureDir = stage_session_archive_capture(
+            paths: $paths,
+            manifest: $manifest,
+            artifactState: 'none',
+        );
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100011',
+            "--slug=accepted-staged-{$status}",
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('Preferring validated staged captures')
+            ->and(
+                session_archive_summary(process: $process)['archive_dir']
+                .'/agent-sessions/codex/lane-801/manifest.json',
+            )
+            ->toBeFile()
+            ->and(file_get_contents($captureDir.'/manifest.json'))
+            ->toBe(file_get_contents(
+                session_archive_summary(process: $process)['archive_dir']
+                .'/agent-sessions/codex/lane-801/manifest.json',
+            ));
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+})->with([
+    'capture_failed',
+    'partial',
+]);
+
+it('session archive warns and skips source file symlinks without following them: :dataset', function (bool $nested): void {
+    $workspace = session_archive_workspace(suffix: $nested ? 'nested-file-symlink' : 'root-file-symlink');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $externalFile = "{$workspace}/external-secret.txt";
+        $relativeArchivePath = $nested ? 'evidence/linked-secret.txt' : 'linked-secret.txt';
+        $sourceLink = "{$paths['sourceOrbitDir']}/{$relativeArchivePath}";
+        file_put_contents($externalFile, "must not be archived\n");
+        symlink($externalFile, $sourceLink);
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100012',
+            '--slug=file-symlink-no-follow',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getErrorOutput())
+            ->toContain('WARNING')
+            ->toContain(basename($sourceLink));
+
+        $archiveDir = session_archive_summary(process: $process)['archive_dir'];
+
+        expect("{$archiveDir}/{$relativeArchivePath}")
+            ->not
+            ->toBeFile()
+            ->and($externalFile)
+            ->toBeFile()
+            ->and(file_get_contents($externalFile))
+            ->toBe("must not be archived\n");
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+})->with([
+    'root file symlink' => [false],
+    'nested file symlink' => [true],
+]);
+
+it('session archive excludes release candidates and reports only copied top-level source entries', function (): void {
+    $workspace = session_archive_workspace(suffix: 'truthful-copied-entries');
+
+    try {
+        $paths = session_archive_paths(workspace: $workspace);
+        $releaseCandidates = "{$paths['sourceOrbitDir']}/release-candidates";
+        $priorSessions = "{$paths['sourceOrbitDir']}/sessions";
+        $externalFile = "{$workspace}/external.txt";
+        mkdir($releaseCandidates);
+        mkdir($priorSessions);
+        file_put_contents("{$releaseCandidates}/candidate.json", "{}\n");
+        file_put_contents("{$priorSessions}/prior.txt", "prior\n");
+        file_put_contents($externalFile, "external\n");
+        symlink($externalFile, "{$paths['sourceOrbitDir']}/linked-root-file.txt");
+
+        $process = run_session_archive(arguments: [
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-100013',
+            '--slug=truthful-copied-entries',
+            "--cwd={$paths['cwd']}",
+            "--home={$paths['home']}",
+        ]);
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $summary = session_archive_summary(process: $process);
+        $archiveDir = $summary['archive_dir'];
+
+        expect($summary['copied_entries'])
+            ->toBe(['evidence', 'loop.md'])
+            ->and("{$archiveDir}/release-candidates")
+            ->not->toBeDirectory()->and("{$archiveDir}/sessions")
+            ->not->toBeDirectory()->and("{$archiveDir}/linked-root-file.txt")
+            ->not->toBeFile()->and("{$releaseCandidates}/candidate.json")->toBeFile();
+    } finally {
+        remove_session_archive_workspace(path: $workspace);
+    }
+});
+
+/**
+ * @param array{sourceOrbitDir: string, archiveRoot: string, loopPath: string} $paths
+ */
+function seed_existing_session_archive(array $paths, string $basename): string
+{
+    $archiveDir = "{$paths['archiveRoot']}/{$basename}";
+    mkdir($archiveDir, recursive: true);
+    copy($paths['loopPath'], "{$archiveDir}/loop.md");
+    file_put_contents("{$archiveDir}/previous-final.txt", "old final\n");
+
+    return $archiveDir;
+}
+
+/**
+ * @return array<string, string>
+ */
+function snapshot_session_archive_tree(string $root): array
+{
+    if (! is_dir($root)) {
+        return [];
+    }
+
+    $snapshot = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+
+    foreach ($iterator as $entry) {
+        $relativePath = substr($entry->getPathname(), strlen($root) + 1);
+
+        if ($entry->isLink()) {
+            $snapshot["link:{$relativePath}"] = (string) readlink($entry->getPathname());
+
+            continue;
+        }
+
+        if ($entry->isDir()) {
+            $snapshot["dir:{$relativePath}"] = '';
+
+            continue;
+        }
+
+        if ($entry->isFile()) {
+            $snapshot["file:{$relativePath}"] = hash_file('sha256', $entry->getPathname());
+        }
+    }
+
+    ksort($snapshot);
+
+    return $snapshot;
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_transaction_residue(string $archiveDir): array
+{
+    return [
+        ...session_archive_temp_directories($archiveDir),
+        ...session_archive_backup_directories($archiveDir),
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_temp_directories(string $archiveDir): array
+{
+    return session_archive_matching_directories($archiveDir, 'tmp');
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_backup_directories(string $archiveDir): array
+{
+    return session_archive_matching_directories($archiveDir, 'backup');
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_matching_directories(string $archiveDir, string $kind): array
+{
+    $matches = array_values(array_filter(
+        glob(dirname($archiveDir).'/.'.basename($archiveDir).".{$kind}-*") ?: [],
+        'is_dir',
+    ));
+    sort($matches, SORT_STRING);
+
+    return $matches;
+}
+
+/**
+ * @return list<string>
+ */
+function session_archive_transaction_directories(string $archiveRoot): array
+{
+    if (! is_dir($archiveRoot)) {
+        return [];
+    }
+
+    $directories = [];
+
+    foreach (new FilesystemIterator($archiveRoot, FilesystemIterator::SKIP_DOTS) as $entry) {
+        if ($entry->isDir()) {
+            $directories[] = $entry->getPathname();
+        }
+    }
+
+    sort($directories, SORT_STRING);
+
+    return $directories;
+}
+
+/**
+ * @return array{schema_version: int, provider: string, status: string, slug: string, solo_process_id: int}
+ */
+function valid_staged_manifest(): array
+{
+    return [
+        'schema_version' => 1,
+        'provider' => 'codex',
+        'status' => 'ok',
+        'slug' => 'lane-801',
+        'solo_process_id' => 801,
+    ];
+}
+
+/**
+ * @param array{sourceOrbitDir: string} $paths
+ * @param array<string, mixed>|string $manifest
+ */
+function stage_session_archive_capture(array $paths, array|string $manifest, string $artifactState = 'complete'): string
+{
+    $captureDir = $paths['sourceOrbitDir'].'/agent-sessions/codex/lane-801';
+    mkdir($captureDir, recursive: true);
+    $manifestContents = is_array($manifest)
+        ? json_encode($manifest, JSON_THROW_ON_ERROR).PHP_EOL
+        : $manifest;
+    file_put_contents("{$captureDir}/manifest.json", $manifestContents);
+
+    if ($artifactState === 'none') {
+        return $captureDir;
+    }
+
+    file_put_contents("{$captureDir}/usage.json", $artifactState === 'empty-usage' ? '' : "{}\n");
+    file_put_contents("{$captureDir}/messages.jsonl", $artifactState === 'empty-messages' ? '' : "{}\n");
+    mkdir("{$captureDir}/raw");
+
+    if ($artifactState === 'raw-symlink-only') {
+        $externalRawFile = dirname($paths['sourceOrbitDir']).'/external-raw.jsonl';
+        file_put_contents($externalRawFile, "{}\n");
+        symlink($externalRawFile, "{$captureDir}/raw/rollout.jsonl");
+    } elseif ($artifactState !== 'empty-raw') {
+        file_put_contents("{$captureDir}/raw/rollout.jsonl", "{}\n");
+    }
+
+    return $captureDir;
+}
