@@ -135,6 +135,62 @@ function orbitFeedbackValidateStream(array $events): void
 }
 
 /**
+ * @param  list<array<string, mixed>>  $events
+ * @return list<string>
+ */
+function orbitFeedbackUnresolvedActionableIds(array $events): array
+{
+    $actionableRecords = [];
+    $unresolved = [];
+
+    foreach ($events as $event) {
+        $type = $event['type'] ?? null;
+
+        if ($type === 'feedback.recorded') {
+            $id = (string) ($event['id'] ?? '');
+            $actionable = array_key_exists('actionable', $event)
+                ? $event['actionable'] === true
+                : ($event['context']['kind'] ?? null) !== 'acceptance';
+            $actionableRecords[$id] = $actionable;
+
+            if ($actionable) {
+                $unresolved[$id] = true;
+            }
+
+            continue;
+        }
+
+        $feedbackId = (string) ($event['feedback_id'] ?? '');
+
+        if (! ($actionableRecords[$feedbackId] ?? false)) {
+            continue;
+        }
+
+        if (in_array($type, ['feedback.promoted', 'feedback.waived'], true)) {
+            unset($unresolved[$feedbackId]);
+
+            continue;
+        }
+
+        if ($type === 'protection.failed') {
+            $unresolved[$feedbackId] = true;
+        }
+    }
+
+    return array_keys($unresolved);
+}
+
+/** @param list<array<string, mixed>> $events */
+function orbitFeedbackRequireActionableClosure(array $events): void
+{
+    $unresolved = orbitFeedbackUnresolvedActionableIds($events);
+
+    if ($unresolved !== []) {
+        throw new RuntimeException('unresolved actionable feedback: '.implode(', ', $unresolved));
+    }
+}
+
+/**
  * @param array<string, mixed> $event
  * @param list<array<string, mixed>> $existing
  */
@@ -159,6 +215,10 @@ function orbitFeedbackValidate(array $event, array $existing = []): void
     if ($type === 'feedback.recorded') {
         orbitFeedbackRequireStrings($event, ['raw_text', 'session_ref', 'surface']);
 
+        if (array_key_exists('actionable', $event) && ! is_bool($event['actionable'])) {
+            throw new RuntimeException('feedback actionable must be a boolean');
+        }
+
         if (! orbitFeedbackSourceRefIsValid((string) $event['session_ref'])) {
             throw new RuntimeException('feedback session_ref must be a safe Codex or Solo source reference');
         }
@@ -173,6 +233,24 @@ function orbitFeedbackValidate(array $event, array $existing = []): void
 
         if (! is_array($event['context'] ?? null) || ! is_array($event['evidence'] ?? null)) {
             throw new RuntimeException('feedback recorded context and evidence must be arrays');
+        }
+
+        $isAcceptanceEvidence = ($event['context']['kind'] ?? null) === 'acceptance';
+
+        if ($isAcceptanceEvidence) {
+            if (
+                ! str_starts_with((string) $event['id'], 'feedback-acceptance-')
+                || ! str_starts_with((string) $event['surface'], 'acceptance.')
+                || ($event['actionable'] ?? false) !== false
+            ) {
+                throw new RuntimeException('acceptance feedback must use its reserved id, surface, and non-actionable marker');
+            }
+
+            return;
+        }
+
+        if (($event['actionable'] ?? true) !== true) {
+            throw new RuntimeException('non-acceptance feedback cannot be marked non-actionable');
         }
 
         return;

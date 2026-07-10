@@ -648,6 +648,14 @@ function check_merge(string $root, array $targets): array
     $currentBranch = trim(run_git($root, ['branch', '--show-current'])['stdout']);
 
     if ($currentBranch !== 'main') {
+        if ($branch !== 'main') {
+            return block_result(
+                $branch,
+                'a non-main checkout may only merge local main into its current feature branch; '
+                ."checkout `{$currentBranch}` cannot merge `{$branch}` through this boundary",
+            );
+        }
+
         return ok();
     }
 
@@ -1444,6 +1452,7 @@ function compact_acceptance_provenance_problem(
     if (file_exists($feedbackPath) || is_link($feedbackPath)) {
         try {
             $events = orbitFeedbackRead($feedbackPath);
+            orbitFeedbackRequireActionableClosure($events);
         } catch (Throwable $exception) {
             return 'feedback stream is invalid: '.$exception->getMessage();
         }
@@ -1460,17 +1469,7 @@ function compact_acceptance_provenance_problem(
                 : 'automated acceptance says reviewer-confirmed non-observable, but review does not confirm non-observable';
         }
 
-        if ($acceptance === 'accepted - automated - automation-only diff') {
-            if (orbitLoopReviewSaysNonObservable($review)) {
-                return 'automated acceptance for a non-observable review must record reviewer-confirmed non-observable provenance';
-            }
-
-            return $minimumVenue === 'automated'
-                ? null
-                : "automated acceptance is not eligible for the diff-routed {$minimumVenue} venue";
-        }
-
-        return 'acceptance provenance is invalid; automated acceptance must name automation-only diff or reviewer-confirmed non-observable';
+        return 'acceptance provenance is invalid; automated acceptance must name reviewer-confirmed non-observable';
     }
 
     if (preg_match('/^accepted - user @ (\S+)$/', $acceptance, $match) !== 1) {

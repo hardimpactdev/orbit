@@ -122,9 +122,10 @@ bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
 
 The conservative venues are:
 
-- `automated` for docs, tests, repository tooling, or reviewer-confirmed
-  non-observable production-path changes;
-- `retained-incus` for CLI and node/runtime behavior;
+- `automated` as the default route for docs, tests, and declarative workflow
+  files, and as a reviewer-confirmed non-observable override for other changes;
+- `retained-incus` for executable repository tooling, CLI, and node/runtime
+  behavior;
 - `browser` for web UI;
 - `host-macos` for native macOS behavior.
 
@@ -152,8 +153,8 @@ bin/orbit-feature-acceptance accept \
   --source-ref=<codex-or-solo-ref>
 ```
 
-Automated acceptance is allowed only for automation-only or independently
-reviewed non-observable work.
+Automated acceptance is allowed only for independently reviewed non-observable
+work.
 
 If main advances, merge current main into the feature branch, return through
 PROVE, and repeat ACCEPT against the new feature tip. Do not refresh a recorded
@@ -164,6 +165,10 @@ acceptance.
 
 Non-secret feedback events are immutable. Close generalized feedback with the
 strongest practical protection, in order:
+
+Implementation feedback is actionable by default; acceptance evidence is not.
+Do not enter ACCEPT or LAND while an actionable record lacks a linked promotion
+or user-sourced waiver. A failed protection reopens the record.
 
 1. test, linter, schema, state check;
 2. tool, default, generated contract, template;

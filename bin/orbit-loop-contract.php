@@ -287,7 +287,6 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         str_ends_with($path, '.md')
         || str_contains($path, '/tests/')
         || str_starts_with($path, 'tests/')
-        || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
         || str_starts_with($path, '.github/')
         || in_array(

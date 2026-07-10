@@ -76,6 +76,7 @@ function feedbackRecord(string $stream, string $cwd, array $options): never
         'session_ref' => $sessionRef,
         'candidate_commit' => $candidate,
         'surface' => $surface,
+        'actionable' => true,
         'context' => $command !== null ? ['command' => $command['text']] : [],
         'evidence' => [],
     ];

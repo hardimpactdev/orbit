@@ -86,8 +86,8 @@ changed files:
 
 | Venue | Use |
 | --- | --- |
-| `automated` | Docs, tests, repository tooling, or production-path work that the general reviewer explicitly marks non-observable |
-| `retained-incus` | CLI and server/runtime behavior |
+| `automated` | Default route for docs, tests, and declarative workflow files; usable for acceptance only when the general reviewer explicitly marks the work non-observable |
+| `retained-incus` | Executable repository tooling, CLI, and server/runtime behavior |
 | `browser` | Gateway or docs web UI |
 | `host-macos` | Native macOS Agent behavior |
 
@@ -132,8 +132,7 @@ Record acceptance with `bin/orbit-feature-acceptance`:
 
 - user acceptance reads the verbatim message from STDIN and requires its
   `codex://` or `solo://` source reference;
-- automated acceptance requires an automation-only diff or the reviewer’s
-  non-observable result;
+- automated acceptance always requires the reviewer’s non-observable result;
 - `Reviewed feature tip` is the exact HEAD that received reviewer PASS;
 - `Accepted feature tip` is the exact feature `HEAD`;
 - `Accepted main tip` is the actual `git rev-parse main` at acceptance or
@@ -156,6 +155,11 @@ Feedback closes by a product protection or a user-volunteered waiver. A waiver
 requires a safe Codex/Solo source reference and the verbatim user message; a
 bare `source=user` claim is not evidence. Never ask the user for a waiver merely
 to avoid doing the work. Promote reusable feedback in this order:
+
+Implementation feedback is actionable by default. Acceptance evidence is
+explicitly non-actionable. ACCEPT, LAND, and archive construction block while
+any actionable record lacks a linked promotion or user-sourced waiver; a later
+`protection.failed` event reopens that feedback.
 
 1. test, linter, schema, or state check;
 2. tool, safe default, generated contract, or template;

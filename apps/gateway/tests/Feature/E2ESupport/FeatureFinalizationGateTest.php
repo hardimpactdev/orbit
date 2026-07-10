@@ -83,6 +83,36 @@ it('allows only the exact reviewed and accepted feature and main tips to merge',
     }
 });
 
+it('blocks a cwd-changing command from landing the current feature through a non-main checkout', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $process = run_finalization_gate($worktree, "cd {$repo} && git merge feature");
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('a non-main checkout may only merge local main into its current feature branch');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('allows a non-main checkout to integrate local main into its current feature branch', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        $process = run_finalization_gate($worktree, 'git merge main');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('blocks compact merge when main moved after acceptance', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
@@ -380,7 +410,7 @@ it('rejects multi-target or chained destructive boundary commands', function (st
     ],
 ]);
 
-it('allows exact automation-only acceptance for an automation-only diff', function (): void {
+it('rejects automation-only acceptance even for a declarative diff', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
 
     try {
@@ -402,9 +432,9 @@ it('allows exact automation-only acceptance for an automation-only diff', functi
         $process = run_finalization_gate($repo, 'git merge --no-ff feature');
 
         expect($process->getExitCode())
-            ->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())
-            ->toContain('FINALIZATION: PASS');
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('reviewer-confirmed non-observable');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
@@ -429,6 +459,43 @@ it('rejects an invalid existing feedback stream for automated acceptance', funct
             ->and($process->getErrorOutput())
             ->toContain('feedback stream is invalid')
             ->toContain('unknown feedback event type');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects unresolved actionable feedback before merge', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'HARNESS.md', "# Compact harness\n");
+        write_finalization_gate_artifact($worktree, 'docs-lint', 0, gmdate('c'));
+        write_compact_feature_loop_for_fixture($repo, $worktree);
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $event = [
+            'schema_version' => 1,
+            'type' => 'feedback.recorded',
+            'id' => 'feedback-unresolved',
+            'recorded_at' => '2026-07-10T20:00:00Z',
+            'raw_text' => 'The command still appears frozen.',
+            'session_ref' => 'codex://threads/example#feedback',
+            'candidate_commit' => $featureTip,
+            'surface' => 'cli.progress',
+            'actionable' => true,
+            'context' => [],
+            'evidence' => [],
+        ];
+        file_put_contents(
+            "{$worktree}/.orbit/feedback.jsonl",
+            json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL,
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('unresolved actionable feedback: feedback-unresolved');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
@@ -3048,6 +3115,7 @@ function write_finalization_acceptance_event(
         'session_ref' => $sourceRef,
         'candidate_commit' => $candidateCommit,
         'surface' => $surface,
+        'actionable' => false,
         'context' => ['kind' => 'acceptance'],
         'evidence' => [],
     ];

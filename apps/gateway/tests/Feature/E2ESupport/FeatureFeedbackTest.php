@@ -50,6 +50,51 @@ it('round trips immutable feedback and linked promotion events', function (): vo
     }
 });
 
+it('requires actionable feedback closure and reopens a failed protection', function (): void {
+    require_once repo_path('bin/orbit-feedback-events.php');
+
+    $actionable = feedback_test_recorded_event('feedback-actionable');
+    $acceptance = feedback_test_recorded_event('feedback-acceptance-legacy', 'acceptance.retained-incus');
+    $acceptance['context'] = ['kind' => 'acceptance'];
+    $promotion = [
+        'schema_version' => 1,
+        'type' => 'feedback.promoted',
+        'id' => 'promotion-actionable',
+        'recorded_at' => '2026-07-10T18:01:00Z',
+        'feedback_id' => 'feedback-actionable',
+        'scope' => 'cli.progress',
+        'expectation' => 'Long operations continuously communicate liveness.',
+        'protection' => [
+            'kind' => 'test',
+            'reference' => 'bin/quality-check-progress-frame-check',
+            'rejected_example' => 'feedback-actionable',
+            'accepted_example' => 'quality-check-progress-monotonic',
+        ],
+    ];
+    $failed = [
+        'schema_version' => 1,
+        'type' => 'protection.failed',
+        'id' => 'protection-failed-actionable',
+        'recorded_at' => '2026-07-10T18:02:00Z',
+        'feedback_id' => 'feedback-actionable',
+        'protection' => 'bin/quality-check-progress-frame-check',
+        'reason' => 'The regression escaped the protection.',
+    ];
+
+    orbitFeedbackValidate($acceptance);
+
+    expect(orbitFeedbackUnresolvedActionableIds([$actionable, $acceptance]))
+        ->toBe(['feedback-actionable'])
+        ->and(fn () => orbitFeedbackRequireActionableClosure([$actionable, $acceptance]))
+        ->toThrow(RuntimeException::class, 'unresolved actionable feedback: feedback-actionable')
+        ->and(orbitFeedbackUnresolvedActionableIds([$actionable, $acceptance, $promotion]))
+        ->toBe([])
+        ->and(orbitFeedbackUnresolvedActionableIds([$actionable, $acceptance, $promotion, $failed]))
+        ->toBe(['feedback-actionable'])
+        ->and(fn () => orbitFeedbackValidate([...$actionable, 'actionable' => false]))
+        ->toThrow(RuntimeException::class, 'non-acceptance feedback cannot be marked non-actionable');
+});
+
 it('refuses to append to an invalid existing feedback stream', function (): void {
     require_once repo_path('bin/orbit-feedback-events.php');
 
@@ -106,6 +151,7 @@ it('records non-secret feedback verbatim and redacts secret-bearing feedback bef
 
         expect($normalEvent)
             ->toHaveKey('raw_text', 'The command appears frozen.')
+            ->toHaveKey('actionable', true)
             ->toHaveKey('candidate_commit', feedback_test_git($workspace, ['rev-parse', 'HEAD']))
             ->and($secretEvent['raw_text'])
             ->toBe('The error printed [REDACTED:github-token]; keep the useful context.')
@@ -127,9 +173,9 @@ it('redacts complete private keys and rejects secrets in durable metadata', func
 
     try {
         $privateKey = implode("\n", [
-            '-----BEGIN ENCRYPTED PRIVATE KEY-----',
+            implode(' ', ['-----BEGIN', 'ENCRYPTED', 'PRIVATE', 'KEY-----']),
             str_repeat('A', 64),
-            '-----END ENCRYPTED PRIVATE KEY-----',
+            implode(' ', ['-----END', 'ENCRYPTED', 'PRIVATE', 'KEY-----']),
         ]);
         $record = feedback_test_run(
             $workspace,

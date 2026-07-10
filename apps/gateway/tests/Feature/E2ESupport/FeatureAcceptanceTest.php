@@ -11,6 +11,7 @@ it('derives the minimum acceptance venue from changed files', function (array $f
 })->with([
     'docs only' => [['apps/docs/content/mission.md'], 'automated'],
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
+    'repository executable' => [['bin/orbit-example'], 'retained-incus'],
     'cli command' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus'],
     'node runtime' => [['apps/gateway/app/Actions/Node/RepairNode.php'], 'retained-incus'],
     'gateway frontend' => [['apps/gateway/resources/js/app.js'], 'browser'],
@@ -54,14 +55,15 @@ it('records user acceptance against the clean feature and current main tips', fu
                 'raw_text' => 'Looks correct; accept.',
                 'session_ref' => 'codex://threads/example#acceptance-1',
                 'surface' => 'acceptance.retained-incus',
+                'actionable' => false,
             ]);
     } finally {
         acceptance_test_remove($fixture);
     }
 });
 
-it('allows automated acceptance only for automation-only or reviewer-confirmed non-observable work', function (): void {
-    $observable = acceptance_test_workspace('automated-blocked', 'apps/cli/app/Commands/FooCommand.php');
+it('requires reviewer-confirmed non-observable behavior before automatically accepting repository tooling', function (): void {
+    $observable = acceptance_test_workspace('automated-blocked', 'bin/orbit-observable');
     $nonObservable = acceptance_test_workspace('automated-pass', 'bin/orbit-example');
 
     try {
@@ -84,7 +86,7 @@ it('allows automated acceptance only for automation-only or reviewer-confirmed n
         expect($blocked->getExitCode())
             ->toBe(2)
             ->and($blocked->getErrorOutput())
-            ->toContain('user acceptance')
+            ->toContain('reviewer-confirmed non-observable')
             ->and($accepted->getExitCode())
             ->toBe(0, $accepted->getErrorOutput())
             ->and((string) file_get_contents("{$nonObservable}/.orbit/loop.md"))
@@ -93,6 +95,48 @@ it('allows automated acceptance only for automation-only or reviewer-confirmed n
     } finally {
         acceptance_test_remove($observable);
         acceptance_test_remove($nonObservable);
+    }
+});
+
+it('blocks acceptance while actionable feedback is unresolved', function (): void {
+    $fixture = acceptance_test_workspace('unresolved-feedback', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'accept',
+            review: 'passed - reviewer - non-observable',
+            venue: 'automated',
+        );
+        $event = [
+            'schema_version' => 1,
+            'type' => 'feedback.recorded',
+            'id' => 'feedback-unresolved',
+            'recorded_at' => '2026-07-10T18:00:00Z',
+            'raw_text' => 'The command still appears frozen.',
+            'session_ref' => 'codex://threads/example#feedback',
+            'candidate_commit' => acceptance_test_git($fixture, ['rev-parse', 'HEAD']),
+            'surface' => 'cli.progress',
+            'actionable' => true,
+            'context' => [],
+            'evidence' => [],
+        ];
+        file_put_contents(
+            "{$fixture}/.orbit/feedback.jsonl",
+            json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n",
+        );
+
+        $process = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('unresolved actionable feedback: feedback-unresolved')
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- Acceptance: pending')
+            ->toContain('- State: accept');
+    } finally {
+        acceptance_test_remove($fixture);
     }
 });
 

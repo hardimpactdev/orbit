@@ -125,8 +125,8 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
     $minimum = orbitLoopAcceptanceVenue(orbitLoopChangedFiles($cwd));
     $venue = (string) orbitLoopLabel($loop, 'Proof', 'Acceptance venue');
 
-    if ($actor === 'automated' && $minimum !== 'automated' && ! orbitLoopReviewSaysNonObservable($review)) {
-        throw new RuntimeException('user-observable candidates require user acceptance');
+    if ($actor === 'automated' && ! orbitLoopReviewSaysNonObservable($review)) {
+        throw new RuntimeException('automated acceptance requires reviewer-confirmed non-observable behavior');
     }
 
     if (! orbitLoopVenueSatisfies($venue, $minimum, $review)) {
@@ -134,9 +134,7 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
     }
 
     $mainTip = acceptanceGitRequired($cwd, ['rev-parse', 'main']);
-    $acceptanceValue = orbitLoopReviewSaysNonObservable($review)
-        ? 'accepted - automated - reviewer-confirmed non-observable'
-        : 'accepted - automated - automation-only diff';
+    $acceptanceValue = 'accepted - automated - reviewer-confirmed non-observable';
 
     if ($actor === 'user') {
         $sourceRef = acceptanceRequiredOption($options, 'source-ref');
@@ -277,7 +275,8 @@ function acceptanceRequireFeedbackValid(string $path): void
     }
 
     try {
-        orbitFeedbackRead($path);
+        $events = orbitFeedbackRead($path);
+        orbitFeedbackRequireActionableClosure($events);
     } catch (Throwable $exception) {
         throw new RuntimeException('feedback stream is invalid: '.$exception->getMessage(), previous: $exception);
     }
@@ -300,6 +299,7 @@ function acceptanceAppendUserMessage(
         'session_ref' => $sourceRef,
         'candidate_commit' => $featureTip,
         'surface' => 'acceptance.'.$venue,
+        'actionable' => false,
         'context' => ['kind' => 'acceptance'],
         'evidence' => [],
     ];

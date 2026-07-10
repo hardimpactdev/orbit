@@ -121,7 +121,8 @@ $activeFeedbackPath = "{$sourceOrbitDir}/feedback.jsonl";
 
 try {
     if (file_exists($activeFeedbackPath) || is_link($activeFeedbackPath)) {
-        orbitFeedbackRead($activeFeedbackPath);
+        $activeFeedback = orbitFeedbackRead($activeFeedbackPath);
+        orbitFeedbackRequireActionableClosure($activeFeedback);
     }
 } catch (Throwable $exception) {
     fwrite(STDERR, "Active feedback stream is invalid: {$exception->getMessage()}\n");

@@ -12,7 +12,7 @@ it('session archive stores a compact receipt by default', function (): void {
         session_archive_prepare_accepted_feature($paths);
         file_put_contents(
             "{$paths['sourceOrbitDir']}/feedback.jsonl",
-            session_archive_feedback_json('feedback-compact-default'),
+            session_archive_closed_feedback_json('feedback-compact-default'),
         );
         mkdir("{$paths['sourceOrbitDir']}/agent-sessions");
         file_put_contents("{$paths['sourceOrbitDir']}/agent-sessions/raw.txt", "large trace\n");
@@ -247,19 +247,7 @@ it('session archive refuses a refresh that would remove immutable feedback', fun
     try {
         $paths = session_archive_paths($workspace);
         session_archive_prepare_accepted_feature($paths);
-        $event = [
-            'schema_version' => 1,
-            'type' => 'feedback.recorded',
-            'id' => 'feedback-monotonic',
-            'recorded_at' => '2026-07-10T18:00:00Z',
-            'raw_text' => 'Keep this feedback.',
-            'session_ref' => 'codex://threads/example#monotonic',
-            'candidate_commit' => str_repeat('a', 40),
-            'surface' => 'cli.progress',
-            'context' => [],
-            'evidence' => [],
-        ];
-        $feedback = json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+        $feedback = session_archive_closed_feedback_json('feedback-monotonic');
         file_put_contents("{$paths['sourceOrbitDir']}/feedback.jsonl", $feedback);
         $arguments = [
             "--source-orbit-dir={$paths['sourceOrbitDir']}",
@@ -390,6 +378,41 @@ it('session archive rejects an invalid feedback stream before construction', fun
             ->and($process->getErrorOutput())
             ->toContain('Active feedback stream is invalid')
             ->toContain('unknown feedback event type')
+            ->and(session_archive_directories($paths['archiveRoot']))
+            ->toBe([]);
+    } finally {
+        remove_session_archive_workspace($workspace);
+    }
+});
+
+it('session archive rejects unresolved actionable feedback before construction', function (): void {
+    $workspace = session_archive_workspace('unresolved-feedback');
+
+    try {
+        $paths = session_archive_paths($workspace);
+        $event = json_decode(
+            session_archive_feedback_json('feedback-unresolved'),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $event['actionable'] = true;
+        file_put_contents(
+            "{$paths['sourceOrbitDir']}/feedback.jsonl",
+            json_encode($event, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n",
+        );
+
+        $process = run_session_archive([
+            "--source-orbit-dir={$paths['sourceOrbitDir']}",
+            "--archive-root={$paths['archiveRoot']}",
+            '--timestamp=2026-07-10-180006',
+            '--slug=unresolved-feedback',
+            "--cwd={$paths['cwd']}",
+        ], full: false);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('unresolved actionable feedback: feedback-unresolved')
             ->and(session_archive_directories($paths['archiveRoot']))
             ->toBe([]);
     } finally {
@@ -795,6 +818,28 @@ function session_archive_feedback_json(string $id): string
         'context' => [],
         'evidence' => [],
     ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+}
+
+function session_archive_closed_feedback_json(string $id): string
+{
+    $recorded = session_archive_feedback_json($id);
+    $promotion = json_encode([
+        'schema_version' => 1,
+        'type' => 'feedback.promoted',
+        'id' => 'promotion-'.$id,
+        'recorded_at' => '2026-07-10T18:01:00Z',
+        'feedback_id' => $id,
+        'scope' => 'cli.progress',
+        'expectation' => 'Progress remains visible and monotonic.',
+        'protection' => [
+            'kind' => 'test',
+            'reference' => 'bin/quality-check-progress-frame-check',
+            'rejected_example' => 'progress-stalled',
+            'accepted_example' => 'progress-monotonic',
+        ],
+    ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+
+    return $recorded.$promotion;
 }
 
 /**
