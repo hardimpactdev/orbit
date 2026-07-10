@@ -36,10 +36,6 @@ final class LiveRepaintOutput
             }
         }
 
-        if (defined('STDOUT')) {
-            return STDOUT;
-        }
-
         return null;
     }
 }

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Orbit\Core\Progress\LiveRepaintOutput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\StreamOutput;
 
 it('supports decorated output even when the stream is not a tty', function (): void {
@@ -32,4 +33,13 @@ it('keeps live repaint support narrowed to stream tty detection and console deco
         ->toContain('isDecorated')
         ->and($source)
         ->not->toContain('posix_isatty');
+});
+
+it('respects injected non-stream BufferedOutput and does not fall back to global STDOUT', function (): void {
+    $output = new BufferedOutput(decorated: false);
+
+    expect(LiveRepaintOutput::resolveStream($output))
+        ->toBeNull()
+        ->and(LiveRepaintOutput::supports($output))
+        ->toBeFalse();
 });
