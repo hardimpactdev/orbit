@@ -1,14 +1,14 @@
 # Signal: Raw Contract Dropped During Slicing
 
-Status: guarded
+Status: recurring
 First seen: 2026-06-24
-Last seen: 2026-06-24
-Last reviewed: 2026-06-24
+Last seen: 2026-07-10
+Last reviewed: 2026-07-10
 Source worktree: doctor-progress-scheduler
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, .agents/skills/implementing-features/SKILL.md, .agents/review-personas/cli-command.md
-Guardrail change: landed — HARNESS.md Done Contract raw-examples requirement; .agents/skills/implementing-features/SKILL.md raw acceptance examples and explicit deferrals; .agents/review-personas/cli-command.md raw-contract comparison
+Guardrail change: recurring — 2026-07-10 accepted design/panel adjudication preservation tightened in HARNESS.md Done Contract and .agents/skills/implementing-features/SKILL.md feature-owner, worker-handoff, and per-loop Reviewer checks
 Related signals: harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md, harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
 Superseded by: none
 Tags: contract, slicing, prompt, cli, review
@@ -25,6 +25,22 @@ This is a slicing failure, not merely a documentation gap. When an agent
 decomposes a broad request, it must preserve the raw examples and explicitly
 name any deferred parts before implementation starts.
 
+Analyzer 983: candidate A is missed. An accepted design/panel adjudication
+against free-text analyzer verdict canonicalization was lost across
+implementation/review handoffs; existing raw-example/deferral coverage does not
+explicitly preserve accepted design/panel adjudications.
+
+Claude 943: keep this in the current worktree; mark the existing raw-contract
+signal recurring; minimally extend HARNESS Done Contract and
+implementing-features worker handoff/Reviewer checks reachability; do not add
+standing reviewer-persona prose.
+
+Feature-owner final adjudication: three authored guardrail surfaces only:
+HARNESS.md, .agents/skills/implementing-features/SKILL.md, and
+harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md. No
+reviewer-persona edit and no new signal. harness-signals/index.json is accepted
+solely as the owning tool's deterministic companion after the stale-index gate.
+
 ## Prior Occurrences
 
 Related CLI and review signals existed, but no dedicated record covered raw
@@ -39,6 +55,11 @@ failure transcripts, screenshots, or negative examples to survive into
 not have a clear instruction to compare implementation evidence against those
 raw examples and classify mismatches as contract gaps.
 
+The guarded path also did not explicitly require accepted design/panel
+adjudications to survive feature-owner and worker handoffs or require per-loop
+Reviewer checks to compare implementation evidence against them when they
+exist.
+
 ## Guardrail Change
 
 `HARNESS.md` now says concrete output samples, command transcripts, UI
@@ -50,6 +71,13 @@ why deferral does not invalidate acceptance.
 worker prompts to preserve raw acceptance examples and explicit deferrals, and
 to capture literal red-test output when tests are used as proof.
 
+After recurrence, `HARNESS.md` also requires accepted design/panel
+adjudications to be preserved verbatim or by a precise pointer alongside raw
+examples and deferrals. The implementing-features feature-owner and worker
+handoffs carry those adjudication lines or pointer, and the per-loop Done
+Contract Reviewer checks explicitly compare implementation evidence against
+them when they exist. No standing reviewer-persona ceremony was added.
+
 `.agents/review-personas/cli-command.md` now requires reviewers to read raw
 examples and explicit deferrals, and to block mismatches with user-provided
 samples unless they were explicitly deferred before implementation evidence was
@@ -59,17 +87,21 @@ produced.
 
 ```bash
 rg -n "raw user|Raw acceptance examples|Raw contract|explicit deferrals|user-provided output samples|negative examples" HARNESS.md .agents/skills/implementing-features/SKILL.md .agents/review-personas/cli-command.md harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md
+rg -ni "accepted (design|adjudication)|design/panel adjudications|accepted adjudication" HARNESS.md .agents/skills/implementing-features/SKILL.md harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md
 ```
 
-The search shows the guardrail is discoverable from the root harness, the
-implementation workflow, the CLI reviewer persona, and this signal record.
+The searches show the original raw-contract guardrail remains discoverable and
+the accepted-adjudication tightening is discoverable from the root harness, the
+implementation workflow, and this signal record.
 
 ## Reappearance Check
 
 If a future implementation prompt omits concrete user examples or a reviewer
 accepts a mismatch with a raw sample as a follow-up without a prior explicit
 deferral, keep this record `recurring` and tighten the Done Contract template
-or worker-prompt shape.
+or worker-prompt shape. Apply the same recurrence rule when accepted
+design/panel adjudication lines or their precise pointer disappear across a
+handoff, or when per-loop Reviewer checks fail to compare against them.
 
 ## Curation Notes
 

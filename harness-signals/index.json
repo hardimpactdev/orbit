@@ -548,14 +548,14 @@
         {
             "path": "harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md",
             "title": "Raw Contract Dropped During Slicing",
-            "status": "guarded",
+            "status": "recurring",
             "signal_type": "agent-mistake",
             "guardrail_target": [
                 "HARNESS.md",
                 ".agents/skills/implementing-features/SKILL.md",
                 ".agents/review-personas/cli-command.md"
             ],
-            "guardrail_change": "landed \u2014 HARNESS.md Done Contract raw-examples requirement; .agents/skills/implementing-features/SKILL.md raw acceptance examples and explicit deferrals; .agents/review-personas/cli-command.md raw-contract comparison",
+            "guardrail_change": "recurring \u2014 2026-07-10 accepted design/panel adjudication preservation tightened in HARNESS.md Done Contract and .agents/skills/implementing-features/SKILL.md feature-owner, worker-handoff, and per-loop Reviewer checks",
             "related_signals": [
                 "harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md",
                 "harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md"
