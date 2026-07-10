@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\E2E\Support\E2ECurrentCheckout;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 
 function quality_check_script_source(): string
@@ -1245,4 +1248,67 @@ it('runs the topology contract against the Docker full topology by default', fun
         ->not->toHaveKey('test:e2e:topology-contract:operator-gateway')
         ->not->toHaveKey('test:e2e:topology-contract:operator-gateway-dev')
         ->not->toHaveKey('test:e2e:topology-contract:operator-gateway-dev-prod');
+});
+
+it('prevents CLI Pest from consuming caller stdin', function (): void {
+    $tempDir = sys_get_temp_dir().'/orbit-cli-pest-stdin-'.bin2hex(random_bytes(6));
+
+    try {
+        File::makeDirectory($tempDir, 0777, true);
+
+        $fake = <<<'BASH'
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            # Read one line from stdin; report EOF when the launcher has redirected to /dev/null
+            if ! read -r line <&0 2>/dev/null; then
+                printf 'stdin=eof\n'
+            else
+                printf 'stdin=%s\n' "$line"
+            fi
+
+            printf 'cwd=%s\n' "$(pwd)"
+            printf 'args=%s\n' "$*"
+            exit 23
+            BASH;
+
+        $fakePath = $tempDir.'/php';
+        File::put($fakePath, $fake);
+        chmod($fakePath, 0755);
+
+        $basePath = getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin';
+        $env = ['PATH' => $tempDir.':'.$basePath];
+
+        $input = new InputStream;
+
+        $process = new Process(
+            [repo_path('bin/orbit-cli-pest'), '--compact', '--filter=stdin-sentinel'],
+            null,
+            $env,
+            $input,
+            2.0,
+        );
+
+        $timedOut = false;
+        try {
+            $process->start();
+            $process->wait();
+        } catch (ProcessTimedOutException $e) {
+            $timedOut = true;
+        }
+
+        expect($timedOut)->toBeFalse('CLI Pest consumed caller stdin (timed out before EOF from /dev/null)');
+
+        expect($process->getExitCode())->toBe(23);
+
+        $combined = $process->getOutput().$process->getErrorOutput();
+        expect($combined)->toContain('stdin=eof');
+        expect($combined)->toContain('cwd='.repo_path('apps/cli'));
+        expect($combined)->toContain('--compact');
+        expect($combined)->toContain('--filter=stdin-sentinel');
+    } finally {
+        if (isset($tempDir) && File::isDirectory($tempDir)) {
+            File::deleteDirectory($tempDir);
+        }
+    }
 });
