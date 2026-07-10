@@ -95,6 +95,11 @@ $name = (string) ($processRow['name'] ?? $processRow['process_name'] ?? 'agent')
 
 $provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
 
+if ($incarnationFloor !== null && $provider !== 'codex') {
+    fwrite(STDERR, "incarnation_floor_unsupported_provider\n");
+    exit(2);
+}
+
 // Resolve started_at from Solo row (prefer runtime spawned_at when the row is alive)
 $startedAt = $processRow['spawned_at']
     ?? $processRow['created_at']

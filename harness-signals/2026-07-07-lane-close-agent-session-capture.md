@@ -8,7 +8,7 @@ Source worktree: agent-session-capture-disambiguation
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: after exact-marker discovery, disambiguate duplicate Codex candidates only by provider context, exact normalized cwd, and the transcript's primary Solo identity; retain loud ambiguity when multiple candidates survive; after one candidate remains, an optional caller-attested incarnation floor validates canonical activity without selecting or ranking candidates
+Guardrail change: after exact-marker discovery, disambiguate duplicate Codex candidates only by provider context, exact normalized cwd, and the transcript's primary Solo identity; retain loud ambiguity when multiple candidates survive; after one candidate remains, an optional caller-attested Codex-only incarnation floor validates canonical activity without selecting or ranking candidates
 Related signals: harness-signals/2026-06-25-required-verification-finalization-gap.md
 Superseded by: none
 Tags: finalization, agent-sessions, solo, loop-engineering
@@ -86,6 +86,10 @@ ownership or selection evidence.
   non-`session_meta` row. Before-floor, missing, or unparseable activity returns
   `stale_pre_restart_session` with the floor, source, rollout id, and observed
   last activity, while no-flag captures retain their prior output and manifest.
+- Claude and Grok reject `--incarnation-started-at` with
+  `incarnation_floor_unsupported_provider` before staging mutation. Restarted
+  Claude or Grok lanes require a fresh Solo process id or an explicit capture
+  waiver.
 
 ## Verification
 
@@ -106,8 +110,9 @@ The live capture command staged a real Solo-spawned Grok worker session with
 `status: ok` under `.orbit/agent-sessions/grok/lane-close-capture-worker-801/`.
 The 2026-07-10 recurrence verification passed with 2 focused disambiguation
 tests / 9 assertions, 1 duplicate-marker safety test / 3 assertions, and the
-incarnation-floor filter at 7 tests / 74 assertions, including the non-Codex
-compatibility case. The full archive file passed at 22 tests / 359 assertions;
+incarnation-floor filter at 7 tests / 74 assertions. The provider-floor
+hardening additionally covers Claude and Grok rejection before staging
+mutation. The full archive file passed at 22 tests / 359 assertions;
 PHP syntax and the gateway-test-only Mago format check passed. The root helper
 retains its pre-existing baseline style and is not claimed Mago-clean.
 
@@ -126,9 +131,11 @@ rescue or tie-break the match; session-meta timestamp remains manifest
 corroboration only, while the caller floor validates non-session-meta activity
 only after one candidate remains.
 
-For a deliberate process restart, prefer a fresh process id. If the id is
+For a deliberate Codex process restart, prefer a fresh process id. If the id is
 reused, record the restart time and pass the caller-attested floor; a stale
 result requires an explicit lane-close waiver rather than capture acceptance.
+Restarted Claude or Grok lanes require a fresh Solo process id or an explicit
+capture waiver because incarnation floors are unsupported for those providers.
 
 ## Curation Notes
 

@@ -1728,7 +1728,7 @@ it('rejects malformed caller-attested incarnation floors before capture staging'
     }
 });
 
-it('keeps incarnation floor metadata Codex-only for successful Grok capture', function (): void {
+it('rejects caller-attested incarnation floors for Grok before staging mutation', function (): void {
     $soloProcessId = 979_799;
     $fixture = make_incarnation_floor_capture_fixture(
         suffix: 'grok',
@@ -1736,6 +1736,7 @@ it('keeps incarnation floor metadata Codex-only for successful Grok capture', fu
         command: 'grok',
     );
     $slug = 'incarnation-floor-grok';
+    $stagingDir = "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}";
 
     try {
         write_grok_fixture(
@@ -1743,6 +1744,8 @@ it('keeps incarnation floor metadata Codex-only for successful Grok capture', fu
             cwd: $fixture['cwd'],
             marker: "Solo process ID: {$soloProcessId}",
         );
+        mkdir($stagingDir, recursive: true);
+        file_put_contents("{$stagingDir}/sentinel.txt", "preserve\n");
 
         $process = run_incarnation_floor_capture(
             fixture: $fixture,
@@ -1751,17 +1754,57 @@ it('keeps incarnation floor metadata Codex-only for successful Grok capture', fu
             incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("incarnation_floor_unsupported_provider\n")
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and(glob("{$stagingDir}/*"))
+            ->toBe(["{$stagingDir}/sentinel.txt"])
+            ->and(file_get_contents("{$stagingDir}/sentinel.txt"))
+            ->toBe("preserve\n");
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
 
-        $manifest = read_agent_session_archive_json(
-            path: "{$fixture['orbit_dir']}/agent-sessions/grok/{$slug}/manifest.json",
+it('rejects caller-attested incarnation floors for Claude before staging mutation', function (): void {
+    $soloProcessId = 979_804;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'claude',
+        soloProcessId: $soloProcessId,
+        command: 'claude',
+    );
+    $slug = 'incarnation-floor-claude';
+    $stagingDir = "{$fixture['orbit_dir']}/agent-sessions/claude/{$slug}";
+
+    try {
+        write_claude_project_dir_fixture(
+            home: $fixture['home'],
+            cwd: $fixture['cwd'],
+            marker: "Solo process ID: {$soloProcessId}",
+        );
+        mkdir($stagingDir, recursive: true);
+        file_put_contents("{$stagingDir}/sentinel.txt", "preserve\n");
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+            incarnationStartedAt: '2026-07-09T10:10:00Z',
         );
 
-        expect($manifest)
-            ->not->toHaveKey('incarnation_floor')
-            ->not->toHaveKey('incarnation_floor_source')
-            ->not->toHaveKey('rollout_id')
-            ->not->toHaveKey('last_activity_at');
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("incarnation_floor_unsupported_provider\n")
+            ->and($process->getOutput())
+            ->toBe('')
+            ->and(glob("{$stagingDir}/*"))
+            ->toBe(["{$stagingDir}/sentinel.txt"])
+            ->and(file_get_contents("{$stagingDir}/sentinel.txt"))
+            ->toBe("preserve\n");
     } finally {
         remove_agent_session_archive_temp_dir(path: $fixture['temp']);
     }
