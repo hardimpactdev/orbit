@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T21:53:10+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/home/nckrtl/orbit/.worktrees/codex-quality-check-performance/.orbit",
+    "archive_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-07-10-235310-quality-check-performance",
+    "agent_sessions_dir": "/home/nckrtl/orbit/.orbit/sessions/2026-07-10-235310-quality-check-performance/agent-sessions",
+    "copied_entries": [
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
