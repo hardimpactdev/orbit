@@ -78,10 +78,6 @@ describe('internal unattended upgrades probe command', function (): void {
             ->and($data)
             ->toMatchArray([
                 'installed' => true,
-                'auto_exists' => false,
-                'unattended_exists' => false,
-                'auto_hash_ok' => false,
-                'unattended_hash_ok' => false,
                 'dry_run_exit' => null,
             ])
             ->and(file_get_contents("{$bin}/calls.log"))

@@ -23,6 +23,7 @@ afterEach(function (): void {
 describe('internal process launchd service command', function (): void {
     beforeEach(function (): void {
         app()->forgetInstance('App\Services\Executor\OperationTokenGuard');
+        app()->instance(LocalLaunchdServiceAction::class, new LocalLaunchdServiceAction(osFamily: 'Darwin'));
         fakeGateway(fakeSuccessEnvelope([
             'allowed' => true,
         ]));

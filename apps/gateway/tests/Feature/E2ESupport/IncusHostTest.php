@@ -493,7 +493,7 @@ it('allows remote checkout archive copies to use ssh agent identities', function
     Process::preventStrayProcesses();
 
     $commands = [];
-    $host = recordingIncusHost(incusHostTestConfig(host: 'beast'), $commands);
+    $host = recordingIncusHost(incusHostTestConfig(host: 'orbit-remote.invalid'), $commands);
     $instance = new IncusInstance($host, 'orbit-template-operator');
 
     try {
@@ -503,12 +503,14 @@ it('allows remote checkout archive copies to use ssh agent identities', function
     }
 
     expect($scpCommand)
+        ->toBeString()
+        ->and($scpCommand)
         ->toContain('scp -o BatchMode=yes')
         ->and($scpCommand)
         ->not
         ->toContain('IdentitiesOnly=yes')
         ->and($scpCommand)
-        ->toContain("'beast':")
+        ->toContain("'orbit-remote.invalid':")
         ->and($commands[0])
         ->toContain("incus file push '/tmp/orbit-current-transfer-")
         ->and($commands[1])
