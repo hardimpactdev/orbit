@@ -127,13 +127,12 @@ $extract = match ($provider) {
         $home,
         $workingDir,
         $soloProcessId,
-        $markerNeedle,
         $startedAt,
         $incarnationFloor,
         $incarnationFloorTimestamp,
     ),
-    'claude' => captureClaudeExact($home, $workingDir, $soloProcessId, $markerNeedle),
-    'grok' => captureGrokExact($home, $workingDir, $soloProcessId, $markerNeedle),
+    'claude' => captureClaudeExact($home, $workingDir, $soloProcessId),
+    'grok' => captureGrokExact($home, $workingDir, $soloProcessId),
     default => [
         'status' => 'unsupported',
         'reason' => $kind === 'terminal' ? 'terminal_kind_requires_waiver' : 'provider_unsupported',
@@ -449,7 +448,6 @@ function captureCodexExact(
     string $home,
     string $cwd,
     int $soloProcessId,
-    string $markerNeedle,
     mixed $startedAt,
     ?string $incarnationFloor,
     ?DateTimeImmutable $incarnationFloorTimestamp,
@@ -462,7 +460,7 @@ function captureCodexExact(
 
     foreach ($rollouts as $file) {
         $checked[] = $file;
-        if (! codexFileHasScopedMarker($file, $markerNeedle)) {
+        if (! codexFileHasScopedMarker($file, $soloProcessId)) {
             continue;
         }
         $candidates[] = $file;
@@ -476,47 +474,59 @@ function captureCodexExact(
         ];
     }
 
-    $chosen = $candidates[0];
-    $disambiguationBasis = null;
-    $timestampCorroboration = null;
+    $normalizedCwd = normalizeCodexCwd($cwd);
+    $fullOwners = [];
+    $partialOwners = [];
 
-    if (count($candidates) > 1) {
-        $normalizedCwd = normalizeCodexCwd($cwd);
-        $survivors = [];
+    foreach ($candidates as $candidate) {
+        $context = codexCandidateContext($candidate);
 
-        foreach ($candidates as $candidate) {
-            $context = codexCandidateContext($candidate);
-
-            if ($context['normalized_cwd'] !== $normalizedCwd) {
-                continue;
-            }
-
-            if ($context['primary_solo_process_id'] !== $soloProcessId) {
-                continue;
-            }
-
-            $survivors[] = [
-                'path' => $candidate,
-                'timestamp' => $context['timestamp'],
-            ];
+        if ($context['normalized_cwd'] !== $normalizedCwd) {
+            continue;
         }
 
-        if (count($survivors) !== 1) {
-            return [
-                'status' => 'ambiguous',
-                'reason' => 'ambiguous_duplicate_markers',
-                'checked' => array_slice($checked, 0, 20),
-            ];
+        $owner = [
+            'path' => $candidate,
+            'timestamp' => $context['timestamp'],
+        ];
+
+        if ($context['primary_solo_process_id'] === $soloProcessId) {
+            $fullOwners[] = $owner;
+
+            continue;
         }
 
-        $chosen = $survivors[0]['path'];
-        $timestampCorroboration = codexTimestampCorroboration($survivors[0]['timestamp'], $startedAt);
-        $disambiguationBasis = sprintf(
-            'provider=codex; normalized_cwd=exact; primary_solo_process_id=%d; timestamp_corroboration=%s',
-            $soloProcessId,
-            $timestampCorroboration,
-        );
+        if ($context['primary_solo_process_id'] === null) {
+            $partialOwners[] = $owner;
+        }
     }
+
+    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+        return [
+            'status' => 'ambiguous',
+            'reason' => 'ambiguous_duplicate_markers',
+            'checked' => array_slice($checked, 0, 20),
+        ];
+    }
+
+    if ($fullOwners === [] && $partialOwners === []) {
+        return [
+            'status' => 'missing',
+            'reason' => 'no_owned_marker_transcript',
+            'checked' => array_slice($checked, 0, 20),
+        ];
+    }
+
+    $ownership = $fullOwners !== [] ? 'full' : 'partial(no_primary_identity)';
+    $chosenOwner = $fullOwners[0] ?? $partialOwners[0];
+    $chosen = $chosenOwner['path'];
+    $timestampCorroboration = codexTimestampCorroboration($chosenOwner['timestamp'], $startedAt);
+    $disambiguationBasis = sprintf(
+        'provider=codex; ownership=%s; normalized_cwd=exact; primary_solo_process_id=%s; timestamp_corroboration=%s',
+        $ownership,
+        $ownership === 'full' ? (string) $soloProcessId : 'none',
+        $timestampCorroboration,
+    );
 
     $incarnationActivity = null;
 
@@ -571,10 +581,8 @@ function captureCodexExact(
         'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
     ];
 
-    if ($disambiguationBasis !== null) {
-        $result['disambiguation_basis'] = $disambiguationBasis;
-        $result['timestamp_corroboration'] = $timestampCorroboration;
-    }
+    $result['disambiguation_basis'] = $disambiguationBasis;
+    $result['timestamp_corroboration'] = $timestampCorroboration;
 
     if ($incarnationFloor !== null && $incarnationActivity !== null) {
         $result['incarnation_floor'] = $incarnationFloor;
@@ -640,6 +648,7 @@ function codexCandidateContext(string $path): array
     $candidateCwd = null;
     $timestamp = null;
     $baseInstructionsIdentity = null;
+    $baseInstructionsIdentityAmbiguous = false;
     $firstUserIdentity = null;
     $firstUserMessageSeen = false;
 
@@ -660,7 +669,13 @@ function codexCandidateContext(string $path): array
                 $baseText = is_array($base) && isset($base['text'])
                     ? (string) $base['text']
                     : (is_string($base) ? $base : '');
-                $baseInstructionsIdentity = soloProcessIdFromText($baseText);
+                $baseInstructionIdentities = standaloneSoloProcessIdsFromIdentityText($baseText);
+
+                if (count($baseInstructionIdentities) > 1) {
+                    $baseInstructionsIdentityAmbiguous = true;
+                } elseif (count($baseInstructionIdentities) === 1) {
+                    $baseInstructionsIdentity = $baseInstructionIdentities[0];
+                }
             }
 
             continue;
@@ -677,32 +692,42 @@ function codexCandidateContext(string $path): array
         }
 
         $firstUserMessageSeen = true;
-        $firstUserIdentity = soloProcessIdFromUserIdentityMarker(extractText($payload['content'] ?? ''));
+        $firstUserIdentities = standaloneSoloProcessIdsFromIdentityText(extractText($payload['content'] ?? ''));
+        $firstUserIdentity = count($firstUserIdentities) === 1 ? $firstUserIdentities[0] : null;
     }
 
     return [
         'normalized_cwd' => normalizeCodexCwd($candidateCwd),
-        'primary_solo_process_id' => $baseInstructionsIdentity ?? $firstUserIdentity,
+        'primary_solo_process_id' => $baseInstructionsIdentityAmbiguous
+            ? null
+            : ($baseInstructionsIdentity ?? $firstUserIdentity),
         'timestamp' => $timestamp,
     ];
 }
 
-function soloProcessIdFromText(string $text): ?int
+/** @return list<int> */
+function soloProcessIdsFromText(string $text): array
 {
-    if (preg_match('/Solo process ID:\s*(\d+)\b/', $text, $matches) !== 1) {
-        return null;
+    if (preg_match_all('/Solo process ID:\s*(\d+)(?!\d)/', $text, $matches) === false) {
+        return [];
     }
 
-    return (int) $matches[1];
+    return array_map(static fn (string $id): int => (int) $id, $matches[1]);
 }
 
-function soloProcessIdFromUserIdentityMarker(string $text): ?int
+/** @return list<int> */
+function standaloneSoloProcessIdsFromIdentityText(string $text): array
 {
-    if (preg_match('/(?:^|\R)\s*Solo process ID:\s*(\d+)\b/', $text, $matches) !== 1) {
-        return null;
+    if (preg_match_all('/(?:^|\R)\h*Solo process ID:\h*(\d+)(?!\d)\h*(?=\R|$)/', $text, $matches) === false) {
+        return [];
     }
 
-    return (int) $matches[1];
+    return array_map(static fn (string $id): int => (int) $id, $matches[1]);
+}
+
+function textHasSoloProcessId(string $text, int $soloProcessId): bool
+{
+    return in_array($soloProcessId, soloProcessIdsFromText($text), true);
 }
 
 function normalizeCodexCwd(?string $cwd): ?string
@@ -829,7 +854,7 @@ function parseIso8601Timestamp(mixed $timestamp): ?DateTimeImmutable
     return $parsed;
 }
 
-function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
+function codexFileHasScopedMarker(string $path, int $soloProcessId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) === 'session_meta') {
@@ -842,7 +867,7 @@ function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
                 $text = $base;
             }
 
-            if (str_contains($text, $markerNeedle)) {
+            if (textHasSoloProcessId($text, $soloProcessId)) {
                 return true;
             }
 
@@ -859,7 +884,7 @@ function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
             continue;
         }
 
-        if (str_contains(extractText($payload['content'] ?? ''), $markerNeedle)) {
+        if (textHasSoloProcessId(extractText($payload['content'] ?? ''), $soloProcessId)) {
             return true;
         }
     }
@@ -867,13 +892,13 @@ function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
     return false;
 }
 
-function captureClaudeExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+function captureClaudeExact(string $home, string $cwd, int $soloProcessId): array
 {
     $checked = [];
     $matches = [];
     foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
         $checked[] = $file;
-        if (claudeFileHasPromptMarker($file, $markerNeedle)) {
+        if (claudeFileHasPromptMarker($file, $soloProcessId)) {
             $matches[] = $file;
         }
     }
@@ -915,7 +940,7 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId, strin
     ];
 }
 
-function captureGrokExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
 {
     $checked = [];
     $candidates = [];
@@ -923,7 +948,7 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId, string 
     foreach (glob("{$base}/*/*", GLOB_ONLYDIR) ?: [] as $dir) {
         foreach (glob("{$dir}/chat_history.jsonl") ?: [] as $f) {
             $checked[] = $f;
-            if (grokChatHasPromptMarker($f, $markerNeedle)) {
+            if (grokChatHasPromptMarker($f, $soloProcessId)) {
                 $candidates[] = $dir;
             }
         }
@@ -969,14 +994,14 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId, string 
     ];
 }
 
-function claudeFileHasPromptMarker(string $path, string $markerNeedle): bool
+function claudeFileHasPromptMarker(string $path, int $soloProcessId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) !== 'user') {
             continue;
         }
 
-        if (str_contains(extractText($row['message']['content'] ?? ''), $markerNeedle)) {
+        if (textHasSoloProcessId(extractText($row['message']['content'] ?? ''), $soloProcessId)) {
             return true;
         }
     }
@@ -984,14 +1009,14 @@ function claudeFileHasPromptMarker(string $path, string $markerNeedle): bool
     return false;
 }
 
-function grokChatHasPromptMarker(string $path, string $markerNeedle): bool
+function grokChatHasPromptMarker(string $path, int $soloProcessId): bool
 {
     foreach (jsonl($path) as $row) {
         if (($row['type'] ?? null) !== 'user') {
             continue;
         }
 
-        if (str_contains(extractText($row['content'] ?? ''), $markerNeedle)) {
+        if (textHasSoloProcessId(extractText($row['content'] ?? ''), $soloProcessId)) {
             return true;
         }
     }

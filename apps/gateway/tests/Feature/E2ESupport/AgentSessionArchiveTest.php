@@ -1540,6 +1540,505 @@ it('lane-close capture disambiguates an inherited marker by primary Solo identit
     }
 });
 
+it('stage 2 exact identity rejects numeric-prefix marker collisions', function (string $provider): void {
+    $soloProcessId = 12;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: "numeric-prefix-{$provider}",
+        soloProcessId: $soloProcessId,
+        command: $provider,
+    );
+    $slug = "numeric-prefix-{$provider}";
+
+    try {
+        if ($provider === 'codex') {
+            write_incarnation_floor_rollout(
+                fixture: $fixture,
+                rolloutId: 'numeric-prefix',
+                soloProcessId: 123,
+                activityRows: [],
+            );
+        } elseif ($provider === 'claude') {
+            write_claude_project_dir_fixture(
+                home: $fixture['home'],
+                cwd: $fixture['cwd'],
+                marker: 'Solo process ID: 123',
+            );
+        } else {
+            write_grok_fixture(
+                home: $fixture['home'],
+                cwd: $fixture['cwd'],
+                marker: 'Solo process ID: 123',
+            );
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('exact_marker_not_found');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/{$provider}/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'exact_marker_not_found',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+})->with(['codex', 'claude', 'grok']);
+
+it('stage 2 exact identity rejects a wrong-cwd Codex singleton', function (): void {
+    $soloProcessId = 979_810;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'wrong-cwd-singleton', soloProcessId: $soloProcessId);
+    $slug = 'wrong-cwd-singleton';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-wrong-cwd.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'wrong-cwd',
+                'cwd' => "{$fixture['temp']}/foreign-worktree",
+                'timestamp' => '2026-07-09T10:00:00Z',
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('no_owned_marker_transcript');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity rejects a foreign-primary Codex singleton with a later target marker', function (): void {
+    $soloProcessId = 979_811;
+    $foreignSoloProcessId = 979_812;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'foreign-primary-singleton',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'foreign-primary-singleton';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-foreign-primary.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'foreign-primary',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2026-07-09T10:00:00Z',
+                    'base_instructions' => ['text' => "Solo process ID: {$foreignSoloProcessId}"],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Continue the foreign lane.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                ],
+            ],
+        ]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('no_owned_marker_transcript');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'missing',
+                'reason' => 'no_owned_marker_transcript',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity prefers a full Codex owner over a partial owner and records the basis', function (): void {
+    $soloProcessId = 979_813;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'full-over-partial', soloProcessId: $soloProcessId);
+    $slug = 'full-over-partial';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-partial-newer.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'partial-newer',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2030-01-01T00:00:00Z',
+                    'base_instructions' => ['text' => 'Legacy lane without primary identity.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Legacy first message.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                ],
+            ],
+        ]);
+        write_jsonl("{$fixture['codex_dir']}/rollout-full-older.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'full-older',
+                'cwd' => $fixture['cwd'],
+                'timestamp' => '2020-01-01T00:00:00Z',
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-full-older')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toContain('ownership=full');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity accepts a sole exact-cwd legacy Codex candidate as visibly partial ownership', function (): void {
+    $soloProcessId = 979_814;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'legacy-partial', soloProcessId: $soloProcessId);
+    $slug = 'legacy-partial';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-legacy-partial.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'legacy-partial',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2026-07-09T10:00:00Z',
+                    'base_instructions' => ['text' => 'Legacy lane without primary identity.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => 'Legacy first message.']],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                ],
+            ],
+        ]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-legacy-partial')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity keeps multiple partial-only Codex candidates loudly ambiguous', function (): void {
+    $soloProcessId = 979_815;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'multiple-legacy-partials',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'multiple-legacy-partials';
+
+    try {
+        foreach (['first', 'second'] as $candidate) {
+            write_jsonl("{$fixture['codex_dir']}/rollout-legacy-partial-{$candidate}.jsonl", [
+                [
+                    'type' => 'session_meta',
+                    'payload' => [
+                        'id' => "legacy-partial-{$candidate}",
+                        'cwd' => $fixture['cwd'],
+                        'timestamp' => '2026-07-09T10:00:00Z',
+                        'base_instructions' => ['text' => 'Legacy lane without primary identity.'],
+                    ],
+                ],
+                [
+                    'type' => 'response_item',
+                    'payload' => [
+                        'type' => 'message',
+                        'role' => 'user',
+                        'content' => [['type' => 'input_text', 'text' => 'Legacy first message.']],
+                    ],
+                ],
+                [
+                    'type' => 'response_item',
+                    'payload' => [
+                        'type' => 'message',
+                        'role' => 'user',
+                        'content' => [['type' => 'input_text', 'text' => "Solo process ID: {$soloProcessId}"]],
+                    ],
+                ],
+            ]);
+        }
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($process->getErrorOutput().$process->getOutput())
+            ->toContain('ambiguous_duplicate_markers');
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest)
+            ->toMatchArray([
+                'status' => 'ambiguous',
+                'reason' => 'ambiguous_duplicate_markers',
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity primary identity treats a mention-only first user candidate as visibly partial', function (): void {
+    $soloProcessId = 979_816;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'mention-only-partial', soloProcessId: $soloProcessId);
+    $slug = 'mention-only-partial';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-mention-only-partial.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'mention-only-partial',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2026-07-09T10:00:00Z',
+                    'base_instructions' => ['text' => 'Coordinate the child lane.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "coordinate spawned child Solo process ID: {$soloProcessId}",
+                    ]],
+                ],
+            ],
+        ]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-mention-only-partial')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity primary identity prefers a standalone full owner over a mention-only candidate', function (): void {
+    $soloProcessId = 979_817;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'standalone-over-mention', soloProcessId: $soloProcessId);
+    $slug = 'standalone-over-mention';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-mention-only.jsonl", [
+            [
+                'type' => 'session_meta',
+                'payload' => [
+                    'id' => 'mention-only',
+                    'cwd' => $fixture['cwd'],
+                    'timestamp' => '2030-01-01T00:00:00Z',
+                    'base_instructions' => ['text' => 'Coordinate the child lane.'],
+                ],
+            ],
+            [
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'user',
+                    'content' => [[
+                        'type' => 'input_text',
+                        'text' => "coordinate spawned child Solo process ID: {$soloProcessId}",
+                    ]],
+                ],
+            ],
+        ]);
+        write_jsonl("{$fixture['codex_dir']}/rollout-standalone-full.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'standalone-full',
+                'cwd' => $fixture['cwd'],
+                'timestamp' => '2020-01-01T00:00:00Z',
+                'base_instructions' => ['text' => "Solo process ID: {$soloProcessId}"],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-standalone-full')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=full');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 2 exact identity primary identity treats multiple standalone identity markers as partial', function (): void {
+    $soloProcessId = 979_818;
+    $otherSoloProcessId = 979_819;
+    $fixture = make_incarnation_floor_capture_fixture(
+        suffix: 'multiple-standalone-identities',
+        soloProcessId: $soloProcessId,
+    );
+    $slug = 'multiple-standalone-identities';
+
+    try {
+        write_jsonl("{$fixture['codex_dir']}/rollout-multiple-standalone-identities.jsonl", [[
+            'type' => 'session_meta',
+            'payload' => [
+                'id' => 'multiple-standalone-identities',
+                'cwd' => $fixture['cwd'],
+                'timestamp' => '2026-07-09T10:00:00Z',
+                'base_instructions' => [
+                    'text' => "Solo process ID: {$soloProcessId}\nSolo process ID: {$otherSoloProcessId}",
+                ],
+            ],
+        ]]);
+
+        $process = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $manifest = read_agent_session_archive_json(
+            path: "{$fixture['orbit_dir']}/agent-sessions/codex/{$slug}/manifest.json",
+        );
+
+        expect($manifest['artifact'])
+            ->toContain('rollout-multiple-standalone-identities')
+            ->and($manifest['disambiguation_basis'] ?? null)
+            ->toBeString()
+            ->toContain('ownership=partial(no_primary_identity)');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
 it('exact marker join ignores parent-orchestrator transcript containing child marker (does not select parent for child)', function (): void {
     $temp = make_agent_session_archive_temp_dir(suffix: 'capture-parent');
 
