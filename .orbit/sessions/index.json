@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 86,
+    "record_count": 87,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -2489,6 +2489,33 @@
                 "output_tokens": 123641,
                 "total_tokens": 37183793,
                 "reasoning_tokens": 54357
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-10-135417-session-index-direct-child-authority",
+            "slug": "session-index-direct-child-authority",
+            "timestamp": "2026-07-10-135417",
+            "loop_outcome": "complete + loop improvement",
+            "loop_outcome_raw": "complete + loop improvement",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "fresh_analyzer_verdict_raw": "yes - no findings or packet gaps; deterministic parser and recurrence updates are correctly scoped; privacy and later program slices remain explicit deferrals.",
+            "candidate_signals": {
+                "total": 2,
+                "classifications": {
+                    "unknown": 2
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 18782634,
+                "output_tokens": 64907,
+                "total_tokens": 18847541,
+                "reasoning_tokens": 27912
             },
             "capture_status": "partial"
         }
