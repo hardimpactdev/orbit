@@ -1,0 +1,13 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "partial",
+    "slug": "capture-health-gate-worker-1022",
+    "solo_process_id": 1022,
+    "kind": "agent",
+    "started_at": "2026-07-10 17:02:16",
+    "reason": "missing_primary_identity",
+    "checked": [],
+    "marker": "Solo process ID: 1022",
+    "disambiguation_basis": "provider=codex; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none; timestamp_corroboration=corroborated"
+}

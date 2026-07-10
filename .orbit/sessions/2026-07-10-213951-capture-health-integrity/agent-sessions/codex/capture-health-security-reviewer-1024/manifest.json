@@ -1,0 +1,13 @@
+{
+    "schema_version": 1,
+    "provider": "codex",
+    "status": "partial",
+    "slug": "capture-health-security-reviewer-1024",
+    "solo_process_id": 1024,
+    "kind": "agent",
+    "started_at": "2026-07-10 17:39:12",
+    "reason": "missing_primary_identity",
+    "checked": [],
+    "marker": "Solo process ID: 1024",
+    "disambiguation_basis": "provider=codex; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none; timestamp_corroboration=corroborated"
+}
