@@ -1,0 +1,22 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T12:52:55+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/archive-evidence-metadata-corrections/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-145255-archive-evidence-metadata-corrections",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-10-145255-archive-evidence-metadata-corrections/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [
+        942,
+        1006,
+        1007,
+        1008,
+        1009
+    ],
+    "agent_results": []
+}

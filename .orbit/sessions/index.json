@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 87,
+    "record_count": 88,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -2516,6 +2516,33 @@
                 "output_tokens": 64907,
                 "total_tokens": 18847541,
                 "reasoning_tokens": 27912
+            },
+            "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-10-145255-archive-evidence-metadata-corrections",
+            "slug": "archive-evidence-metadata-corrections",
+            "timestamp": "2026-07-10-145255",
+            "loop_outcome": "complete",
+            "loop_outcome_raw": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "flawed",
+            "fresh_analyzer_verdict_raw": "`flawed` - accepted and reconciled. Four zero-byte `.json` placeholders disproved the packet's broad parse claim. Roadmap revision 116 freezes them outside the revision-112 backlog, records them as non-blocking deferred evidence, and requires exact corpus accounting. The accepted seven-record diff remains the one independently reviewed by process `1007`.",
+            "candidate_signals": {
+                "total": 7,
+                "classifications": {
+                    "unknown": 7
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "input_tokens": 5962004,
+                "output_tokens": 55052,
+                "total_tokens": 6017056,
+                "reasoning_tokens": 30322
             },
             "capture_status": "partial"
         }
