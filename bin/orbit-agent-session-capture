@@ -99,18 +99,25 @@ function orbitAgentSessionCaptureMain(array $argv): int
     $processRow = loadSoloProcessRow($soloDb, $soloProcessId);
 
     if ($processRow === null) {
-        // Try spawned_processes as fallback for runtime liveness
-        $processRow = loadSoloSpawnedProcess($soloDb, $soloProcessId);
-    }
-
-    if ($processRow === null) {
-        fwrite(STDERR, "solo process {$soloProcessId} not found in solo db (row not alive)\n");
+        fwrite(STDERR, "solo_process_not_found solo_process_id={$soloProcessId}\n");
         return 2;
     }
 
     $kind = strtolower((string) ($processRow['kind'] ?? $processRow['process_kind'] ?? 'command'));
     $command = (string) ($processRow['command'] ?? '');
-    $workingDir = realpath((string) ($processRow['working_dir'] ?? $processRow['project_path'] ?? $cwd)) ?: $cwd;
+    $rowWorkingDir = null;
+
+    foreach ([$processRow['working_dir'] ?? null, $processRow['project_path'] ?? null] as $candidateWorkingDir) {
+        if (is_string($candidateWorkingDir) && trim($candidateWorkingDir) !== '') {
+            $rowWorkingDir = $candidateWorkingDir;
+
+            break;
+        }
+    }
+
+    $workingDir = $rowWorkingDir === null
+        ? $cwd
+        : (normalizeCodexCwd($rowWorkingDir) ?? $rowWorkingDir);
     $name = (string) ($processRow['name'] ?? $processRow['process_name'] ?? 'agent');
 
     $provider = $explicitProvider ?: inferProviderFromCommandOrName($command, $name, $kind);
@@ -196,7 +203,9 @@ function orbitAgentSessionCaptureMain(array $argv): int
         'grok' => captureGrokExact($home, $workingDir, $soloProcessId),
         default => [
             'status' => 'unsupported',
-            'reason' => $kind === 'terminal' ? 'terminal_kind_requires_waiver' : 'provider_unsupported',
+            'reason' => $kind === 'terminal'
+                ? 'terminal_kind_requires_waiver'
+                : 'unsupported_provider',
             'checked' => [],
         ],
     };
@@ -222,6 +231,10 @@ function orbitAgentSessionCaptureMain(array $argv): int
 
         if (isset($extract['timestamp_corroboration'])) {
             $manifest['timestamp_corroboration'] = $extract['timestamp_corroboration'];
+        }
+
+        if (isset($extract['diagnostics'])) {
+            $manifest['diagnostics'] = $extract['diagnostics'];
         }
 
         if (array_key_exists('incarnation_floor', $extract)) {
@@ -254,6 +267,14 @@ function orbitAgentSessionCaptureMain(array $argv): int
             $manifest['incarnation_floor_source'] = $extract['incarnation_floor_source'];
             $manifest['rollout_id'] = $extract['rollout_id'];
             $manifest['last_activity_at'] = $extract['last_activity_at'];
+        }
+
+        if (isset($extract['disambiguation_basis'])) {
+            $manifest['disambiguation_basis'] = $extract['disambiguation_basis'];
+        }
+
+        if (isset($extract['diagnostics'])) {
+            $manifest['diagnostics'] = $extract['diagnostics'];
         }
 
         foreach (['matched_candidates', 'owned_candidates'] as $diagnosticKey) {
@@ -329,6 +350,9 @@ function orbitAgentSessionCaptureMain(array $argv): int
             );
         }
     }
+    foreach ($extract['diagnostics'] ?? [] as $diagnostic) {
+        fwrite(STDERR, "diagnostic: {$diagnostic}\n");
+    }
     if (($extract['status'] ?? '') === 'ambiguous') {
         fwrite(STDERR, "ambiguous: exact marker \"Solo process ID: {$soloProcessId}\" matched multiple sessions; inspect matched_candidates and owned_candidates above.\n");
     }
@@ -355,76 +379,6 @@ function loadSoloProcessRow(string $dbPath, int $id): ?array
         $select = implode(', ', array_map(quoteIdentifier(...), $selectedColumns));
         $stmt = $db->prepare("SELECT {$select} FROM processes WHERE id = ?");
         $stmt->execute([$id]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
-    } catch (Throwable $e) {
-        return null;
-    }
-}
-
-function loadSoloSpawnedProcess(string $dbPath, int $id): ?array
-{
-    try {
-        $db = new PDO('sqlite:'.$dbPath);
-        $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $columns = tableColumns($db, 'spawned_processes');
-
-        if ($columns === []) {
-            return null;
-        }
-
-        $select = [];
-
-        foreach ([
-            'pid' => 'id',
-            'id' => 'id',
-            'process_name' => 'name',
-            'name' => 'name',
-            'command' => 'command',
-            'project_path' => 'working_dir',
-            'working_dir' => 'working_dir',
-            'kind' => 'kind',
-            'spawned_at' => 'spawned_at',
-            'started_at' => 'started_at',
-            'created_at' => 'created_at',
-        ] as $column => $alias) {
-            if (in_array($column, $columns, true)) {
-                $select[] = quoteIdentifier($column).' AS '.quoteIdentifier($alias);
-            }
-        }
-
-        if (! in_array('kind', $columns, true)) {
-            $select[] = "'agent' AS ".quoteIdentifier('kind');
-        }
-
-        if ($select === []) {
-            return null;
-        }
-
-        $where = [];
-        $params = [];
-
-        if (in_array('pid', $columns, true)) {
-            $where[] = quoteIdentifier('pid').' = ?';
-            $params[] = $id;
-        }
-
-        if (in_array('id', $columns, true)) {
-            $where[] = quoteIdentifier('id').' = ?';
-            $params[] = $id;
-        }
-
-        if (in_array('process_name', $columns, true)) {
-            $where[] = quoteIdentifier('process_name').' LIKE ?';
-            $params[] = '%'.$id.'%';
-        }
-
-        if ($where === []) {
-            return null;
-        }
-
-        $stmt = $db->prepare('SELECT '.implode(', ', $select).' FROM spawned_processes WHERE '.implode(' OR ', $where).' LIMIT 1');
-        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
     } catch (Throwable $e) {
@@ -469,8 +423,7 @@ function inferProviderFromCommandOrName(string $command, string $name, string $k
     if ($kind === 'terminal') {
         return 'terminal';
     }
-    // default to codex for agent workers in this harness
-    return 'codex';
+    return 'unknown';
 }
 
 function slugify(string $value): string
@@ -491,41 +444,123 @@ function uniqueStagingSiblingPath(string $providerRoot, string $slug, string $ki
 
 function fileContains(string $path, string $needle): bool
 {
-    if (!is_file($path)) {
-        return false;
-    }
-    $fh = fopen($path, 'r');
+    $fh = orbitAgentSessionCaptureOpenPinnedRegularFile($path);
+
     if ($fh === false) {
         return false;
     }
-    while (!feof($fh)) {
-        $chunk = fread($fh, 8192);
-        if ($chunk !== false && str_contains($chunk, $needle)) {
-            fclose($fh);
-            return true;
+
+    try {
+        while (! feof($fh)) {
+            $chunk = fread($fh, 8192);
+
+            if ($chunk !== false && str_contains($chunk, $needle)) {
+                return true;
+            }
+        }
+    } finally {
+        fclose($fh);
+    }
+
+    return false;
+}
+
+/**
+ * @return array{files: list<string>, symlinks: list<string>}
+ */
+function findProviderArtifacts(string $root, string $glob): array
+{
+    $files = [];
+    $symlinks = [];
+
+    if (is_link($root)) {
+        return ['files' => [], 'symlinks' => [$root]];
+    }
+
+    if (! is_dir($root)) {
+        return ['files' => [], 'symlinks' => []];
+    }
+
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST,
+    );
+
+    foreach ($it as $entry) {
+        if (! fnmatch($glob, $entry->getFilename())) {
+            continue;
+        }
+
+        if ($entry->isLink()) {
+            $symlinks[] = $entry->getPathname();
+
+            continue;
+        }
+
+        if ($entry->isFile()) {
+            $files[] = $entry->getPathname();
         }
     }
-    fclose($fh);
-    return false;
+
+    return ['files' => $files, 'symlinks' => $symlinks];
+}
+
+/** @return null|array{reason: string, path: string} */
+function providerSourceRootError(string $home, string $root): ?array
+{
+    $reportedHome = rtrim($home, '/');
+    $canonicalHome = realpath($reportedHome);
+
+    if ($canonicalHome === false || ! str_starts_with($root, $reportedHome.'/')) {
+        return null;
+    }
+
+    $relativeRoot = substr($root, strlen($reportedHome) + 1);
+    $reportedComponent = $reportedHome;
+    $canonicalComponent = rtrim($canonicalHome, '/');
+
+    foreach (explode('/', $relativeRoot) as $component) {
+        if ($component === '') {
+            continue;
+        }
+
+        $reportedComponent .= "/{$component}";
+        $canonicalComponent .= "/{$component}";
+        $componentStat = @lstat($reportedComponent);
+
+        if ($componentStat === false) {
+            return null;
+        }
+
+        if (($componentStat['mode'] & 0170000) === 0120000) {
+            return ['reason' => 'symlinked_provider_source_component', 'path' => $reportedComponent];
+        }
+
+        $resolvedComponent = realpath($reportedComponent);
+
+        if (
+            ($componentStat['mode'] & 0170000) !== 0040000
+            || $resolvedComponent === false
+            || $resolvedComponent !== $canonicalComponent
+        ) {
+            return ['reason' => 'noncanonical_provider_source_component', 'path' => $reportedComponent];
+        }
+    }
+
+    return null;
 }
 
 /** @return list<string> */
 function findFiles(string $root, string $glob): array
 {
-    $files = [];
-    if (!is_dir($root)) {
-        return $files;
-    }
-    $it = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($root, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::SELF_FIRST,
-    );
-    foreach ($it as $entry) {
-        if ($entry->isFile() && fnmatch($glob, $entry->getFilename())) {
-            $files[] = $entry->getPathname();
-        }
-    }
-    return $files;
+    return findProviderArtifacts($root, $glob)['files'];
+}
+
+function isRegularFileNoFollow(string $path): bool
+{
+    $stat = @lstat($path);
+
+    return $stat !== false && ($stat['mode'] & 0170000) === 0100000;
 }
 
 function captureCodexExact(
@@ -540,7 +575,29 @@ function captureCodexExact(
     $root = "{$home}/.codex/sessions";
     $candidates = [];
     $checked = [];
-    $rollouts = findFiles($root, '*.jsonl');
+    $sourceRootError = providerSourceRootError($home, $root);
+
+    if ($sourceRootError !== null) {
+        return [
+            'status' => 'extraction_failed',
+            'reason' => "{$sourceRootError['reason']} path={$sourceRootError['path']}",
+            'checked' => [$sourceRootError['path']],
+        ];
+    }
+
+    $discovery = findProviderArtifacts($root, '*.jsonl');
+
+    if ($discovery['symlinks'] !== []) {
+        $symlink = $discovery['symlinks'][0];
+
+        return [
+            'status' => 'extraction_failed',
+            'reason' => "symlinked_required_artifact path={$symlink}",
+            'checked' => array_slice([...$discovery['files'], ...$discovery['symlinks']], 0, 20),
+        ];
+    }
+
+    $rollouts = $discovery['files'];
 
     foreach ($rollouts as $file) {
         $checked[] = $file;
@@ -678,7 +735,7 @@ function captureCodexExact(
     $messagesJsonl = implode("\n", array_map(fn($m) => json_encode(['role' => $m['role'], 'content' => $m['content']], JSON_UNESCAPED_SLASHES), $messages));
 
     $result = [
-        'status' => 'ok',
+        'status' => $ownership === 'full' ? 'ok' : 'partial',
         'source' => 'codex_exact_marker',
         'artifact' => $chosen,
         'usage' => $usage,
@@ -688,6 +745,10 @@ function captureCodexExact(
 
     $result['disambiguation_basis'] = $disambiguationBasis;
     $result['timestamp_corroboration'] = $timestampCorroboration;
+
+    if ($ownership !== 'full') {
+        $result['reason'] = 'missing_primary_identity';
+    }
 
     if ($incarnationFloor !== null && $incarnationActivity !== null) {
         $result['incarnation_floor'] = $incarnationFloor;
@@ -877,6 +938,21 @@ function normalizeCodexCwd(?string $cwd): ?string
     return $isAbsolute ? '/' : '.';
 }
 
+function claudeProjectDirectoryForCwd(string $home, string $cwd): string
+{
+    $normalizedCwd = normalizeCodexCwd($cwd) ?? $cwd;
+    $encodedCwd = (string) preg_replace('/[^a-zA-Z0-9]/', '-', $normalizedCwd);
+
+    return "{$home}/.claude/projects/{$encodedCwd}";
+}
+
+function grokSessionRootForCwd(string $home, string $cwd): string
+{
+    $normalizedCwd = normalizeCodexCwd($cwd) ?? $cwd;
+
+    return "{$home}/.grok/sessions/".rawurlencode($normalizedCwd);
+}
+
 function codexTimestampCorroboration(mixed $timestamp, mixed $startedAt): string
 {
     if ($timestamp === null || $timestamp === '' || $startedAt === null || $startedAt === '') {
@@ -1001,24 +1077,122 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
 {
     $checked = [];
     $matches = [];
-    foreach (findFiles("{$home}/.claude/projects", '*.jsonl') as $file) {
+    $normalizedCwd = normalizeCodexCwd($cwd) ?? $cwd;
+    $expectedProjectDirectory = claudeProjectDirectoryForCwd($home, $cwd);
+    $sourceRoot = "{$home}/.claude/projects";
+    $sourceRootError = providerSourceRootError($home, $sourceRoot);
+
+    if ($sourceRootError !== null) {
+        return [
+            'status' => 'extraction_failed',
+            'reason' => "{$sourceRootError['reason']} path={$sourceRootError['path']}",
+            'checked' => [$sourceRootError['path']],
+        ];
+    }
+
+    $discovery = findProviderArtifacts($sourceRoot, '*.jsonl');
+    $ownedSymlinks = array_values(array_filter(
+        $discovery['symlinks'],
+        static fn (string $path): bool => dirname($path) === $expectedProjectDirectory,
+    ));
+
+    if ($ownedSymlinks !== []) {
+        $symlink = $ownedSymlinks[0];
+
+        return [
+            'status' => 'extraction_failed',
+            'reason' => "symlinked_required_artifact path={$symlink}",
+            'checked' => array_slice([...$discovery['files'], ...$ownedSymlinks], 0, 20),
+        ];
+    }
+
+    foreach ($discovery['files'] as $file) {
         $checked[] = $file;
+
         if (claudeFileHasPromptMarker($file, $soloProcessId)) {
             $matches[] = $file;
         }
     }
 
-    if (count($matches) !== 1) {
+    if ($matches === []) {
         return [
-            'status' => count($matches) === 0 ? 'missing' : 'ambiguous',
-            'reason' => count($matches) === 0 ? 'exact_marker_not_found' : 'duplicate_exact_markers',
+            'status' => 'missing',
+            'reason' => 'exact_marker_not_found',
             'checked' => array_slice($checked, 0, 20),
         ];
     }
 
-    $chosen = $matches[0];
+    $fullOwners = [];
+    $partialOwners = [];
+    $matchedCandidates = [];
+    $ownedCandidates = [];
+    $diagnostics = [];
+
+    foreach ($matches as $candidate) {
+        $context = claudeCandidateContext($candidate, $expectedProjectDirectory, $normalizedCwd);
+        $ownershipClass = match (true) {
+            ! $context['cwd_matches'] => 'foreign_cwd',
+            $context['primary_solo_process_id'] === $soloProcessId => 'full',
+            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            default => 'foreign_primary_identity',
+        };
+        $diagnostic = [
+            'path' => $candidate,
+            'ownership_class' => $ownershipClass,
+            'normalized_cwd' => $context['normalized_cwd'],
+            'primary_solo_process_id' => $context['primary_solo_process_id'],
+            'structural_cwd_matches' => $context['structural_cwd_matches'],
+        ];
+        $matchedCandidates[] = $diagnostic;
+
+        if ($ownershipClass === 'foreign_cwd') {
+            $diagnostics[] = "foreign_cwd expected_cwd={$normalizedCwd} observed_cwd={$context['cwd_diagnostic']}"
+                .'; lane spawned without a working-directory pin?';
+
+            continue;
+        }
+
+        if ($ownershipClass === 'full') {
+            $fullOwners[] = $diagnostic;
+            $ownedCandidates[] = $diagnostic;
+
+            continue;
+        }
+
+        if ($ownershipClass === 'partial(no_primary_identity)') {
+            $partialOwners[] = $diagnostic;
+            $ownedCandidates[] = $diagnostic;
+        }
+    }
+
+    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+        return [
+            'status' => 'ambiguous',
+            'reason' => 'ambiguous_duplicate_markers',
+            'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => array_slice($ownedCandidates, 0, 20),
+            'diagnostics' => array_slice($diagnostics, 0, 20),
+        ];
+    }
+
+    if ($fullOwners === [] && $partialOwners === []) {
+        return [
+            'status' => 'missing',
+            'reason' => 'no_owned_marker_transcript',
+            'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => [],
+            'diagnostics' => array_slice($diagnostics, 0, 20),
+        ];
+    }
+
+    $ownership = $fullOwners !== [] ? 'full' : 'partial(no_primary_identity)';
+    $chosenOwner = $fullOwners[0] ?? $partialOwners[0];
+    $chosen = $chosenOwner['path'];
     $messages = [];
     $usage = ['input_tokens' => 0, 'output_tokens' => 0];
+
     foreach (jsonl($chosen) as $row) {
         if (($row['type'] ?? '') === 'user' && isset($row['message']['content'])) {
             $messages[] = ['role' => 'user', 'content' => extractText($row['message']['content'])];
@@ -1035,14 +1209,22 @@ function captureClaudeExact(string $home, string $cwd, int $soloProcessId): arra
 
     $messagesJsonl = implode("\n", array_map(fn($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
 
-    return [
-        'status' => 'ok',
+    $result = [
+        'status' => $ownership === 'full' ? 'ok' : 'partial',
         'source' => 'claude_exact_marker',
         'artifact' => $chosen,
         'usage' => $usage,
         'messages_jsonl' => $messagesJsonl,
         'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
+        'disambiguation_basis' => "provider=claude; ownership={$ownership}; normalized_cwd=exact; "
+            .'primary_solo_process_id='.($ownership === 'full' ? (string) $soloProcessId : 'none'),
     ];
+
+    if ($ownership !== 'full') {
+        $result['reason'] = 'missing_primary_identity';
+    }
+
+    return $result;
 }
 
 function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
@@ -1050,27 +1232,122 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
     $checked = [];
     $candidates = [];
     $base = "{$home}/.grok/sessions";
-    foreach (glob("{$base}/*/*", GLOB_ONLYDIR) ?: [] as $dir) {
-        foreach (glob("{$dir}/chat_history.jsonl") ?: [] as $f) {
-            $checked[] = $f;
-            if (grokChatHasPromptMarker($f, $soloProcessId)) {
-                $candidates[] = $dir;
-            }
+    $normalizedCwd = normalizeCodexCwd($cwd) ?? $cwd;
+    $expectedSessionRoot = grokSessionRootForCwd($home, $cwd);
+    $sourceRootError = providerSourceRootError($home, $base);
+
+    if ($sourceRootError !== null) {
+        return [
+            'status' => 'extraction_failed',
+            'reason' => "{$sourceRootError['reason']} path={$sourceRootError['path']}",
+            'checked' => [$sourceRootError['path']],
+        ];
+    }
+
+    $discovery = findProviderArtifacts($base, 'chat_history.jsonl');
+    $ownedSymlinks = array_values(array_filter(
+        $discovery['symlinks'],
+        static fn (string $path): bool => dirname(dirname($path)) === $expectedSessionRoot,
+    ));
+
+    if ($ownedSymlinks !== []) {
+        $symlink = $ownedSymlinks[0];
+
+        return [
+            'status' => 'extraction_failed',
+            'reason' => "symlinked_required_artifact path={$symlink}",
+            'checked' => array_slice([...$discovery['files'], ...$ownedSymlinks], 0, 20),
+        ];
+    }
+
+    foreach ($discovery['files'] as $file) {
+        $checked[] = $file;
+
+        if (grokChatHasPromptMarker($file, $soloProcessId)) {
+            $candidates[] = dirname($file);
         }
     }
 
-    if (count($candidates) !== 1) {
+    if ($candidates === []) {
         return [
-            'status' => count($candidates) === 0 ? 'missing' : 'ambiguous',
-            'reason' => count($candidates) === 0 ? 'exact_marker_not_found' : 'ambiguous_duplicate_markers',
+            'status' => 'missing',
+            'reason' => 'exact_marker_not_found',
             'checked' => array_slice($checked, 0, 20),
         ];
     }
 
-    $dir = $candidates[0];
+    $fullOwners = [];
+    $partialOwners = [];
+    $matchedCandidates = [];
+    $ownedCandidates = [];
+    $diagnostics = [];
+
+    foreach ($candidates as $candidate) {
+        $context = grokCandidateContext($candidate, $expectedSessionRoot, $normalizedCwd);
+        $ownershipClass = match (true) {
+            ! $context['cwd_matches'] => 'foreign_cwd',
+            $context['primary_solo_process_id'] === $soloProcessId => 'full',
+            $context['primary_solo_process_id'] === null => 'partial(no_primary_identity)',
+            default => 'foreign_primary_identity',
+        };
+        $diagnostic = [
+            'path' => $candidate,
+            'ownership_class' => $ownershipClass,
+            'normalized_cwd' => $context['normalized_cwd'],
+            'primary_solo_process_id' => $context['primary_solo_process_id'],
+            'structural_cwd_matches' => $context['structural_cwd_matches'],
+        ];
+        $matchedCandidates[] = $diagnostic;
+
+        if ($ownershipClass === 'foreign_cwd') {
+            $diagnostics[] = "foreign_cwd expected_cwd={$normalizedCwd} observed_cwd={$context['cwd_diagnostic']}"
+                .'; lane spawned without a working-directory pin?';
+
+            continue;
+        }
+
+        if ($ownershipClass === 'full') {
+            $fullOwners[] = $diagnostic;
+            $ownedCandidates[] = $diagnostic;
+
+            continue;
+        }
+
+        if ($ownershipClass === 'partial(no_primary_identity)') {
+            $partialOwners[] = $diagnostic;
+            $ownedCandidates[] = $diagnostic;
+        }
+    }
+
+    if (count($fullOwners) > 1 || ($fullOwners === [] && count($partialOwners) > 1)) {
+        return [
+            'status' => 'ambiguous',
+            'reason' => 'ambiguous_duplicate_markers',
+            'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => array_slice($ownedCandidates, 0, 20),
+            'diagnostics' => array_slice($diagnostics, 0, 20),
+        ];
+    }
+
+    if ($fullOwners === [] && $partialOwners === []) {
+        return [
+            'status' => 'missing',
+            'reason' => 'no_owned_marker_transcript',
+            'checked' => array_slice($checked, 0, 20),
+            'matched_candidates' => array_slice($matchedCandidates, 0, 20),
+            'owned_candidates' => [],
+            'diagnostics' => array_slice($diagnostics, 0, 20),
+        ];
+    }
+
+    $ownership = $fullOwners !== [] ? 'full' : 'partial(no_primary_identity)';
+    $chosenOwner = $fullOwners[0] ?? $partialOwners[0];
+    $dir = $chosenOwner['path'];
     $messages = extractGrokMessages($dir);
     $signalsFile = "{$dir}/signals.json";
-    $signals = is_file($signalsFile) ? (json_decode((string) file_get_contents($signalsFile), true) ?: []) : [];
+    $signalsContents = orbitAgentSessionCaptureReadPinnedRegularFile($signalsFile);
+    $signals = $signalsContents === null ? [] : (json_decode($signalsContents, true) ?: []);
     // Honest telemetry: do not surface toolFailureCount or other unverified counters.
     $usage = [
         'context_tokens_used' => (int) ($signals['contextTokensUsed'] ?? 0),
@@ -1081,21 +1358,152 @@ function captureGrokExact(string $home, string $cwd, int $soloProcessId): array
 
     $messagesJsonl = implode("\n", array_map(fn($m) => json_encode($m, JSON_UNESCAPED_SLASHES), $messages));
 
-    $raw = [];
+    $raw = [['path' => "{$dir}/chat_history.jsonl", 'archive_name' => 'chat_history.jsonl']];
     foreach (['chat_history.jsonl','events.jsonl','updates.jsonl','signals.json','summary.json','prompt_context.json','resources_state.json','system_prompt.txt','terminal.log'] as $rf) {
+        if ($rf === 'chat_history.jsonl') {
+            continue;
+        }
+
         $p = "{$dir}/{$rf}";
-        if (is_file($p)) {
+
+        if (is_link($p)) {
+            $diagnostics[] = "optional_symlink_artifact_omitted path={$p}";
+
+            continue;
+        }
+
+        if (isRegularFileNoFollow($p)) {
             $raw[] = ['path' => $p, 'archive_name' => $rf];
         }
     }
 
-    return [
-        'status' => 'ok',
+    $result = [
+        'status' => $ownership === 'full' ? 'ok' : 'partial',
         'source' => 'grok_exact_marker',
         'artifact' => $dir,
         'usage' => $usage,
         'messages_jsonl' => $messagesJsonl,
         'raw_files' => $raw,
+        'disambiguation_basis' => "provider=grok; ownership={$ownership}; normalized_cwd=exact; "
+            .'primary_solo_process_id='.($ownership === 'full' ? (string) $soloProcessId : 'none'),
+        'diagnostics' => array_slice($diagnostics, 0, 20),
+    ];
+
+    if ($ownership !== 'full') {
+        $result['reason'] = 'missing_primary_identity';
+    }
+
+    return $result;
+}
+
+/**
+ * @return array{
+ *     normalized_cwd: ?string,
+ *     primary_solo_process_id: ?int,
+ *     cwd_matches: bool,
+ *     structural_cwd_matches: bool,
+ *     cwd_diagnostic: string,
+ * }
+ */
+function claudeCandidateContext(string $path, string $expectedProjectDirectory, string $expectedCwd): array
+{
+    $candidateCwd = null;
+    $firstUserIdentity = null;
+    $firstUserMessageSeen = false;
+
+    foreach (jsonl($path) as $row) {
+        if ($candidateCwd === null && is_string($row['cwd'] ?? null)) {
+            $candidateCwd = $row['cwd'];
+        }
+
+        if ($firstUserMessageSeen || ($row['type'] ?? null) !== 'user') {
+            continue;
+        }
+
+        $firstUserMessageSeen = true;
+        $identities = standaloneSoloProcessIdsFromIdentityText(
+            extractText($row['message']['content'] ?? ''),
+        );
+        $firstUserIdentity = count($identities) === 1 ? $identities[0] : null;
+    }
+
+    $normalizedCandidateCwd = normalizeCodexCwd($candidateCwd);
+    $structuralCwdMatches = dirname($path) === $expectedProjectDirectory;
+    $rowCwdMatches = $normalizedCandidateCwd === null || $normalizedCandidateCwd === $expectedCwd;
+    $cwdDiagnostic = $normalizedCandidateCwd ?? 'missing';
+
+    if (! $structuralCwdMatches) {
+        $cwdDiagnostic .= '; structural_root='.dirname($path);
+    }
+
+    return [
+        'normalized_cwd' => $normalizedCandidateCwd ?? ($structuralCwdMatches ? $expectedCwd : null),
+        'primary_solo_process_id' => $firstUserIdentity,
+        'cwd_matches' => $structuralCwdMatches && $rowCwdMatches,
+        'structural_cwd_matches' => $structuralCwdMatches,
+        'cwd_diagnostic' => $cwdDiagnostic,
+    ];
+}
+
+/**
+ * @return array{
+ *     normalized_cwd: ?string,
+ *     primary_solo_process_id: ?int,
+ *     cwd_matches: bool,
+ *     structural_cwd_matches: bool,
+ *     cwd_diagnostic: string,
+ * }
+ */
+function grokCandidateContext(string $sessionDir, string $expectedSessionRoot, string $expectedCwd): array
+{
+    $promptContextPath = "{$sessionDir}/prompt_context.json";
+    $candidateCwd = null;
+    $promptContextContents = orbitAgentSessionCaptureReadPinnedRegularFile($promptContextPath);
+
+    if ($promptContextContents !== null) {
+        $promptContext = json_decode($promptContextContents, true);
+
+        if (is_array($promptContext)) {
+            foreach ([$promptContext['working_directory'] ?? null, $promptContext['cwd'] ?? null] as $contextCwd) {
+                if (is_string($contextCwd) && trim($contextCwd) !== '') {
+                    $candidateCwd = $contextCwd;
+
+                    break;
+                }
+            }
+        }
+    }
+
+    $sessionRoot = dirname($sessionDir);
+    $structuralCwdMatches = $sessionRoot === $expectedSessionRoot;
+    $structuralCwd = normalizeCodexCwd(rawurldecode(basename($sessionRoot)));
+    $normalizedCandidateCwd = normalizeCodexCwd($candidateCwd);
+    $contextCwdMatches = $normalizedCandidateCwd === null || $normalizedCandidateCwd === $expectedCwd;
+    $cwdDiagnostic = $normalizedCandidateCwd ?? ($structuralCwd ?? 'missing');
+
+    if (! $structuralCwdMatches) {
+        $cwdDiagnostic .= "; structural_root={$sessionRoot}";
+    }
+
+    $firstUserIdentity = null;
+
+    foreach (jsonl("{$sessionDir}/chat_history.jsonl") as $row) {
+        if (($row['type'] ?? null) !== 'user') {
+            continue;
+        }
+
+        $identities = standaloneSoloProcessIdsFromIdentityText(extractText($row['content'] ?? ''));
+        $firstUserIdentity = count($identities) === 1 ? $identities[0] : null;
+
+        break;
+    }
+
+    return [
+        'normalized_cwd' => $normalizedCandidateCwd ?? ($structuralCwdMatches ? $expectedCwd : $structuralCwd),
+        'primary_solo_process_id' => $firstUserIdentity,
+        'cwd_matches' => $structuralCwdMatches && $contextCwdMatches,
+        'structural_cwd_matches' => $structuralCwdMatches,
+        'cwd_diagnostic' => $cwdDiagnostic,
     ];
 }
 
@@ -1149,11 +1557,7 @@ function extractText($content): string
 /** @return iterable<array> */
 function jsonl(string $path): iterable
 {
-    if (!is_file($path)) {
-        return;
-    }
-
-    $handle = fopen($path, 'r');
+    $handle = orbitAgentSessionCaptureOpenPinnedRegularFile($path);
 
     if ($handle === false) {
         return;

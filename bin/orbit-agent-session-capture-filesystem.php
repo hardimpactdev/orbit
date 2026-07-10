@@ -42,6 +42,54 @@ function orbitAgentSessionCaptureEnsureDirectory(string $directory): void
     }
 }
 
+/** @return resource|false */
+function orbitAgentSessionCaptureOpenPinnedRegularFile(string $path): mixed
+{
+    $pathStat = @lstat($path);
+
+    if ($pathStat === false || ($pathStat['mode'] & 0170000) !== 0100000) {
+        return false;
+    }
+
+    $handle = @fopen($path, 'rb');
+
+    if ($handle === false) {
+        return false;
+    }
+
+    $handleStat = @fstat($handle);
+
+    if (
+        $handleStat === false
+        || ($handleStat['mode'] & 0170000) !== 0100000
+        || $handleStat['dev'] !== $pathStat['dev']
+        || $handleStat['ino'] !== $pathStat['ino']
+    ) {
+        fclose($handle);
+
+        return false;
+    }
+
+    return $handle;
+}
+
+function orbitAgentSessionCaptureReadPinnedRegularFile(string $path): ?string
+{
+    $handle = orbitAgentSessionCaptureOpenPinnedRegularFile($path);
+
+    if ($handle === false) {
+        return null;
+    }
+
+    try {
+        $contents = stream_get_contents($handle);
+
+        return $contents === false ? null : $contents;
+    } finally {
+        fclose($handle);
+    }
+}
+
 function orbitAgentSessionCaptureRemovePathRecursively(string $path, string $canonicalProviderRoot): void
 {
     orbitAgentSessionCaptureAssertDirectChildPath($path, $canonicalProviderRoot);
@@ -100,7 +148,19 @@ function orbitAgentSessionCaptureBuildStagingDirectory(
     orbitAgentSessionCaptureAssertDirectChildPath($temporaryStaging, $canonicalProviderRoot);
 
     $write ??= static fn (string $path, string $contents): int|false => @file_put_contents($path, $contents);
-    $copy ??= static fn (string $source, string $destination): bool => @copy($source, $destination);
+    $copy ??= static function (mixed $sourceHandle, string $destination): bool {
+        $destinationHandle = @fopen($destination, 'wb');
+
+        if ($destinationHandle === false) {
+            return false;
+        }
+
+        try {
+            return stream_copy_to_stream($sourceHandle, $destinationHandle) !== false;
+        } finally {
+            fclose($destinationHandle);
+        }
+    };
 
     try {
         if (is_link($temporaryStaging)) {
@@ -155,8 +215,8 @@ function orbitAgentSessionCaptureBuildStagingDirectory(
             $source = $rawFile['path'];
             $archiveName = $rawFile['archive_name'];
 
-            if (! is_file($source)) {
-                throw new RuntimeException("raw_source_missing source={$source}");
+            if (is_link($source)) {
+                throw new RuntimeException("raw_source_symlink source={$source}");
             }
 
             if (
@@ -168,9 +228,18 @@ function orbitAgentSessionCaptureBuildStagingDirectory(
             }
 
             $destination = "{$rawDirectory}/{$archiveName}";
+            $sourceHandle = orbitAgentSessionCaptureOpenPinnedRegularFile($source);
 
-            if (! $copy($source, $destination)) {
-                throw new RuntimeException("copy_failed operation=raw source={$source} path={$destination}");
+            if ($sourceHandle === false) {
+                throw new RuntimeException("raw_source_missing source={$source}");
+            }
+
+            try {
+                if (! $copy($sourceHandle, $destination)) {
+                    throw new RuntimeException("copy_failed operation=raw source={$source} path={$destination}");
+                }
+            } finally {
+                fclose($sourceHandle);
             }
         }
     } catch (Throwable $throwable) {

@@ -1933,6 +1933,90 @@ it('finalization lint passes lanes-having packet with healthy active staged capt
     }
 });
 
+it('finalization lint ignores direct provider transaction backup manifests', function (): void {
+    $packetDir = make_finalization_lint_dir(capture_health_finalization_packet());
+
+    try {
+        $backupDir = "{$packetDir}/.orbit/agent-sessions/grok/.lane-close-capture-worker-801.backup-review";
+        mkdir($backupDir, recursive: true);
+        file_put_contents("{$backupDir}/manifest.json", json_encode([
+            'schema_version' => 1,
+            'provider' => 'grok',
+            'status' => 'ok',
+            'solo_process_id' => 801,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getOutput())
+            ->toContain('zero healthy agent session captures');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('finalization lint counts direct provider backup-shaped evidence with an empty suffix', function (): void {
+    $packetDir = make_finalization_lint_dir(capture_health_finalization_packet());
+
+    try {
+        $evidenceDir = "{$packetDir}/.orbit/agent-sessions/grok/.lane.backup-";
+        mkdir($evidenceDir, recursive: true);
+        file_put_contents("{$evidenceDir}/manifest.json", json_encode([
+            'schema_version' => 1,
+            'provider' => 'grok',
+            'status' => 'ok',
+            'solo_process_id' => 801,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
+it('finalization lint counts non-dot backup-shaped evidence', function (): void {
+    $packetDir = make_finalization_lint_dir(capture_health_finalization_packet());
+
+    try {
+        $evidenceDir = "{$packetDir}/.orbit/agent-sessions/grok/lane-close-capture-worker-801.backup-review";
+        mkdir($evidenceDir, recursive: true);
+        file_put_contents("{$evidenceDir}/manifest.json", json_encode([
+            'schema_version' => 1,
+            'provider' => 'grok',
+            'status' => 'ok',
+            'solo_process_id' => 801,
+        ], JSON_THROW_ON_ERROR)
+            .PHP_EOL);
+
+        $process = run_finalization_check_wrapper(
+            cwd: $packetDir,
+            args: ['--lint', "{$packetDir}/.orbit/loop.md"],
+        );
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getOutput().$process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('PASS');
+    } finally {
+        remove_finalization_lint_dir($packetDir);
+    }
+});
+
 it('finalization gate unchanged for laneless loops even with zero captures', function (): void {
     $packetDir = make_finalization_lint_dir(<<<'MARKDOWN'
         # Orbit Current Slice State
@@ -2229,6 +2313,48 @@ function make_finalization_lint_dir(string $loopMarkdown): string
     file_put_contents(filename: "{$packetDir}/.orbit/loop.md", data: $loopMarkdown);
 
     return $packetDir;
+}
+
+function capture_health_finalization_packet(): string
+{
+    return <<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Feature Context
+        - Scratchpad: solo://proj/4/scratchpad/loop-improvement-rev--237
+        - Worktree: .worktrees/lane-close-agent-session-capture
+        - Branch: lane-close-agent-session-capture
+        - Current slice: lane close capture
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Retained topology proof: not applicable - repo tooling only
+          - `composer quality-check`: not applicable - focused pest only for this test
+        - Finalization gate fit:
+          - lint packet for capture health gate
+        - Distillation packet:
+          - Location: `.orbit/loop.md`
+          - Includes objective/final diff: yes
+          - Includes worker/reviewer/terminal/evidence pointers: yes
+          - Includes orchestrator steering notes: yes
+        - Fresh analyzer:
+          - deferred - Solo analyzer capacity unavailable this session
+        - Accepted durable updates:
+          - none
+        - Rejected or already-covered signals:
+          - none
+        - Deferred follow-ups:
+          - none
+        - No-new-signal rationale:
+          - capture health traversal boundary fixture
+
+        - Worker: lane-close-capture-worker (Solo process 801)
+
+        - Agent session capture waivers: none
+        MARKDOWN;
 }
 
 function remove_finalization_lint_dir(string $packetDir): void

@@ -596,7 +596,12 @@ function agent_session_manifest_paths(string $agentSessionsDir): array
         }
 
         $path = $entry->getPathname();
-        if ($path !== $topLevelManifest) {
+        $manifestDirectory = dirname($path);
+        $providerDirectory = dirname($manifestDirectory);
+        $isDirectProviderTransactionBackup = dirname($providerDirectory) === rtrim($agentSessionsDir, DIRECTORY_SEPARATOR)
+            && preg_match('/^\..+\.backup-.+$/', basename($manifestDirectory)) === 1;
+
+        if ($path !== $topLevelManifest && ! $isDirectProviderTransactionBackup) {
             $paths[] = $path;
         }
     }

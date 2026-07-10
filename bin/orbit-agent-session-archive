@@ -195,11 +195,8 @@ foreach ($processes as $process) {
         continue;
     }
 
-    $runtime = inferRuntime((string) ($process['command'] ?? ''));
-
-    if ($runtime === null) {
-        continue;
-    }
+    $command = (string) ($process['command'] ?? '');
+    $runtime = inferRuntime($command);
 
     $startedAt = processStartedAt($process, $now);
     $processCwd = processCwd($process, $cwd);
@@ -208,18 +205,21 @@ foreach ($processes as $process) {
     $base = [
         'solo_process_id' => $process['id'] ?? null,
         'process_name' => $process['name'] ?? null,
-        'command' => $process['command'] ?? null,
         'agent' => $runtime,
         'process_metadata_source' => $processMetadataSource,
         'artifact_cwd' => $processCwd,
     ];
+
+    if ($runtime !== 'unknown') {
+        $base['command'] = $process['command'] ?? null;
+    }
 
     $usage = match ($runtime) {
         'claude' => extractClaudeSession($home, $processCwd, $process, $marker),
         'codex' => extractCodexSession($home, $processCwd, $startedAt, $marker, $maxStartDistance, $requireCwdMatch),
         'grok' => extractGrokSession($home, $processCwd, $startedAt, $marker, $maxStartDistance, $requireCwdMatch),
         'antigravity' => unsupported('antigravity_session_contract_unsupported'),
-        default => unsupported('provider_unsupported'),
+        default => unsupported('unsupported_provider'),
     };
 
     $result = array_merge($base, $usage);
@@ -241,7 +241,7 @@ if ($archiveDir !== null) {
 
 echo json_encode(array_map('publicResult', $results), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL;
 
-function inferRuntime(string $command): ?string
+function inferRuntime(string $command): string
 {
     $binary = basename(strtok(trim($command), " \t\n\r\0\x0B") ?: '');
 
@@ -250,7 +250,7 @@ function inferRuntime(string $command): ?string
         'codex' => 'codex',
         'grok' => 'grok',
         'antigravity' => 'antigravity',
-        default => null,
+        default => 'unknown',
     };
 }
 
