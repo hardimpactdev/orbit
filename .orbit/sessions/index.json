@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 88,
+    "record_count": 89,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -2633,6 +2633,34 @@
                 "reasoning_tokens": 30322
             },
             "capture_status": "partial"
+        },
+        {
+            "archive": "2026-07-10-160545-session-index-token-schema-honesty",
+            "slug": "session-index-token-schema-honesty",
+            "timestamp": "2026-07-10-160545",
+            "loop_outcome": "complete",
+            "loop_outcome_raw": "complete",
+            "required_verification": {
+                "Retained topology proof": "passed",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "yes",
+            "fresh_analyzer_verdict_raw": "`yes`; no findings, all six candidates `correct-noop`, no packet gaps, no new loop improvement.",
+            "candidate_signals": {
+                "total": 1,
+                "classifications": {
+                    "already-covered": 1
+                }
+            },
+            "blockers_present": false,
+            "token_usage": {
+                "status": "consistent",
+                "input_tokens": 16006165,
+                "output_tokens": 66809,
+                "total_tokens": 16072974,
+                "reasoning_tokens": 31679
+            },
+            "capture_status": "ok"
         }
     ]
 }

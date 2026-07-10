@@ -1,0 +1,23 @@
+➜  orbit git:(main) ✗ cd /Users/nckrtl/orbit/.worktrees/session-index-token-schema-honesty && printf 'LOCAL_COMMIT=%s\nLOCAL_HELPER_SHA256=' "$(git re
+v-parse HEAD)" && shasum -a 256 bin/orbit-session-index | awk '{print $1}' && ssh -tt beast 'incus exec orbit-e2e-dev-52df92-operator -- sudo -iu orbi
+t bash -lc "cd /home/orbit/orbit-run && exec bash -i"'
+LOCAL_COMMIT=66dda9f88211b524018fc434540f8e26b63c9108
+LOCAL_HELPER_SHA256=208d4a4e2b0431111a68f283bb7c7ececfb31bd86e03cdc7d09895ab2af46dfb
+<TURE_CORPUS:\n' && bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/SessionIndexTest.php
+VM_PWD=/home/orbit/orbit-run
+VM_HELPER_SHA256=208d4a4e2b0431111a68f283bb7c7ececfb31bd86e03cdc7d09895ab2af46dfb
+INDEX_CHECK:
+Session index is missing. Run `bin/orbit-session-index --write`.
+<TURE_CORPUS:\n' && bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/SessionIndexTest.php
+BOUNDED_FIXTURE_CORPUS:
+
+   INFO  Warning: mkdir(): Permission denied in /home/orbit/orbit-run/apps/gateway/vendor/pestphp/pest-plugin-mutate/src/Cache/FileStore.php on line 2
+3.
+
+
+  .........
+
+  Tests:    9 passed (312 assertions)
+  Duration: 6.91s
+
+orbit@orbit-e2e-dev-52df92-operator:~/orbit-run$
