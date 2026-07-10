@@ -59,7 +59,11 @@ function quality_check_script_labels(string $script, string $arrayName): array
 function quality_check_background_labels(string $script): array
 {
     $backgroundLabelMatches = [];
-    preg_match_all('/^\s*run_subgate (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
+    preg_match_all(
+        '/^\s*(?:run_with_quality_check_args )?run_subgate (?P<label>[a-z0-9_]+) /m',
+        $script,
+        $backgroundLabelMatches,
+    );
 
     return array_values(array_unique($backgroundLabelMatches['label']));
 }
@@ -630,6 +634,9 @@ it('maps every aggregate subgate to a quality-check progress area', function ():
         ->all();
 
     expect($lines)->toBe([
+        'component_workers_empty=0',
+        'quality_check_args_empty=0',
+        'quality_check_args_non_empty=2|--filter=alpha beta|--compact',
         'apps/gateway=5',
         'apps/cli=5',
         'apps/docs=8',
