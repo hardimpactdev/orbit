@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 
-# Parallelized quality gate for Orbit.
-#
-# Static checks (docs-lint, Mago, rector) run concurrently in a
-# capped background pool while Pest lanes run alongside them. Each background
-# job writes to its own log file so output stays readable, and the gate exits
-# non-zero if any single check failed.
+# CPU-budgeted quality gate for Orbit. Components are admitted in order when
+# their declared peak demand fits the host budget, then run their owned
+# subgates sequentially. This keeps progress truthful and prevents Pest, Cargo,
+# Mago, and Rector from competing through hidden nested fan-out.
 #
 # Defaults are read-only (rector --dry-run, mago format --check). Pass
 # `--fix` to apply rector + Mago changes the same way the legacy
@@ -33,6 +31,8 @@ if [ "${1:-}" = "--fix" ]; then
     shift
 fi
 
+QUALITY_CHECK_ARGS=("$@")
+
 MODE="check"
 COMMAND="composer quality-check"
 if [ "$FIX_MODE" -eq 1 ]; then
@@ -41,12 +41,49 @@ if [ "$FIX_MODE" -eq 1 ]; then
 fi
 
 LOG_DIR="$(mktemp -d)"
+COMPONENT_WORKERS=()
+
+terminate_process_tree() {
+    local parent_pid="$1"
+    local signal="${2:-TERM}"
+    local child_pid
+    local child_pids
+
+    child_pids="$(pgrep -P "$parent_pid" 2>/dev/null || true)"
+    kill -"$signal" "$parent_pid" 2>/dev/null || true
+
+    for child_pid in $child_pids; do
+        terminate_process_tree "$child_pid" "$signal"
+    done
+}
 
 quality_check_cleanup() {
+    local key
+    local pid_var
+    local pid
+
     if [ -n "${PROGRESS_TICKER_PID:-}" ]; then
         : >"$LOG_DIR/progress.stop"
         wait "$PROGRESS_TICKER_PID" 2>/dev/null || true
     fi
+
+    for key in "${COMPONENT_WORKERS[@]}"; do
+        pid_var="${key}_COMPONENT_PID"
+        pid="${!pid_var:-}"
+
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            terminate_process_tree "$pid"
+        fi
+    done
+
+    for key in "${COMPONENT_WORKERS[@]}"; do
+        pid_var="${key}_COMPONENT_PID"
+        pid="${!pid_var:-}"
+
+        if [ -n "$pid" ]; then
+            wait "$pid" 2>/dev/null || true
+        fi
+    done
 
     if [ "${PROGRESS_CURSOR_HIDDEN:-0}" -eq 1 ]; then
         printf '\e[?25h'
@@ -68,14 +105,13 @@ if [ "$FIX_MODE" -eq 1 ]; then
     MAGO_FORMAT_ARGS=()
 fi
 
-quality_check_default_max_background_jobs() {
+quality_check_default_cpu_budget() {
     local detected_jobs
-    local default_jobs
 
     detected_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 8)"
 
     if ! [[ "$detected_jobs" =~ ^[0-9]+$ ]] || [ "$detected_jobs" -lt 1 ]; then
-        echo 4
+        echo 6
         return
     fi
 
@@ -85,26 +121,53 @@ quality_check_default_max_background_jobs() {
     fi
 
     if [ "$detected_jobs" -le 4 ]; then
-        echo 2
+        echo $((detected_jobs - 1))
         return
     fi
 
-    default_jobs=$((detected_jobs / 2))
-
-    if [ "$default_jobs" -gt 8 ]; then
-        echo 8
+    if [ "$detected_jobs" -gt 14 ]; then
+        echo 14
         return
     fi
 
-    echo "$default_jobs"
+    echo $((detected_jobs - 2))
 }
 
-DEFAULT_MAX_BACKGROUND_JOBS="$(quality_check_default_max_background_jobs)"
-MAX_BACKGROUND_JOBS="${ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS:-$DEFAULT_MAX_BACKGROUND_JOBS}"
+DEFAULT_CPU_BUDGET="$(quality_check_default_cpu_budget)"
+CPU_BUDGET="${ORBIT_QUALITY_CHECK_CPU_BUDGET:-$DEFAULT_CPU_BUDGET}"
 
-if ! [[ "$MAX_BACKGROUND_JOBS" =~ ^[0-9]+$ ]] || [ "$MAX_BACKGROUND_JOBS" -lt 1 ]; then
-    MAX_BACKGROUND_JOBS="$DEFAULT_MAX_BACKGROUND_JOBS"
+if ! [[ "$CPU_BUDGET" =~ ^[0-9]+$ ]] || [ "$CPU_BUDGET" -lt 1 ]; then
+    CPU_BUDGET="$DEFAULT_CPU_BUDGET"
 fi
+
+GATEWAY_PEST_PROCESSES=$((CPU_BUDGET / 2))
+[ "$GATEWAY_PEST_PROCESSES" -lt 1 ] && GATEWAY_PEST_PROCESSES=1
+[ "$CPU_BUDGET" -ge 14 ] && GATEWAY_PEST_PROCESSES=8
+[ "$GATEWAY_PEST_PROCESSES" -gt 8 ] && GATEWAY_PEST_PROCESSES=8
+
+GATEWAY_COMPONENT_DEMAND="$GATEWAY_PEST_PROCESSES"
+CLI_COMPONENT_DEMAND=5
+DOCS_COMPONENT_DEMAND=1
+E2E_COMPONENT_DEMAND=1
+REVERB_COMPONENT_DEMAND=1
+CARGO_COMPONENT_DEMAND=3
+CORE_COMPONENT_DEMAND=1
+SDK_COMPONENT_DEMAND=1
+
+GATEWAY_STATIC_MAGO_THREADS=$(((GATEWAY_COMPONENT_DEMAND - 1) / 3))
+[ "$GATEWAY_STATIC_MAGO_THREADS" -lt 1 ] && GATEWAY_STATIC_MAGO_THREADS=1
+CLI_STATIC_MAGO_THREADS=1
+HEAVY_PEST_PHASE_COORDINATION=0
+
+if [ "$FIX_MODE" -eq 0 ] && [ $((GATEWAY_COMPONENT_DEMAND + CLI_COMPONENT_DEMAND)) -le "$CPU_BUDGET" ]; then
+    HEAVY_PEST_PHASE_COORDINATION=1
+fi
+
+for demand_var in CLI_COMPONENT_DEMAND CARGO_COMPONENT_DEMAND; do
+    if [ "${!demand_var}" -gt "$CPU_BUDGET" ]; then
+        eval "${demand_var}=$CPU_BUDGET"
+    fi
+done
 
 running_bg_jobs() {
     local count=0
@@ -119,19 +182,6 @@ running_bg_jobs() {
     done
 
     echo "$count"
-}
-
-wait_for_bg_label() {
-    local label="$1"
-    local pid_var="${label}_PID"
-
-    wait "${!pid_var}" 2>/dev/null
-}
-
-wait_for_bg_slot() {
-    while [ "$(running_bg_jobs)" -ge "$MAX_BACKGROUND_JOBS" ]; do
-        sleep 0.2
-    done
 }
 
 record_subgate_start() {
@@ -814,112 +864,365 @@ if [ "${ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST:-}" = "1" ]; then
     exit 0
 fi
 
-run_bg() {
+run_subgate() {
     local label="$1"
     shift
     local log="$LOG_DIR/$label.log"
-    local pid
+    local code=0
 
-    wait_for_bg_slot
-    record_label_area_admitted "$label"
     record_subgate_start "$label"
-    (
-        record_subgate_running "$label"
-        "$@" >"$log" 2>&1
-        code="$?"
-        record_subgate_duration "$label"
-        echo "$code" >"$LOG_DIR/$label.exit"
-        clear_subgate_running "$label"
-        exit "$code"
-    ) &
-    pid=$!
-    echo "$pid" >"$LOG_DIR/$label.pid"
-    eval "${label}_PID=$pid"
+    record_subgate_running "$label"
+    "$@" >"$log" 2>&1 || code="$?"
+    record_subgate_duration "$label"
+    echo "$code" >"$LOG_DIR/$label.exit"
+    clear_subgate_running "$label"
 }
 
-wait_for_bg_labels() {
+run_static_subgates() {
+    local pid
+    local pids=()
+
+    for command_function in "$@"; do
+        "$command_function" &
+        pids+=("$!")
+    done
+
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+}
+
+component_cpu_in_use() {
+    local total=0
+    local key
+    local pid_var
+    local demand_var
+    local pid
+    local demand
+
+    for key in "${COMPONENT_WORKERS[@]}"; do
+        pid_var="${key}_COMPONENT_PID"
+        demand_var="${key}_COMPONENT_CPU"
+        pid="${!pid_var:-}"
+
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            demand="$(cat "$LOG_DIR/$key.cpu" 2>/dev/null || echo "${!demand_var}")"
+            total=$((total + demand))
+        fi
+    done
+
+    echo "$total"
+}
+
+wait_for_cpu_capacity() {
+    local demand="$1"
+
+    while [ $(( $(component_cpu_in_use) + demand )) -gt "$CPU_BUDGET" ]; do
+        sleep 0.2
+    done
+}
+
+start_component() {
+    local area="$1"
+    local demand="$2"
+    local key="$3"
+    local function_name="${key}_component"
+
+    record_area_admitted "$area"
+    echo "$demand" >"$LOG_DIR/$key.cpu"
+    "$function_name" &
+    eval "${key}_COMPONENT_PID=$!"
+    eval "${key}_COMPONENT_CPU=$demand"
+    COMPONENT_WORKERS+=("$key")
+}
+
+run_component() {
+    local area="$1"
+    local demand="$2"
+    local key="$3"
+
+    wait_for_cpu_capacity "$demand"
+    start_component "$area" "$demand" "$key"
+}
+
+admit_components() {
+    local specs=("$@")
+    local started=0
+    local admitted
+    local spec
+    local area
+    local demand_var
+    local demand
+    local key
+    local started_var
+
+    while [ "$started" -lt "${#specs[@]}" ]; do
+        admitted=0
+
+        for spec in "${specs[@]}"; do
+            IFS='|' read -r area demand_var key <<<"$spec"
+            started_var="${key}_COMPONENT_STARTED"
+
+            if [ "${!started_var:-0}" -eq 1 ]; then
+                continue
+            fi
+
+            demand="${!demand_var}"
+
+            if [ $(( $(component_cpu_in_use) + demand )) -gt "$CPU_BUDGET" ]; then
+                continue
+            fi
+
+            start_component "$area" "$demand" "$key"
+            eval "${started_var}=1"
+            started=$((started + 1))
+            admitted=1
+        done
+
+        if [ "$admitted" -eq 0 ]; then
+            sleep 0.2
+        fi
+    done
+}
+
+wait_for_component_labels() {
+    local key
+    local pid_var
+
+    for key in "$@"; do
+        pid_var="${key}_COMPONENT_PID"
+        wait "${!pid_var}" 2>/dev/null || true
+    done
+}
+
+wait_for_subgate_labels() {
     local label
 
     for label in "$@"; do
-        wait_for_bg_label "$label"
+        while [ ! -f "$LOG_DIR/$label.exit" ]; do
+            sleep 0.1
+        done
     done
+}
+
+gateway_mago_analyze_subgate() {
+    run_subgate gateway_mago_analyze env RAYON_NUM_THREADS="$GATEWAY_STATIC_MAGO_THREADS" bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium
+}
+
+gateway_mago_lint_subgate() {
+    run_subgate gateway_mago_lint env RAYON_NUM_THREADS="$GATEWAY_STATIC_MAGO_THREADS" bin/orbit-gateway-vendor-bin mago lint "${MAGO_LINT_ARGS[@]}"
+}
+
+gateway_rector_subgate() {
+    run_subgate gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
+}
+
+gateway_mago_format_subgate() {
+    run_subgate gateway_mago_format env RAYON_NUM_THREADS="$GATEWAY_STATIC_MAGO_THREADS" bin/orbit-gateway-vendor-bin mago format "${MAGO_FORMAT_ARGS[@]}"
+}
+
+gateway_component() {
+    local gateway_pest_pid
+
+    bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
+
+    if [ "$HEAVY_PEST_PHASE_COORDINATION" -eq 1 ]; then
+        run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" "${QUALITY_CHECK_ARGS[@]}" &
+        gateway_pest_pid=$!
+
+        while [ ! -f "$LOG_DIR/cli_heavy_phase_released" ]; do
+            sleep 0.1
+        done
+
+        run_gateway_static_subgates_budgeted
+        echo "$GATEWAY_COMPONENT_DEMAND" >"$LOG_DIR/gateway.cpu"
+        wait "$gateway_pest_pid" 2>/dev/null || true
+        append_gateway_pest_profile
+
+        return
+    fi
+
+    if [ "$FIX_MODE" -eq 1 ] || [ "$GATEWAY_COMPONENT_DEMAND" -lt 4 ]; then
+        gateway_mago_analyze_subgate
+        gateway_mago_lint_subgate
+        gateway_rector_subgate
+        gateway_mago_format_subgate
+    else
+        run_static_subgates gateway_mago_analyze_subgate gateway_mago_lint_subgate gateway_rector_subgate gateway_mago_format_subgate
+    fi
+    run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" "${QUALITY_CHECK_ARGS[@]}"
+    append_gateway_pest_profile
+}
+
+run_gateway_static_subgates_budgeted() {
+    local analyze_pid
+    local lint_pid
+    local rector_pid
+    local format_pid
+
+    gateway_mago_analyze_subgate &
+    analyze_pid=$!
+    gateway_mago_lint_subgate &
+    lint_pid=$!
+    gateway_rector_subgate &
+    rector_pid=$!
+
+    wait "$lint_pid" 2>/dev/null || true
+    gateway_mago_format_subgate &
+    format_pid=$!
+
+    wait "$analyze_pid" 2>/dev/null || true
+    wait "$rector_pid" 2>/dev/null || true
+    wait "$format_pid" 2>/dev/null || true
+}
+
+append_gateway_pest_profile() {
+    local junit_path="$LOG_DIR/gateway_pest.junit.xml"
+
+    if [ ! -s "$junit_path" ]; then
+        return
+    fi
+
+    php -r '
+$testCases = simplexml_load_file($argv[1])->xpath("//testcase") ?: [];
+$durations = [];
+
+foreach ($testCases as $testCase) {
+    $durations[] = [
+        "test" => (string) $testCase["name"],
+        "file" => (string) $testCase["file"],
+        "duration_ms" => (int) round(((float) $testCase["time"]) * 1000),
+    ];
+}
+
+usort($durations, fn (array $left, array $right): int => $right["duration_ms"] <=> $left["duration_ms"]);
+
+echo json_encode([
+    "tool" => "pest-profile",
+    "source" => "junit",
+    "slowest" => array_slice($durations, 0, 10),
+], JSON_UNESCAPED_SLASHES).PHP_EOL;
+' "$junit_path" >>"$LOG_DIR/gateway_pest.log"
+}
+
+cli_mago_analyze_subgate() {
+    run_subgate cli_mago_analyze env RAYON_NUM_THREADS="$CLI_STATIC_MAGO_THREADS" bash -lc 'cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium'
+}
+
+cli_mago_lint_subgate() {
+    run_subgate cli_mago_lint env RAYON_NUM_THREADS="$CLI_STATIC_MAGO_THREADS" bash -lc 'cd apps/cli && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+}
+
+cli_rector_subgate() {
+    run_subgate cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+}
+
+cli_mago_format_subgate() {
+    run_subgate cli_mago_format env RAYON_NUM_THREADS="$CLI_STATIC_MAGO_THREADS" bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+}
+
+cli_component() {
+    if [ "$HEAVY_PEST_PHASE_COORDINATION" -eq 1 ]; then
+        run_subgate cli_pest bin/orbit-cli-pest-quality --exclude-group=slow --profile --compact
+        run_static_subgates cli_mago_analyze_subgate cli_mago_lint_subgate cli_rector_subgate cli_mago_format_subgate
+        echo $((GATEWAY_PEST_PROCESSES + (2 * GATEWAY_STATIC_MAGO_THREADS) + 1)) >"$LOG_DIR/gateway.cpu"
+        : >"$LOG_DIR/cli_heavy_phase_released"
+
+        return
+    fi
+
+    if [ "$FIX_MODE" -eq 1 ] || [ "$CLI_COMPONENT_DEMAND" -lt 4 ]; then
+        cli_mago_analyze_subgate
+        cli_mago_lint_subgate
+        cli_rector_subgate
+        cli_mago_format_subgate
+    else
+        run_static_subgates cli_mago_analyze_subgate cli_mago_lint_subgate cli_rector_subgate cli_mago_format_subgate
+    fi
+    if [ "$CLI_COMPONENT_DEMAND" -lt 5 ]; then
+        run_subgate cli_pest bin/orbit-cli-pest --exclude-group=slow --profile --compact
+    else
+        run_subgate cli_pest bin/orbit-cli-pest-quality --exclude-group=slow --profile --compact
+    fi
+}
+
+docs_component() {
+    run_subgate docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=domains
+    run_subgate docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=testing
+    run_subgate docs_references bin/orbit-docs-artisan librarian:lint --format=agent --group=references
+    run_subgate docs_mago_analyze env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium'
+    run_subgate docs_mago_lint env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+    run_subgate docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+    run_subgate docs_mago_format env RAYON_NUM_THREADS="$DOCS_COMPONENT_DEMAND" bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate docs_pest bin/orbit-docs-pest --profile --compact
+}
+
+e2e_component() {
+    run_subgate e2e_mago_analyze env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium'
+    run_subgate e2e_mago_lint env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+    run_subgate e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+    run_subgate e2e_mago_format env RAYON_NUM_THREADS="$E2E_COMPONENT_DEMAND" bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+}
+
+reverb_component() {
+    run_subgate reverb_mago_analyze env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
+    run_subgate reverb_mago_lint env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
+    run_subgate reverb_mago_format env RAYON_NUM_THREADS="$REVERB_COMPONENT_DEMAND" bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
+}
+
+agent_component() {
+    if [ "$FIX_MODE" -eq 1 ]; then
+        run_subgate agent_cargo_fmt env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/agent && cargo fmt'
+    else
+        run_subgate agent_cargo_fmt env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/agent && cargo fmt -- --check'
+    fi
+    run_subgate agent_cargo_test env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/agent && cargo test'
+    run_subgate agent_cargo_check env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/agent && cargo check'
+    run_subgate agent_cargo_clippy env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/agent && cargo clippy --all-targets -- -D warnings'
+}
+
+macos_component() {
+    if [ "$FIX_MODE" -eq 1 ]; then
+        run_subgate macos_cargo_fmt env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/macos && cargo fmt'
+    else
+        run_subgate macos_cargo_fmt env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/macos && cargo fmt -- --check'
+    fi
+    run_subgate macos_cargo_test env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/macos && cargo test'
+    run_subgate macos_cargo_check env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/macos && cargo check'
+    run_subgate macos_cargo_clippy env CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND" bash -lc 'cd apps/macos && cargo clippy --all-targets -- -D warnings'
+}
+
+sdk_component() {
+    run_subgate sdk_mago_analyze env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium'
+    run_subgate sdk_mago_lint env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+    run_subgate sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+    run_subgate sdk_mago_format env RAYON_NUM_THREADS="$SDK_COMPONENT_DEMAND" bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    run_subgate sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --profile --compact'
+}
+
+core_component() {
+    run_subgate core_mago_analyze env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
+    run_subgate core_mago_lint env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+    run_subgate core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+    run_subgate core_mago_format env RAYON_NUM_THREADS="$CORE_COMPONENT_DEMAND" bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+    wait_for_subgate_labels gateway_pest cli_pest docs_pest sdk_pest
+    run_subgate core_pest bash -lc 'cd packages/core && vendor/bin/pest --profile --compact'
 }
 
 quality_check_progress_start_ticker
 
-run_bg gateway_mago_analyze bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium
-run_bg gateway_mago_lint bin/orbit-gateway-vendor-bin mago lint "${MAGO_LINT_ARGS[@]}"
-run_bg gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
-run_bg gateway_mago_format bin/orbit-gateway-vendor-bin mago format "${MAGO_FORMAT_ARGS[@]}"
-bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
-run_bg gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
+admit_components \
+    'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway' \
+    'apps/cli|CLI_COMPONENT_DEMAND|cli' \
+    'apps/docs|DOCS_COMPONENT_DEMAND|docs' \
+    'apps/e2e|E2E_COMPONENT_DEMAND|e2e' \
+    'apps/reverb|REVERB_COMPONENT_DEMAND|reverb' \
+    'apps/agent|CARGO_COMPONENT_DEMAND|agent' \
+    'apps/macos|CARGO_COMPONENT_DEMAND|macos' \
+    'packages/core|CORE_COMPONENT_DEMAND|core' \
+    'packages/sdk|SDK_COMPONENT_DEMAND|sdk'
 
-run_bg cli_mago_analyze bash -lc 'cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium'
-run_bg cli_mago_lint bash -lc 'cd apps/cli && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg cli_mago_format bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-run_bg cli_pest bin/orbit-cli-pest --exclude-group=slow --compact
-
-run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=domains
-run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=testing
-run_bg docs_references bin/orbit-docs-artisan librarian:lint --format=agent --group=references
-run_bg docs_mago_analyze bash -lc 'cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium'
-run_bg docs_mago_lint bash -lc 'cd apps/docs && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg docs_mago_format bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-run_bg docs_pest bin/orbit-docs-pest --compact
-
-run_bg e2e_mago_analyze bash -lc 'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium'
-run_bg e2e_mago_lint bash -lc 'cd apps/e2e && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg e2e_mago_format bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-
-run_bg reverb_mago_analyze bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
-run_bg reverb_mago_lint bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
-run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
-
-if [ "$FIX_MODE" -eq 1 ]; then
-    run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt'
-    run_bg macos_cargo_fmt bash -lc 'cd apps/macos && cargo fmt'
-    wait_for_bg_labels agent_cargo_fmt macos_cargo_fmt
-    quality_check_progress_render_pending
-else
-    run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt -- --check'
-    run_bg macos_cargo_fmt bash -lc 'cd apps/macos && cargo fmt -- --check'
-fi
-run_bg agent_cargo_test bash -lc 'cd apps/agent && cargo test'
-run_bg agent_cargo_check bash -lc 'cd apps/agent && cargo check'
-run_bg agent_cargo_clippy bash -lc 'cd apps/agent && cargo clippy --all-targets -- -D warnings'
-run_bg macos_cargo_test bash -lc 'cd apps/macos && cargo test'
-run_bg macos_cargo_check bash -lc 'cd apps/macos && cargo check'
-run_bg macos_cargo_clippy bash -lc 'cd apps/macos && cargo clippy --all-targets -- -D warnings'
-
-wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"
-quality_check_progress_render_pending
-
-run_bg core_mago_analyze bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
-run_bg core_mago_lint bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg core_mago_format bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-
-run_bg sdk_mago_analyze bash -lc 'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium'
-run_bg sdk_mago_lint bash -lc 'cd packages/sdk && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
-run_bg sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
-run_bg sdk_mago_format bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
-run_bg sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --compact'
-
-wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"
-wait_for_bg_labels "${APP_REMAINING_CHECK_LABELS[@]}"
-
-# The core progress tests intentionally fork short-lived ticker children. Keep
-# this lane out of the background fan-out so unrelated Pest suites cannot
-# deliver process-group signals to the core Pest parent.
-record_area_admitted packages/core
-record_subgate_start core_pest
-record_subgate_running core_pest
-( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )
-record_subgate_duration core_pest
-clear_subgate_running core_pest
+wait_for_component_labels gateway cli docs e2e reverb agent macos sdk core
 
 quality_check_progress_render_final
 
@@ -929,6 +1232,11 @@ print_log() {
     local log_file="$LOG_DIR/$label.log"
     local code
     code="$(cat "$exit_file" 2>/dev/null || echo 1)"
+
+    if [ "$code" -eq 0 ]; then
+        return 0
+    fi
+
     if [ "$code" -ne 0 ] || [ -s "$log_file" ]; then
         echo "─── ${label} (exit=${code}) ───"
         cat "$log_file"
@@ -958,6 +1266,23 @@ for label in "${CHECK_LABELS[@]}"; do
         SUBGATE_DURATION_ARGS+=(--subgate-duration="${label}=${duration}")
     fi
 done
+
+PROFILE_RUN_ID="${STARTED_AT//:/-}-${GIT_COMMIT:0:12}"
+PROFILE_DIR="${ARTIFACT_DIR}/profiles/${PROFILE_RUN_ID}"
+mkdir -p "$PROFILE_DIR"
+
+for label in gateway_pest cli_pest docs_pest core_pest sdk_pest; do
+    if [ -f "$LOG_DIR/$label.log" ]; then
+        cp "$LOG_DIR/$label.log" "$PROFILE_DIR/$label.log"
+    fi
+done
+
+
+if [ -f "$LOG_DIR/gateway_pest.junit.xml" ]; then
+    cp "$LOG_DIR/gateway_pest.junit.xml" "$PROFILE_DIR/gateway_pest.junit.xml"
+fi
+
+echo "Pest profiles: ${PROFILE_DIR}"
 
 if [ "$overall" -ne 0 ]; then
     echo "Quality gate FAILED (${summary})"

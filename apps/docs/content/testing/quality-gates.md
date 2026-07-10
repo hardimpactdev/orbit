@@ -25,13 +25,11 @@ for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/e2e`,
 while subgates run, leaves the final pass/fail tree visible, and then prints the same
 per-subgate logs and summaries as before.
 
-In the tree, every row for an area starts as queued. It changes to running when
-the scheduler starts the first real subgate for that area, then remains running
-while later owned subgates are still pending. A row never returns to queued
-after running; it settles only to passed or failed. Package rows are admitted
-after the fast app checks have passed, while the long gateway and CLI Pest lanes
-may still be running. Core Pest still waits until other Pest lanes finish before
-it runs.
+In the tree, every row for an area starts as queued. It changes to running only
+after the CPU scheduler admits that component, then remains running while the
+component runs its owned subgates. A row never returns to queued after running;
+it settles only to passed or failed. Components that do not fit the remaining
+CPU budget stay visibly queued instead of appearing to run while they wait.
 
 Redirected or non-TTY runs skip the live tree so CI logs stay free of ANSI
 cursor repainting. `NO_COLOR` removes color from the tree but keeps the live
@@ -43,12 +41,24 @@ a lane-specific command such as `bin/orbit-gateway-pest --group=slow` or
 `bin/orbit-cli-pest --group=slow`, or run a focused Pest command for the changed
 file.
 
-The wrapper derives background fan-out from the host: one-core hosts use one
-background job, hosts with up to four logical CPUs use two, and larger hosts use
-half of the detected logical CPU count capped at eight. The cap only changes
-scheduling; every subgate still runs and still contributes to the final exit
-code. For a one-off diagnostic, override it with
-`ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=<n> composer quality-check`.
+The wrapper derives a CPU-token budget from the host: one-core hosts use one
+token, hosts with up to four logical CPUs reserve one core, hosts with five to
+fourteen logical CPUs reserve two cores, and larger hosts use fourteen tokens.
+Each component declares its peak nested demand. Admission follows priority
+order but backfills later components that fit while a larger component remains
+queued, so the gateway's parallel Pest workers and the CLI
+surface split cannot be mistaken for single cheap background jobs. For a
+one-off diagnostic, override the budget with
+`ORBIT_QUALITY_CHECK_CPU_BUDGET=<n> composer quality-check`.
+
+The gateway Pest lane uses an explicit worker count equal to half of the CPU
+budget, increasing to eight on fourteen-token hosts, and never exceeds eight.
+It reserves that same number of scheduler tokens.
+Parallel workers receive the same 512 MB PHP memory limit as the parent Pest
+process so file workers do not fall back to the host's smaller CLI default.
+CLI reserves up to five tokens for its concurrent test surfaces. Cargo
+components reserve up to three tokens and set `CARGO_BUILD_JOBS` to the same
+limit. Mago also receives the admitted component's thread limit.
 
 Subgate durations start when the actual subgate command starts, after any
 background-slot queue wait. Queue time is reflected in the aggregate gate
@@ -63,26 +73,41 @@ auto-fix runs without rerunning the gate.
 The E2E lane launcher gives each provider lane its own temp directory. This
 keeps Pest cache files isolated when Docker and Incus lanes start together.
 
-The CLI Pest subgate runs the default CLI suite through `bin/orbit-cli-pest`.
-The aggregate gate avoids an extra split-wrapper layer here so the CLI lane uses
-the same stable Pest process model as `composer test`.
+Every aggregate Pest subgate uses Pest's `--profile` report so slow tests remain
+visible in the per-subgate logs. Each run retains those logs under
+`.orbit/quality-gates/profiles/` before temporary scheduler state is removed.
+The CLI Pest subgate runs through
+`bin/orbit-cli-pest-quality`: top-level feature files and the command,
+architecture, support, suite-root, and service surfaces are distributed across
+five stable mixed shards.
+This is a file-surface split, not Pest or ParaTest
+`--parallel`. On
+successful profiled runs the wrapper records each surface log before its final
+aggregate JSON line. The root scheduler retains that output without replaying
+successful subgate logs to the terminal, preserving both the slow-test reports
+and the machine-readable summary without adding avoidable terminal I/O.
+Gateway's parallel Pest lane also retains merged JUnit timing data because
+ParaTest suppresses Pest's ordinary terminal profile table.
 
-The SDK Pest lane runs as a background subgate after the gateway lane has
-started. Mago and Rector still cover `apps/e2e` during the aggregate
-quality-check, but E2E-app Pest tests are not part of the default aggregate
-gate. E2E Pest remains manual-only through the explicit E2E command surface.
+Mago and Rector still cover `apps/e2e` during the aggregate quality-check, but
+E2E-app Pest tests are not part of the default aggregate gate. E2E Pest remains
+manual-only through the explicit E2E command surface.
 
 The Orbit Agent lanes run Cargo checks from both Rust surfaces. `apps/agent`
 is the headless service lane and `apps/macos` is the macOS Tauri UI lane. Each
-lane runs `cargo test`, `cargo fmt -- --check`, `cargo check`, and
-`cargo clippy --all-targets -- -D warnings`. In `composer quality-check:fix`,
-each formatting subgate runs `cargo fmt` instead of `cargo fmt -- --check`.
+component runs `cargo fmt -- --check`, `cargo test`, `cargo check`, and
+`cargo clippy --all-targets -- -D warnings` sequentially, avoiding Cargo target
+locks and duplicate compiler pressure. In `composer quality-check:fix`, each
+formatting subgate runs `cargo fmt` instead of `cargo fmt -- --check`.
 Focused development can still run the same Cargo commands directly from the
 owning app; the root aggregate gate exists for broad handoff evidence.
 
-Core Pest still runs after all background Pest lanes because the core progress
-tests fork ticker children and must stay isolated from unrelated Pest process
-signals.
+Read-only gateway and CLI static checks share their component's reserved CPU
+budget. `composer quality-check:fix` keeps Rector and Mago mutators sequential,
+preventing two tools from rewriting the same component at once. Core's static
+checks can backfill an available token, but Core Pest waits for the gateway,
+CLI, docs, and SDK Pest lanes because its progress tests fork ticker children
+and must stay isolated from unrelated Pest process-group signals.
 
 Gate names for docs and prepared-source E2E are:
 

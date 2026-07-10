@@ -59,7 +59,7 @@ function quality_check_script_labels(string $script, string $arrayName): array
 function quality_check_background_labels(string $script): array
 {
     $backgroundLabelMatches = [];
-    preg_match_all('/^\s*run_bg (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
+    preg_match_all('/^\s*run_subgate (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
 
     return array_values(array_unique($backgroundLabelMatches['label']));
 }
@@ -302,21 +302,23 @@ it('disables the Composer process timeout for aggregate quality gate scripts', f
         ]);
 });
 
-it('caps aggregate quality gate fan-out by host size', function (): void {
+it('budgets aggregate quality gate CPU pressure by host size', function (): void {
     $script = quality_check_script_source();
 
     expect($script)
-        ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
-        ->toContain('quality_check_default_max_background_jobs')
+        ->toContain('ORBIT_QUALITY_CHECK_CPU_BUDGET')
+        ->toContain('quality_check_default_cpu_budget')
         ->toContain('if [ "$detected_jobs" -le 1 ]; then')
         ->toContain('if [ "$detected_jobs" -le 4 ]; then')
         ->toContain('echo 1')
-        ->toContain('echo 2')
-        ->toContain('default_jobs=$((detected_jobs / 2))')
-        ->toContain('echo 8')
-        ->toContain('wait_for_bg_slot')
-        ->toContain('PROGRESS_TICKER_PID')
-        ->toContain('[ "$pid" = "$PROGRESS_TICKER_PID" ]');
+        ->toContain('echo $((detected_jobs - 1))')
+        ->toContain('echo 14')
+        ->toContain('GATEWAY_PEST_PROCESSES')
+        ->toContain('wait_for_cpu_capacity')
+        ->toContain('component_cpu_in_use')
+        ->toContain("'apps/gateway|GATEWAY_COMPONENT_DEMAND|gateway'")
+        ->toContain("'apps/cli|CLI_COMPONENT_DEMAND|cli'")
+        ->toContain('CARGO_BUILD_JOBS="$CARGO_COMPONENT_DEMAND"');
 });
 
 it('keeps the aggregate quality gate static subgates complete', function (): void {
@@ -366,7 +368,7 @@ it('keeps the aggregate quality gate Pest lanes complete', function (): void {
     $script = quality_check_script_source();
 
     expect($script)
-        ->toContain('bin/orbit-cli-pest')
+        ->toContain('bin/orbit-cli-pest-quality')
         ->toContain('bin/orbit-docs-pest')
         ->toContain('cd packages/core && vendor/bin/pest')
         ->toContain('cd packages/sdk && vendor/bin/pest')
@@ -374,8 +376,12 @@ it('keeps the aggregate quality gate Pest lanes complete', function (): void {
         ->toContain('--exclude-group=e2e')
         ->toContain('--exclude-group=slow')
         ->toContain('--parallel')
+        ->toContain('--processes="$GATEWAY_PEST_PROCESSES"')
+        ->toContain('--passthru-php="\'-d\' \'memory_limit=512M\'"')
+        ->toContain('--profile')
         ->toContain('--compact')
-        ->not->toContain('bin/orbit-cli-pest-quality')
+        ->toContain('if [ "$code" -eq 0 ]')
+        ->toContain('Pest profiles: ${PROFILE_DIR}')
         ->not->toContain('cd apps/e2e && vendor/bin/pest')
         ->not->toContain('run_bg e2e_pest')
         ->not->toContain('PRE_E2E_PEST_LABELS=(');
@@ -383,89 +389,20 @@ it('keeps the aggregate quality gate Pest lanes complete', function (): void {
 
 it('keeps aggregate quality gate labels complete and ordered', function (): void {
     $script = quality_check_script_source();
-    $backgroundLabels = quality_check_background_labels(script: $script);
-    $waitedBackgroundLabels = [
-        ...quality_check_script_labels(script: $script, arrayName: 'APP_BEFORE_PACKAGE_CHECK_LABELS'),
-        ...quality_check_script_labels(script: $script, arrayName: 'APP_REMAINING_CHECK_LABELS'),
-        ...quality_check_script_labels(script: $script, arrayName: 'PACKAGE_BACKGROUND_CHECK_LABELS'),
-    ];
-    $declaredBackgroundLabels = quality_check_script_labels(script: $script, arrayName: 'BACKGROUND_CHECK_LABELS');
+    $subgateLabels = quality_check_background_labels(script: $script);
     $aggregationLabels = quality_check_script_labels(script: $script, arrayName: 'CHECK_LABELS');
-    $expectedAggregationLabels = [
-        ...$backgroundLabels,
-        'core_pest',
-    ];
 
-    sort($backgroundLabels);
-    sort($waitedBackgroundLabels);
-    sort($declaredBackgroundLabels);
+    sort($subgateLabels);
     sort($aggregationLabels);
-    sort($expectedAggregationLabels);
 
-    expect($waitedBackgroundLabels)
-        ->toBe($backgroundLabels)
-        ->and($waitedBackgroundLabels)
-        ->toHaveCount(count(array_unique($waitedBackgroundLabels)))
-        ->and($declaredBackgroundLabels)
-        ->toBe($backgroundLabels)
-        ->and($aggregationLabels)
-        ->toBe($expectedAggregationLabels)
+    expect($subgateLabels)
+        ->toBe($aggregationLabels)
+        ->and($subgateLabels)
+        ->toHaveCount(count(array_unique($subgateLabels)))
         ->and($aggregationLabels)
         ->toHaveCount(count(array_unique($aggregationLabels)))
-        ->and(quality_check_script_labels(script: $script, arrayName: 'APP_REMAINING_CHECK_LABELS'))
-        ->toBe([
-            'gateway_pest',
-            'cli_pest',
-        ])
-        ->and(quality_check_script_labels(script: $script, arrayName: 'PACKAGE_BACKGROUND_CHECK_LABELS'))
-        ->toBe([
-            'core_mago_analyze',
-            'sdk_mago_analyze',
-            'core_mago_lint',
-            'sdk_mago_lint',
-            'core_rector',
-            'sdk_rector',
-            'core_mago_format',
-            'sdk_mago_format',
-            'sdk_pest',
-        ])
-        ->and(quality_check_script_position(script: $script, needle: 'run_bg gateway_pest'))
-        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg cli_mago_analyze'))
-        ->and(quality_check_script_position(script: $script, needle: 'run_bg cli_pest'))
-        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg docs_lint'))
-        ->and(quality_check_script_position(script: $script, needle: 'run_bg reverb_mago_format'))
-        ->toBeLessThan(quality_check_script_position(
-            script: $script,
-            needle: 'wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"',
-        ))
-        ->and(quality_check_script_position(
-            script: $script,
-            needle: 'wait_for_bg_labels "${APP_BEFORE_PACKAGE_CHECK_LABELS[@]}"',
-        ))
-        ->toBeLessThan(quality_check_script_last_position(
-            script: $script,
-            needle: 'quality_check_progress_render_pending',
-        ))
-        ->and(quality_check_script_last_position(script: $script, needle: 'quality_check_progress_render_pending'))
-        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'run_bg core_mago_analyze'))
-        ->and(quality_check_script_position(script: $script, needle: 'run_bg sdk_pest'))
-        ->toBeLessThan(quality_check_script_position(
-            script: $script,
-            needle: 'wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"',
-        ))
-        ->and(quality_check_script_position(
-            script: $script,
-            needle: 'wait_for_bg_labels "${PACKAGE_BACKGROUND_CHECK_LABELS[@]}"',
-        ))
-        ->toBeLessThan(quality_check_script_position(
-            script: $script,
-            needle: 'wait_for_bg_labels "${APP_REMAINING_CHECK_LABELS[@]}"',
-        ))
-        ->and(quality_check_script_position(
-            script: $script,
-            needle: 'wait_for_bg_labels "${APP_REMAINING_CHECK_LABELS[@]}"',
-        ))
-        ->toBeLessThan(quality_check_script_position(script: $script, needle: 'record_subgate_start core_pest'));
+        ->and($script)
+        ->toContain('wait_for_subgate_labels gateway_pest cli_pest docs_pest sdk_pest');
 });
 
 it('renders a TTY progress tree for aggregate quality-check areas', function (): void {
@@ -522,16 +459,12 @@ it('renders a TTY progress tree for aggregate quality-check areas', function ():
         ->toContain('cd apps/macos && cargo check')
         ->toContain('cd apps/macos && cargo clippy --all-targets -- -D warnings')
         ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST')
-        ->and($scriptPosition("run_bg agent_cargo_fmt bash -lc 'cd apps/agent && cargo fmt'"))
-        ->toBeLessThan($scriptPosition("run_bg macos_cargo_fmt bash -lc 'cd apps/macos && cargo fmt'"))
-        ->and($scriptPosition("run_bg macos_cargo_fmt bash -lc 'cd apps/macos && cargo fmt'"))
-        ->toBeLessThan($scriptPosition('wait_for_bg_labels agent_cargo_fmt macos_cargo_fmt'))
-        ->and($scriptPosition('wait_for_bg_labels agent_cargo_fmt macos_cargo_fmt'))
-        ->toBeLessThan($scriptPosition("run_bg agent_cargo_test bash -lc 'cd apps/agent && cargo test'"))
-        ->and($scriptPosition("run_bg agent_cargo_test bash -lc 'cd apps/agent && cargo test'"))
-        ->toBeLessThan($scriptPosition("run_bg macos_cargo_test bash -lc 'cd apps/macos && cargo test'"))
+        ->and($scriptPosition('run_subgate agent_cargo_fmt env'))
+        ->toBeLessThan($scriptPosition('run_subgate agent_cargo_test env'))
+        ->and($scriptPosition('run_subgate macos_cargo_fmt env'))
+        ->toBeLessThan($scriptPosition('run_subgate macos_cargo_test env'))
         ->and($scriptPosition('quality_check_progress_start_ticker'))
-        ->toBeLessThan($scriptPosition('run_bg gateway_mago_analyze'))
+        ->toBeLessThan($scriptPosition('admit_components'))
         ->and($scriptPosition('quality_check_progress_stop_ticker'))
         ->toBeLessThan($scriptPosition('print_log "$label"'))
         ->and($scriptPosition('quality_check_progress_render_final'))
@@ -542,12 +475,11 @@ it('keeps admitted aggregate quality-check areas running between owned subgates'
     $script = quality_check_script_source();
 
     expect($script)
-        ->toContain('quality_check_label_running')
         ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST')
         ->toContain('record_area_admitted')
         ->toContain('quality_check_area_admitted "$area"')
-        ->toContain('record_subgate_running core_pest')
-        ->toContain('clear_subgate_running core_pest');
+        ->toContain("'packages/core|CORE_COMPONENT_DEMAND|core'")
+        ->toContain('wait_for_subgate_labels gateway_pest cli_pest docs_pest sdk_pest');
 
     $process = new Process(
         [
@@ -601,26 +533,25 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         'apps/macos' => 'Running',
     ]);
 
-    $fastAppsPassed = array_merge($appsRunning, [
+    $pestOwnersPassed = array_merge($appsRunning, [
+        'apps/gateway' => 'Passed',
+        'apps/cli' => 'Passed',
         'apps/docs' => 'Passed',
-        'apps/e2e' => 'Passed',
-        'apps/reverb' => 'Passed',
-        'apps/agent' => 'Passed',
-        'apps/macos' => 'Passed',
+        'packages/sdk' => 'Passed',
     ]);
 
     $acceptedChunksPath = quality_check_progress_chunks_path([
         quality_check_progress_frame($queued),
         quality_check_progress_frame($appsRunning),
-        quality_check_progress_frame(array_merge($fastAppsPassed, [
+        quality_check_progress_frame(array_merge($pestOwnersPassed, [
             'packages/core' => 'Running',
-            'packages/sdk' => 'Running',
         ])),
-        quality_check_progress_frame(array_merge($fastAppsPassed, [
-            'apps/gateway' => 'Passed',
-            'apps/cli' => 'Passed',
+        quality_check_progress_frame(array_merge($pestOwnersPassed, [
+            'apps/e2e' => 'Passed',
+            'apps/reverb' => 'Passed',
+            'apps/agent' => 'Passed',
+            'apps/macos' => 'Passed',
             'packages/core' => 'Passed',
-            'packages/sdk' => 'Passed',
         ]), 'Quality checks passed'),
     ]);
 
@@ -657,7 +588,7 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         ->and($bounce->getErrorOutput())
         ->toContain('apps/gateway returned to Queued after Running');
 
-    $earlyPackageChunksPath = quality_check_progress_chunks_path([
+    $earlyCoreChunksPath = quality_check_progress_chunks_path([
         quality_check_progress_frame($queued),
         quality_check_progress_frame(array_merge($queued, [
             'apps/gateway' => 'Running',
@@ -665,17 +596,17 @@ it('checks recorded quality-check PTY frames for monotonic area progress', funct
         ])),
     ]);
 
-    $earlyPackage = new Process([
+    $earlyCore = new Process([
         PHP_BINARY,
         repo_path('bin/quality-check-progress-frame-check'),
-        $earlyPackageChunksPath,
+        $earlyCoreChunksPath,
     ]);
-    $earlyPackage->run();
+    $earlyCore->run();
 
-    expect($earlyPackage->isSuccessful())
+    expect($earlyCore->isSuccessful())
         ->toBeFalse()
-        ->and($earlyPackage->getErrorOutput())
-        ->toContain('packages/core was Running before fast app areas completed');
+        ->and($earlyCore->getErrorOutput())
+        ->toContain('packages/core was Running before Pest-owning components completed');
 });
 
 it('maps every aggregate subgate to a quality-check progress area', function (): void {

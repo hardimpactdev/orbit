@@ -1,0 +1,21 @@
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m112 passed[39;22m[90m (519 assertions)[39m
+  [90mDuration:[39m [39m0.96s[39m
+
+  [90mTop 10 slowest tests:[39m
+  [1mTests\Progress\StreamedStepTreeTest[22m [90m>[39m [90mit animates active streamed step[39m [33;1m0.23s[39;22m  
+  [1mTests\Progress\ForkedFrameTickerTest[22m [90m>[39m [90mit invokes tick callbacks in th[39m [33;1m0.19s[39;22m  
+  [1mTests\Progress\StreamIdleReaderTest[22m [90m>[39m [90mit invokes idle callbacks when s[39m [33;1m0.09s[39;22m  
+  [1mTests\Progress\StreamIdleReaderTest[22m [90m>[39m [90mit invokes idle callbacks while[39m  [33;1m0.08s[39;22m  
+  [1mTests\Progress\StreamIdleReaderTest[22m [90m>[39m [90mit polls PSR streams when guzzle[39m [33;1m0.07s[39;22m  
+  [1mTests\Progress\StreamIdleReaderTest[22m [90m>[39m [90mit invokes idle callbacks while[39m  [33;1m0.07s[39;22m  
+  [1mTests\Progress\ForkedFrameTickerTest[22m [90m>[39m [90mit registers an idle callback f[39m [33;1m0.02s[39;22m  
+  [1mTests\SkeletonTest[22m [90m>[39m [90mit can instantiate the service provider[39m           [33;1m0.02s[39;22m  
+  [1mTests\EnumsTest[22m [90m>[39m [90m`Orbit\Core\Enums\ExecutionLane` → it exposes the do[39m [33;1m0.01s[39;22m  
+  [1mTests\Progress\StreamIdleReaderTest[22m [90m>[39m [90mit reads selected native streams[39m [33;1m0.01s[39;22m  
+  [90m────────────────────────────────────────────────────────────────────────────[39m  
+                                                       [90m(82.94% of 0.96s)[39m [1m0.80s[22m  
+

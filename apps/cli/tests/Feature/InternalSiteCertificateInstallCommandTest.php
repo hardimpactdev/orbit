@@ -241,19 +241,22 @@ function install_site_certificate_fake_bin(): string
     $dir = sys_get_temp_dir().'/orbit-site-certificate-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
 
-    file_put_contents("{$dir}/sudo", <<<'PHP'
-        #!/usr/bin/env php
-        <?php
-        file_put_contents(__DIR__.'/calls.log', basename($argv[0]).' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-        $args = array_slice($argv, 1);
-        if (($args[0] ?? null) === '-n') {
-            array_shift($args);
-        }
-        if (($args[0] ?? null) === 'tee') {
-            file_put_contents(__DIR__.'/writes.log', ($args[1] ?? '').'='.stream_get_contents(STDIN).PHP_EOL, FILE_APPEND);
-        }
-        exit(0);
-        PHP);
+    file_put_contents("{$dir}/sudo", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        printf 'sudo %s\n' "$*" >>"$dir/calls.log"
+
+        if [ "${1:-}" = -n ]; then
+            shift
+        fi
+
+        if [ "${1:-}" = tee ]; then
+            path="${2:-}"
+            printf '%s=' "$path" >>"$dir/writes.log"
+            cat >>"$dir/writes.log"
+            printf '\n' >>"$dir/writes.log"
+        fi
+        BASH);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
 
     $path = getenv('PATH');

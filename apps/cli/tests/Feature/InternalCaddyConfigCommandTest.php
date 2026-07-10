@@ -630,83 +630,87 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
 {
     $dir = sys_get_temp_dir().'/orbit-caddy-config-bin-'.bin2hex(random_bytes(8));
     mkdir($dir);
-    $encodedRequiredDockerHost = var_export($requiredDockerHost ?? '', return: true);
-    $encodedNetworkAlreadyExists = var_export($networkAlreadyExists, return: true);
+    file_put_contents("{$dir}/required-docker-host.txt", $requiredDockerHost ?? '');
 
-    file_put_contents("{$dir}/sudo", <<<'PHP_WRAP'
-        #!/usr/bin/env php
-        <?php
-        file_put_contents(__DIR__.'/calls.log', 'sudo '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-        $stdin = stream_get_contents(STDIN);
-        if ($stdin !== '') {
-            file_put_contents(__DIR__.'/stdin.log', $stdin, FILE_APPEND);
-        }
-        $arguments = array_slice($argv, 1);
-        if (($arguments[0] ?? null) === '-n') {
-            $arguments = array_slice($arguments, 1);
-        }
-        $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
-        $missingFiles = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_FILES') ?: ''));
-        if (($arguments[0] ?? null) === 'test' && ($arguments[1] ?? null) === '-d' && in_array($arguments[2] ?? '', $missingDirectories, true)) {
-            exit(1);
-        }
-        if (($arguments[0] ?? null) === 'test' && ($arguments[1] ?? null) === '-f' && in_array($arguments[2] ?? '', $missingFiles, true)) {
-            exit(1);
-        }
-        exit(0);
-        PHP_WRAP);
+    if ($networkAlreadyExists) {
+        touch("{$dir}/network-already-exists");
+    }
+    file_put_contents("{$dir}/sudo", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        printf 'sudo %s\n' "$*" >>"$dir/calls.log"
+        cat >"$dir/stdin.current"
+        [ ! -s "$dir/stdin.current" ] || cat "$dir/stdin.current" >>"$dir/stdin.log"
+        rm -f "$dir/stdin.current"
+
+        [ "${1:-}" != -n ] || shift
+
+        if [ "${1:-}" = test ] && [ "${2:-}" = -d ]; then
+            case ":${ORBIT_CADDY_CONFIG_MISSING_DIRS:-}:" in
+                *":${3:-}:"*) exit 1 ;;
+            esac
+        fi
+
+        if [ "${1:-}" = test ] && [ "${2:-}" = -f ]; then
+            case ":${ORBIT_CADDY_CONFIG_MISSING_FILES:-}:" in
+                *":${3:-}:"*) exit 1 ;;
+            esac
+        fi
+        BASH);
     foreach (['cat', 'chmod', 'install', 'rm', 'tee', 'test'] as $command) {
-        file_put_contents("{$dir}/{$command}", <<<'PHP_WRAP'
-            #!/usr/bin/env php
-            <?php
-            $command = basename($argv[0]);
-            file_put_contents(__DIR__.'/calls.log', $command.' '.implode(' ', array_slice($argv, 1)).PHP_EOL, FILE_APPEND);
-            $stdin = stream_get_contents(STDIN);
-            if ($stdin !== '') {
-                file_put_contents(__DIR__.'/stdin.log', $stdin, FILE_APPEND);
-            }
-            if ($command === 'cat' && is_file(__DIR__.'/read-global.txt')) {
-                echo file_get_contents(__DIR__.'/read-global.txt');
-            }
-            $missingDirectories = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_DIRS') ?: ''));
-            $missingFiles = array_filter(explode(':', getenv('ORBIT_CADDY_CONFIG_MISSING_FILES') ?: ''));
-            if ($command === 'test' && ($argv[1] ?? null) === '-d' && in_array($argv[2] ?? '', $missingDirectories, true)) {
-                exit(1);
-            }
-            if ($command === 'test' && ($argv[1] ?? null) === '-f' && in_array($argv[2] ?? '', $missingFiles, true)) {
-                exit(1);
-            }
-            exit(0);
-            PHP_WRAP);
+        file_put_contents("{$dir}/{$command}", <<<'BASH'
+            #!/usr/bin/env bash
+            dir="$(cd "$(dirname "$0")" && pwd)"
+            command="$(basename "$0")"
+            printf '%s %s\n' "$command" "$*" >>"$dir/calls.log"
+            cat >"$dir/stdin.current"
+            [ ! -s "$dir/stdin.current" ] || cat "$dir/stdin.current" >>"$dir/stdin.log"
+            rm -f "$dir/stdin.current"
+
+            if [ "$command" = cat ] && [ -f "$dir/read-global.txt" ]; then
+                cat "$dir/read-global.txt"
+            fi
+
+            if [ "$command" = test ] && [ "${1:-}" = -d ]; then
+                case ":${ORBIT_CADDY_CONFIG_MISSING_DIRS:-}:" in
+                    *":${2:-}:"*) exit 1 ;;
+                esac
+            fi
+
+            if [ "$command" = test ] && [ "${1:-}" = -f ]; then
+                case ":${ORBIT_CADDY_CONFIG_MISSING_FILES:-}:" in
+                    *":${2:-}:"*) exit 1 ;;
+                esac
+            fi
+            BASH);
         chmod(filename: "{$dir}/{$command}", permissions: 0o755);
     }
-    file_put_contents("{$dir}/docker", <<<PHP_WRAP
-        #!/usr/bin/env php
-        <?php
-        \$requiredDockerHost = {$encodedRequiredDockerHost};
-        \$networkAlreadyExists = {$encodedNetworkAlreadyExists};
-        \$dockerHost = getenv('DOCKER_HOST') ?: '';
-        file_put_contents(__DIR__.'/calls.log', 'DOCKER_HOST='.\$dockerHost.' docker '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
-        if (\$requiredDockerHost !== '' && \$dockerHost !== \$requiredDockerHost) {
-            fwrite(STDERR, 'failed to connect to the docker API at unix:///var/run/docker.sock');
-            exit(1);
-        }
-        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'inspect' && \$networkAlreadyExists) {
-            fwrite(STDERR, 'network not found');
-            exit(1);
-        }
-        if ((\$argv[1] ?? null) === 'network' && (\$argv[2] ?? null) === 'create' && \$networkAlreadyExists) {
-            fwrite(STDERR, 'Error response from daemon: network with name orbit-network already exists');
-            exit(1);
-        }
-        if ((\$argv[1] ?? null) === 'container' && (\$argv[2] ?? null) === 'inspect') {
-            \$inspectPath = __DIR__.'/container-inspect.json';
-            if (is_file(\$inspectPath)) {
-                echo file_get_contents(\$inspectPath);
-            }
-        }
-        exit(0);
-        PHP_WRAP);
+    file_put_contents("{$dir}/docker", <<<'BASH'
+        #!/usr/bin/env bash
+        dir="$(cd "$(dirname "$0")" && pwd)"
+        docker_host="${DOCKER_HOST:-}"
+        required_docker_host="$(cat "$dir/required-docker-host.txt")"
+        printf 'DOCKER_HOST=%s docker %s\n' "$docker_host" "$*" >>"$dir/calls.log"
+
+        if [ -n "$required_docker_host" ] && [ "$docker_host" != "$required_docker_host" ]; then
+            printf 'failed to connect to the docker API at unix:///var/run/docker.sock' >&2
+            exit 1
+        fi
+
+        if [ "${1:-}" = network ] && [ "${2:-}" = inspect ] && [ -f "$dir/network-already-exists" ]; then
+            printf 'network not found' >&2
+            exit 1
+        fi
+
+        if [ "${1:-}" = network ] && [ "${2:-}" = create ] && [ -f "$dir/network-already-exists" ]; then
+            printf 'Error response from daemon: network with name orbit-network already exists' >&2
+            exit 1
+        fi
+
+        if [ "${1:-}" = container ] && [ "${2:-}" = inspect ] && [ -f "$dir/container-inspect.json" ]; then
+            cat "$dir/container-inspect.json"
+        fi
+        BASH);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
     chmod(filename: "{$dir}/docker", permissions: 0o755);
 
@@ -780,6 +784,8 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/stdin.log");
     delete_caddy_config_file("{$path}/container-inspect.json");
     delete_caddy_config_file("{$path}/read-global.txt");
+    delete_caddy_config_file("{$path}/required-docker-host.txt");
+    delete_caddy_config_file("{$path}/network-already-exists");
 
     if (is_dir($path)) {
         rmdir($path);

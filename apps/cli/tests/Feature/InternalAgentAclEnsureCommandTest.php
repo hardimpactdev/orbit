@@ -183,12 +183,12 @@ function install_agent_acl_fake_bin(int $setfaclExitCode, int $sudoExitCode): st
 
 function install_agent_acl_fake_binary(string $dir, string $binary, int $exitCode): void
 {
-    file_put_contents("{$dir}/{$binary}", <<<PHP
-        #!/usr/bin/env php
-        <?php
-        file_put_contents(__DIR__.'/calls.log', basename(\$argv[0]).' '.implode(' ', array_slice(\$argv, 1)).PHP_EOL, FILE_APPEND);
-        exit({$exitCode});
-        PHP);
+    file_put_contents("{$dir}/{$binary}", <<<BASH
+        #!/usr/bin/env bash
+        dir="\$(cd "\$(dirname "\$0")" && pwd)"
+        printf '{$binary} %s\\n' "\$*" >>"\$dir/calls.log"
+        exit {$exitCode}
+        BASH);
     chmod(filename: "{$dir}/{$binary}", permissions: 0o755);
 }
 

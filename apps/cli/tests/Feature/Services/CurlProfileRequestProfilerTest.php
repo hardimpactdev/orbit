@@ -52,7 +52,7 @@ describe(ProfileRequestProfiler::class, function (): void {
             ->and($profile['request']['status'])
             ->toBe(200);
     });
-});
+})->group('slow');
 
 /**
  * @return array{process: resource, directory: string, port: int}

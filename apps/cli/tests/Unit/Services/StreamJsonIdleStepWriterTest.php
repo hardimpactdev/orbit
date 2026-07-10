@@ -104,4 +104,4 @@ it('does not create NUL holes when idle replay writes to a file-captured stdout'
         ->toBeEmpty()
         ->and(end($jsonLines))
         ->toBe('{"event":"error"}');
-});
+})->group('slow');
