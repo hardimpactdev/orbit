@@ -7,6 +7,7 @@ use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Process\Process;
 
 /**
  * @mago-expect lint:cyclomatic-complexity
@@ -42,7 +43,7 @@ describe('internal caddy config command', function (): void {
         unset($_SERVER['ORBIT_CADDY_CONFIG_MISSING_FILES']);
         unset($_SERVER['ORBIT_CADDY_CONFIG_READ_GLOBAL']);
 
-        $fakeBinPaths = glob(sys_get_temp_dir().'/orbit-caddy-config-bin-*');
+        $fakeBinPaths = glob(caddy_config_temp_prefix('bin').'*');
 
         if ($fakeBinPaths === false) {
             return;
@@ -52,7 +53,7 @@ describe('internal caddy config command', function (): void {
             delete_caddy_config_fake_bin($dir);
         }
 
-        $fakeHomes = glob(sys_get_temp_dir().'/orbit-caddy-config-home-*');
+        $fakeHomes = glob(caddy_config_temp_prefix('home').'*');
 
         foreach ($fakeHomes === false ? [] : $fakeHomes as $dir) {
             delete_caddy_config_directory($dir);
@@ -89,6 +90,23 @@ describe('internal caddy config command', function (): void {
             ->toBe('validation_failed')
             ->and($payload['error']['message'] ?? null)
             ->toBe('Caddy config action is invalid.');
+    });
+
+    it('cleans interrupted fake command stdin scratch files', function (): void {
+        $bin = install_caddy_config_fake_bin();
+        file_put_contents("{$bin}/read-global.txt", 'global');
+        $process = new Process(["{$bin}/cat"]);
+        $process->mustRun();
+        touch("{$bin}/stdin.current");
+
+        expect($process->getOutput())
+            ->toBe('global')
+            ->and($bin)
+            ->toStartWith(caddy_config_temp_prefix('bin'));
+
+        delete_caddy_config_fake_bin($bin);
+
+        expect($bin)->not->toBeDirectory();
     });
 
     it('writes site configs and reloads through fixed argv commands', function (): void {
@@ -628,7 +646,7 @@ function run_internal_caddy_config_command(array $parameters = [], string $stdin
 
 function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool $networkAlreadyExists = false): string
 {
-    $dir = sys_get_temp_dir().'/orbit-caddy-config-bin-'.bin2hex(random_bytes(8));
+    $dir = caddy_config_temp_prefix('bin').bin2hex(random_bytes(8));
     mkdir($dir);
     file_put_contents("{$dir}/required-docker-host.txt", $requiredDockerHost ?? '');
 
@@ -639,9 +657,9 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
         #!/usr/bin/env bash
         dir="$(cd "$(dirname "$0")" && pwd)"
         printf 'sudo %s\n' "$*" >>"$dir/calls.log"
-        cat >"$dir/stdin.current"
-        [ ! -s "$dir/stdin.current" ] || cat "$dir/stdin.current" >>"$dir/stdin.log"
-        rm -f "$dir/stdin.current"
+        /bin/cat >"$dir/stdin.current"
+        [ ! -s "$dir/stdin.current" ] || /bin/cat "$dir/stdin.current" >>"$dir/stdin.log"
+        /bin/rm -f "$dir/stdin.current"
 
         [ "${1:-}" != -n ] || shift
 
@@ -663,12 +681,12 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
             dir="$(cd "$(dirname "$0")" && pwd)"
             command="$(basename "$0")"
             printf '%s %s\n' "$command" "$*" >>"$dir/calls.log"
-            cat >"$dir/stdin.current"
-            [ ! -s "$dir/stdin.current" ] || cat "$dir/stdin.current" >>"$dir/stdin.log"
-            rm -f "$dir/stdin.current"
+            /bin/cat >"$dir/stdin.current"
+            [ ! -s "$dir/stdin.current" ] || /bin/cat "$dir/stdin.current" >>"$dir/stdin.log"
+            /bin/rm -f "$dir/stdin.current"
 
             if [ "$command" = cat ] && [ -f "$dir/read-global.txt" ]; then
-                cat "$dir/read-global.txt"
+                /bin/cat "$dir/read-global.txt"
             fi
 
             if [ "$command" = test ] && [ "${1:-}" = -d ]; then
@@ -689,7 +707,7 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
         #!/usr/bin/env bash
         dir="$(cd "$(dirname "$0")" && pwd)"
         docker_host="${DOCKER_HOST:-}"
-        required_docker_host="$(cat "$dir/required-docker-host.txt")"
+        required_docker_host="$(/bin/cat "$dir/required-docker-host.txt")"
         printf 'DOCKER_HOST=%s docker %s\n' "$docker_host" "$*" >>"$dir/calls.log"
 
         if [ -n "$required_docker_host" ] && [ "$docker_host" != "$required_docker_host" ]; then
@@ -708,7 +726,7 @@ function install_caddy_config_fake_bin(?string $requiredDockerHost = null, bool 
         fi
 
         if [ "${1:-}" = container ] && [ "${2:-}" = inspect ] && [ -f "$dir/container-inspect.json" ]; then
-            cat "$dir/container-inspect.json"
+            /bin/cat "$dir/container-inspect.json"
         fi
         BASH);
     chmod(filename: "{$dir}/sudo", permissions: 0o755);
@@ -730,13 +748,18 @@ function caddy_config_fake_container_inspect(string $bin, array $inspection): vo
 
 function caddy_config_fake_home(): string
 {
-    $home = sys_get_temp_dir().'/orbit-caddy-config-home-'.bin2hex(random_bytes(8));
+    $home = caddy_config_temp_prefix('home').bin2hex(random_bytes(8));
     mkdir($home);
     putenv("HOME={$home}");
     $_SERVER['HOME'] = $home;
     $_ENV['HOME'] = $home;
 
     return $home;
+}
+
+function caddy_config_temp_prefix(string $kind): string
+{
+    return sys_get_temp_dir()."/orbit-caddy-config-{$kind}-".getmypid().'-';
 }
 
 function caddy_config_fake_orbstack_socket(string $home): string
@@ -782,6 +805,7 @@ function delete_caddy_config_fake_bin(string $path): void
     delete_caddy_config_file("{$path}/docker");
     delete_caddy_config_file("{$path}/calls.log");
     delete_caddy_config_file("{$path}/stdin.log");
+    delete_caddy_config_file("{$path}/stdin.current");
     delete_caddy_config_file("{$path}/container-inspect.json");
     delete_caddy_config_file("{$path}/read-global.txt");
     delete_caddy_config_file("{$path}/required-docker-host.txt");
