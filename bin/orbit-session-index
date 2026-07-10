@@ -271,7 +271,7 @@ function parse_analyzer_verdict(string $loop): ?array
 }
 
 /**
- * @return array{total: int, classifications: array<string, int>}
+ * @return array{total: int, classifications: object}
  */
 function parse_candidate_signals(string $loop): array
 {
@@ -285,7 +285,7 @@ function parse_candidate_signals(string $loop): array
     ) {
         return [
             'total' => 0,
-            'classifications' => [],
+            'classifications' => (object) [],
         ];
     }
 
@@ -316,7 +316,7 @@ function parse_candidate_signals(string $loop): array
 
     return [
         'total' => $total,
-        'classifications' => $classifications,
+        'classifications' => (object) $classifications,
     ];
 }
 
@@ -377,42 +377,91 @@ function blockers_present(string $loop): bool
 }
 
 /**
- * @return array<string, int|null>
+ * @return array<string, int|string|null>
  */
 function token_usage(string $archiveDir): array
 {
+    $keys = [
+        'input_tokens',
+        'output_tokens',
+        'total_tokens',
+        'reasoning_tokens',
+    ];
+    $nullTotals = [
+        'input_tokens' => null,
+        'output_tokens' => null,
+        'total_tokens' => null,
+        'reasoning_tokens' => null,
+    ];
     $totals = [
         'input_tokens' => 0,
         'output_tokens' => 0,
         'total_tokens' => 0,
         'reasoning_tokens' => 0,
     ];
+    $complete = array_fill_keys($keys, true);
     $found = false;
+    $partial = false;
+    $inconsistent = false;
 
     foreach (glob("{$archiveDir}/agent-sessions/*/*/usage.json") ?: [] as $path) {
         $usage = json_decode(read_file_or_empty($path), true);
 
         if (! is_array($usage)) {
-            continue;
+            return [
+                'status' => 'invalid',
+                ...$nullTotals,
+            ];
         }
 
         $found = true;
 
-        foreach (array_keys($totals) as $key) {
-            $totals[$key] += (int) ($usage[$key] ?? 0);
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $usage)) {
+                $complete[$key] = false;
+                $partial = true;
+
+                continue;
+            }
+
+            if (! is_int($usage[$key]) || $usage[$key] < 0) {
+                return [
+                    'status' => 'invalid',
+                    ...$nullTotals,
+                ];
+            }
+
+            $totals[$key] += $usage[$key];
+        }
+
+        if (
+            isset($usage['input_tokens'], $usage['output_tokens'], $usage['total_tokens'])
+            && $usage['total_tokens'] !== ($usage['input_tokens'] + $usage['output_tokens'])
+        ) {
+            $inconsistent = true;
         }
     }
 
     if (! $found) {
         return [
-            'input_tokens' => null,
-            'output_tokens' => null,
-            'total_tokens' => null,
-            'reasoning_tokens' => null,
+            'status' => 'unavailable',
+            ...$nullTotals,
         ];
     }
 
-    return $totals;
+    $status = match (true) {
+        $inconsistent => 'inconsistent',
+        $partial => 'partial',
+        default => 'consistent',
+    };
+
+    return [
+        'status' => $status,
+        'input_tokens' => $complete['input_tokens'] ? $totals['input_tokens'] : null,
+        'output_tokens' => $complete['output_tokens'] ? $totals['output_tokens'] : null,
+        'total_tokens' => $partial || ! $complete['total_tokens'] ? null : $totals['total_tokens'],
+        'reasoning_tokens' => $complete['reasoning_tokens'] ? $totals['reasoning_tokens'] : null,
+    ];
 }
 
 function capture_status(string $archiveDir): string
@@ -432,8 +481,17 @@ function capture_status(string $archiveDir): string
             return 'legacy';
         }
 
-        $manifest = json_decode(read_file_or_empty($aggregate), true);
-        $sessions = is_array($manifest) ? $manifest['sessions'] ?? [] : [];
+        $manifest = json_decode(read_file_or_empty($aggregate));
+
+        if (
+            ! $manifest instanceof stdClass
+            || ! property_exists($manifest, 'sessions')
+            || ! is_array($manifest->sessions)
+        ) {
+            return 'invalid';
+        }
+
+        $sessions = $manifest->sessions;
 
         return $sessions === [] ? 'empty' : 'partial';
     }
