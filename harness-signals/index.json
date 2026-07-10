@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": "harness-signals/YYYY-*.md",
-    "entry_count": 31,
+    "entry_count": 32,
     "entries": [
         {
             "path": "harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md",
@@ -747,6 +747,32 @@
             ],
             "signal_summary": "Agent-session preservation was previously resolved during session archive, after the Solo process row and runtime-scoped identity could already be gone. That made capture fragile and let empty or wrong provider archives look acceptable...",
             "reappearance_check": "If a future feature loop names Solo worker/reviewer/analyzer lanes but the session archive has zero healthy captures, inspect whether lane-close capture was skipped, whether the provider is unsupported and needs a waiver, or whether the..."
+        },
+        {
+            "path": "harness-signals/2026-07-10-cli-pest-tty-stdin-blocker.md",
+            "title": "CLI Pest Inherited Operator TTY Stdin",
+            "status": "guarded",
+            "signal_type": "setup",
+            "guardrail_target": [
+                "bin/orbit-cli-pest",
+                "apps/gateway/tests/Feature/E2ESupport/VerificationScriptsTest.php"
+            ],
+            "guardrail_change": "cli-pest-noninteractive-baseline",
+            "related_signals": [
+                "harness-signals/2026-06-24-cli-pest-parallel-bootstrap-blocker.md"
+            ],
+            "superseded_by": null,
+            "tags": [
+                "cli",
+                "pest",
+                "tty",
+                "stdin",
+                "worktree",
+                "preparation",
+                "determinism"
+            ],
+            "signal_summary": "Two clean `bin/orbit-prepare-worktree` runs reached serial CLI Pest and then waited on the operator terminal instead of completing. Sending Ctrl-D resumed the suite, and native samples showed PHP blocked in `stream_select` and later...",
+            "reappearance_check": "If serial CLI Pest or worktree preparation waits for terminal input again, first run the focused `prevents CLI Pest from consuming caller stdin` regression and inspect `bin/orbit-cli-pest` for lost stdin detachment. Capture the exact..."
         }
     ]
 }
