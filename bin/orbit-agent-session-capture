@@ -107,7 +107,7 @@ ensureDirectory($stagingBase.'/raw');
 $markerNeedle = "Solo process ID: {$soloProcessId}";
 
 $extract = match ($provider) {
-    'codex' => captureCodexExact($home, $workingDir, $soloProcessId, $markerNeedle),
+    'codex' => captureCodexExact($home, $workingDir, $soloProcessId, $markerNeedle, $startedAt),
     'claude' => captureClaudeExact($home, $workingDir, $soloProcessId, $markerNeedle),
     'grok' => captureGrokExact($home, $workingDir, $soloProcessId, $markerNeedle),
     default => [
@@ -131,6 +131,15 @@ if (($extract['status'] ?? null) === 'ok') {
         'artifact' => $extract['artifact'] ?? null,
         'source' => $extract['source'] ?? 'lane_close_capture',
     ];
+
+    if (isset($extract['disambiguation_basis'])) {
+        $manifest['disambiguation_basis'] = $extract['disambiguation_basis'];
+    }
+
+    if (isset($extract['timestamp_corroboration'])) {
+        $manifest['timestamp_corroboration'] = $extract['timestamp_corroboration'];
+    }
+
     writeJsonFile($stagingBase.'/manifest.json', $manifest);
     writeJsonFile($stagingBase.'/usage.json', $extract['usage'] ?? []);
     file_put_contents($stagingBase.'/messages.jsonl', ($extract['messages_jsonl'] ?? '')."\n");
@@ -389,7 +398,7 @@ function findFiles(string $root, string $glob): array
     return $files;
 }
 
-function captureCodexExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle): array
+function captureCodexExact(string $home, string $cwd, int $soloProcessId, string $markerNeedle, mixed $startedAt): array
 {
     $root = "{$home}/.codex/sessions";
     $candidates = [];
@@ -404,15 +413,56 @@ function captureCodexExact(string $home, string $cwd, int $soloProcessId, string
         $candidates[] = $file;
     }
 
-    if (count($candidates) !== 1) {
+    if ($candidates === []) {
         return [
-            'status' => count($candidates) === 0 ? 'missing' : 'ambiguous',
-            'reason' => count($candidates) === 0 ? 'exact_marker_not_found' : 'ambiguous_duplicate_markers',
+            'status' => 'missing',
+            'reason' => 'exact_marker_not_found',
             'checked' => array_slice($checked, 0, 20),
         ];
     }
 
     $chosen = $candidates[0];
+    $disambiguationBasis = null;
+    $timestampCorroboration = null;
+
+    if (count($candidates) > 1) {
+        $normalizedCwd = normalizeCodexCwd($cwd);
+        $survivors = [];
+
+        foreach ($candidates as $candidate) {
+            $context = codexCandidateContext($candidate);
+
+            if ($context['normalized_cwd'] !== $normalizedCwd) {
+                continue;
+            }
+
+            if ($context['primary_solo_process_id'] !== $soloProcessId) {
+                continue;
+            }
+
+            $survivors[] = [
+                'path' => $candidate,
+                'timestamp' => $context['timestamp'],
+            ];
+        }
+
+        if (count($survivors) !== 1) {
+            return [
+                'status' => 'ambiguous',
+                'reason' => 'ambiguous_duplicate_markers',
+                'checked' => array_slice($checked, 0, 20),
+            ];
+        }
+
+        $chosen = $survivors[0]['path'];
+        $timestampCorroboration = codexTimestampCorroboration($survivors[0]['timestamp'], $startedAt);
+        $disambiguationBasis = sprintf(
+            'provider=codex; normalized_cwd=exact; primary_solo_process_id=%d; timestamp_corroboration=%s',
+            $soloProcessId,
+            $timestampCorroboration,
+        );
+    }
+
     // Parse minimal usage + messages from the rollout (reuse light logic)
     $messages = [];
     $usage = ['input_tokens' => 0, 'output_tokens' => 0, 'total_tokens' => 0];
@@ -436,7 +486,7 @@ function captureCodexExact(string $home, string $cwd, int $soloProcessId, string
 
     $messagesJsonl = implode("\n", array_map(fn($m) => json_encode(['role' => $m['role'], 'content' => $m['content']], JSON_UNESCAPED_SLASHES), $messages));
 
-    return [
+    $result = [
         'status' => 'ok',
         'source' => 'codex_exact_marker',
         'artifact' => $chosen,
@@ -444,6 +494,189 @@ function captureCodexExact(string $home, string $cwd, int $soloProcessId, string
         'messages_jsonl' => $messagesJsonl,
         'raw_files' => [['path' => $chosen, 'archive_name' => basename($chosen)]],
     ];
+
+    if ($disambiguationBasis !== null) {
+        $result['disambiguation_basis'] = $disambiguationBasis;
+        $result['timestamp_corroboration'] = $timestampCorroboration;
+    }
+
+    return $result;
+}
+
+/**
+ * @return array{
+ *     normalized_cwd: ?string,
+ *     primary_solo_process_id: ?int,
+ *     timestamp: mixed,
+ * }
+ */
+function codexCandidateContext(string $path): array
+{
+    $candidateCwd = null;
+    $timestamp = null;
+    $baseInstructionsIdentity = null;
+    $firstUserIdentity = null;
+    $firstUserMessageSeen = false;
+
+    foreach (jsonl($path) as $row) {
+        if (($row['type'] ?? null) === 'session_meta') {
+            $payload = $row['payload'] ?? [];
+
+            if ($candidateCwd === null && is_string($payload['cwd'] ?? null)) {
+                $candidateCwd = $payload['cwd'];
+            }
+
+            if ($timestamp === null && array_key_exists('timestamp', $payload)) {
+                $timestamp = $payload['timestamp'];
+            }
+
+            if ($baseInstructionsIdentity === null) {
+                $base = $payload['base_instructions'] ?? '';
+                $baseText = is_array($base) && isset($base['text'])
+                    ? (string) $base['text']
+                    : (is_string($base) ? $base : '');
+                $baseInstructionsIdentity = soloProcessIdFromText($baseText);
+            }
+
+            continue;
+        }
+
+        if ($firstUserMessageSeen || ($row['type'] ?? null) !== 'response_item') {
+            continue;
+        }
+
+        $payload = $row['payload'] ?? [];
+
+        if (($payload['type'] ?? null) !== 'message' || ($payload['role'] ?? null) !== 'user') {
+            continue;
+        }
+
+        $firstUserMessageSeen = true;
+        $firstUserIdentity = soloProcessIdFromUserIdentityMarker(extractText($payload['content'] ?? ''));
+    }
+
+    return [
+        'normalized_cwd' => normalizeCodexCwd($candidateCwd),
+        'primary_solo_process_id' => $baseInstructionsIdentity ?? $firstUserIdentity,
+        'timestamp' => $timestamp,
+    ];
+}
+
+function soloProcessIdFromText(string $text): ?int
+{
+    if (preg_match('/Solo process ID:\s*(\d+)\b/', $text, $matches) !== 1) {
+        return null;
+    }
+
+    return (int) $matches[1];
+}
+
+function soloProcessIdFromUserIdentityMarker(string $text): ?int
+{
+    if (preg_match('/(?:^|\R)\s*Solo process ID:\s*(\d+)\b/', $text, $matches) !== 1) {
+        return null;
+    }
+
+    return (int) $matches[1];
+}
+
+function normalizeCodexCwd(?string $cwd): ?string
+{
+    if ($cwd === null || trim($cwd) === '') {
+        return null;
+    }
+
+    $resolved = realpath($cwd);
+
+    if ($resolved !== false) {
+        return $resolved;
+    }
+
+    $isAbsolute = str_starts_with($cwd, '/');
+    $segments = [];
+
+    foreach (preg_split('~/+~', $cwd) ?: [] as $segment) {
+        if ($segment === '' || $segment === '.') {
+            continue;
+        }
+
+        if ($segment === '..') {
+            if ($segments !== [] && end($segments) !== '..') {
+                array_pop($segments);
+            } elseif (! $isAbsolute) {
+                $segments[] = $segment;
+            }
+
+            continue;
+        }
+
+        $segments[] = $segment;
+    }
+
+    $normalized = ($isAbsolute ? '/' : '').implode('/', $segments);
+
+    if ($normalized !== '') {
+        return $normalized;
+    }
+
+    return $isAbsolute ? '/' : '.';
+}
+
+function codexTimestampCorroboration(mixed $timestamp, mixed $startedAt): string
+{
+    if ($timestamp === null || $timestamp === '' || $startedAt === null || $startedAt === '') {
+        return 'unavailable';
+    }
+
+    $sessionTimestamp = parseCodexTimestamp($timestamp);
+    $soloStartedAt = parseCodexTimestamp($startedAt);
+
+    if ($sessionTimestamp === null || $soloStartedAt === null) {
+        return 'malformed';
+    }
+
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+
+    if ($sessionTimestamp > $now || $soloStartedAt > $now) {
+        return 'malformed';
+    }
+
+    if ($sessionTimestamp < $soloStartedAt) {
+        return 'resumed-predates-start';
+    }
+
+    return 'corroborated';
+}
+
+function parseCodexTimestamp(mixed $timestamp): ?DateTimeImmutable
+{
+    if (! is_string($timestamp)) {
+        return null;
+    }
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $timestamp) === 1) {
+        $sqliteTimestamp = DateTimeImmutable::createFromFormat(
+            '!Y-m-d H:i:s',
+            $timestamp,
+            new DateTimeZone('UTC'),
+        );
+
+        if ($sqliteTimestamp === false || $sqliteTimestamp->format('Y-m-d H:i:s') !== $timestamp) {
+            return null;
+        }
+
+        return $sqliteTimestamp;
+    }
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/', $timestamp) !== 1) {
+        return null;
+    }
+
+    try {
+        return new DateTimeImmutable($timestamp);
+    } catch (Throwable) {
+        return null;
+    }
 }
 
 function codexFileHasScopedMarker(string $path, string $markerNeedle): bool
