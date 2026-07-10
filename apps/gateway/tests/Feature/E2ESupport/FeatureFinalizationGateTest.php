@@ -2969,6 +2969,7 @@ function finalization_cleanup_packet(): string
         MARKDOWN;
 }
 
+/** @mago-expect lint:excessive-parameter-list */
 function compact_feature_loop_packet(
     string $review = 'passed - reviewer example - non-observable',
     string $acceptance = 'accepted - automated - reviewer-confirmed non-observable',

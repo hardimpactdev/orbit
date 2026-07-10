@@ -110,7 +110,11 @@ it('keeps broad assignment heuristics out of generic candidate diffs', function 
     }
 });
 
-it('blocks calibrated high-confidence formats in added candidate lines', function (string $secret, string $rule): void {
+it('blocks calibrated high-confidence formats in added candidate lines', function (
+    #[\SensitiveParameter]
+    string $secret,
+    string $rule,
+): void {
     $workspace = secret_scan_test_workspace('candidate-'.$rule);
 
     try {

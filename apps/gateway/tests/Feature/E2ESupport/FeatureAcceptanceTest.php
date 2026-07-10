@@ -248,7 +248,11 @@ it('rejects unsafe user acceptance source references before changing durable sta
     }
 });
 
-it('blocks high-confidence candidate secrets before acceptance', function (string $secret, string $rule): void {
+it('blocks high-confidence candidate secrets before acceptance', function (
+    #[\SensitiveParameter]
+    string $secret,
+    string $rule,
+): void {
     $fixture = acceptance_test_workspace('candidate-secret-'.$rule, 'bin/orbit-example');
 
     try {

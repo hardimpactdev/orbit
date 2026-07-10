@@ -44,7 +44,9 @@ it('round trips immutable feedback and linked promotion events', function (): vo
             ]))
             ->toThrow(RuntimeException::class, 'unknown feedback event');
     } finally {
-        @unlink($path);
+        if (is_file($path)) {
+            unlink($path);
+        }
     }
 });
 
@@ -61,7 +63,9 @@ it('refuses to append to an invalid existing feedback stream', function (): void
             ->and((string) file_get_contents($path))
             ->toBe($invalid);
     } finally {
-        @unlink($path);
+        if (is_file($path)) {
+            unlink($path);
+        }
     }
 });
 
