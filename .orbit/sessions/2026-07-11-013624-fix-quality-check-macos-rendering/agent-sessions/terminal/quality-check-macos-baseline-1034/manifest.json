@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "terminal",
+    "status": "unsupported",
+    "slug": "quality-check-macos-baseline-1034",
+    "solo_process_id": 1034,
+    "kind": "terminal",
+    "started_at": "2026-07-10 22:40:23",
+    "reason": "terminal_kind_requires_waiver",
+    "checked": [],
+    "marker": "Solo process ID: 1034"
+}

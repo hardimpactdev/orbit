@@ -1,0 +1,201 @@
+─── cli_pest_mixed_4 (exit=2) ───
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[31;1m⨯[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it writes site configs and r… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'docker' 'container' 'inspect' '--format' '{{json .}}' 'orbit-caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m636[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it writes and removes site m… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'docker' 'container' 'inspect' '--format' '{{json .}}' 'orbit-caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m636[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it uses the local OrbStack s… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'docker' 'container' 'inspect' '--format' '{{json .}}' 'orbit-caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m636[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it removes site configs, orb… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'docker' 'container' 'inspect' '--format' '{{json .}}' 'orbit-caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m636[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it applies caddy container s… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'test' '-d' '/etc/caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1119[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it treats an existing Docker… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'test' '-d' '/etc/caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1119[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it writes the global Caddyfi… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'test' '-d' '/Users/nckrtl/.config/orbit/caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1119[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it updates an existing globa… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'test' '-d' '/Users/nckrtl/.config/orbit/caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1119[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it does not chmod existing c… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'test' '-d' '/etc/caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1119[39;22m
+
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it canonicalizes docker bind… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'test' '-d' '/var/folders/1j/07wx_xvs2j11pqghj72mqlt80000gn/T/orbit-caddy-config-realpath-02ba93c094f2e6c8/link'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1119[39;22m
+
+
+  [90mTests:[39m    [31;1m10 failed[39;22m[90m,[39m[39m [39m[32;1m362 passed[39;22m[90m (1635 assertions)[39m
+  [90mDuration:[39m [39m310.16s[39m
+
+
+{"tool":"pest","result":"failed","tests":1796,"passed":null,"assertions":7352,"duration_ms":310652,"groups":{"mixed_1":{"exit":0,"duration_ms":14626,"tests":623,"assertions":2185},"mixed_2":{"exit":0,"duration_ms":16099,"tests":474,"assertions":1814},"mixed_3":{"exit":0,"duration_ms":20439,"tests":391,"assertions":1523},"mixed_4":{"exit":2,"duration_ms":310340,"tests":0,"assertions":0},"mixed_5":{"exit":0,"duration_ms":17800,"tests":308,"assertions":1830}}}

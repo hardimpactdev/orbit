@@ -1,0 +1,46 @@
+Reconstructed from chunks.jsonl with reconstruct_visible_screen.php.
+
+elapsed=1s
+   1: > Composer\Config::disableProcessTimeout
+   3:   ┌  Running quality checks
+   5:   ○  apps/gateway    Running
+   7:   ○  apps/cli        Running
+   9:   ○  apps/docs       Running
+  11:   ○  apps/e2e        Queued
+  13:   ○  apps/reverb     Queued
+  15:   ○  apps/agent      Queued
+  17:   ○  apps/macos      Queued
+  19:   ○  packages/core   Queued
+  21:   ○  packages/sdk    Queued
+  23:   └  Working...
+
+elapsed=60s
+   1: > Composer\Config::disableProcessTimeout
+   3:   ┌  Running quality checks
+   5:   ○  apps/gateway    Running
+   7:   ○  apps/cli        Running
+   9:   ●  apps/docs       Passed
+  11:   ●  apps/e2e        Passed
+  13:   ●  apps/reverb     Passed
+  15:   ○  apps/agent      Queued
+  17:   ○  apps/macos      Queued
+  19:   ○  packages/core   Running
+  21:   ○  packages/sdk    Queued
+  23:   └  Working...
+
+elapsed=320s
+   1: > Composer\Config::disableProcessTimeout
+   3:   ┌  Running quality checks
+   5:   ●  apps/gateway    Failed
+   7:   ●  apps/cli        Failed
+   9:   ●  apps/docs       Passed
+  11:   ●  apps/e2e        Passed
+  13:   ●  apps/reverb     Passed
+  15:   ○  apps/agent      Running
+  17:   ○  apps/macos      Running
+  19:   ○  packages/core   Running
+  21:   ○  packages/sdk    Running
+  23:   └  Working...
+
+All reconstructed frames have exactly one visible header and no shell error lines above the retained tree.
+

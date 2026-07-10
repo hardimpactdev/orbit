@@ -1,0 +1,18 @@
+Reconstructed from the complete chunks.jsonl at feature commit 8a59d498ed038d7af77ba2fe91ea16a01035533b.
+
+   1: > Composer\Config::disableProcessTimeout
+   3:   ┌  Running quality checks
+   5:   ●  apps/gateway    Passed
+   7:   ●  apps/cli        Passed
+   9:   ●  apps/docs       Passed
+  11:   ●  apps/e2e        Passed
+  13:   ●  apps/reverb     Passed
+  15:   ●  apps/agent      Passed
+  17:   ●  apps/macos      Passed
+  19:   ●  packages/core   Passed
+  21:   ●  packages/sdk    Passed
+  23:   └  Quality checks passed
+  25: Pest profiles: /Users/nckrtl/orbit/.worktrees/fix-quality-check-macos-rendering/.orbit/quality-gates/profiles/2026-07-10T23-27-44Z-8a59d498ed03
+
+Exactly one header is visible; no duplicated or partially retained initial frame remains.
+

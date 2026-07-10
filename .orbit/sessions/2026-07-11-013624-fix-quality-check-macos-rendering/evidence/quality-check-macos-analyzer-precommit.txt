@@ -1,0 +1,37 @@
+CHECKOUT_PROOF: /Users/nckrtl/orbit/.worktrees/fix-quality-check-macos-rendering | fix-quality-check-macos-rendering | 3 declared modified files; Solo process 1039/project 4
+
+## Verdict
+
+Loop proper: flawed
+Guardrail decisions: worker replacement correct-noop; Bash portability coverage correct-noop; fake-bin correction correct-noop; progress-frame checker mismatch missed
+
+## Findings
+
+- Severity: medium
+  Type: missed-guardrail
+  Evidence: bin/quality-check-progress-frame-check:167-169, final PTY frames, apps/docs/content/testing/quality-gates.md, and harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md
+  Issue: The reusable checker deterministically rejects valid production scheduling because it treats any early packages/core activity as early Core Pest, although production intentionally backfills Core static checks and delays only core_pest.
+  Recommendation: Reuse the existing recurring PTY/progress signal and create a bounded checker/test follow-up. Do not create a duplicate signal record or block this rendering fix.
+
+- Severity: low
+  Type: evidence-gap
+  Evidence: .orbit/loop.md:79,90-115; reviewer report; manifest 1038
+  Issue: The packet still records the full gate as pending/blocked, omits reviewer 1038 from capture waivers, and has not classified the checker mismatch. The reviewer also says 58 subgates while the JSON contains 43.
+  Recommendation: Reconcile the packet before finalization, add the terminal-reviewer waiver, record this analyzer verdict and checker follow-up, and retain the planned exact-commit decorated PTY rerun.
+
+## Guardrail Decisions
+
+- Worker 1035 repeated-correction replacement: correct-noop; existing implementing-features guardrail and worker-first-diff signal were exercised.
+- Bash 3.2 empty-array and argument-forwarding regression: correct-noop; current self-test and decorated PTY evidence cover it.
+- CLI fake-bin recursion: correct-noop; owning fixture and focused/owning-file coverage now enforce it.
+- Progress-frame checker rejects legitimate Core static backfill: missed; preserve as a scoped follow-up under the existing recurring PTY/progress signal.
+
+## Packet Gaps
+
+- Replace stale pending/blocked gate rows with captured green evidence.
+- Add reviewer 1038 terminal_kind_requires_waiver.
+- Correct reviewer subgate count from 58 to 43.
+- Record the checker-contract follow-up and analyzer verdict.
+
+VERDICT: flawed
+

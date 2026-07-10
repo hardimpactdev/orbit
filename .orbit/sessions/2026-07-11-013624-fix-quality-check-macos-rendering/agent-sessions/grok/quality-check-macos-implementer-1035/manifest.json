@@ -1,0 +1,14 @@
+{
+    "schema_version": 1,
+    "provider": "grok",
+    "status": "partial",
+    "slug": "quality-check-macos-implementer-1035",
+    "solo_process_id": 1035,
+    "kind": "agent",
+    "started_at": "2026-07-10 22:42:32",
+    "reason": "missing_primary_identity",
+    "checked": [],
+    "marker": "Solo process ID: 1035",
+    "disambiguation_basis": "provider=grok; ownership=partial(no_primary_identity); normalized_cwd=exact; primary_solo_process_id=none",
+    "diagnostics": []
+}

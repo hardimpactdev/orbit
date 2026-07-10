@@ -1,7 +1,7 @@
 {
     "schema_version": 1,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 92,
+    "record_count": 93,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -2745,6 +2745,34 @@
                 "reasoning_tokens": null
             },
             "capture_status": "empty"
+        },
+        {
+            "archive": "2026-07-11-013624-fix-quality-check-macos-rendering",
+            "slug": "fix-quality-check-macos-rendering",
+            "timestamp": "2026-07-11-013624",
+            "loop_outcome": "complete",
+            "loop_outcome_raw": "complete",
+            "required_verification": {
+                "Retained topology proof": "not applicable",
+                "`composer quality-check`": "passed"
+            },
+            "fresh_analyzer_verdict": "precommit `flawed` packet findings were reconciled; final analyzer `VERDICT: yes` with no findings or packet gaps.",
+            "fresh_analyzer_verdict_raw": "precommit `flawed` packet findings were reconciled; final analyzer `VERDICT: yes` with no findings or packet gaps.",
+            "candidate_signals": {
+                "total": 3,
+                "classifications": {
+                    "unknown": 3
+                }
+            },
+            "blockers_present": true,
+            "token_usage": {
+                "status": "unavailable",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
+            },
+            "capture_status": "partial"
         }
     ]
 }

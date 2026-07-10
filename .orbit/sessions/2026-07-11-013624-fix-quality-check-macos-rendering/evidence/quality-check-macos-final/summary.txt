@@ -1,0 +1,8 @@
+command: composer quality-check
+exit_code: 3
+duration: 390.161s
+max_delta_between_chunks: 0.316s
+timed_out: false
+idle_timed_out: false
+chunks: .orbit/evidence/quality-check-macos-final/chunks.jsonl
+transcript: .orbit/evidence/quality-check-macos-final/transcript.txt

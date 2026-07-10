@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "generated_at": "2026-07-10T23:36:24+00:00",
+    "mode": "created",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/fix-quality-check-macos-rendering/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-11-013624-fix-quality-check-macos-rendering",
+    "agent_sessions_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-11-013624-fix-quality-check-macos-rendering/agent-sessions",
+    "copied_entries": [
+        "agent-sessions",
+        "evidence",
+        "loop.md",
+        "quality-gates"
+    ],
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

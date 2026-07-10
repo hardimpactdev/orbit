@@ -1,0 +1,19 @@
+Reconstructed from the complete chunks.jsonl after exit.
+
+   1: > Composer\Config::disableProcessTimeout
+   3:   ┌  Running quality checks
+   5:   ●  apps/gateway    Failed
+   7:   ●  apps/cli        Failed
+   9:   ●  apps/docs       Passed
+  11:   ●  apps/e2e        Passed
+  13:   ●  apps/reverb     Passed
+  15:   ●  apps/agent      Passed
+  17:   ●  apps/macos      Passed
+  19:   ●  packages/core   Passed
+  21:   ●  packages/sdk    Passed
+  23:   └  Quality checks failed
+  25: ─── gateway_mago_format (exit=1) ───
+  28: ─── cli_pest (exit=2) ───
+
+The retained tree has one visible header. The failure details begin below the completed tree and do not pollute its repaint origin.
+
