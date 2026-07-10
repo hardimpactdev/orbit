@@ -2547,3 +2547,348 @@ it('keeps duplicate owned Codex sessions ambiguous when an incarnation floor is 
         remove_agent_session_archive_temp_dir(path: $fixture['temp']);
     }
 });
+
+it('stage 3 staging replacement rejects invalid explicit slugs before DB access or staging', function (string $slugArgument): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'stage-3-invalid-slug');
+    $orbitDir = "{$temp}/.orbit";
+
+    try {
+        $process = new Process([
+            repo_path('bin/orbit-agent-session-capture'),
+            '979901',
+            "--home={$temp}/home",
+            "--cwd={$temp}/worktree",
+            "--solo-db={$temp}/missing-solo.db",
+            "--orbit-dir={$orbitDir}",
+            "--slug={$slugArgument}",
+        ], repo_path());
+
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toBe("invalid_explicit_slug\n")
+            ->not->toContain('solo db not found')->and($process->getOutput())->toBe('')->and(
+                "{$orbitDir}/agent-sessions",
+            )
+            ->not->toBeDirectory();
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+})->with([
+    'empty' => '',
+    'requires lowercasing' => 'Stage-Three',
+    'requires separator rewriting' => 'stage three',
+    'requires repeated-separator collapse' => 'stage--three',
+    'requires edge trimming' => '-stage-three-',
+    'rejects path traversal' => '../escape',
+]);
+
+it('stage 3 staging replacement replaces same-slug success with only new coherent artifacts', function (): void {
+    $soloProcessId = 979_902;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-success', soloProcessId: $soloProcessId);
+    $slug = 'stage-3-success-success';
+    $providerRoot = "{$fixture['orbit_dir']}/agent-sessions/codex";
+    $finalDir = "{$providerRoot}/{$slug}";
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'first-success',
+            soloProcessId: $soloProcessId,
+            activityRows: [[
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'First success.']],
+                ],
+            ]],
+        );
+
+        $first = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($first->getExitCode())->toBe(0, $first->getErrorOutput().$first->getOutput());
+
+        unlink("{$fixture['codex_dir']}/rollout-first-success.jsonl");
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'second-success',
+            soloProcessId: $soloProcessId,
+            activityRows: [[
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'Second success.']],
+                ],
+            ]],
+        );
+
+        $second = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($second->getExitCode())->toBe(0, $second->getErrorOutput().$second->getOutput());
+
+        $rawFiles = array_map('basename', glob("{$finalDir}/raw/*") ?: []);
+        $finalEntries = array_map('basename', glob("{$finalDir}/*") ?: []);
+        sort($rawFiles);
+        sort($finalEntries);
+
+        expect(dirname($finalDir))
+            ->toBe($providerRoot)
+            ->and($finalEntries)
+            ->toBe(['manifest.json', 'messages.jsonl', 'raw', 'usage.json'])
+            ->and($rawFiles)
+            ->toBe(['rollout-second-success.jsonl'])
+            ->and("{$finalDir}/raw/rollout-first-success.jsonl")
+            ->not->toBeFile()->and(file_get_contents("{$finalDir}/messages.jsonl"))->toContain('Second success.')
+            ->not->toContain('First success.')->and(glob("{$providerRoot}/.{$slug}.tmp-*") ?: [])->toBe([])->and(
+                glob("{$providerRoot}/.{$slug}.backup-*") ?: [],
+            )->toBe([]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it('stage 3 staging replacement replaces same-slug success with one coherent failure capture', function (): void {
+    $soloProcessId = 979_903;
+    $fixture = make_incarnation_floor_capture_fixture(suffix: 'stage-3-success-failure', soloProcessId: $soloProcessId);
+    $slug = 'stage-3-success-failure';
+    $providerRoot = "{$fixture['orbit_dir']}/agent-sessions/codex";
+    $finalDir = "{$providerRoot}/{$slug}";
+
+    try {
+        write_incarnation_floor_rollout(
+            fixture: $fixture,
+            rolloutId: 'success-before-failure',
+            soloProcessId: $soloProcessId,
+            activityRows: [[
+                'type' => 'response_item',
+                'payload' => [
+                    'type' => 'message',
+                    'role' => 'assistant',
+                    'content' => [['type' => 'output_text', 'text' => 'Success before failure.']],
+                ],
+            ]],
+        );
+
+        $success = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($success->getExitCode())->toBe(0, $success->getErrorOutput().$success->getOutput());
+
+        unlink("{$fixture['codex_dir']}/rollout-success-before-failure.jsonl");
+
+        $failure = run_incarnation_floor_capture(
+            fixture: $fixture,
+            soloProcessId: $soloProcessId,
+            slug: $slug,
+        );
+
+        expect($failure->getExitCode())
+            ->toBeGreaterThan(0)
+            ->and($failure->getErrorOutput().$failure->getOutput())
+            ->toContain('exact_marker_not_found');
+
+        $finalEntries = array_map('basename', glob("{$finalDir}/*") ?: []);
+        sort($finalEntries);
+
+        expect(dirname($finalDir))
+            ->toBe($providerRoot)
+            ->and($finalEntries)
+            ->toBe(['manifest.json'])
+            ->and("{$finalDir}/usage.json")
+            ->not->toBeFile()->and("{$finalDir}/messages.jsonl")
+            ->not->toBeFile()->and("{$finalDir}/raw")
+            ->not->toBeDirectory()->and(glob("{$providerRoot}/.{$slug}.tmp-*") ?: [])->toBe([])->and(
+                glob("{$providerRoot}/.{$slug}.backup-*") ?: [],
+            )->toBe([]);
+
+        $manifest = read_agent_session_archive_json(path: "{$finalDir}/manifest.json");
+
+        expect($manifest)
+            ->toBe([
+                'schema_version' => 1,
+                'provider' => 'codex',
+                'status' => 'missing',
+                'slug' => $slug,
+                'solo_process_id' => $soloProcessId,
+                'kind' => 'agent',
+                'started_at' => '2026-07-09T09:00:00Z',
+                'reason' => 'exact_marker_not_found',
+                'checked' => [],
+                'marker' => "Solo process ID: {$soloProcessId}",
+            ]);
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $fixture['temp']);
+    }
+});
+
+it(
+    'stage 3 staging replacement proves deterministic replacement and rollback behavior',
+    function (string $scenario, array $expected): void {
+        $temp = make_agent_session_archive_temp_dir(suffix: "stage-3-replacement-{$scenario}");
+
+        try {
+            $process = run_staged_capture_replacement_scenario(root: $temp, scenario: $scenario);
+
+            expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+            $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+            $expectedState = $expected;
+            unset($expectedState['error_contains']);
+
+            expect($result)->toMatchArray($expectedState);
+
+            foreach ($expected['error_contains'] ?? [] as $fragment) {
+                expect($result['error'])->toContain($fragment);
+            }
+        } finally {
+            remove_agent_session_archive_temp_dir(path: $temp);
+        }
+    },
+)->with([
+    'final to backup failure' => [
+        'first-rename-fails',
+        [
+            'final_old' => true,
+            'final_new' => false,
+            'temp_exists' => true,
+            'backup_exists' => false,
+            'rename_calls' => 1,
+            'error_contains' => ['final_to_backup_failed', '/temp', '/final', '/backup'],
+        ],
+    ],
+    'temp to final failure rolls back' => [
+        'second-rename-fails',
+        [
+            'final_old' => true,
+            'final_new' => false,
+            'temp_exists' => false,
+            'backup_exists' => false,
+            'rename_calls' => 3,
+            'error_contains' => ['temp_to_final_failed_rolled_back', '/temp', '/final', '/backup'],
+        ],
+    ],
+    'rollback rename also fails loudly' => [
+        'rollback-rename-fails',
+        [
+            'final_old' => false,
+            'final_new' => false,
+            'temp_exists' => true,
+            'backup_exists' => true,
+            'backup_old' => true,
+            'rename_calls' => 3,
+            'error_contains' => ['temp_to_final_and_rollback_failed', '/temp', '/final', '/backup'],
+        ],
+    ],
+    'native same-filesystem success' => [
+        'native-success',
+        [
+            'final_old' => false,
+            'final_new' => true,
+            'temp_exists' => false,
+            'backup_exists' => false,
+            'rename_calls' => 0,
+            'error' => null,
+        ],
+    ],
+]);
+
+it('stage 3 staging replacement rejects non-sibling paths before any rename', function (): void {
+    $temp = make_agent_session_archive_temp_dir(suffix: 'stage-3-replacement-non-sibling');
+
+    try {
+        $process = run_staged_capture_replacement_scenario(root: $temp, scenario: 'non-sibling');
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput().$process->getOutput());
+
+        $result = json_decode($process->getOutput(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($result['rename_calls'])
+            ->toBe(0)
+            ->and($result['error'])
+            ->toContain('not_direct_child')
+            ->toContain('/nested/temp');
+    } finally {
+        remove_agent_session_archive_temp_dir(path: $temp);
+    }
+});
+
+function run_staged_capture_replacement_scenario(string $root, string $scenario): Process
+{
+    $script = repo_path('bin/orbit-agent-session-capture');
+    $code = <<<'PHP'
+        define('ORBIT_AGENT_SESSION_CAPTURE_TEST_NO_MAIN', true);
+        require $argv[1];
+
+        $root = $argv[2];
+        $scenario = $argv[3];
+        $temp = $scenario === 'non-sibling' ? "{$root}/nested/temp" : "{$root}/temp";
+        $final = "{$root}/final";
+        $backup = "{$root}/backup";
+
+        mkdir($temp, recursive: true);
+        mkdir($final, recursive: true);
+        file_put_contents("{$temp}/new.txt", "new\n");
+        file_put_contents("{$final}/old.txt", "old\n");
+
+        $renameCalls = 0;
+        $rename = null;
+
+        if ($scenario !== 'native-success') {
+            $rename = function (string $from, string $to) use ($scenario, &$renameCalls): bool {
+                $renameCalls++;
+
+                if ($scenario === 'first-rename-fails' && $renameCalls === 1) {
+                    return false;
+                }
+
+                if ($scenario === 'second-rename-fails' && $renameCalls === 2) {
+                    return false;
+                }
+
+                if ($scenario === 'rollback-rename-fails' && $renameCalls >= 2) {
+                    return false;
+                }
+
+                return rename($from, $to);
+            };
+        }
+
+        $error = null;
+
+        try {
+            replaceStagedCaptureDirectory($temp, $final, $backup, $rename);
+        } catch (Throwable $throwable) {
+            $error = $throwable->getMessage();
+        }
+
+        echo json_encode([
+            'final_old' => is_file("{$final}/old.txt"),
+            'final_new' => is_file("{$final}/new.txt"),
+            'temp_exists' => is_dir($temp),
+            'backup_exists' => is_dir($backup),
+            'backup_old' => is_file("{$backup}/old.txt"),
+            'rename_calls' => $renameCalls,
+            'error' => $error,
+        ], JSON_UNESCAPED_SLASHES);
+        PHP;
+
+    $process = new Process([PHP_BINARY, '-r', $code, $script, $root, $scenario], repo_path());
+    $process->run();
+
+    return $process;
+}

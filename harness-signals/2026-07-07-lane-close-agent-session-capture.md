@@ -8,7 +8,7 @@ Source worktree: agent-session-capture-disambiguation
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-agent-session-capture, bin/orbit-session-archive, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: after exact-marker discovery, disambiguate duplicate Codex candidates only by provider context, exact normalized cwd, and the transcript's primary Solo identity; retain loud ambiguity when multiple candidates survive; after one candidate remains, an optional caller-attested Codex-only incarnation floor validates canonical activity without selecting or ranking candidates
+Guardrail change: reject non-Codex incarnation floors before staging; discover exact integer marker identities for every provider and classify every Codex candidate by exact cwd plus standalone primary identity before cardinality; stage each coherent result in a unique sibling and atomically replace the final slug directory with rollback
 Related signals: harness-signals/2026-06-25-required-verification-finalization-gap.md
 Superseded by: none
 Tags: finalization, agent-sessions, solo, loop-engineering
@@ -31,6 +31,10 @@ It recurred again when a deliberately restarted Codex process retained the same
 marker and lane-close capture accepted the sole pre-restart rollout. The marker
 still proved session ownership, but not that the rollout belonged to the active
 process incarnation.
+
+The same review found numeric-prefix marker matches, unowned Codex singletons,
+and direct writes into reused slug directories. Those paths could select the
+wrong transcript or mix stale success artifacts into a later success or failure.
 
 ## Prior Occurrences
 
@@ -62,6 +66,10 @@ After disambiguation, the Codex path also lacked a caller-attested restart floor
 that could reject a stale singleton without turning timestamps into candidate
 ownership or selection evidence.
 
+The helper also silently canonicalized explicit slugs and wrote captures
+directly into the final directory, so reruns could retain files from a previous
+capture and had no rollback boundary for replacement failure.
+
 ## Guardrail Change
 
 - `bin/orbit-agent-session-capture` stages provider artifacts by exact
@@ -74,11 +82,12 @@ ownership or selection evidence.
 - `HARNESS.md`, `LOOP.md.example`, and the implementation skill now document
   the lane-close capture and waiver contract.
 - On duplicate Codex marker matches, `bin/orbit-agent-session-capture` now
-  filters by the already-selected provider context, exact normalized cwd, and
-  the transcript's own primary Solo identity. It selects only one survivor,
-  preserves `ambiguous_duplicate_markers` otherwise, and records both a stable
-  `disambiguation_basis` and non-selecting timestamp corroboration in successful
-  manifests.
+  uses one all-occurrences exact-integer parser for provider discovery, then
+  filters every candidate by exact normalized cwd and a separate standalone-line
+  primary identity channel. A sole no-primary legacy candidate is visibly
+  partial, a full owner outranks partial candidates, and multiple full or
+  partial-only owners preserve `ambiguous_duplicate_markers`. Timestamp evidence
+  remains corroborative and never selects or ranks candidates.
 - `--incarnation-started-at=<ISO8601>` is a Codex-only, caller-attested
   validate-after-selection floor. Its syntax is checked before Solo DB access or
   staging; ambiguity returns before activity validation; and a unique candidate
@@ -90,6 +99,13 @@ ownership or selection evidence.
   `incarnation_floor_unsupported_provider` before staging mutation. Restarted
   Claude or Grok lanes require a fresh Solo process id or an explicit capture
   waiver.
+- Explicit `--slug` input must already be non-empty and canonical; invalid input
+  fails before Solo DB access or staging. Every success or capture-failure result
+  is completed in a unique temporary directory directly under the provider root,
+  then replaces the final slug directory through sibling rename, backup, and
+  rollback steps. Direct-child assertions guard every rename and recursive
+  delete, successful replacement removes the backup, and coherent failure
+  replacement cannot retain stale success artifacts.
 
 ## Verification
 
@@ -101,9 +117,12 @@ bin/orbit-agent-session-capture 801 --orbit-dir=.orbit --cwd=/Users/nckrtl/orbit
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='(inherited marker|wrong cwd)'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='duplicate markers'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter=incarnation
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 2 exact identity'
+bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php --filter='stage 3 staging replacement'
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/AgentSessionArchiveTest.php
 php -l bin/orbit-agent-session-capture
 bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/AgentSessionArchiveTest.php
+bin/orbit-harness-signal-index --check
 ```
 
 The live capture command staged a real Solo-spawned Grok worker session with
@@ -112,9 +131,15 @@ The 2026-07-10 recurrence verification passed with 2 focused disambiguation
 tests / 9 assertions, 1 duplicate-marker safety test / 3 assertions, and the
 incarnation-floor filter at 7 tests / 74 assertions. The provider-floor
 hardening additionally covers Claude and Grok rejection before staging
-mutation. The full archive file passed at 22 tests / 359 assertions;
-PHP syntax and the gateway-test-only Mago format check passed. The root helper
-retains its pre-existing baseline style and is not claimed Mago-clean.
+mutation. The exact-identity/ownership filter passed at 11 tests / 66 assertions,
+and atomic staging replacement passed at 13 tests / 116 assertions, including
+the private procedural rollback matrix accepted by Claude 943. The full owning
+file passed at 47 tests / 545 assertions; the related `SessionArchive` and
+`FeatureFinalizationGate` filters passed at 56 / 607 and 47 / 111 respectively.
+PHP syntax and the gateway-test-only Mago format check passed. The new `main()`
+boundary is structurally indented and the replacement transaction follows
+project style; unrelated legacy statements inside and after `main()` retain the
+pre-existing baseline and are not claimed Mago-clean.
 
 ## Reappearance Check
 
@@ -125,11 +150,19 @@ the exact marker parser missed a runtime-specific prompt shape. Tighten the
 capture helper and add a provider fixture before weakening finalization.
 
 For duplicate Codex markers, also inspect whether provider context, exact
-normalized cwd, and primary Solo identity leave exactly one candidate. Never
-use session-meta timestamp, file order, mtime, or newest-file selection to
-rescue or tie-break the match; session-meta timestamp remains manifest
-corroboration only, while the caller floor validates non-session-meta activity
-only after one candidate remains.
+normalized cwd, and standalone primary Solo identity leave exactly one full
+owner or one allowed partial-only legacy candidate. Numeric marker comparison
+must remain exact, and a mid-sentence child mention must never establish primary
+ownership. Never use session-meta timestamp, file order, mtime, or newest-file
+selection to rescue or tie-break the match; session-meta timestamp remains
+manifest corroboration only, while the caller floor validates non-session-meta
+activity only after one candidate remains.
+
+For repeated slugs, inspect the final directory as one coherent capture and
+check for lingering sibling temp or backup directories. Never restore direct
+in-place writes or delete the previous final before a complete sibling capture
+is ready; replacement failure must preserve or roll back the prior coherent
+capture and report the exact involved paths.
 
 For a deliberate Codex process restart, prefer a fresh process id. If the id is
 reused, record the restart time and pass the caller-attested floor; a stale
