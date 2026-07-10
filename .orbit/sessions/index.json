@@ -24,6 +24,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -46,10 +47,11 @@
             "fresh_analyzer_verdict_raw": "loop outcome `complete`; loop quality `proper`; guardrail verdict `correct-noop`",
             "candidate_signals": {
                 "total": 0,
-                "classifications": []
+                "classifications": {}
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -78,10 +80,11 @@
             "fresh_analyzer_verdict_raw": "accept; no missed verification; no durable signal worth capturing; app-first scheduling is separate deferred work",
             "candidate_signals": {
                 "total": 0,
-                "classifications": []
+                "classifications": {}
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -110,10 +113,11 @@
             "fresh_analyzer_verdict_raw": null,
             "candidate_signals": {
                 "total": 0,
-                "classifications": []
+                "classifications": {}
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -141,6 +145,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -168,6 +173,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -195,6 +201,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -227,6 +234,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -257,6 +265,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -285,6 +294,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -312,6 +322,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -346,6 +357,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -373,6 +385,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -402,6 +415,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -430,6 +444,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -464,6 +479,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -491,6 +507,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -519,6 +536,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -546,6 +564,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -573,6 +592,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -602,6 +622,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -633,6 +654,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -661,6 +683,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -691,6 +714,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -731,6 +755,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -759,6 +784,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -787,6 +813,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -814,6 +841,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -841,6 +869,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -868,6 +897,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -895,6 +925,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -922,10 +953,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -949,6 +981,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -978,6 +1011,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1005,10 +1039,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 42619,
                 "output_tokens": 17250,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -1034,10 +1069,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 42619,
                 "output_tokens": 17250,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -1063,10 +1099,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 42619,
                 "output_tokens": 17250,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -1092,10 +1129,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 42619,
                 "output_tokens": 17250,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -1119,6 +1157,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 33426699,
                 "output_tokens": 110090,
                 "total_tokens": 33536789,
@@ -1148,10 +1187,11 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 1750977,
                 "output_tokens": 122165,
-                "total_tokens": 1712334,
-                "reasoning_tokens": 9859
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1175,10 +1215,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 81425,
                 "output_tokens": 136231,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1202,10 +1243,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 102892,
                 "output_tokens": 174611,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1229,10 +1271,11 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "partial",
                 "input_tokens": 111233,
                 "output_tokens": 191964,
-                "total_tokens": 0,
-                "reasoning_tokens": 0
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1257,6 +1300,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 35052514,
                 "output_tokens": 68416,
                 "total_tokens": 35120930,
@@ -1285,10 +1329,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 36027853,
-                "output_tokens": 128060,
-                "total_tokens": 36155913,
-                "reasoning_tokens": 44367
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -1313,6 +1358,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 33953693,
                 "output_tokens": 108197,
                 "total_tokens": 34061890,
@@ -1341,6 +1387,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 33953693,
                 "output_tokens": 108197,
                 "total_tokens": 34061890,
@@ -1368,6 +1415,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1395,6 +1443,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1422,6 +1471,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1450,10 +1500,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 1767241,
-                "output_tokens": 12374,
-                "total_tokens": 1779615,
-                "reasoning_tokens": 5062
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1478,10 +1529,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 1223268,
-                "output_tokens": 7227,
-                "total_tokens": 1230495,
-                "reasoning_tokens": 2213
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1506,10 +1558,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 1635347,
-                "output_tokens": 9889,
-                "total_tokens": 1645236,
-                "reasoning_tokens": 2731
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -1534,6 +1587,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1561,6 +1615,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 2387669,
                 "output_tokens": 18141,
                 "total_tokens": 2405810,
@@ -1588,10 +1643,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 4020298,
-                "output_tokens": 33682,
-                "total_tokens": 4053980,
-                "reasoning_tokens": 17638
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "ok"
         },
@@ -1615,6 +1671,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 3094137,
                 "output_tokens": 28025,
                 "total_tokens": 3122162,
@@ -1644,6 +1701,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1673,6 +1731,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1701,6 +1760,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 754360,
                 "output_tokens": 5950,
                 "total_tokens": 760310,
@@ -1728,6 +1788,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1761,6 +1822,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1799,6 +1861,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1839,6 +1902,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1875,6 +1939,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1902,6 +1967,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1929,6 +1995,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -1958,6 +2025,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 2722254,
                 "output_tokens": 16897,
                 "total_tokens": 2739151,
@@ -1987,10 +2055,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 6928711,
-                "output_tokens": 50621,
-                "total_tokens": 6910630,
-                "reasoning_tokens": 5215
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2015,10 +2084,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 8831863,
-                "output_tokens": 94033,
-                "total_tokens": 8741590,
-                "reasoning_tokens": 7830
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2043,10 +2113,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 8831863,
-                "output_tokens": 94033,
-                "total_tokens": 8741590,
-                "reasoning_tokens": 7830
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2071,10 +2142,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 8831863,
-                "output_tokens": 94033,
-                "total_tokens": 8741590,
-                "reasoning_tokens": 7830
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2097,14 +2169,15 @@
             "fresh_analyzer_verdict_raw": null,
             "candidate_signals": {
                 "total": 0,
-                "classifications": []
+                "classifications": {}
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 8831863,
-                "output_tokens": 94033,
-                "total_tokens": 8741590,
-                "reasoning_tokens": 7830
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2136,10 +2209,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 8831863,
-                "output_tokens": 94033,
-                "total_tokens": 8741590,
-                "reasoning_tokens": 7830
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2170,6 +2244,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -2199,10 +2274,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 13166235,
-                "output_tokens": 56611,
-                "total_tokens": 13222846,
-                "reasoning_tokens": 35325
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2227,6 +2303,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "unavailable",
                 "input_tokens": null,
                 "output_tokens": null,
                 "total_tokens": null,
@@ -2257,10 +2334,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 6411027,
-                "output_tokens": 27063,
-                "total_tokens": 6438090,
-                "reasoning_tokens": 18087
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2287,10 +2365,11 @@
             },
             "blockers_present": true,
             "token_usage": {
-                "input_tokens": 6411027,
-                "output_tokens": 27063,
-                "total_tokens": 6438090,
-                "reasoning_tokens": 18087
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2314,10 +2393,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 12108900,
-                "output_tokens": 44552,
-                "total_tokens": 12153452,
-                "reasoning_tokens": 27737
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2341,10 +2421,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 15685496,
-                "output_tokens": 85539,
-                "total_tokens": 15771035,
-                "reasoning_tokens": 47698
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2368,10 +2449,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 15685496,
-                "output_tokens": 85539,
-                "total_tokens": 15771035,
-                "reasoning_tokens": 47698
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2397,6 +2479,7 @@
             },
             "blockers_present": true,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 11030183,
                 "output_tokens": 42886,
                 "total_tokens": 11073069,
@@ -2426,10 +2509,11 @@
             },
             "blockers_present": false,
             "token_usage": {
-                "input_tokens": 5886304,
-                "output_tokens": 32143,
-                "total_tokens": 5918447,
-                "reasoning_tokens": 11683
+                "status": "partial",
+                "input_tokens": null,
+                "output_tokens": null,
+                "total_tokens": null,
+                "reasoning_tokens": null
             },
             "capture_status": "partial"
         },
@@ -2455,6 +2539,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 19594123,
                 "output_tokens": 75077,
                 "total_tokens": 19669200,
@@ -2485,6 +2570,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 37060152,
                 "output_tokens": 123641,
                 "total_tokens": 37183793,
@@ -2512,6 +2598,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 18782634,
                 "output_tokens": 64907,
                 "total_tokens": 18847541,
@@ -2539,6 +2626,7 @@
             },
             "blockers_present": false,
             "token_usage": {
+                "status": "consistent",
                 "input_tokens": 5962004,
                 "output_tokens": 55052,
                 "total_tokens": 6017056,

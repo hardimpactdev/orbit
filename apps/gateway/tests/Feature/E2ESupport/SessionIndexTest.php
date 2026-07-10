@@ -162,6 +162,441 @@ it('writes and checks deterministic facets for heterogeneous session archives', 
     }
 });
 
+it('classifies token usage without inventing missing or invalid values', function (): void {
+    $workspace = session_index_workspace('token-usage-status');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100000-unavailable-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'no-usage-file',
+                    'status' => 'ok',
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100100-consistent-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'first-consistent-file',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 10,
+                        'output_tokens' => 2,
+                        'total_tokens' => 12,
+                        'reasoning_tokens' => 1,
+                    ],
+                ],
+                [
+                    'provider' => 'grok',
+                    'slug' => 'second-consistent-file',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 20,
+                        'output_tokens' => 3,
+                        'total_tokens' => 23,
+                        'reasoning_tokens' => 4,
+                    ],
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100200-partial-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'complete-contributor',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 30,
+                        'output_tokens' => 5,
+                        'total_tokens' => 35,
+                        'reasoning_tokens' => 6,
+                    ],
+                ],
+                [
+                    'provider' => 'grok',
+                    'slug' => 'missing-reasoning',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 40,
+                        'output_tokens' => 7,
+                        'total_tokens' => 47,
+                    ],
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100300-malformed-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'malformed-json',
+                    'status' => 'ok',
+                    'usage' => [],
+                ],
+            ],
+        );
+        file_put_contents(
+            "{$sessionsDir}/2026-07-10-100300-malformed-token-usage/agent-sessions/codex/malformed-json/usage.json",
+            '{',
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100400-non-integer-token-component',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'non-integer',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => '10',
+                        'output_tokens' => 1,
+                        'total_tokens' => 11,
+                        'reasoning_tokens' => 0,
+                    ],
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100450-negative-token-component',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'negative',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 10,
+                        'output_tokens' => -1,
+                        'total_tokens' => 9,
+                        'reasoning_tokens' => 0,
+                    ],
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100500-inconsistent-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'mismatched-total',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 50,
+                        'output_tokens' => 8,
+                        'total_tokens' => 99,
+                        'reasoning_tokens' => 3,
+                    ],
+                ],
+                [
+                    'provider' => 'grok',
+                    'slug' => 'matched-total',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 60,
+                        'output_tokens' => 9,
+                        'total_tokens' => 69,
+                        'reasoning_tokens' => 4,
+                    ],
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100600-inconsistent-partial-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'codex',
+                    'slug' => 'inconsistent-contributor',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 70,
+                        'output_tokens' => 10,
+                        'total_tokens' => 100,
+                        'reasoning_tokens' => 5,
+                    ],
+                ],
+                [
+                    'provider' => 'grok',
+                    'slug' => 'partial-contributor',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 80,
+                        'output_tokens' => 11,
+                        'total_tokens' => 91,
+                    ],
+                ],
+            ],
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-100700-invalid-precedence-token-usage',
+            loop: session_index_loop(outcome: 'complete'),
+            captures: [
+                [
+                    'provider' => 'grok',
+                    'slug' => 'invalid-contributor',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => -1,
+                        'output_tokens' => 1,
+                        'total_tokens' => 0,
+                        'reasoning_tokens' => 0,
+                    ],
+                ],
+                [
+                    'provider' => 'codex',
+                    'slug' => 'inconsistent-contributor',
+                    'status' => 'ok',
+                    'usage' => [
+                        'input_tokens' => 90,
+                        'output_tokens' => 12,
+                        'total_tokens' => 120,
+                    ],
+                ],
+            ],
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+        $unavailable = session_index_record($index, 'unavailable-token-usage');
+        $consistent = session_index_record($index, 'consistent-token-usage');
+        $partial = session_index_record($index, 'partial-token-usage');
+        $malformed = session_index_record($index, 'malformed-token-usage');
+        $nonInteger = session_index_record($index, 'non-integer-token-component');
+        $negative = session_index_record($index, 'negative-token-component');
+        $inconsistent = session_index_record($index, 'inconsistent-token-usage');
+        $inconsistentPartial = session_index_record($index, 'inconsistent-partial-token-usage');
+        $invalidPrecedence = session_index_record($index, 'invalid-precedence-token-usage');
+
+        expect($index)
+            ->toHaveKey('schema_version', 1)
+            ->and($unavailable)
+            ->not
+            ->toHaveKey('token_usage_status')
+            ->and($unavailable['token_usage'])
+            ->toBe([
+                'status' => 'unavailable',
+                'input_tokens' => null,
+                'output_tokens' => null,
+                'total_tokens' => null,
+                'reasoning_tokens' => null,
+            ])
+            ->and($consistent['token_usage'])
+            ->toBe([
+                'status' => 'consistent',
+                'input_tokens' => 30,
+                'output_tokens' => 5,
+                'total_tokens' => 35,
+                'reasoning_tokens' => 5,
+            ])
+            ->and($partial['token_usage'])
+            ->toBe([
+                'status' => 'partial',
+                'input_tokens' => 70,
+                'output_tokens' => 12,
+                'total_tokens' => null,
+                'reasoning_tokens' => null,
+            ]);
+
+        foreach ([$malformed, $nonInteger, $negative, $invalidPrecedence] as $invalid) {
+            expect($invalid['token_usage'])->toBe([
+                'status' => 'invalid',
+                'input_tokens' => null,
+                'output_tokens' => null,
+                'total_tokens' => null,
+                'reasoning_tokens' => null,
+            ]);
+        }
+
+        expect($inconsistent['token_usage'])
+            ->toBe([
+                'status' => 'inconsistent',
+                'input_tokens' => 110,
+                'output_tokens' => 17,
+                'total_tokens' => 168,
+                'reasoning_tokens' => 7,
+            ])
+            ->and($inconsistentPartial['token_usage'])
+            ->toBe([
+                'status' => 'inconsistent',
+                'input_tokens' => 150,
+                'output_tokens' => 21,
+                'total_tokens' => null,
+                'reasoning_tokens' => null,
+            ]);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('serializes empty and populated candidate classifications as JSON objects', function (): void {
+    $workspace = session_index_workspace('candidate-classification-shape');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-110000-empty-classifications',
+            loop: session_index_loop(outcome: 'complete'),
+        );
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-110100-populated-classifications',
+            loop: session_index_loop(
+                outcome: 'complete + loop improvement',
+                candidateSignals: [
+                    'First signal -> promote -> durable correction',
+                    'Second signal -> reject -> local-only issue',
+                ],
+            ),
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $rawIndex = (string) file_get_contents("{$sessionsDir}/index.json");
+        $objectIndex = json_decode($rawIndex, false, 512, JSON_THROW_ON_ERROR);
+        $records = [];
+
+        foreach ($objectIndex->records as $record) {
+            $records[$record->slug] = $record;
+        }
+
+        expect($records['empty-classifications']->candidate_signals->classifications)
+            ->toBeInstanceOf(stdClass::class)
+            ->and((array) $records['empty-classifications']->candidate_signals->classifications)
+            ->toBe([])
+            ->and($records['populated-classifications']->candidate_signals->classifications)
+            ->toBeInstanceOf(stdClass::class)
+            ->and((array) $records['populated-classifications']->candidate_signals->classifications)
+            ->toBe([
+                'promote' => 1,
+                'reject' => 1,
+            ]);
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
+it('distinguishes invalid empty and partial aggregate capture manifests', function (): void {
+    $workspace = session_index_workspace('aggregate-capture-status');
+
+    try {
+        $sessionsDir = "{$workspace}/sessions";
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120000-malformed-aggregate',
+            loop: session_index_loop(outcome: 'complete'),
+        );
+        mkdir("{$sessionsDir}/2026-07-10-120000-malformed-aggregate/agent-sessions", recursive: true);
+        file_put_contents(
+            "{$sessionsDir}/2026-07-10-120000-malformed-aggregate/agent-sessions/manifest.json",
+            '{',
+        );
+
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120100-unusable-aggregate',
+            loop: session_index_loop(outcome: 'complete'),
+            aggregateManifest: [
+                'schema_version' => 1,
+                'sessions' => 'not-an-array',
+            ],
+        );
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120150-object-shaped-sessions',
+            loop: session_index_loop(outcome: 'complete'),
+        );
+        mkdir("{$sessionsDir}/2026-07-10-120150-object-shaped-sessions/agent-sessions", recursive: true);
+        file_put_contents(
+            "{$sessionsDir}/2026-07-10-120150-object-shaped-sessions/agent-sessions/manifest.json",
+            <<<'JSON'
+                {
+                    "schema_version": 1,
+                    "sessions": {}
+                }
+                JSON,
+        );
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120200-empty-aggregate',
+            loop: session_index_loop(outcome: 'complete'),
+            aggregateManifest: [
+                'schema_version' => 1,
+                'sessions' => [],
+            ],
+        );
+        session_index_archive(
+            sessionsDir: $sessionsDir,
+            basename: '2026-07-10-120300-partial-aggregate',
+            loop: session_index_loop(outcome: 'complete'),
+            aggregateManifest: [
+                'schema_version' => 1,
+                'sessions' => [
+                    [
+                        'provider' => 'codex',
+                        'status' => 'ok',
+                    ],
+                ],
+            ],
+        );
+
+        $write = run_session_index($sessionsDir, ['--write']);
+
+        expect($write->getExitCode())->toBe(0, $write->getErrorOutput());
+
+        $index = session_index_json($sessionsDir);
+
+        expect(session_index_record($index, 'malformed-aggregate'))
+            ->toHaveKey('capture_status', 'invalid')
+            ->and(session_index_record($index, 'unusable-aggregate'))
+            ->toHaveKey('capture_status', 'invalid')
+            ->and(session_index_record($index, 'object-shaped-sessions'))
+            ->toHaveKey('capture_status', 'invalid')
+            ->and(session_index_record($index, 'empty-aggregate'))
+            ->toHaveKey('capture_status', 'empty')
+            ->and(session_index_record($index, 'partial-aggregate'))
+            ->toHaveKey('capture_status', 'partial');
+    } finally {
+        session_index_remove($workspace);
+    }
+});
+
 it('normalizes accepted same-line and nested packet shapes for facets', function (): void {
     $workspace = session_index_workspace('facet-normalization');
 
