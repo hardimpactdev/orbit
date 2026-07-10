@@ -1075,6 +1075,7 @@ it('throws when the batch script fails, surfacing the host error output', functi
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('runWithoutMultiplexing')->andReturn($failure);
+    $host->shouldReceive('run')->andReturn(successfulProcessResult());
 
     expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::Operator, 'runZ'))
         ->toThrow(RuntimeException::class, 'Topology batch failed for operator');

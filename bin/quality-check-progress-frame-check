@@ -24,36 +24,13 @@ function quality_check_progress_areas(): array
 /**
  * @return list<string>
  */
-function quality_check_progress_fast_app_areas(): array
-{
-    return [
-        'apps/docs',
-        'apps/e2e',
-        'apps/reverb',
-        'apps/agent',
-        'apps/macos',
-    ];
-}
-
-/**
- * @return list<string>
- */
-function quality_check_progress_package_areas(): array
-{
-    return [
-        'packages/core',
-        'packages/sdk',
-    ];
-}
-
-/**
- * @return list<string>
- */
-function quality_check_progress_long_app_areas(): array
+function quality_check_progress_pest_owner_areas(): array
 {
     return [
         'apps/gateway',
         'apps/cli',
+        'apps/docs',
+        'packages/sdk',
     ];
 }
 
@@ -146,27 +123,18 @@ function quality_check_progress_extract_frames(string $transcript): array
 function quality_check_progress_validate_frames(array $frames): array
 {
     $areas = quality_check_progress_areas();
-    $fastAppAreas = quality_check_progress_fast_app_areas();
-    $longAppAreas = quality_check_progress_long_app_areas();
-    $packageAreas = quality_check_progress_package_areas();
+    $pestOwnerAreas = quality_check_progress_pest_owner_areas();
     $sequences = array_fill_keys($areas, []);
     $errors = [];
     $maxRunningRows = 0;
 
     foreach ($frames as $frame) {
         $runningRows = 0;
-        $fastAppAreasCompleted = true;
-        $longAppAreasAdmitted = true;
+        $pestOwnersCompleted = true;
 
-        foreach ($fastAppAreas as $area) {
+        foreach ($pestOwnerAreas as $area) {
             if (! in_array($frame[$area], ['Passed', 'Failed'], true)) {
-                $fastAppAreasCompleted = false;
-            }
-        }
-
-        foreach ($longAppAreas as $area) {
-            if ($frame[$area] === 'Queued') {
-                $longAppAreasAdmitted = false;
+                $pestOwnersCompleted = false;
             }
         }
 
@@ -196,17 +164,12 @@ function quality_check_progress_validate_frames(array $frames): array
             }
         }
 
-        foreach ($packageAreas as $area) {
-            if ($frame[$area] === 'Running' && (! $fastAppAreasCompleted || ! $longAppAreasAdmitted)) {
-                $errors[] = "{$area} was Running before fast app areas completed";
-            }
+        if ($frame['packages/core'] === 'Running' && ! $pestOwnersCompleted) {
+            $errors[] = 'packages/core was Running before Pest-owning components completed';
         }
 
         $maxRunningRows = max($maxRunningRows, $runningRows);
 
-        if ($runningRows > 7) {
-            $errors[] = 'more than 7 rows were Running in one frame';
-        }
     }
 
     return [

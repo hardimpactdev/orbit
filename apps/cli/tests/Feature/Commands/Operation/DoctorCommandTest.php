@@ -2374,6 +2374,18 @@ describe('doctor human panel', function (): void {
             'adoptable' => false,
         ]];
 
+        app()->instance(StreamJsonIdleStepWriter::class, new class extends StreamJsonIdleStepWriter {
+            /**
+             * @param  callable(string): void  $write
+             * @param  resource|null  $stdout
+             */
+            public function start(string $line, callable $write, int $intervalSeconds = 1, mixed $stdout = null): void
+            {
+                $write($line);
+            }
+
+            public function stop(): void {}
+        });
         app()->forgetInstance(GatewayStreamClient::class);
         app()->instance(GatewayStreamClient::class, new class($report) {
             public function __construct(
@@ -2404,7 +2416,6 @@ describe('doctor human panel', function (): void {
                     'status' => 'running',
                     'message' => 'Checking app-prod-1',
                 ]);
-                usleep(1_100_000);
                 $onEvent(ProgressEventType::Step, [
                     'key' => 'app-prod-1',
                     'status' => 'done',
