@@ -2691,9 +2691,9 @@
             "capture_status": "partial"
         },
         {
-            "archive": "2026-07-10-235310-quality-check-performance",
-            "slug": "quality-check-performance",
-            "timestamp": "2026-07-10-235310",
+            "archive": "2026-07-10-235737-codex-quality-check-performance",
+            "slug": "codex-quality-check-performance",
+            "timestamp": "2026-07-10-235737",
             "loop_outcome": "complete + loop improvement",
             "loop_outcome_raw": "complete + loop improvement",
             "required_verification": {

@@ -66,7 +66,7 @@ from scattered artifacts.
 - `.orbit/quality-gates/quality-check-2026-07-10T214937Z-d9bc6628de34.json` - exit 0, 62s total, CLI Pest 27.0s, gateway Pest 57.9s
 - `.orbit/quality-gates/quality-check-2026-07-10T215046Z-1b02befbfba6.json` - exit 0, 64s total, CLI Pest 27.5s, gateway Pest 58.4s
 - `.orbit/quality-gates/quality-check-2026-07-10T215242Z-db6f0e435479.json` - exact commit `71e100b1d`, exit 0, 63s total, CLI Pest 27.1s, gateway Pest 58.3s
-- Session archive: .orbit/sessions/2026-07-10-235310-quality-check-performance
+- Session archive: .orbit/sessions/2026-07-10-235737-codex-quality-check-performance
 
 ## Harness Signals
 
