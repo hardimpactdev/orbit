@@ -233,6 +233,10 @@ git branch missing-loop
 git worktree add .worktrees/missing-loop missing-loop >/dev/null 2>&1
 
 expect_pass "$REPO" 'composer quality-check'
+boundary_command='git'
+boundary_command+=' merge --ff-only templated'
+patch_payload="*** Begin Patch\\n*** Update File: docs/example.md\\n@@\\n $boundary_command\\n*** End Patch"
+expect_pass "$REPO" "$patch_payload"
 expect_pass "$REPO" 'git merge --ff-only finalized'
 git -C "$REPO" merge --ff-only finalized >/dev/null
 expect_pass "$REPO" 'git merge --ff-only historical-pending'

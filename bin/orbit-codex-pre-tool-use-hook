@@ -70,6 +70,12 @@ if ($command === null || $command === '') {
     exit(unclassifiable_exit('no command was provided to classify'));
 }
 
+$trimmedCommand = trim($command);
+
+if (str_starts_with($trimmedCommand, '*** Begin Patch') && str_ends_with($trimmedCommand, '*** End Patch')) {
+    exit(unclassifiable_exit('patch payload is not an executable command'));
+}
+
 $action = classify_command($command);
 
 if ($action === null) {
