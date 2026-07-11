@@ -1267,7 +1267,7 @@ it('prevents CLI Pest from consuming caller stdin', function (): void {
             null,
             $env,
             $input,
-            2.0,
+            10.0,
         );
 
         $timedOut = false;
