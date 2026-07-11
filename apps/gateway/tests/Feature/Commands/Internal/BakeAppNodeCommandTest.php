@@ -11,15 +11,8 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
-use App\Services\Operations\OperationRunRecorder;
-use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -144,37 +137,6 @@ describe('orbit:internal:bake-app-node', function (): void {
                 'laravel-installer' => 'installed',
                 'php-cli' => 'installed',
             ]);
-    });
-
-    it('scopes prepared app convergence to the explicit ssh fallback', function (): void {
-        $applicationKey = config('app.key');
-
-        if (! is_string($applicationKey) || trim($applicationKey) === '') {
-            throw new LogicException('The test application key must be configured.');
-        }
-
-        app()->bind(RemoteLocalExecutor::class, fn ($app): RemoteLocalExecutor => new RemoteLocalExecutor(
-            transport: $app->make(RemoteExecutor::class),
-            commands: $app->make(LocalExecutorCommandBuilder::class),
-            operationTokens: $app->make(OperationTokenFactory::class),
-            activityLogger: $app->make(ActivityLogger::class),
-            operationRuns: $app->make(OperationRunRecorder::class),
-            applicationKey: $applicationKey,
-            defaultTransportPreference: NodeTransportPreference::Auto,
-        ));
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
-        $this->artisan('orbit:internal:bake-app-node', [
-            'name' => 'app-dev-1',
-            '--role' => 'app-dev',
-            '--host' => 'dev',
-            '--wireguard-address' => '10.6.0.4',
-            '--gateway-endpoint' => 'gateway',
-            '--user' => 'orbit',
-            '--tld' => 'test',
-        ])->assertSuccessful();
-
-        expect(request()->headers->get(ExplicitRemoteShellFallback::HEADER))->toBeNull();
     });
 
     it('emits app-dev bake phase timings', function (): void {

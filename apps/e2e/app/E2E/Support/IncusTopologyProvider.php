@@ -1293,6 +1293,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['dev'])) {
             $tasks['dev'] = implode(' && ', [
+                $this->preparedCaddyStartTask($instances['dev']),
                 $this->gatewayHostKeyScanTask($gateway, self::DevWireGuardIp),
                 $this->gatewayArtisanTask(
                     $gateway,
@@ -1379,6 +1380,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         return $tasks;
+    }
+
+    private function preparedCaddyStartTask(IncusInstance $instance): string
+    {
+        return sprintf(
+            'incus exec %s -- sh -lc %s',
+            escapeshellarg($instance->name()),
+            escapeshellarg('install -d -m 0755 /run/php && docker container start orbit-caddy >/dev/null'),
+        );
     }
 
     private function gatewayHostKeyScanTask(IncusInstance $gateway, string $wireGuardIp): string

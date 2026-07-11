@@ -108,6 +108,38 @@ it('waits for gateway host-key reachability before incus bake commands pin host 
         ->toBeLessThan(strpos($source, 'orbit:internal:bake-websocket-node app-dev-1'));
 });
 
+it('starts prepared app-dev Caddy before retarget bake', function (): void {
+    $host = new IncusHost(incusTopologyProviderTestConfig());
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'retargetBakeTasks');
+    $method->setAccessible(true);
+    $gateway = new IncusInstance($host, 'gateway', commandTransport: true);
+    $tasks = $method->invoke(
+        $provider,
+        [
+            'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+            'gateway' => $gateway,
+            'dev' => new IncusInstance($host, 'dev', commandTransport: true),
+        ],
+        $gateway,
+        E2ETopologyKind::OperatorGatewayAppdev,
+        true,
+    );
+
+    $runtimeDirectory = strpos(haystack: $tasks['dev'], needle: 'install -d -m 0755 /run/php');
+    $caddyStart = strpos(haystack: $tasks['dev'], needle: 'docker container start orbit-caddy');
+    $bake = strpos(haystack: $tasks['dev'], needle: 'orbit:internal:bake-app-node app-dev-1');
+
+    expect($tasks['dev'])
+        ->toContain("incus exec 'dev'")
+        ->not->toContain('/home/orbit/.local/bin/orbit')
+        ->not->toContain('/home/orbit/.config/orbit/install.json')->and($runtimeDirectory)->toBeInt()->and(
+            $caddyStart,
+        )->toBeInt()->and($bake)->toBeInt()->and($runtimeDirectory)->toBeLessThan($caddyStart)->and(
+            $caddyStart,
+        )->toBeLessThan($bake);
+});
+
 it('waits for stable gateway ssh reachability after prepared incus retargeting', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 

@@ -13,7 +13,6 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeRegistryWriter;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -105,25 +104,6 @@ class BakeAppNodeCommand extends Command
             return;
         }
 
-        $previousTransportPreference = request()->headers->get(ExplicitRemoteShellFallback::HEADER);
-        request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
-        try {
-            $this->convergeDevelopmentNode($nodeConverger, $node, $timingRole);
-        } finally {
-            request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
-            if ($previousTransportPreference !== null) {
-                request()->headers->set(ExplicitRemoteShellFallback::HEADER, $previousTransportPreference);
-            }
-        }
-    }
-
-    private function convergeDevelopmentNode(
-        NodeConverger $nodeConverger,
-        Node $node,
-        string $timingRole,
-    ): void {
         $freshNode = $node->fresh();
         $node = $freshNode instanceof Node ? $freshNode : $node;
 
