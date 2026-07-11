@@ -488,7 +488,7 @@ final class E2ECurrentCheckout
             'if mountpoint -q "$target"; then $sudo_prefix umount "$target"; fi',
             $resetCommand,
             'mkdir -p "$target" "$upper" "$work"',
-            'if [ -n "$sudo_prefix" ]; then $sudo_prefix chown -R "$(id -u):$(id -g)" "$target" "$upper" "$work"; fi',
+            'if [ -n "$sudo_prefix" ]; then $sudo_prefix chown "$(id -u):$(id -g)" "$target" "$upper" "$work"; fi',
             '$sudo_prefix mount -t overlay overlay -o "lowerdir=$source,upperdir=$upper,workdir=$work" "$target"',
         ]);
     }

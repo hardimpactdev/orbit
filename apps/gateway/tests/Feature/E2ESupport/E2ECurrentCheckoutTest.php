@@ -284,6 +284,19 @@ it('runs source-mounted Incus checkouts from a VM-local overlay runtime path', f
         ))->toContain('checkout.source-overlay');
 });
 
+it('avoids recursively changing preserved overlay contents during source sync', function (): void {
+    $command = E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
+        '/home/orbit/orbit',
+        '/home/orbit/orbit-run',
+        resetUpper: false,
+    );
+
+    expect($command)
+        ->toContain(': preserve overlay upperdir')
+        ->toContain('chown "$(id -u):$(id -g)" "$target" "$upper" "$work"')
+        ->not->toContain('chown -R');
+});
+
 it('refreshes source-mounted Incus gateway settings and CLI trust config', function (): void {
     $operatorCommands = [];
     $gatewayCommands = [];
