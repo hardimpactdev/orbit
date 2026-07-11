@@ -619,6 +619,13 @@ it('uses the configured remote docker source path for source-mounted bind mounts
             return $publicKeyResult;
         }
 
+        if (str_contains($command, 'flock -w 30 9')) {
+            return Process::result(implode("\n", [
+                '__ORBIT_SOURCE_SYNC_LOCK_READY__',
+                '__ORBIT_SOURCE_SYNC_LOCK_RELEASED__',
+            ]));
+        }
+
         if (
             $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'

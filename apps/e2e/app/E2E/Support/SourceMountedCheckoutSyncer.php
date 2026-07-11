@@ -34,16 +34,18 @@ final readonly class SourceMountedCheckoutSyncer
         ?E2EPhaseTimer $timer = null,
         ?string $scope = null,
     ): string {
-        $operation = fn (): string => $this->withSyncLock(
+        $operation = fn (): string => self::stringResult($this->withSyncLock(
             host: $host,
             provider: $provider,
-            criticalSection: static fn (Closure $syncSource): string => $syncSource(),
+            criticalSection: static fn (Closure $syncSource): string => self::stringResult($syncSource()),
             scope: $scope,
-        );
+        ));
 
-        return $timer !== null
-            ? $timer->measure('source-sync', $operation)
-            : $operation();
+        return self::stringResult(
+            $timer !== null
+                ? $timer->measure('source-sync', $operation)
+                : $operation(),
+        );
     }
 
     /**
@@ -170,6 +172,15 @@ final readonly class SourceMountedCheckoutSyncer
         $slug = trim($slug, '-._');
 
         return $slug !== '' ? $slug : $fallback;
+    }
+
+    private static function stringResult(mixed $result): string
+    {
+        if (! is_string($result)) {
+            throw new LogicException('The source sync operation must return its source path.');
+        }
+
+        return $result;
     }
 
     /**

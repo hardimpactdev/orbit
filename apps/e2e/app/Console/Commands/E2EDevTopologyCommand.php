@@ -68,7 +68,7 @@ class E2EDevTopologyCommand extends Command
      * @var (Closure(E2ETopologyKind, list<string>): array{
      *     host: string,
      *     run_id: string,
-     *     source_path?: string,
+     *     source_path?: string|null,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -85,7 +85,7 @@ class E2EDevTopologyCommand extends Command
      * @param  Closure(E2ETopologyKind, list<string>): array{
      *     host: string,
      *     run_id: string,
-     *     source_path?: string,
+     *     source_path?: string|null,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -154,12 +154,23 @@ class E2EDevTopologyCommand extends Command
      *     gateway_ip: string,
      *     instances: array<string, string>,
      *     checkouts: array<string, string>,
-     *     created_at: string
+     *     created_at: string,
+     *     release_command: string,
+     *     timings?: list<array{name: string, seconds: float}>,
+     *     network?: string,
+     *     managed_containers?: list<string>,
+     *     volumes?: list<string>
      * }
      */
     public function acquireRetainedIncusTopology(E2ETopologyKind $kind, array $displayRoles): array
     {
-        return $this->acquireRetainedTopology('incus', $kind, $displayRoles);
+        $manifest = $this->acquireRetainedTopology('incus', $kind, $displayRoles);
+
+        if (! isset($manifest['source_path'])) {
+            throw new \LogicException('A retained Incus topology must record its source path.');
+        }
+
+        return $manifest;
     }
 
     /**
@@ -175,7 +186,12 @@ class E2EDevTopologyCommand extends Command
      *     gateway_ip: string,
      *     instances: array<string, string>,
      *     checkouts: array<string, string>,
-     *     created_at: string
+     *     created_at: string,
+     *     release_command: string,
+     *     timings?: list<array{name: string, seconds: float}>,
+     *     network?: string,
+     *     managed_containers?: list<string>,
+     *     volumes?: list<string>
      * }
      */
     private function acquireRetainedTopology(
@@ -202,14 +218,31 @@ class E2EDevTopologyCommand extends Command
      * @param  array{
      *     host: string,
      *     run_id: string,
-     *     source_path?: string,
+     *     source_path?: string|null,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
      *     checkouts: array<string, string>,
      *     timings?: list<array{name: string, seconds: float}>
      * }  $prepared
-     * @return array<string, mixed>
+     * @return array{
+     *     id: string,
+     *     kind: string,
+     *     provider: string,
+     *     host: string,
+     *     run_id: string,
+     *     ssh_key_path: string,
+     *     gateway_ip: string,
+     *     instances: array<string, string>,
+     *     checkouts: array<string, string>,
+     *     created_at: string,
+     *     release_command: string,
+     *     timings?: list<array{name: string, seconds: float}>,
+     *     source_path?: string,
+     *     network?: string,
+     *     managed_containers?: list<string>,
+     *     volumes?: list<string>
+     * }
      */
     private function retainedManifest(
         E2EConfig $config,
@@ -340,13 +373,16 @@ class E2EDevTopologyCommand extends Command
             throw $exception;
         }
 
+        $operator = $lease->operator();
+        $sourcePath =
+            $providerName === 'incus' && $operator instanceof IncusInstance
+                ? $operator->hostSourcePath()
+                : null;
+
         return [
             'host' => $host,
             'run_id' => $runId,
-            'source_path' =>
-                $providerName === 'incus' && $lease->operator() instanceof IncusInstance
-                    ? $lease->operator()->hostSourcePath()
-                    : null,
+            'source_path' => $sourcePath,
             'ssh_key_path' => $lease->sshKeyPair()->privateKeyPath,
             'gateway_ip' => $lease->gatewayApiIp(),
             'instances' => $this->instanceNamesByRole($lease, $this->manifestRolesForKind($kind)),
@@ -513,15 +549,24 @@ class E2EDevTopologyCommand extends Command
      *     gateway_ip: string,
      *     instances: array<string, string>,
      *     checkouts: array<string, string>,
-     *     created_at: string
+     *     created_at: string,
+     *     release_command: string,
+     *     timings?: list<array{name: string, seconds: float}>,
+     *     network?: string,
+     *     managed_containers?: list<string>,
+     *     volumes?: list<string>
      * }  $manifest
      */
     private function renderAcquired(array $manifest, bool $json): int
     {
-        $handles = $this->buildHandles($manifest);
-        $releaseCommand = is_string($manifest['release_command'] ?? null)
-            ? $manifest['release_command']
-            : $this->releaseCommandFor($manifest['provider'], $manifest['id']);
+        $handles = $this->buildHandles(
+            $manifest['host'],
+            $manifest['provider'],
+            $manifest['gateway_ip'],
+            $manifest['instances'],
+            $manifest['checkouts'],
+        );
+        $releaseCommand = $manifest['release_command'];
 
         if ($json) {
             $this->line(json_encode([
@@ -543,8 +588,8 @@ class E2EDevTopologyCommand extends Command
         $this->line("Gateway API: http://{$manifest['gateway_ip']}");
         $this->renderTimings($manifest);
 
-        if ($this->sourceMountedCheckout($manifest)) {
-            $runtimeCheckout = $this->sourceMountedRuntimeCheckout($manifest);
+        if ($this->sourceMountedCheckout($manifest['checkouts'])) {
+            $runtimeCheckout = $this->sourceMountedRuntimeCheckout($manifest['checkouts']);
 
             $this->line('Source-mounted checkout: '.E2ECurrentCheckout::sourceMountedGuestPath());
 
@@ -606,11 +651,11 @@ class E2EDevTopologyCommand extends Command
     }
 
     /**
-     * @param  array{checkouts: array<string, string>}  $manifest
+     * @param  array<string, string>  $checkouts
      */
-    private function sourceMountedCheckout(array $manifest): bool
+    private function sourceMountedCheckout(array $checkouts): bool
     {
-        return collect($manifest['checkouts'])
+        return collect($checkouts)
             ->contains(
                 fn (string $checkout): bool => (
                     $checkout === E2ECurrentCheckout::sourceMountedGuestPath()
@@ -620,11 +665,11 @@ class E2EDevTopologyCommand extends Command
     }
 
     /**
-     * @param  array{checkouts: array<string, string>}  $manifest
+     * @param  array<string, string>  $checkouts
      */
-    private function sourceMountedRuntimeCheckout(array $manifest): ?string
+    private function sourceMountedRuntimeCheckout(array $checkouts): ?string
     {
-        foreach ($manifest['checkouts'] as $checkout) {
+        foreach ($checkouts as $checkout) {
             if (! is_string($checkout)) {
                 continue;
             }
@@ -645,23 +690,29 @@ class E2EDevTopologyCommand extends Command
     }
 
     /**
-     * @param  array{
-     *     host: string,
-     *     gateway_ip: string,
-     *     instances: array<string, string>,
-     *     checkouts: array<string, string>
-     * }  $manifest
-     * @return list<array{role: string, instance: string, ssh_example: string, endpoint?: string, curl_example?: string}>
+     * @param  array<string, string>  $instances
+     * @param  array<string, string>  $checkouts
+     * @return list<array{
+     *     role: string,
+     *     instance: string,
+     *     ssh_example: string,
+     *     endpoint?: string,
+     *     perf_example?: string,
+     *     note?: string
+     * }>
      */
-    private function buildHandles(array $manifest): array
-    {
-        $host = $manifest['host'];
-        $provider = $manifest['provider'] ?? 'incus';
+    private function buildHandles(
+        string $host,
+        string $provider,
+        string $gatewayIp,
+        array $instances,
+        array $checkouts,
+    ): array {
         $handles = [];
 
-        foreach ($manifest['instances'] as $role => $instance) {
+        foreach ($instances as $role => $instance) {
             $user = $this->userForRole($role);
-            $checkout = $manifest['checkouts'][$role] ?? "/home/{$user}/orbit";
+            $checkout = $checkouts[$role] ?? "/home/{$user}/orbit";
 
             $handle = [
                 'role' => $role,
@@ -682,7 +733,7 @@ class E2EDevTopologyCommand extends Command
                 // bootstrap over plain http with no auth, so it is a clean
                 // round-trip signal for how fast the gateway responds. Works with
                 // no app deployed.
-                $command = "curl -sS -o /dev/null -w 'gateway /api/ca/root: %{time_total}s\\n' http://{$manifest['gateway_ip']}/api/ca/root";
+                $command = "curl -sS -o /dev/null -w 'gateway /api/ca/root: %{time_total}s\\n' http://{$gatewayIp}/api/ca/root";
                 $handle['perf_example'] = $provider === 'docker'
                     ? $this->dockerExecExample($host, $instance, 'root', $command)
                     : sprintf(

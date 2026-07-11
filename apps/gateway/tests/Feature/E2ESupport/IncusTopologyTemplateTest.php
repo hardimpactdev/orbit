@@ -788,16 +788,6 @@ it('adds a source mount before start for source-mounted Incus retained topologie
     $config = makeIncusTopologyTemplateTestConfig();
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     mockIncusTopologyCurrentSnapshots($host, 2);
-    $host
-        ->shouldReceive('run')
-        ->once()
-        ->withArgs(
-            fn (string $command, int $timeoutSeconds): bool => (
-                $timeoutSeconds === 30
-                && $command === "test -d '/srv/orbit-source' && test -f '/srv/orbit-source/apps/cli/orbit'"
-            ),
-        )
-        ->andReturn(successfulProcessResult());
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_INCUS_SOURCE_PATH' => '/srv/orbit-source',
@@ -808,6 +798,7 @@ it('adds a source mount before start for source-mounted Incus retained topologie
             'runSource',
             IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
             sourceMounted: true,
+            sourcePath: '/srv/orbit-source/retained/runSource',
         );
 
         expect($script)
@@ -815,19 +806,19 @@ it('adds a source mount before start for source-mounted Incus retained topologie
                 "if incus config device get 'orbit-e2e-runSource-operator' orbit-source path >/dev/null 2>&1; then",
             )
             ->toContain(
-                "  incus config device add 'orbit-e2e-runSource-operator' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true",
+                "  incus config device add 'orbit-e2e-runSource-operator' orbit-source disk source='/srv/orbit-source/retained/runSource' path='/home/orbit/orbit' shift=true",
             )
             ->toContain(
-                "  incus config device add 'orbit-e2e-runSource-gateway' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true",
+                "  incus config device add 'orbit-e2e-runSource-gateway' orbit-source disk source='/srv/orbit-source/retained/runSource' path='/home/orbit/orbit' shift=true",
             )
             ->toContain(
-                "incus config device set 'orbit-e2e-runSource-operator' orbit-source source='/srv/orbit-source'",
+                "incus config device set 'orbit-e2e-runSource-operator' orbit-source source='/srv/orbit-source/retained/runSource'",
             )
             ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source path='/home/orbit/orbit'")
             ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source shift=true")
             ->not
             ->toContain('shift=true || true')
-            ->and(strpos($script, "orbit-source disk source='/srv/orbit-source'"))
+            ->and(strpos($script, needle: "orbit-source disk source='/srv/orbit-source/retained/runSource'"))
             ->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runSource-operator'"));
     });
 });

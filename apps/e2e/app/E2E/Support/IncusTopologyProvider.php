@@ -168,11 +168,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         ): array {
             $cycleTimer->measure('reset.worker-network', fn () => $workerNetwork->ensureOn($host));
 
-            $sourcePath = $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync(
-                $host->config->host,
-                'incus',
-                scope: $options->sourceMountedCheckout ? $runId : null,
-            ));
+            $sourcePath = self::sourcePathResult(
+                $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync(
+                    $host->config->host,
+                    'incus',
+                    scope: $options->sourceMountedCheckout ? $runId : null,
+                )),
+            );
 
             $newInstances = IncusTopologyTemplate::clone(
                 $host,
@@ -356,11 +358,13 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         bool $sourceMounted,
         ?string $expectedPath,
     ): string {
-        $syncedPath = $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync(
-            $host->config->host,
-            'incus',
-            scope: $sourceMounted ? $runId : null,
-        ));
+        $syncedPath = self::sourcePathResult(
+            $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync(
+                $host->config->host,
+                'incus',
+                scope: $sourceMounted ? $runId : null,
+            )),
+        );
 
         if ($expectedPath !== null && ! hash_equals($expectedPath, $syncedPath)) {
             throw new \RuntimeException(
@@ -369,6 +373,15 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         return $syncedPath;
+    }
+
+    private static function sourcePathResult(mixed $result): string
+    {
+        if (! is_string($result)) {
+            throw new \LogicException('The source sync operation must return its source path.');
+        }
+
+        return $result;
     }
 
     private function removeScopedSourcePath(

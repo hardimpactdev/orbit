@@ -306,11 +306,17 @@ class E2EIncusCommand extends Command
      *     provider: string,
      *     host: string,
      *     run_id: string,
+     *     source_path: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
      *     checkouts: array<string, string>,
-     *     created_at: string
+     *     created_at: string,
+     *     release_command: string,
+     *     timings?: list<array{name: string, seconds: float}>,
+     *     network?: string,
+     *     managed_containers?: list<string>,
+     *     volumes?: list<string>
      * }  $manifest
      * @return array<string, mixed>
      */
@@ -922,7 +928,7 @@ class E2EIncusCommand extends Command
         $runtimeCheckouts = [];
         $syncer = new SourceMountedCheckoutSyncer;
 
-        $syncedPath = $syncer->withSyncLock(
+        $syncedPath = self::sourcePathResult($syncer->withSyncLock(
             host: $host,
             provider: 'incus',
             criticalSection: function (Closure $syncSource) use (
@@ -945,13 +951,15 @@ class E2EIncusCommand extends Command
                     );
                 }
 
+                $syncedPath = self::sourcePathResult($syncedPath);
+
                 $runtimeCheckouts = $this->refreshRuntimeCheckouts($manifest, $host);
 
                 return $syncedPath;
             },
             scope: $id,
             sourcePath: $sourcePath,
-        );
+        ));
 
         if (! hash_equals($sourcePath, $syncedPath)) {
             throw new RuntimeException(
@@ -960,6 +968,15 @@ class E2EIncusCommand extends Command
         }
 
         return $runtimeCheckouts;
+    }
+
+    private static function sourcePathResult(mixed $result): string
+    {
+        if (! is_string($result)) {
+            throw new \LogicException('The source sync operation must return its source path.');
+        }
+
+        return $result;
     }
 
     /** @return array<string, mixed> */
