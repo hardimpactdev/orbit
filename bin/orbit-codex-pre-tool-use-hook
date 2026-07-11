@@ -71,10 +71,16 @@ if ($command === null || $command === '') {
 }
 
 $trimmedCommand = trim($command);
+$patchLines = preg_split('/\R/', $trimmedCommand);
+$patchLineCounts = is_array($patchLines) ? array_count_values($patchLines) : [];
 
 if (
-    str_starts_with($trimmedCommand, '*** Begin Patch')
-    && str_ends_with($trimmedCommand, '*** End Patch')
+    is_array($patchLines)
+    && count($patchLines) >= 3
+    && $patchLines[0] === '*** Begin Patch'
+    && $patchLines[array_key_last($patchLines)] === '*** End Patch'
+    && ($patchLineCounts['*** Begin Patch'] ?? 0) === 1
+    && ($patchLineCounts['*** End Patch'] ?? 0) === 1
     && preg_match('/^\*\*\* (?:Add|Update|Delete) File: .+$/m', $trimmedCommand) === 1
 ) {
     exit(unclassifiable_exit('patch payload is not an executable command'));
