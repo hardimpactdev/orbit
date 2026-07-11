@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-11T16:00:25+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-loop-program-trial-b/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-11-180025-codex-fix-hook-patch-classification",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "afe874337514b52b9c9d1b092156a085489dc41b213d38e56f15b52acaf097a9"
+    },
+    "branch": "codex/fix-hook-patch-classification",
+    "candidate_commit": "479c6d4f240549caf57b39b759099952b71cb9e3",
+    "accepted_feature_tip": "479c6d4f240549caf57b39b759099952b71cb9e3",
+    "accepted_main_tip": "d59aedfdebb41f1b1c1875ac7950b4bb789bc831",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}

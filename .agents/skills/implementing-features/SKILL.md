@@ -124,10 +124,10 @@ bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
 
 The conservative venues are:
 
-- `automated` as the proof venue for docs, tests, and declarative workflow
-  files;
-- `retained-incus` for executable repository tooling, CLI, and node/runtime
-  behavior;
+- `automated` as the proof venue for docs, tests, declarative workflow files,
+  and repository tooling under `bin/`; repository tooling still requires
+  diff-routed `composer quality-check`;
+- `retained-incus` for CLI and node/runtime behavior;
 - `browser` for web UI;
 - `host-macos` for native macOS behavior.
 

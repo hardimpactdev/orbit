@@ -87,13 +87,15 @@ changed files:
 
 | Venue | Use |
 | --- | --- |
-| `automated` | Proof venue for docs, tests, and declarative workflow files |
-| `retained-incus` | Executable repository tooling, CLI, and server/runtime behavior |
+| `automated` | Proof venue for docs, tests, declarative workflow files, and repository tooling under `bin/` |
+| `retained-incus` | CLI commands and server or node runtime behavior |
 | `browser` | Gateway or docs web UI |
 | `host-macos` | Native macOS Agent behavior |
 
 Run `ready` only after recording the venue proof. It refuses every
 non-`automated` venue unless `Verification.runtime` is `passed`.
+Repository tooling still requires diff-routed `composer quality-check`; it has
+no retained topology target.
 
 Work that still requires human judgment needs explicit user acceptance before
 merge. Other work is accepted by the automated actor after reviewer PASS and
