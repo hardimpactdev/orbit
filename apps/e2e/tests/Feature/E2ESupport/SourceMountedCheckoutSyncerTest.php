@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\E2E\Support\SourceMountedCheckoutMutationFence;
 use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\Process as SymfonyProcess;
 
 function source_mounted_sync_process_result(PendingProcess $process, string $output = ''): ProcessResult
 {
@@ -46,6 +48,7 @@ it('syncs the initiating worktree to a generated remote path without dependency 
         $path = new SourceMountedCheckoutSyncer()->sync('beast', 'docker');
         $commandsOutput = implode("\n", $commands);
         $ownershipRepairOffset = strpos($commandsOutput, 'ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"');
+        $guardInstallationOffset = strpos(haystack: $commandsOutput, needle: 'expected_guard_hash=');
         $rsyncOffset = strpos($commandsOutput, 'rsync -az --delete');
         $cleanupOffset = is_int($rsyncOffset) ? strpos($commandsOutput, 'rm -f', $rsyncOffset) : false;
         $hydrationOffset = strpos($commandsOutput, 'if command -v composer >/dev/null 2>&1; then');
@@ -57,11 +60,25 @@ it('syncs the initiating worktree to a generated remote path without dependency 
         );
         $expectedPathPrefix = '/tmp/orbit-e2e-sources/'.($worktreeSlug !== '' ? $worktreeSlug : 'orbit').'-docker-';
 
+        if (
+            ! is_int($ownershipRepairOffset)
+            || ! is_int($guardInstallationOffset)
+            || ! is_int($rsyncOffset)
+            || ! is_int($cleanupOffset)
+            || ! is_int($hydrationOffset)
+            || ! is_int($vendorArchiveOffset)
+            || ! is_int($permissionOffset)
+        ) {
+            throw new LogicException('The source sync commands did not contain every expected lifecycle phase.');
+        }
+
         expect($path)
             ->toStartWith($expectedPathPrefix)
             ->and($commandsOutput)
             ->toContain('ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"')
             ->toContain('chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work')
+            ->toContain('/tmp/orbit-e2e-source-locks/helpers/rsync-guard-')
+            ->toContain('expected_guard_hash=')
             ->toContain('rsync -az --delete')
             ->toContain(escapeshellarg(repo_path().'/'))
             ->toContain("'beast:{$path}/'")
@@ -125,18 +142,14 @@ it('syncs the initiating worktree to a generated remote path without dependency 
             ->toContain('chmod -R a+rwX "$path"')
             ->toContain('apps/gateway/storage')
             ->toContain('apps/gateway/bootstrap/cache')
-            ->toContain('.orbit-e2e-source-sync.lock')
-            ->and($ownershipRepairOffset)
-            ->not->toBeFalse()->and($cleanupOffset)
-            ->not->toBeFalse()->and($rsyncOffset)
-            ->not->toBeFalse()->and($hydrationOffset)
-            ->not->toBeFalse()->and($vendorArchiveOffset)
-            ->not->toBeFalse()->and($permissionOffset)
-            ->not->toBeFalse()->and($ownershipRepairOffset)->toBeLessThan($rsyncOffset)->and(
-                $rsyncOffset,
-            )->toBeLessThan($cleanupOffset)->and($cleanupOffset)->toBeLessThan($hydrationOffset)->and(
-                $hydrationOffset,
-            )->toBeLessThan($vendorArchiveOffset)->and($vendorArchiveOffset)->toBeLessThan($permissionOffset);
+            ->toContain('.orbit-e2e-source-sync.lock');
+
+        expect($ownershipRepairOffset)->toBeLessThan($guardInstallationOffset);
+        expect($guardInstallationOffset)->toBeLessThan($rsyncOffset);
+        expect($rsyncOffset)->toBeLessThan($cleanupOffset);
+        expect($cleanupOffset)->toBeLessThan($hydrationOffset);
+        expect($hydrationOffset)->toBeLessThan($vendorArchiveOffset);
+        expect($vendorArchiveOffset)->toBeLessThan($permissionOffset);
     } finally {
         if (is_string($previousTestToken)) {
             putenv("TEST_TOKEN={$previousTestToken}");
@@ -343,6 +356,127 @@ it('holds a live remote flock for the complete source sync', function (): void {
         ->toContain('__ORBIT_SOURCE_SYNC_LOCK_RELEASED__')
         ->not->toContain('lock='.escapeshellarg("{$sourcePath}/.orbit-e2e-source-sync.lock"))
         ->not->toContain('"$$" > "$lock/pid"')->toContain('kill -0 "$owner_pid"');
+});
+
+it('keeps the rsync remote guard transport-safe for legacy rsync clients', function (): void {
+    $mutationFence = new SourceMountedCheckoutMutationFence(
+        '/tmp/orbit-e2e-sources/example/retained/dev-example',
+        '0123456789abcdef0123456789abcdef',
+    );
+    $rsyncGuard = $mutationFence->rsyncGuard();
+    $remotePath = $rsyncGuard->remotePath();
+    $installer = $rsyncGuard->installationScript();
+
+    expect($remotePath)
+        ->toMatch(
+            '#\\A/tmp/orbit-e2e-source-locks/helpers/rsync-guard-[a-f0-9]{64} '
+            .'/tmp/orbit-e2e-source-locks/[a-f0-9]{64}\\.mutation\\.lock '
+            .'/tmp/orbit-e2e-source-locks/[a-f0-9]{64}\\.generation '
+            .'[a-f0-9]{32}\\z#D',
+        )
+        ->not->toContain("\n")
+        ->not->toContain("'")
+        ->not->toContain('"')
+        ->not->toContain('\\')
+        ->not->toContain('$')
+        ->not->toContain(';');
+
+    expect(explode(' ', $remotePath))->toHaveCount(4);
+    expect($installer)
+        ->toContain('#!/usr/bin/env bash')
+        ->toContain('flock -w 1200 -x 8')
+        ->toContain('shift 3')
+        ->toContain('exec flock -n -x 8 rsync "$@"')
+        ->toContain('sha256sum "$guard_temp"')
+        ->toContain('ln "$guard_temp" "$guard_path"')
+        ->toContain('[ ! -x "$guard_path" ]');
+});
+
+it('passes the production guard through the local rsync remote-shell transport', function (): void {
+    if (! is_executable('/usr/bin/rsync')) {
+        test()->markTestSkipped('/usr/bin/rsync is required to exercise its remote-shell parser.');
+    }
+
+    $files = new Filesystem;
+    $temporaryPath = sys_get_temp_dir().'/orbit-rsync-guard-'.bin2hex(random_bytes(8));
+    $sourcePath = $temporaryPath.'/source';
+    $destinationPath = $temporaryPath.'/destination';
+    $fakeBinPath = $temporaryPath.'/bin';
+    $generation = bin2hex(random_bytes(16));
+    $mutationFence = new SourceMountedCheckoutMutationFence($destinationPath, $generation);
+
+    $files->ensureDirectoryExists($sourcePath);
+    $files->ensureDirectoryExists($destinationPath);
+    $files->ensureDirectoryExists($fakeBinPath);
+    $files->ensureDirectoryExists(
+        path: SourceMountedCheckoutMutationFence::LOCK_DIRECTORY,
+        mode: 0o700,
+    );
+    $files->put($sourcePath.'/transport-proof.txt', "legacy rsync transport proof\n");
+    $files->put($mutationFence->generationFilePath(), $generation);
+    $files->put($fakeBinPath.'/ssh', <<<'SHELL'
+        #!/bin/sh
+        set -eu
+        shift
+        exec /bin/sh -c "$*"
+        SHELL);
+    $files->put($fakeBinPath.'/flock', <<<'SHELL'
+        #!/bin/sh
+        set -eu
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -w) shift 2 ;;
+                -n|-x) shift ;;
+                [0-9]*) shift; break ;;
+                *) break ;;
+            esac
+        done
+        if [ "$#" -eq 0 ]; then exit 0; fi
+        exec "$@"
+        SHELL);
+    $files->put($fakeBinPath.'/sha256sum', <<<'SHELL'
+        #!/bin/sh
+        set -eu
+        if [ -x /usr/bin/sha256sum ]; then exec /usr/bin/sha256sum "$@"; fi
+        exec /usr/bin/shasum -a 256 "$@"
+        SHELL);
+    chmod(filename: $fakeBinPath.'/ssh', permissions: 0o700);
+    chmod(filename: $fakeBinPath.'/flock', permissions: 0o700);
+    chmod(filename: $fakeBinPath.'/sha256sum', permissions: 0o700);
+
+    $environment = ['PATH' => $fakeBinPath.':'.(string) getenv('PATH')];
+
+    try {
+        $installer = new SymfonyProcess(
+            command: ['/bin/bash', '-s'],
+            env: $environment,
+        );
+        $rsyncGuard = $mutationFence->rsyncGuard();
+        $installer->setInput($mutationFence->guardedScript($rsyncGuard->installationScript()));
+        $installer->mustRun();
+
+        $rsync = new SymfonyProcess(
+            command: [
+                '/usr/bin/rsync',
+                '-az',
+                '--rsync-path',
+                $rsyncGuard->remotePath(),
+                '-e',
+                $fakeBinPath.'/ssh',
+                $sourcePath.'/',
+                'probe:'.$destinationPath.'/',
+            ],
+            env: $environment,
+        );
+        $rsync->mustRun();
+
+        expect($files->get($destinationPath.'/transport-proof.txt'))
+            ->toBe("legacy rsync transport proof\n");
+    } finally {
+        $files->delete($mutationFence->lockPath());
+        $files->delete($mutationFence->generationFilePath());
+        $files->deleteDirectory($temporaryPath);
+    }
 });
 
 it('hands the mutation fence into daemon-owned source helper containers', function (): void {

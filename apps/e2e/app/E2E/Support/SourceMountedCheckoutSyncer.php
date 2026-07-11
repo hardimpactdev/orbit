@@ -242,8 +242,15 @@ final readonly class SourceMountedCheckoutSyncer
             ),
             "Could not repair source checkout ownership on {$host}:{$targetPath}",
         );
+        $rsyncGuard = $mutationFence->rsyncGuard();
+        $rsyncGuardInstallation = $this->rsyncGuardInstallationSshCommand($host, $mutationFence, $rsyncGuard);
+        $this->mustRun(
+            $rsyncGuardInstallation['command'],
+            "Could not install the source checkout rsync guard on {$host}",
+            input: $rsyncGuardInstallation['input'],
+        );
         $rsync = $this->mustRun(
-            $this->rsyncCommand($host, $targetPath, $mutationFence),
+            $this->rsyncCommand($host, $targetPath, $rsyncGuard),
             "Could not rsync source checkout to {$host}:{$targetPath}",
         );
         $changed = trim($rsync->output()) !== '';
@@ -279,7 +286,7 @@ final readonly class SourceMountedCheckoutSyncer
     private function rsyncCommand(
         string $host,
         string $targetPath,
-        SourceMountedCheckoutMutationFence $mutationFence,
+        SourceMountedCheckoutRsyncGuard $rsyncGuard,
     ): string {
         $excludes = implode(' ', array_map(
             fn (string $pattern): string => '--exclude '.escapeshellarg($pattern),
@@ -289,7 +296,7 @@ final readonly class SourceMountedCheckoutSyncer
         return sprintf(
             'rsync -az --delete --itemize-changes %s --rsync-path %s %s %s',
             $excludes,
-            escapeshellarg($mutationFence->rsyncRemotePath()),
+            escapeshellarg($rsyncGuard->remotePath()),
             escapeshellarg(repo_path().'/'),
             escapeshellarg("{$host}:{$targetPath}/"),
         );
@@ -636,6 +643,24 @@ final readonly class SourceMountedCheckoutSyncer
         string $command,
     ): string {
         return $this->sshCommand($host, $mutationFence->guardedScript($command));
+    }
+
+    /**
+     * @return array{command: string, input: string}
+     */
+    private function rsyncGuardInstallationSshCommand(
+        string $host,
+        SourceMountedCheckoutMutationFence $mutationFence,
+        SourceMountedCheckoutRsyncGuard $rsyncGuard,
+    ): array {
+        return [
+            'command' => sprintf(
+                'ssh -o BatchMode=yes -o ConnectTimeout=10 %s %s',
+                escapeshellarg($host),
+                escapeshellarg('bash -s'),
+            ),
+            'input' => $mutationFence->guardedScript($rsyncGuard->installationScript()),
+        ];
     }
 
     /**

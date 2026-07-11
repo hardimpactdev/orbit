@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use LogicException;
+
 final readonly class SourceMountedCheckoutMutationFence
 {
     public const string LOCK_DIRECTORY = '/tmp/orbit-e2e-source-locks';
@@ -13,7 +15,11 @@ final readonly class SourceMountedCheckoutMutationFence
     public function __construct(
         private string $sourcePath,
         private string $generation,
-    ) {}
+    ) {
+        if (preg_match('/\A[a-f0-9]{32}\z/D', $this->generation) !== 1) {
+            throw new LogicException('The source lifecycle generation must be a 32-character lowercase hex token.');
+        }
+    }
 
     public function guardedScript(string $script): string
     {
@@ -31,9 +37,9 @@ final readonly class SourceMountedCheckoutMutationFence
         ]);
     }
 
-    public function rsyncRemotePath(): string
+    public function rsyncGuard(): SourceMountedCheckoutRsyncGuard
     {
-        return 'bash -c '.escapeshellarg($this->guardedScript('exec rsync "$@"')).' _';
+        return new SourceMountedCheckoutRsyncGuard($this);
     }
 
     public function releaseGuardScript(): string
