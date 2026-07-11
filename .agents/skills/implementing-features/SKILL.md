@@ -214,13 +214,19 @@ message rather than accepting a bare `source=user` claim.
 2. Lint it with `bin/orbit-feature-finalization-check --lint .orbit/loop.md`.
 3. Confirm exact successful gates, reviewer PASS, acceptance, feature HEAD,
    actual `git rev-parse main`, clean identity, and conflict-free merge preview.
-4. Merge with `bin/orbit-feature-finalization-check git merge <branch>`.
+4. Validate the exact merge mutation with
+   `bin/orbit-feature-finalization-check <exact git command>`.
+   After `FINALIZATION: PASS`, execute that exact command separately.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd, never cwd main.
    Use `--full` only for failure, escalation, security/release scope, or explicit
    request.
-6. Commit the archive/index, remove the worktree and branch through the wrapper,
-   and leave the primary checkout on updated `main` without altering unrelated
+6. Commit the archive/index.
+7. After the archive/index commit:
+   - Validate each cleanup mutation with
+     `bin/orbit-feature-finalization-check <exact git command>`.
+     After `FINALIZATION: PASS`, execute that exact cleanup command separately.
+   Leave the primary checkout on updated `main` without altering unrelated
    files.
 
 ## Trigger-Only Process Improvement

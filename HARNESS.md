@@ -203,7 +203,9 @@ passes.
 2. Confirm the worktree has no tracked dirt or nonignored untracked files.
 3. Confirm exact successful diff-routed artifacts, reviewer PASS, accepted
    feature/main tips, and a conflict-free non-mutating merge preview.
-4. Merge through `bin/orbit-feature-finalization-check git merge <branch>`.
+4. Validate the exact merge mutation with
+   `bin/orbit-feature-finalization-check <exact git command>`.
+   After `FINALIZATION: PASS`, execute that exact command separately.
 5. After merge, keep the accepted feature worktree open and run its now-landed
    `bin/orbit-session-archive` with the feature worktree as cwd. Do not run the
    compact archive from main. Archives are compact by default: `loop.md`,
@@ -211,9 +213,13 @@ passes.
    feature branch and archived bytes.
 6. Use `bin/orbit-session-archive --full` only for failure diagnosis,
    escalation, security or release scope, or an explicit request.
-7. Update the session index, commit the archive/index, remove the worktree and
-   branch through the same finalization wrapper, and leave the primary checkout
-   on updated `main` without disturbing unrelated files.
+7. Update the session index and commit the archive/index.
+8. After the archive/index commit:
+   - Validate each cleanup mutation with
+     `bin/orbit-feature-finalization-check <exact git command>`.
+     After `FINALIZATION: PASS`, execute that exact cleanup command separately.
+   Leave the primary checkout on updated `main` without disturbing unrelated
+   files.
 
 Compact cleanup proof is a regular `loop.md` plus a valid schema-v2 compact
 receipt. Historical/full archives remain valid through their legacy manifests.

@@ -37,15 +37,29 @@ it('documents clean candidate review escalation and landed archive ordering', fu
         ->toContain('commit the candidate and confirm a clean worktree')
         ->toContain('same general reviewer')
         ->toContain('terminal `PASS` or `FIX`')
-        ->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')
-        ->toContain('After merge, keep the accepted feature worktree open')
-        ->and(strpos($harness, 'Merge through `bin/orbit-feature-finalization-check git merge <branch>`'))
-        ->toBeLessThan(strpos($harness, 'After merge, keep the accepted feature worktree open'))
-        ->and($skill)
-        ->toContain('commit the candidate and confirm the worktree is')
-        ->toContain('same general reviewer')
-        ->toContain('terminal PASS or FIX')
-        ->toContain('After merge, keep the accepted feature worktree open');
+        ->toContain('Validate the exact merge mutation with')
+        ->toContain('`bin/orbit-feature-finalization-check <exact git command>`')
+        ->toContain('After `FINALIZATION: PASS`, execute that exact command separately.')
+        ->toContain('After the archive/index commit:')
+        ->toContain('Validate each cleanup mutation with')
+        ->toContain('After `FINALIZATION: PASS`, execute that exact cleanup command separately.')
+        ->not->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')->toContain(
+            'After merge, keep the accepted feature worktree open',
+        )->and(strpos($harness, 'Validate the exact merge mutation with'))->toBeLessThan(strpos(
+            $harness,
+            'After merge, keep the accepted feature worktree open',
+        ))->and($skill)->toContain('commit the candidate and confirm the worktree is')->toContain(
+            'same general reviewer',
+        )->toContain('terminal PASS or FIX')->toContain('Validate the exact merge mutation with')->toContain(
+            '`bin/orbit-feature-finalization-check <exact git command>`',
+        )->toContain('After `FINALIZATION: PASS`, execute that exact command separately.')->toContain(
+            'After the archive/index commit:',
+        )->toContain('Validate each cleanup mutation with')->toContain(
+            'After `FINALIZATION: PASS`, execute that exact cleanup command separately.',
+        )
+        ->not->toContain('Merge through `bin/orbit-feature-finalization-check git merge <branch>`')->toContain(
+            'After merge, keep the accepted feature worktree open',
+        );
 });
 
 it('lints the compact loop contract without historical ceremony', function (): void {
