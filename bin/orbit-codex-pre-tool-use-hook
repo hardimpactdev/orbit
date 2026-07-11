@@ -1458,22 +1458,35 @@ function compact_acceptance_provenance_problem(
         }
     }
 
-    if (! orbitLoopVenueSatisfies($venue, $minimumVenue, $review)) {
+    if (! orbitLoopVenueSatisfies($venue, $minimumVenue)) {
         return "acceptance venue {$venue} does not satisfy the diff-routed {$minimumVenue} venue";
     }
 
+    $runtimeProblem = orbitLoopRuntimeProofProblem($contents, $venue);
+
+    if ($runtimeProblem !== null) {
+        return $runtimeProblem;
+    }
+
     if (str_starts_with($acceptance, 'accepted - automated')) {
-        if ($acceptance === 'accepted - automated - reviewer-confirmed non-observable') {
-            return orbitLoopReviewSaysNonObservable($review)
+        if (in_array($acceptance, [
+            'accepted - automated - reviewer-confirmed no-human-judgment',
+            'accepted - automated - reviewer-confirmed non-observable',
+        ], true)) {
+            return orbitLoopReviewSaysNoHumanJudgment($review)
                 ? null
-                : 'automated acceptance says reviewer-confirmed non-observable, but review does not confirm non-observable';
+                : 'automated acceptance says no human judgment, but review requires human judgment';
         }
 
-        return 'acceptance provenance is invalid; automated acceptance must name reviewer-confirmed non-observable';
+        return 'acceptance provenance is invalid; automated acceptance must name reviewer-confirmed no-human-judgment';
     }
 
     if (preg_match('/^accepted - user @ (\S+)$/', $acceptance, $match) !== 1) {
         return 'acceptance provenance is invalid; expected an exact automated or user acceptance record';
+    }
+
+    if (! orbitLoopReviewRequiresHumanJudgment($review)) {
+        return 'human acceptance is unnecessary because review records no human judgment';
     }
 
     $sourceRef = $match[1];
@@ -1548,6 +1561,8 @@ function compact_loop_problems(string $contents): array
     $review = orbitLoopLabel($contents, 'Proof', 'Review');
     if (! orbitLoopReviewPassed($review)) {
         $problems[] = 'Review must be passed; current: '.($review ?? 'missing');
+    } elseif (orbitLoopReviewHumanJudgment($review) === null) {
+        $problems[] = 'Review must record human-judgment=required or human-judgment=not-required';
     }
 
     $reviewedTip = orbitLoopLabel($contents, 'Proof', 'Reviewed feature tip');

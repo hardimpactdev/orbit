@@ -254,7 +254,7 @@ it('uses one general reviewer and no standing specialist reviewers in the active
         ->toBeFile()
         ->and($reviewer)
         ->toContain('CHECKOUT_PROOF')
-        ->toContain('OBSERVABLE_CHANGE: yes|no')
+        ->toContain('HUMAN_JUDGMENT: required|not-required')
         ->toContain('VERDICT: PASS|FIX|ESCALATE')
         ->toContain('one concrete high-risk question')
         ->and($active)
@@ -315,6 +315,45 @@ it('keeps the native Orbit Agent development skill without a standing reviewer l
         ->and($implementing)
         ->toContain('macOS Agent: `tauri-agent-development`')
         ->not->toContain('.agents/review-personas/tauri-agent.md');
+});
+
+it('reserves human acceptance for judgment instead of deterministic checks', function (): void {
+    $harness = preg_replace('/\s+/', ' ', file_get_contents(repo_path('HARNESS.md')) ?: '') ?: '';
+    $skill = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '',
+    ) ?: '';
+    $reviewer = preg_replace('/\s+/', ' ', file_get_contents(repo_path('.agents/review-personas/general.md')) ?: '')
+    ?: '';
+    $implementingPrompt = file_get_contents(
+        repo_path('.agents/skills/implementing-features/agents/openai.yaml'),
+    ) ?: '';
+    $e2e = preg_replace(
+        '/\s+/',
+        ' ',
+        file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/SKILL.md')) ?: '',
+    ) ?: '';
+
+    expect($harness)
+        ->toContain('Never ask the user to execute a check the agent can execute')
+        ->toContain('only a prepared surface that requires human judgment')
+        ->and($skill)
+        ->toContain('Run every deterministic acceptance command yourself')
+        ->toContain('Do not hand the user a mechanical command checklist')
+        ->toContain('--actor=automated')
+        ->toContain('Do not send an acceptance handoff when the actor is automated')
+        ->toContain('Keep it open for the user only when')
+        ->and($reviewer)
+        ->toContain('HUMAN_JUDGMENT: required|not-required')
+        ->toContain('Executable files or a retained topology alone do not make a change human-observable')
+        ->toContain('all remaining acceptance actions are deterministic commands')
+        ->and($implementingPrompt)
+        ->toContain('complete the diff-derived proof venue')
+        ->toContain('involve the user only for remaining human judgment')
+        ->and($e2e)
+        ->toContain('Do not ask the user to run E2E for ordinary feature completion')
+        ->toContain('Only explain a manual E2E command after the user explicitly asks');
 });
 
 it('documents immutable feedback promotion and deterministic protection first', function (): void {

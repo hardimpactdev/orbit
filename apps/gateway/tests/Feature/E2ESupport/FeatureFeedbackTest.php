@@ -4,6 +4,30 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('shows global help without requiring feedback state', function (string $argument): void {
+    $workspace = sys_get_temp_dir().'/orbit-feedback-help-'.bin2hex(random_bytes(6));
+    mkdir($workspace, recursive: true);
+
+    try {
+        $process = new Process([repo_path('bin/orbit-feature-feedback'), $argument], $workspace);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(trim($process->getOutput()))
+            ->toBe('Usage: bin/orbit-feature-feedback record|promote|waive|relevant|show [options]')
+            ->and($process->getErrorOutput())
+            ->toBe('')
+            ->and(is_dir("{$workspace}/.orbit"))
+            ->toBeFalse();
+    } finally {
+        feedback_test_remove($workspace);
+    }
+})->with([
+    'long help' => '--help',
+    'short help' => '-h',
+]);
+
 it('round trips immutable feedback and linked promotion events', function (): void {
     require_once repo_path('bin/orbit-feedback-events.php');
 

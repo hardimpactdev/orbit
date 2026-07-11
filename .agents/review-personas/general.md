@@ -34,6 +34,13 @@ Report only concrete findings. Each finding contains severity, file/line or
 evidence ref, impact, and the smallest correction. Do not propose unrelated
 refactors or process improvements.
 
+Classify `HUMAN_JUDGMENT: required` only when proof leaves a prepared experience
+that still requires human judgment about intent, UX, or real-world behavior.
+Executable files or a retained topology alone do not make a change
+human-observable. If all remaining acceptance actions are deterministic commands
+an agent can run and inspect, classify it `not-required`; do not turn the user
+into a test runner.
+
 Use ESCALATE only when one concrete high-risk question genuinely requires
 specialized expertise. Name the specialist domain and exact question; do not
 dispatch a standing specialist suite.
@@ -41,7 +48,7 @@ dispatch a standing specialist suite.
 ## Required Final Lines
 
 ```text
-OBSERVABLE_CHANGE: yes|no
+HUMAN_JUDGMENT: required|not-required
 VERDICT: PASS|FIX|ESCALATE
 ```
 

@@ -190,15 +190,43 @@ function orbitLoopReviewPassed(?string $review): bool
     return orbitLoopStatusHead($review) === 'passed';
 }
 
-function orbitLoopReviewSaysNonObservable(?string $review): bool
+function orbitLoopReviewHumanJudgment(?string $review): ?string
 {
-    return orbitLoopReviewPassed($review) && preg_match('/\bnon[- ]observable\b/i', (string) $review) === 1;
+    if (! orbitLoopReviewPassed($review)) {
+        return null;
+    }
+
+    if (preg_match('/\bhuman-judgment=(required|not-required)\b/i', (string) $review, $match) === 1) {
+        return strtolower($match[1]);
+    }
+
+    if (preg_match('/\bnon[- ]observable\b/i', (string) $review) === 1) {
+        return 'not-required';
+    }
+
+    return preg_match('/\bobservable\b/i', (string) $review) === 1 ? 'required' : null;
+}
+
+function orbitLoopReviewRequiresHumanJudgment(?string $review): bool
+{
+    return orbitLoopReviewHumanJudgment($review) === 'required';
+}
+
+function orbitLoopReviewSaysNoHumanJudgment(?string $review): bool
+{
+    return orbitLoopReviewHumanJudgment($review) === 'not-required';
 }
 
 function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip): ?string
 {
-    if (! orbitLoopReviewPassed(orbitLoopLabel($markdown, 'Proof', 'Review'))) {
+    $review = orbitLoopLabel($markdown, 'Proof', 'Review');
+
+    if (! orbitLoopReviewPassed($review)) {
         return 'Review must be passed';
+    }
+
+    if (orbitLoopReviewHumanJudgment($review) === null) {
+        return 'Review must record human-judgment=required or human-judgment=not-required';
     }
 
     $reviewedFeature = orbitLoopLabel($markdown, 'Proof', 'Reviewed feature tip');
@@ -210,13 +238,24 @@ function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip):
     return null;
 }
 
-function orbitLoopVenueSatisfies(string $actual, string $minimum, ?string $review): bool
+function orbitLoopVenueSatisfies(string $actual, string $required): bool
 {
-    if ($actual === $minimum) {
-        return true;
+    return $actual === $required;
+}
+
+function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
+{
+    if ($venue === 'automated') {
+        return null;
     }
 
-    return $actual === 'automated' && orbitLoopReviewSaysNonObservable($review);
+    $runtime = orbitLoopNestedLabel($markdown, 'Proof', 'Verification', 'runtime');
+
+    if (orbitLoopStatusHead($runtime) !== 'passed') {
+        return "Verification runtime must be passed for acceptance venue {$venue}; current: ".($runtime ?? 'missing');
+    }
+
+    return null;
 }
 
 function orbitLoopAcceptedIdentityProblem(string $markdown, string $featureTip, string $mainTip): ?string

@@ -7,8 +7,16 @@ require_once __DIR__.'/orbit-feedback-events.php';
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-secret-rules.php';
 
+const ORBIT_FEATURE_FEEDBACK_USAGE = 'Usage: bin/orbit-feature-feedback record|promote|waive|relevant|show [options]';
+
 try {
     $command = $argv[1] ?? null;
+
+    if (in_array($command, ['--help', '-h'], true)) {
+        fwrite(STDOUT, ORBIT_FEATURE_FEEDBACK_USAGE.PHP_EOL);
+        exit(0);
+    }
+
     $options = feedbackOptions(array_slice($argv, 2));
     $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
     $orbitDir = rtrim((string) ($options['orbit-dir'] ?? "{$cwd}/.orbit"), '/');
@@ -20,9 +28,7 @@ try {
         'waive' => feedbackWaive($stream, $options),
         'relevant' => feedbackRelevant($stream, $cwd, $options),
         'show' => feedbackShow($stream, $options),
-        default => throw new RuntimeException(
-            'Usage: bin/orbit-feature-feedback record|promote|waive|relevant|show [options]',
-        ),
+        default => throw new RuntimeException(ORBIT_FEATURE_FEEDBACK_USAGE),
     };
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage().PHP_EOL);

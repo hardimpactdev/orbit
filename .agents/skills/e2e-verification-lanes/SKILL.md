@@ -12,9 +12,11 @@ Agents must not run, delegate, background, schedule, hook, or script any
 `composer test:e2e:docker`, `composer test:e2e:incus`,
 `composer test:e2e:provision:docker`, and `composer test:e2e:provision:incus`.
 
-E2E tests run only when the user explicitly invokes the Composer command from a
-shell. If E2E proof is desired, ask the user to run the command manually and
-share the terminal output or resulting `.orbit/quality-gates/` artifact.
+E2E tests run only when the user independently invokes the Composer command from
+a shell. Do not ask the user to run E2E for ordinary feature completion; use
+retained proof instead. Only explain a manual E2E command after the user
+explicitly asks about that lane. If they choose to run it, inspect the terminal
+output or resulting `.orbit/quality-gates/` artifact.
 
 For normal feature completion, use retained topology proof instead: record the
 topology id/kind, inspected roles or nodes, exact command, terminal/session or
@@ -38,7 +40,7 @@ Agents may not:
 - Treat missing E2E output as a feature-completion blocker; use retained
   topology proof for the feature gate.
 
-## Manual Command Reference
+## Manual Command Reference After An Explicit User Request
 
 These commands remain available for user-run checks only:
 

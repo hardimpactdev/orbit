@@ -51,7 +51,7 @@ Run the smallest relevant checks first, then the diff-routed broader gate:
 
 - docs-only: focused docs checks and `composer docs-lint`;
 - non-docs repository changes: focused owning tests and `composer quality-check`;
-- observable runtime behavior: the real acceptance venue below;
+- integrated runtime behavior: the real proof venue below;
 - rendering, progress, streaming, TTY, cadence, repaint, or liveness risk:
   capture PTY evidence; ordinary commands do not pay a PTY tax.
 
@@ -65,7 +65,7 @@ baseline exists.
 
 After checks pass, use one independent general reviewer from
 `.agents/review-personas/general.md`. The reviewer returns `PASS`, `FIX`, or
-`ESCALATE` and `OBSERVABLE_CHANGE: yes|no`.
+`ESCALATE` and `HUMAN_JUDGMENT: required|not-required`.
 
 - `PASS`: continue.
 - `FIX`: record `Review: fix`, reset `Reviewed feature tip: none`, return to
@@ -76,8 +76,9 @@ After checks pass, use one independent general reviewer from
   That reviewer then issues the terminal `PASS` or `FIX`, even when the answer
   requires no code delta. There are no standing specialist lanes.
 
-On terminal PASS, record `Reviewed feature tip` as the exact reviewed HEAD.
-Acceptance refuses a PASS recorded against any other commit.
+On terminal PASS, record `Reviewed feature tip` as the exact reviewed HEAD and
+include `human-judgment=required|not-required` in Review. Acceptance refuses a
+PASS recorded against any other commit or without that decision.
 
 ## Acceptance Venues
 
@@ -86,13 +87,29 @@ changed files:
 
 | Venue | Use |
 | --- | --- |
-| `automated` | Default route for docs, tests, and declarative workflow files; usable for acceptance only when the general reviewer explicitly marks the work non-observable |
+| `automated` | Proof venue for docs, tests, and declarative workflow files |
 | `retained-incus` | Executable repository tooling, CLI, and server/runtime behavior |
 | `browser` | Gateway or docs web UI |
 | `host-macos` | Native macOS Agent behavior |
 
-User-observable work requires explicit user acceptance before merge.
-Non-observable work may be accepted automatically after a reviewer PASS.
+Run `ready` only after recording the venue proof. It refuses every
+non-`automated` venue unless `Verification.runtime` is `passed`.
+
+Work that still requires human judgment needs explicit user acceptance before
+merge. Other work is accepted by the automated actor after reviewer PASS and
+the same diff-derived proof venue.
+The venue selects the required proof surface; the actor selects whether a user
+judgment remains. A `human-judgment=not-required` review permits an automated
+actor only after the diff-derived venue is proven. It never downgrades
+`retained-incus`, `browser`, or `host-macos` proof to `automated`.
+
+Agents run every deterministic check and inspect its output before acceptance.
+Never ask the user to execute a check the agent can execute. The user receives
+only a prepared surface that requires human judgment about intent, UX, or
+real-world behavior. Executable files or a conservatively derived venue do not
+by themselves create a human acceptance task. If no judgment surface remains,
+the general reviewer records `HUMAN_JUDGMENT: not-required` and acceptance is
+recorded by the automated actor at the already proven venue.
 
 ### Retained Incus Acceptance
 
@@ -105,15 +122,16 @@ build as the default acceptance path:
 4. Open one ready Solo terminal inside the relevant VM at
    `/home/orbit/orbit-run` and verify launcher identity.
 5. Exercise changed human output, JSON, failures, side effects, idempotency,
-   performance, and PTY behavior only where applicable.
-6. Send one concise `ACCEPTANCE READY` handoff with the exact terminal and
-   actions to try.
+   performance, and PTY behavior yourself where applicable.
+6. Only when judgment still remains, send one concise `ACCEPTANCE READY`
+   handoff pointing at the already prepared experience and the decision the
+   user must make. Do not hand off a command or check that an agent can run.
 
-CLI retained topology proof must run in a Solo terminal. Keep that Solo
-terminal open through feature completion and leave it available afterward so
-the user can inspect the addressed CLI commands and their output. On feedback,
-keep the topology, invalidate acceptance, fix, resync, restart only affected
-services, and repeat the affected proof.
+CLI retained topology proof must run in a Solo terminal. Keep that terminal open
+for a user only when `HUMAN_JUDGMENT: required`; otherwise it is agent-owned
+proof and may close after completion. On feedback, keep the topology, invalidate
+acceptance, fix, resync, restart only affected services, and repeat the affected
+proof.
 
 The `composer test:e2e*` commands are human-only. Agents never run, delegate,
 background, schedule, hook, script, or trigger them. Existing manual E2E
@@ -132,7 +150,7 @@ Record acceptance with `bin/orbit-feature-acceptance`:
 
 - user acceptance reads the verbatim message from STDIN and requires its
   `codex://` or `solo://` source reference;
-- automated acceptance always requires the reviewer’s non-observable result;
+- automated acceptance always requires `human-judgment=not-required`;
 - `Reviewed feature tip` is the exact HEAD that received reviewer PASS;
 - `Accepted feature tip` is the exact feature `HEAD`;
 - `Accepted main tip` is the actual `git rev-parse main` at acceptance or
@@ -225,6 +243,6 @@ explicit human-requested diagnostic; they are not ordinary delivery gates.
 
 Stop and request direction only when product intent is genuinely ambiguous,
 external authority is missing, safe required infrastructure is unavailable, or
-the user must evaluate an observable candidate. A test failure, reviewer FIX,
-main movement, or acceptance feedback is a state transition, not a reason to
-abandon the loop.
+the user must make a judgment automation cannot make. A test failure, reviewer
+FIX, main movement, or acceptance feedback is a state transition, not a reason
+to abandon the loop.

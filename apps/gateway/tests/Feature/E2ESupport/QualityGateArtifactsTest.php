@@ -1228,7 +1228,7 @@ it('keeps e2e test commands manual only across default gates and skills', functi
     }
 });
 
-it('requires retained cli topology proof to keep the solo terminal open', function (): void {
+it('keeps retained cli proof agent-owned unless human judgment remains', function (): void {
     $harness = (string) file_get_contents(repo_path('HARNESS.md'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
     $normalizedHarness = preg_replace('/\s+/', ' ', $harness) ?: '';
@@ -1236,13 +1236,12 @@ it('requires retained cli topology proof to keep the solo terminal open', functi
 
     expect($normalizedHarness)
         ->toContain('CLI retained topology proof must run in a Solo terminal')
-        ->toContain('Keep that Solo terminal open')
-        ->toContain('through feature completion')
-        ->toContain('leave it available afterward')
-        ->toContain('addressed CLI commands')
-        ->toContain('their output')
+        ->toContain('Keep that terminal open for a user only when')
+        ->toContain('`HUMAN_JUDGMENT: required`')
+        ->toContain('otherwise it is agent-owned proof')
         ->and($normalizedImplementingFeaturesSkill)
-        ->toContain('keep one ready Solo terminal at `/home/orbit/orbit-run`');
+        ->toContain('use one agent-owned Solo terminal at `/home/orbit/orbit-run`')
+        ->toContain('Keep it open for the user only when `HUMAN_JUDGMENT: required`');
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {

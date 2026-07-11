@@ -92,8 +92,10 @@ product authority and are not linted as product docs.
   must not recreate that setup flow manually. If the script cannot be used,
   stop and report the blocker instead of silently falling back.
 - When a feature is implemented and verified, follow `HARNESS.md` for one
-  independent review, real-surface acceptance, exact accepted feature/main
-  identity, merge, post-merge compact archive, and cleanup. Leave `~/orbit` on
+  independent review, diff-derived real-surface proof, human judgment only when
+  automation cannot decide intent or UX, exact accepted feature/main identity,
+  merge, post-merge compact archive, and cleanup. Agents run all deterministic
+  checks; never hand the user a mechanical command checklist. Leave `~/orbit` on
   updated `main`, and preserve unrelated dirty files; never discard user
   changes to make a merge easier.
 - Always make sure that `apps/docs/content/` describes the correct behavior. If
@@ -148,6 +150,8 @@ terminal/session or artifact path, and result in `.orbit/loop.md` or
 The `composer test:e2e*` commands and E2E tests remain available, but agents,
 skills, hooks, release flows, and default scripts must not trigger them. They
 run only when the user explicitly invokes the Composer command from a shell.
+Never ask the user to run them for ordinary feature completion; use retained
+topology proof.
 See `apps/docs/content/testing/README.md` for the full verification model and
 lane map.
 

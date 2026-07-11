@@ -1,4 +1,4 @@
 interface:
   display_name: "Implementing Features"
   short_description: "Own an Orbit feature from frame through land."
-  default_prompt: "Use this skill to own the current Orbit feature through FRAME, BUILD, PROVE, ACCEPT, and LAND. Implement directly when efficient; use only bounded workers that materially help. Require one general review bound to the exact Reviewed feature tip, real-surface acceptance for observable behavior, exact accepted tips, and compact archival from the still-open landed feature worktree."
+  default_prompt: "Use this skill to own the current Orbit feature through FRAME, BUILD, PROVE, ACCEPT, and LAND. Implement directly when efficient; use only bounded workers that materially help; complete the diff-derived proof venue, run every deterministic check yourself, and involve the user only for remaining human judgment. Require one general review bound to the exact Reviewed feature tip, exact accepted tips, and compact archival from the still-open landed feature worktree."

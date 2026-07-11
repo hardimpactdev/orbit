@@ -21,12 +21,13 @@ result.
   report the setup blocker; do not recreate the setup flow manually.
 - Preserve unrelated user state.
 - Never run, delegate, background, schedule, hook, script, or trigger a
-  `composer test:e2e*` command. A user may run one manually; agents may inspect
-  the resulting artifact.
+  `composer test:e2e*` command. Only explain that manual lane after the user
+  explicitly asks; agents may inspect an artifact the user independently
+  creates.
 - Keep product docs, executable coverage, and implementation aligned.
 - Reject every nonignored untracked file at review, acceptance, finalization,
   and retained-source sync boundaries.
-- User-observable work requires explicit user acceptance before merge.
+- Work with `human-judgment=required` needs explicit user acceptance before merge.
 - Do not rebase or amend an accepted feature tip.
 
 ## FRAME
@@ -75,7 +76,7 @@ diff-routed broader gate:
 - docs-only: `composer docs-lint`;
 - any non-docs repository change: `composer quality-check`;
 - rendering/progress/stream/TTY/cadence/repaint/liveness risk: PTY capture;
-- observable runtime behavior: the real acceptance venue after review.
+- integrated runtime behavior: the real proof venue after review.
 
 Promoted deterministic feedback protections are part of these normal gates
 when their surface matches. Do not invent a parallel pass-receipt system.
@@ -98,7 +99,7 @@ It returns:
 
 - `CHECKOUT_PROOF: ...`
 - concrete findings, if any;
-- `OBSERVABLE_CHANGE: yes|no`
+- `HUMAN_JUDGMENT: required|not-required`
 - `VERDICT: PASS|FIX|ESCALATE`
 
 On FIX, record `Review: fix`, reset `Reviewed feature tip: none`, return to BUILD
@@ -108,13 +109,14 @@ high-risk question. The specialist answers back to the same general reviewer,
 which issues the terminal PASS or FIX even when no code delta was needed. One
 reviewer PASS is enough when no specialist question exists.
 
-Record Review in `.orbit/loop.md`, including `non-observable` when that is the
-reviewer’s result. On terminal PASS, record `Reviewed feature tip` as the exact
-reviewed HEAD; acceptance rejects any other commit.
+Record Review in `.orbit/loop.md` with
+`human-judgment=required|not-required`. On terminal PASS, record
+`Reviewed feature tip` as the exact reviewed HEAD; acceptance rejects any other
+commit or a PASS without that decision.
 
 ## ACCEPT
 
-Derive and prepare the venue:
+After completing the diff-derived venue proof, arm acceptance:
 
 ```bash
 bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
@@ -122,17 +124,47 @@ bin/orbit-feature-acceptance ready --loop=.orbit/loop.md
 
 The conservative venues are:
 
-- `automated` as the default route for docs, tests, and declarative workflow
-  files, and as a reviewer-confirmed non-observable override for other changes;
+- `automated` as the proof venue for docs, tests, and declarative workflow
+  files;
 - `retained-incus` for executable repository tooling, CLI, and node/runtime
   behavior;
 - `browser` for web UI;
 - `host-macos` for native macOS behavior.
 
+Run every deterministic acceptance command yourself and inspect the result.
+Do not hand the user a mechanical command checklist. Human acceptance is only
+for a prepared experience that still needs judgment about intent, UX, or
+real-world behavior. A changed executable or conservatively derived venue is
+not sufficient reason to involve the user; when no human-judgment surface
+remains, require the reviewer to record `HUMAN_JUDGMENT: not-required` and use the
+automated actor after completing the diff-derived proof venue. Never downgrade
+the venue merely because the actor is automated.
+
 For retained Incus, use the smallest source-mounted topology, sync only required
-roles, and keep one ready Solo terminal at `/home/orbit/orbit-run`. For browser,
-open the exact candidate URL. For macOS, open or run the exact candidate on the
-implementing Mac. Give the user one concise `ACCEPTANCE READY` handoff.
+roles, and use one agent-owned Solo terminal at `/home/orbit/orbit-run`. Keep it
+open for the user only when `HUMAN_JUDGMENT: required`. For browser, open the
+exact candidate URL. For macOS, open or run the exact candidate on the
+implementing Mac.
+
+`ready` prints the required venue and actor. When it prints `actor=automated`,
+immediately run:
+
+```bash
+bin/orbit-feature-acceptance accept \
+  --loop=.orbit/loop.md \
+  --actor=automated
+```
+
+Do not send an acceptance handoff when the actor is automated. When it prints
+`actor=user`, give the user one concise handoff for the remaining judgment with
+the experience already prepared, then record the verbatim acceptance:
+
+```bash
+bin/orbit-feature-acceptance accept \
+  --loop=.orbit/loop.md \
+  --actor=user \
+  --source-ref=<codex-or-solo-ref>
+```
 
 On feedback:
 
@@ -144,17 +176,8 @@ On feedback:
 5. repeat affected proof and review;
 6. return the same acceptance surface.
 
-Record user acceptance with the verbatim message on STDIN:
-
-```bash
-bin/orbit-feature-acceptance accept \
-  --loop=.orbit/loop.md \
-  --actor=user \
-  --source-ref=<codex-or-solo-ref>
-```
-
-Automated acceptance is allowed only for independently reviewed non-observable
-work.
+Automated acceptance is allowed only after independent
+`HUMAN_JUDGMENT: not-required` review and the diff-derived proof venue.
 
 If main advances, merge current main into the feature branch, return through
 PROVE, and repeat ACCEPT against the new feature tip. Do not refresh a recorded

@@ -4,6 +4,30 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+it('shows global help without requiring a loop packet', function (string $argument): void {
+    $workspace = sys_get_temp_dir().'/orbit-acceptance-help-'.bin2hex(random_bytes(6));
+    mkdir($workspace, recursive: true);
+
+    try {
+        $process = new Process([repo_path('bin/orbit-feature-acceptance'), $argument], $workspace);
+        $process->run();
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(trim($process->getOutput()))
+            ->toBe('Usage: bin/orbit-feature-acceptance ready|accept|reprove|invalidate|show [options]')
+            ->and($process->getErrorOutput())
+            ->toBe('')
+            ->and(is_dir("{$workspace}/.orbit"))
+            ->toBeFalse();
+    } finally {
+        acceptance_test_remove($workspace);
+    }
+})->with([
+    'long help' => '--help',
+    'short help' => '-h',
+]);
+
 it('derives the minimum acceptance venue from changed files', function (array $files, string $venue): void {
     require_once repo_path('bin/orbit-loop-contract.php');
 
@@ -62,7 +86,7 @@ it('records user acceptance against the clean feature and current main tips', fu
     }
 });
 
-it('requires reviewer-confirmed non-observable behavior before automatically accepting repository tooling', function (): void {
+it('requires reviewer-confirmed no human judgment before automatically accepting repository tooling', function (): void {
     $observable = acceptance_test_workspace('automated-blocked', 'bin/orbit-observable');
     $nonObservable = acceptance_test_workspace('automated-pass', 'bin/orbit-example');
 
@@ -70,14 +94,14 @@ it('requires reviewer-confirmed non-observable behavior before automatically acc
         acceptance_test_seed_loop(
             $observable,
             state: 'accept',
-            review: 'passed - reviewer 1 - observable',
-            venue: 'automated',
+            review: 'passed - reviewer 1 - human-judgment=required',
+            venue: 'retained-incus',
         );
         acceptance_test_seed_loop(
             $nonObservable,
             state: 'accept',
-            review: 'passed - reviewer 2 - non-observable',
-            venue: 'automated',
+            review: 'passed - reviewer 2 - human-judgment=not-required',
+            venue: 'retained-incus',
         );
 
         $blocked = acceptance_test_run($observable, ['accept', '--actor=automated']);
@@ -86,15 +110,155 @@ it('requires reviewer-confirmed non-observable behavior before automatically acc
         expect($blocked->getExitCode())
             ->toBe(2)
             ->and($blocked->getErrorOutput())
-            ->toContain('reviewer-confirmed non-observable')
+            ->toContain('reviewer-confirmed no human judgment')
             ->and($accepted->getExitCode())
             ->toBe(0, $accepted->getErrorOutput())
             ->and((string) file_get_contents("{$nonObservable}/.orbit/loop.md"))
-            ->toContain('- Acceptance: accepted - automated - reviewer-confirmed non-observable')
+            ->toContain('- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment')
             ->toContain('- State: accepted');
     } finally {
         acceptance_test_remove($observable);
         acceptance_test_remove($nonObservable);
+    }
+});
+
+it('keeps diff-derived proof separate from the automated acceptance actor', function (): void {
+    $fixture = acceptance_test_workspace('automated-retained-proof', 'bin/orbit-example');
+    $weakVenue = acceptance_test_workspace('automated-weak-proof', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+        );
+        acceptance_test_seed_loop(
+            $weakVenue,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+        $weakened = acceptance_test_run($weakVenue, ['ready', '--venue=automated']);
+
+        expect($ready->getExitCode())
+            ->toBe(0, $ready->getErrorOutput())
+            ->and($ready->getOutput())
+            ->toContain('ACCEPTANCE READY venue=retained-incus actor=automated')
+            ->and($accepted->getExitCode())
+            ->toBe(0, $accepted->getErrorOutput())
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- Acceptance venue: retained-incus')
+            ->toContain('- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment')
+            ->and($weakened->getExitCode())
+            ->toBe(2)
+            ->and($weakened->getErrorOutput())
+            ->toContain('acceptance venue automated is weaker than retained-incus');
+    } finally {
+        acceptance_test_remove($fixture);
+        acceptance_test_remove($weakVenue);
+    }
+});
+
+it('matches the acceptance actor to the reviewer human-judgment decision', function (): void {
+    $required = acceptance_test_workspace('human-required', 'bin/orbit-required');
+    $notRequired = acceptance_test_workspace('human-not-required', 'bin/orbit-not-required');
+
+    try {
+        acceptance_test_seed_loop(
+            $required,
+            state: 'accept',
+            review: 'passed - reviewer - human-judgment=required',
+            venue: 'retained-incus',
+        );
+        acceptance_test_seed_loop(
+            $notRequired,
+            state: 'accept',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+
+        $automated = acceptance_test_run($required, ['accept', '--actor=automated']);
+        $unnecessaryUser = acceptance_test_run(
+            $notRequired,
+            ['accept', '--actor=user', '--source-ref=codex://threads/example#unnecessary'],
+            "I should not need to run this.\n",
+        );
+
+        expect($automated->getExitCode())
+            ->toBe(2)
+            ->and($automated->getErrorOutput())
+            ->toContain('human judgment is required')
+            ->and($unnecessaryUser->getExitCode())
+            ->toBe(2)
+            ->and($unnecessaryUser->getErrorOutput())
+            ->toContain('human acceptance is unnecessary')
+            ->and("{$notRequired}/.orbit/feedback.jsonl")
+            ->not->toBeFile();
+    } finally {
+        acceptance_test_remove($required);
+        acceptance_test_remove($notRequired);
+    }
+});
+
+it('requires the diff-derived runtime proof before any retained acceptance', function (): void {
+    $fixture = acceptance_test_workspace('missing-runtime-proof', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'retained-incus',
+        );
+        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        file_put_contents(
+            "{$fixture}/.orbit/loop.md",
+            str_replace(
+                '- runtime: passed - retained fixture',
+                '- runtime: not applicable - skipped',
+                $loop,
+            ),
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($ready->getExitCode())
+            ->toBe(2)
+            ->and($ready->getErrorOutput())
+            ->toContain('Verification runtime must be passed for acceptance venue retained-incus')
+            ->and($accepted->getExitCode())
+            ->toBe(2)
+            ->and($accepted->getErrorOutput())
+            ->toContain('Verification runtime must be passed for acceptance venue retained-incus');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
+it('requires a human-judgment decision on reviewer PASS', function (): void {
+    $fixture = acceptance_test_workspace('missing-human-judgment', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer without decision',
+            venue: 'retained-incus',
+        );
+
+        $process = acceptance_test_run($fixture, ['ready']);
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('Review must record human-judgment=required or human-judgment=not-required');
+    } finally {
+        acceptance_test_remove($fixture);
     }
 });
 
@@ -106,7 +270,7 @@ it('blocks acceptance while actionable feedback is unresolved', function (): voi
             $fixture,
             state: 'accept',
             review: 'passed - reviewer - non-observable',
-            venue: 'automated',
+            venue: 'retained-incus',
         );
         $event = [
             'schema_version' => 1,
@@ -148,11 +312,11 @@ it('rejects all nonignored untracked files before readiness or acceptance', func
             $fixture,
             state: 'prove',
             review: 'passed - reviewer - non-observable',
-            venue: 'automated',
+            venue: 'retained-incus',
         );
         file_put_contents("{$fixture}/forgotten.php", "<?php\n");
 
-        $ready = acceptance_test_run($fixture, ['ready', '--venue=automated']);
+        $ready = acceptance_test_run($fixture, ['ready', '--venue=retained-incus']);
 
         expect($ready->getExitCode())
             ->toBe(2)
@@ -172,13 +336,13 @@ it('requires reviewer PASS to be bound to the exact candidate HEAD', function ()
             $fixture,
             state: 'prove',
             review: 'passed - reviewer - non-observable',
-            venue: 'automated',
+            venue: 'retained-incus',
         );
         file_put_contents("{$fixture}/bin/orbit-later", "later\n");
         acceptance_test_git($fixture, ['add', 'bin/orbit-later']);
         acceptance_test_git($fixture, ['commit', '-m', 'Move candidate after review']);
 
-        $ready = acceptance_test_run($fixture, ['ready', '--venue=automated']);
+        $ready = acceptance_test_run($fixture, ['ready', '--venue=retained-incus']);
 
         expect($ready->getExitCode())
             ->toBe(2)
@@ -242,7 +406,7 @@ it('invalidating accepted feedback resets the reviewer identity for the FIX delt
             $fixture,
             state: 'accept',
             review: 'passed - reviewer - non-observable',
-            venue: 'automated',
+            venue: 'retained-incus',
         );
         $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
         expect($accepted->getExitCode())->toBe(0, $accepted->getErrorOutput());
@@ -349,7 +513,7 @@ it('blocks high-confidence candidate secrets before acceptance', function (
             $fixture,
             state: 'accept',
             review: 'passed - reviewer - non-observable',
-            venue: 'automated',
+            venue: 'retained-incus',
         );
 
         $process = acceptance_test_run($fixture, ['accept', '--actor=automated']);

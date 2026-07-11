@@ -262,6 +262,37 @@ it('routes deleted production files through observable acceptance', function ():
     }
 });
 
+it('requires runtime proof for retained automated acceptance before finalization', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/cli/runtime.php', "<?php\n\n// Updated runtime.\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - human-judgment=not-required',
+                acceptance: 'accepted - automated - reviewer-confirmed no-human-judgment',
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                venue: 'retained-incus',
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('Verification runtime must be passed for acceptance venue retained-incus');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
 it('requires exact automated acceptance provenance', function (
     string $review,
     string $acceptance,
@@ -296,19 +327,19 @@ it('requires exact automated acceptance provenance', function (
     }
 })->with([
     'generic accepted label' => [
-        'passed - reviewer example - non-observable',
+        'passed - reviewer example - human-judgment=not-required',
         'accepted - automated',
         'acceptance provenance is invalid',
     ],
     'automation-only claim on reviewer override' => [
-        'passed - reviewer example - non-observable',
+        'passed - reviewer example - human-judgment=not-required',
         'accepted - automated - automation-only diff',
-        'reviewer-confirmed non-observable',
+        'reviewer-confirmed no-human-judgment',
     ],
     'reviewer claim without reviewer result' => [
-        'passed - reviewer example - observable',
-        'accepted - automated - reviewer-confirmed non-observable',
-        'review does not confirm non-observable',
+        'passed - reviewer example - human-judgment=required',
+        'accepted - automated - reviewer-confirmed no-human-judgment',
+        'review requires human judgment',
     ],
 ]);
 
@@ -422,7 +453,7 @@ it('rejects automation-only acceptance even for a declarative diff', function ()
         file_put_contents(
             "{$worktree}/.orbit/loop.md",
             compact_feature_loop_packet(
-                review: 'passed - reviewer example - observable',
+                review: 'passed - reviewer example - human-judgment=required',
                 acceptance: 'accepted - automated - automation-only diff',
                 featureTip: $featureTip,
                 mainTip: $mainTip,
@@ -434,7 +465,7 @@ it('rejects automation-only acceptance even for a declarative diff', function ()
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('reviewer-confirmed non-observable');
+            ->toContain('reviewer-confirmed no-human-judgment');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
@@ -510,7 +541,12 @@ it('rejects forged or incomplete reserved quality-check evidence', function (
     try {
         commit_finalization_gate_file($worktree, 'bin/example', "#!/usr/bin/env bash\n");
         write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
-        write_compact_feature_loop_for_fixture($repo, $worktree);
+        write_compact_feature_loop_for_fixture(
+            $repo,
+            $worktree,
+            venue: 'retained-incus',
+            runtime: 'passed - retained fixture',
+        );
         $artifactPath = latest_finalization_artifact_path($worktree, 'quality-check');
         $artifact = json_decode((string) file_get_contents($artifactPath), true, flags: JSON_THROW_ON_ERROR);
 
@@ -605,6 +641,7 @@ it('requires a user acceptance event matching the accepted candidate source and 
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
+                runtime: 'passed - retained fixture',
             ),
         );
         write_finalization_acceptance_event(
@@ -647,6 +684,7 @@ it('allows exact user acceptance provenance', function (): void {
                 featureTip: $featureTip,
                 mainTip: $mainTip,
                 venue: 'retained-incus',
+                runtime: 'passed - retained fixture',
             ),
         );
         write_finalization_acceptance_event(
@@ -662,6 +700,38 @@ it('allows exact user acceptance provenance', function (): void {
             ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('FINALIZATION: PASS');
+    } finally {
+        remove_finalization_gate_fixture($repo, $worktree);
+    }
+});
+
+it('rejects unnecessary user acceptance at finalization', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(compact_feature_loop_packet());
+
+    try {
+        commit_finalization_gate_file($worktree, 'apps/cli/accepted.php', "<?php\n");
+        write_finalization_gate_artifact($worktree, 'quality-check', 0, gmdate('c'));
+
+        $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
+        $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
+        file_put_contents(
+            "{$worktree}/.orbit/loop.md",
+            compact_feature_loop_packet(
+                review: 'passed - reviewer example - human-judgment=not-required',
+                acceptance: 'accepted - user @ codex://threads/example#unnecessary',
+                featureTip: $featureTip,
+                mainTip: $mainTip,
+                venue: 'retained-incus',
+                runtime: 'passed - retained fixture',
+            ),
+        );
+
+        $process = run_finalization_gate($repo, 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('human acceptance is unnecessary because review records no human judgment');
     } finally {
         remove_finalization_gate_fixture($repo, $worktree);
     }
@@ -3038,13 +3108,14 @@ function finalization_cleanup_packet(): string
 
 /** @mago-expect lint:excessive-parameter-list */
 function compact_feature_loop_packet(
-    string $review = 'passed - reviewer example - non-observable',
-    string $acceptance = 'accepted - automated - reviewer-confirmed non-observable',
+    string $review = 'passed - reviewer example - human-judgment=not-required',
+    string $acceptance = 'accepted - automated - reviewer-confirmed no-human-judgment',
     string $featureTip = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     string $mainTip = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     string $state = 'accepted',
     string $venue = 'automated',
     ?string $reviewedTip = null,
+    string $runtime = 'not applicable - no runtime proof venue',
 ): string {
     $reviewedTip ??= $featureTip;
 
@@ -3070,7 +3141,7 @@ function compact_feature_loop_packet(
         - Verification:
           - focused: passed - focused test
           - broader: passed - quality artifact
-          - runtime: not applicable - non-observable tooling
+          - runtime: {$runtime}
         - Review: {$review}
         - Reviewed feature tip: {$reviewedTip}
         - Acceptance venue: {$venue}
@@ -3089,14 +3160,23 @@ function compact_feature_loop_packet(
         MARKDOWN;
 }
 
-function write_compact_feature_loop_for_fixture(string $repo, string $worktree): void
-{
+function write_compact_feature_loop_for_fixture(
+    string $repo,
+    string $worktree,
+    string $venue = 'automated',
+    string $runtime = 'not applicable - no runtime proof venue',
+): void {
     $featureTip = trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput());
     $mainTip = trim(new Process(['git', 'rev-parse', 'main'], $repo)->mustRun()->getOutput());
 
     file_put_contents(
         "{$worktree}/.orbit/loop.md",
-        compact_feature_loop_packet(featureTip: $featureTip, mainTip: $mainTip),
+        compact_feature_loop_packet(
+            featureTip: $featureTip,
+            mainTip: $mainTip,
+            venue: $venue,
+            runtime: $runtime,
+        ),
     );
 }
 

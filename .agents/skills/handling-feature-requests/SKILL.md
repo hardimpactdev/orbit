@@ -14,8 +14,9 @@ Capture only what changes the result:
 1. **Outcome** — what verifiable outcome should become true?
 2. **Surface** — command, API, runtime, browser, native app, docs, or repository
    tooling.
-3. **Acceptance** — how will a user recognize success on the real surface? Mark
-   genuinely non-observable maintenance as such.
+3. **Acceptance** — what prepared experience, if any, still requires user
+   judgment about intent or UX after agents run every deterministic check? Mark
+   work with no remaining human-judgment surface as `not-required`.
 4. **Constraints** — security, compatibility, performance, rollout, topology,
    and explicit exclusions.
 5. **Authority** — relevant `PRODUCT_DECISIONS.md` entry and product docs.

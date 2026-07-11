@@ -29,8 +29,9 @@ navigation aid, not product authority.
 5. Read the authority docs first, then align docs, tests, and code in that
    order when behavior changes.
 6. Run the narrowest useful verification while developing.
-7. Use one general reviewer, prepare the derived real acceptance venue, and
-   record the exact accepted feature and current main tips.
+7. Use one general reviewer and always complete the diff-derived proof venue.
+   Involve the user only when `HUMAN_JUDGMENT: required`; otherwise use the
+   automated actor. Record the exact accepted feature and current main tips.
 8. Before merge, run the finalization helper with the actual git command.
 9. After merge, stay in the accepted feature worktree and run its now-landed
    `bin/orbit-session-archive`; never run the compact archive with cwd main.

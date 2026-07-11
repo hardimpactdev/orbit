@@ -7,8 +7,16 @@ require_once __DIR__.'/orbit-feedback-events.php';
 require_once __DIR__.'/orbit-loop-contract.php';
 require_once __DIR__.'/orbit-secret-rules.php';
 
+const ORBIT_FEATURE_ACCEPTANCE_USAGE = 'Usage: bin/orbit-feature-acceptance ready|accept|reprove|invalidate|show [options]';
+
 try {
     $command = $argv[1] ?? null;
+
+    if (in_array($command, ['--help', '-h'], true)) {
+        fwrite(STDOUT, ORBIT_FEATURE_ACCEPTANCE_USAGE.PHP_EOL);
+        exit(0);
+    }
+
     $options = acceptanceOptions(array_slice($argv, 2));
     $cwd = realpath((string) ($options['cwd'] ?? getcwd())) ?: (string) ($options['cwd'] ?? getcwd());
     $loopPath = (string) ($options['loop'] ?? "{$cwd}/.orbit/loop.md");
@@ -23,9 +31,7 @@ try {
         'reprove' => acceptanceReprove($cwd, $loopPath, $options),
         'invalidate' => acceptanceInvalidate($loopPath, $options),
         'show' => acceptanceShow($cwd, $loopPath),
-        default => throw new RuntimeException(
-            'Usage: bin/orbit-feature-acceptance ready|accept|reprove|invalidate|show [options]',
-        ),
+        default => throw new RuntimeException(ORBIT_FEATURE_ACCEPTANCE_USAGE),
     };
 } catch (Throwable $exception) {
     fwrite(STDERR, $exception->getMessage().PHP_EOL);
@@ -75,15 +81,20 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
     acceptanceRequireCurrentMainIncluded($cwd, $featureTip);
 
     $minimum = orbitLoopAcceptanceVenue(orbitLoopChangedFiles($cwd));
-    $defaultVenue = orbitLoopReviewSaysNonObservable($review) ? 'automated' : $minimum;
-    $venue = (string) ($options['venue'] ?? $defaultVenue);
+    $venue = (string) ($options['venue'] ?? $minimum);
 
     if (! in_array($venue, ORBIT_LOOP_ACCEPTANCE_VENUES, true)) {
         throw new RuntimeException("invalid acceptance venue: {$venue}");
     }
 
-    if (! orbitLoopVenueSatisfies($venue, $minimum, $review)) {
+    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
+    }
+
+    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+
+    if ($runtimeProblem !== null) {
+        throw new RuntimeException($runtimeProblem);
     }
 
     $loop = orbitLoopSetLabel($loop, 'Proof', 'Acceptance venue', $venue);
@@ -94,7 +105,8 @@ function acceptanceReady(string $cwd, string $loopPath, array $options): never
     $loop = orbitLoopSetLabel($loop, 'Status', 'Blocker', 'none');
     acceptanceWriteLoop($loopPath, $loop);
 
-    fwrite(STDOUT, "ACCEPTANCE READY venue={$venue}\n");
+    $actor = orbitLoopReviewRequiresHumanJudgment($review) ? 'user' : 'automated';
+    fwrite(STDOUT, "ACCEPTANCE READY venue={$venue} actor={$actor}\n");
     exit(0);
 }
 
@@ -129,15 +141,27 @@ function acceptanceAccept(string $cwd, string $loopPath, array $options): never
     $minimum = orbitLoopAcceptanceVenue(orbitLoopChangedFiles($cwd));
     $venue = (string) orbitLoopLabel($loop, 'Proof', 'Acceptance venue');
 
-    if ($actor === 'automated' && ! orbitLoopReviewSaysNonObservable($review)) {
-        throw new RuntimeException('automated acceptance requires reviewer-confirmed non-observable behavior');
-    }
-
-    if (! orbitLoopVenueSatisfies($venue, $minimum, $review)) {
+    if (! orbitLoopVenueSatisfies($venue, $minimum)) {
         throw new RuntimeException("acceptance venue {$venue} is weaker than {$minimum}");
     }
 
-    $acceptanceValue = 'accepted - automated - reviewer-confirmed non-observable';
+    $runtimeProblem = orbitLoopRuntimeProofProblem($loop, $venue);
+
+    if ($runtimeProblem !== null) {
+        throw new RuntimeException($runtimeProblem);
+    }
+
+    if ($actor === 'automated' && ! orbitLoopReviewSaysNoHumanJudgment($review)) {
+        throw new RuntimeException(
+            'automated acceptance requires reviewer-confirmed no human judgment; human judgment is required',
+        );
+    }
+
+    if ($actor === 'user' && ! orbitLoopReviewRequiresHumanJudgment($review)) {
+        throw new RuntimeException('human acceptance is unnecessary; use actor=automated');
+    }
+
+    $acceptanceValue = 'accepted - automated - reviewer-confirmed no-human-judgment';
 
     if ($actor === 'user') {
         $sourceRef = acceptanceRequiredOption($options, 'source-ref');
