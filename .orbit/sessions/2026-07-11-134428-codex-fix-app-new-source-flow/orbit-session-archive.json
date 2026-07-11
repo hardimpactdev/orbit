@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-11T11:44:28+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-fix-app-new-source-flow/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-11-134428-codex-fix-app-new-source-flow",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "4a71f52bb42cfb86172c7f4d6a23ca9162da090b06afc19961c089cdecb8346b",
+        "loop.md": "ae35ab6b1035e2c2222f3e5e75a4f4597bfe70555553d7d29fe6dc5dbb3ca1dd"
+    },
+    "branch": "codex/fix-app-new-source-flow",
+    "candidate_commit": "ee65fc0a9a685e0f7d3026e94fe2482d09dbbcf9",
+    "accepted_feature_tip": "ee65fc0a9a685e0f7d3026e94fe2482d09dbbcf9",
+    "accepted_main_tip": "aa51ba7f79cefdbe25cd8216e64126e6e1b02bb6",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
