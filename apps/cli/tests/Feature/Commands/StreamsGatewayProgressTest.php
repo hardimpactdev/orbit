@@ -336,7 +336,12 @@ describe('StreamsGatewayProgress', function (): void {
                 ],
             ]);
     })->with([
-        'app:new' => ['app:new', ['name' => 'docs', '--node' => 'app-1'], 'POST', '/api/apps'],
+        'app:new' => [
+            'app:new',
+            ['name' => 'docs', '--node' => 'app-1', '--repo' => 'hardimpact/docs'],
+            'POST',
+            '/api/apps',
+        ],
         'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--app' => 'docs'], 'POST', '/api/workspaces'],
         'workspace:setup' => [
             'workspace:setup',

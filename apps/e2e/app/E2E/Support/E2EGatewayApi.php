@@ -1164,7 +1164,12 @@ final readonly class E2EGatewayApi
                         '--json',
                     ];
 
-                    foreach (['repository' => 'repo', 'domain' => 'domain'] as $field => $option) {
+                    foreach ([
+                        'repository' => 'repo',
+                        'template_repository' => 'template-repo',
+                        'new_repository' => 'new-repo',
+                        'domain' => 'domain',
+                    ] as $field => $option) {
                         $value = $input[$field] ?? null;
 
                         if (is_scalar($value) && (string) $value !== '') {

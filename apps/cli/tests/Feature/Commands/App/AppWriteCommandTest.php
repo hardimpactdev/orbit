@@ -72,6 +72,8 @@ describe('app write commands', function (): void {
                     'name' => 'docs',
                     'node' => 'app-1',
                     'repository' => 'spatie/docs',
+                    'template_repository' => null,
+                    'new_repository' => null,
                     'root' => 'public',
                     'php_version' => '8.5',
                     'domain' => 'docs.example.com',
@@ -88,6 +90,102 @@ describe('app write commands', function (): void {
                 'data' => $complete,
             ]);
     });
+
+    it('posts template-based app:new payloads to the gateway apps endpoint', function (): void {
+        $complete = [
+            'exit_code' => 0,
+            'data' => [
+                'result' => ['action' => 'created'],
+                'app' => ['name' => 'docs', 'node' => 'app-1'],
+            ],
+        ];
+
+        fakeGatewayProgressStream(gatewayProgressFrame('complete', $complete));
+
+        [$exitCode] = runCommand($this, 'app:new', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            '--template-repo' => 'hardimpact/laravel-template',
+            '--new-repo' => 'hardimpact/docs',
+            '--json' => true,
+        ]);
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'repository' => null,
+                'template_repository' => 'hardimpact/laravel-template',
+                'new_repository' => 'hardimpact/docs',
+                'root' => 'public',
+                'php_version' => '8.5',
+                'domain' => null,
+                'runtime_proxy_transport' => 'http',
+            ],
+        );
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('rejects incomplete or conflicting app:new source input before gateway IO', function (array $source): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:new', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            ...$source,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('source')
+            ->and($decoded['error']['meta']['fields'])
+            ->toBe(['repo', 'template-repo', 'new-repo']);
+    })->with([
+        'missing source' => [[]],
+        'template without destination' => [['--template-repo' => 'hardimpact/laravel-template']],
+        'destination without template' => [['--new-repo' => 'hardimpact/docs']],
+        'clone and template branches' => [[
+            '--repo' => 'hardimpact/docs',
+            '--template-repo' => 'hardimpact/laravel-template',
+            '--new-repo' => 'hardimpact/new-docs',
+        ]],
+    ]);
+
+    it('rejects credential-bearing app:new clone URLs before gateway IO', function (string $repository): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:new', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            '--repo' => $repository,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('repo');
+    })->with([
+        'token in HTTPS username' => ['https://secret-token@git.example.com/docs.git'],
+        'HTTPS username and password' => ['https://user:secret@git.example.com/docs.git'],
+        'SSH password' => ['ssh://git:secret@git.example.com/docs.git'],
+        'token in query string' => ['https://git.example.com/docs.git?token=secret'],
+    ]);
 
     it('posts app:register payloads to the gateway register endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([

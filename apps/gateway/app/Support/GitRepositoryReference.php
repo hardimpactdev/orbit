@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use Orbit\Core\SourceControl\GitCloneReference;
+use Orbit\Core\SourceControl\GitHubRepositorySlug;
+
 final class GitRepositoryReference
 {
     public static function canonicalize(?string $repository): string|false|null
@@ -12,11 +15,11 @@ final class GitRepositoryReference
             return null;
         }
 
-        if (self::isGithubShorthand($repository)) {
+        if (self::isGithubSlug($repository)) {
             return "git@github.com:{$repository}.git";
         }
 
-        if (preg_match('/^(git@|https:\/\/|ssh:\/\/).+/', $repository)) {
+        if (GitCloneReference::isValid($repository)) {
             return $repository;
         }
 
@@ -44,7 +47,7 @@ final class GitRepositoryReference
 
     public static function githubSlug(string $repository): ?string
     {
-        if (self::isGithubShorthand($repository)) {
+        if (self::isGithubSlug($repository)) {
             return $repository;
         }
 
@@ -69,9 +72,9 @@ final class GitRepositoryReference
         return null;
     }
 
-    private static function isGithubShorthand(string $repository): bool
+    public static function isGithubSlug(string $repository): bool
     {
-        return preg_match('/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/', $repository) === 1;
+        return GitHubRepositorySlug::isValid($repository);
     }
 
     private static function existingCheckoutGuard(string $repository, string $path): string

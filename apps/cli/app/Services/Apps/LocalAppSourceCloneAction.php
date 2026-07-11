@@ -13,20 +13,31 @@ final readonly class LocalAppSourceCloneAction
     ) {}
 
     /**
-     * @return array{command: list<string>, exit_code: int|null}
+     * @return array{command: list<string>, exit_code: int|null, reused: bool}
      */
     public function clone(string $repository, string $path): array
     {
-        $this->ensureDestination($repository, $path);
+        $reused = $this->reuse($repository, $path);
+
+        if ($reused !== null) {
+            return $reused;
+        }
+
         $githubSlug = $this->repositories->githubSlug($repository);
         $command = $githubSlug !== null
             ? ['gh', 'repo', 'clone', $githubSlug, $path]
             : ['git', 'clone', $repository, $path];
 
-        return $this->mustRun($command);
+        return [
+            ...$this->mustRun($command),
+            'reused' => false,
+        ];
     }
 
-    private function ensureDestination(string $repository, string $path): void
+    /**
+     * @return array{command: list<string>, exit_code: int, reused: true}|null
+     */
+    public function reuse(string $repository, string $path): ?array
     {
         if (file_exists($path) && ! is_dir($path)) {
             throw new LocalAppSourceCreateFailure(
@@ -37,7 +48,7 @@ final readonly class LocalAppSourceCloneAction
         }
 
         if (! is_dir($path) || $this->directoryIsEmpty($path)) {
-            return;
+            return null;
         }
 
         if (! is_dir("{$path}/.git")) {
@@ -50,8 +61,12 @@ final readonly class LocalAppSourceCloneAction
 
         $origin = $this->gitOrigin($path);
 
-        if (in_array($origin, $this->repositories->expectedOrigins($repository), strict: true)) {
-            return;
+        if ($this->repositories->matchesOrigin($repository, $origin)) {
+            return [
+                'command' => ['git', '-C', $path, 'remote', 'get-url', 'origin'],
+                'exit_code' => 0,
+                'reused' => true,
+            ];
         }
 
         throw new LocalAppSourceCreateFailure(
@@ -85,7 +100,14 @@ final readonly class LocalAppSourceCloneAction
 
     private function run(array $command): Process
     {
-        $process = new Process($command);
+        $environment = ['GIT_TERMINAL_PROMPT' => '0'];
+
+        if ($command[0] === 'gh') {
+            $environment['GH_HOST'] = 'github.com';
+            $environment['GH_PROMPT_DISABLED'] = '1';
+        }
+
+        $process = new Process($command, env: $environment);
         $process->setTimeout(300);
         $process->run();
 

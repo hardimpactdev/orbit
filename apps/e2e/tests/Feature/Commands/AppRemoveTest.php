@@ -64,7 +64,7 @@ it('removes an app from a operator caller through the gateway api', function ():
         $create = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:new %s --node=app-dev-1 --repo=octocat/Hello-World --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),

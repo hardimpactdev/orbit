@@ -8,15 +8,15 @@ response.
 
 ## Behavior
 
-- **Input Resolution:** Gathers all arguments and options. Performs only the
-  local input shape validation the command's input contract documents (slug
-  regex, length) before calling the gateway. Authorization is the gateway's
-  responsibility.
+- **Input Resolution:** Gathers all arguments and options. Validates the slug,
+  source-branch shape, and repository-reference format before calling the
+  gateway. Authorization is the gateway's responsibility.
 - **Gateway Call:** Executes an HTTPS POST request to the gateway's `app:new`
   endpoint. The gateway identifies the WireGuard peer and decides whether the
   request is allowed.
-- **Apply:** The gateway writes app configuration locally and orchestrates all
-  remote work to the target node through the classified host execution lane.
+- **Apply:** After the CLI resolves the complete source plan, the gateway writes
+  app configuration locally and orchestrates all remote work to the target node
+  through the classified host execution lane.
 - **Progress:** The CLI consumes the gateway's progress stream and renders the
   human-facing tree or JSON envelope.
 
@@ -33,5 +33,6 @@ Primary test owners:
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | Operator CLI posts to gateway stream endpoint without local workload SSH. |
 | `apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php` | Stream request shape and gateway stream consumption for operator-caller paths. |
+| `packages/core/tests/SourceControl/GitCloneReferenceTest.php` | Clone-reference safety shared by local and gateway validation. |
 
 There is no gateway-side coverage for this on-client mapping: operator-caller behavior lives in `apps/cli`. Gateway API behavior is mapped in the command contract file.

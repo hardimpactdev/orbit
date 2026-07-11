@@ -77,6 +77,7 @@ describe('AppStore node role eligibility', function (): void {
             [
                 'name' => 'docs',
                 'node' => $target->name,
+                'repository' => 'hardimpact/docs',
                 'root' => 'public',
                 'php_version' => '8.5',
             ],
@@ -122,6 +123,7 @@ describe('AppStore node role eligibility', function (): void {
             [
                 'name' => 'docs',
                 'node' => $target->name,
+                'repository' => 'hardimpact/docs',
                 'domain' => 'docs.example.com',
                 'root' => 'public',
                 'php_version' => '8.5',
@@ -149,6 +151,7 @@ describe('AppStore node role eligibility', function (): void {
             [
                 'name' => 'docs',
                 'node' => $target->name,
+                'repository' => 'hardimpact/docs',
             ],
             [],
             [],
@@ -173,6 +176,7 @@ describe('AppStore node role eligibility', function (): void {
             [
                 'name' => 'docs',
                 'node' => $target->name,
+                'repository' => 'hardimpact/docs',
             ],
             [],
             [],

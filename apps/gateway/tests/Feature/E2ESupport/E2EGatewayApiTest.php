@@ -272,6 +272,15 @@ it('proxies gateway api routes to Laravel before legacy command shims', function
         );
 });
 
+it('forwards both app source-plan branches through the legacy app create shim', function (): void {
+    $script = gatewayTlsServerScript();
+
+    expect($script)
+        ->toContain("'repository' => 'repo'")
+        ->toContain("'template_repository' => 'template-repo'")
+        ->toContain("'new_repository' => 'new-repo'");
+});
+
 it('runs Docker gateway api shim commands directly inside orbit gateway', function (): void {
     $reflection = new ReflectionClass(E2EGatewayApi::class);
     $method = $reflection->getMethod('tlsServerScript');

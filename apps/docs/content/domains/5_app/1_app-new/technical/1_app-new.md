@@ -8,19 +8,21 @@
 - The CLI caller can reach the Orbit gateway.
 - The current node identity has `app:new` on the target app node, or is the
   gateway itself.
-- The gateway can reach the target node over SSH.
-- The resolved target node is an active `app` node.
+- The gateway can reach the target node through its selected node execution
+  transport.
+- The resolved target node is active with the applicable role: `app-dev`
+  without `--domain`, or `app-prod` when `--domain` is supplied.
 
 [Back to public page](../app-new.md)
 
 `app:new` is the primary creation command for Orbit applications. It orchestrates
-remote source creation over SSH, writes gateway registry configuration, and executes
+remote source creation, writes gateway registry configuration, and executes
 the app-family registration pipeline.
 
 ## Signature
 
 ```bash
-orbit app:new [name] [--node=<name>] [--node-transport=<transport>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json|--stream-json]
+orbit app:new [name] [--node=<name>] [--node-transport=<transport>] [--repo=<url> | --template-repo=<owner/repo> --new-repo=<owner/repo>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -31,8 +33,10 @@ This command follows the shared
 | Input | Type | Required | Default | Constraint |
 | --- | --- | --- | --- | --- |
 | `name` | string | Always; can be prompted in interactive input mode. | n/a | slug: `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`, max 40 chars. Must be globally unique in the gateway app registry. |
-| `--node` | string | No | (resolved) | Must be an active `app` node. |
-| `--repo` | string | No | null | Full Git repository URL, or GitHub-only `owner/repo` shorthand. GitHub inputs use the target node's `gh` authentication. No credential discovery, prompting, or forwarding. |
+| `--node` | string | No | (resolved) | Must be active with `app-dev`, or with `app-prod` when `--domain` is supplied. |
+| `--repo` | string | One source branch is required. | none | Existing repository as a full HTTPS/SSH Git URL, SCP-style `git@host:path`, or GitHub-only `owner/repo` shorthand; rejects embedded credentials, query strings, fragments, whitespace, and control characters; mutually exclusive with `--template-repo` and `--new-repo`. |
+| `--template-repo` | string | Required with `--new-repo`. | none | GitHub template repository as `owner/repo`. Mutually exclusive with `--repo`. |
+| `--new-repo` | string | Required with `--template-repo`. | none | New GitHub repository as `owner/repo`. Created private from the template using the target node's `gh` authentication. Mutually exclusive with `--repo`. |
 | `--root` | string | No | `public` | App document root relative to app path. |
 | `--php-version` | string | No | `8.5` | Must match Orbit's supported PHP version set (gateway-side static check). Node-side availability is verified while applying. |
 | `--runtime-proxy-transport` | string | No | `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
@@ -51,15 +55,24 @@ This command follows the shared
    limit. In interactive mode, this validation happens at the app-name prompt
    after node resolution so the operator can correct the value before repository
    input is requested.
-3. **Collision Check:** Fail if `name` is already taken in the gateway app
+3. **Source Resolution:** Resolve exactly one complete source branch before the
+   gateway create request is sent:
+   - clone: `--repo`; or
+   - new from template: `--template-repo` plus `--new-repo`.
+   Interactive mode prompts for the branch and its missing values. Machine
+   mode fails before gateway I/O when neither branch, an incomplete branch, or
+   both branches are supplied. Template and new repository values must be
+   GitHub `owner/repo` identities. Repository credentials remain target-node
+   state and are never prompted for or forwarded.
+4. **Collision Check:** Fail if `name` is already taken in the gateway app
    registry. App slugs are globally unique across all nodes; there is no
    per-node uniqueness namespace and no `--node`-disambiguation prompt.
-4. **PHP Validation (gateway-side, static):** Validate `--php-version` against Orbit's
+5. **PHP Validation (gateway-side, static):** Validate `--php-version` against Orbit's
    supported PHP version set. An unsupported value fails before any side
    effects with `error.code=validation_failed` and `error.meta.field=php_version`.
    Node-side availability of the requested PHP runtime is verified while
    applying, not during input resolution.
-5. **Runtime proxy transport validation:** Validate `--runtime-proxy-transport`
+6. **Runtime proxy transport validation:** Validate `--runtime-proxy-transport`
    against `http|https`. `http` stores no override and is the default. `https`
    stores PHP/FrankenPHP runtime config that makes app-dev app and workspace
    proxy routes use inner TLS.
@@ -72,8 +85,15 @@ This command follows the shared
 ## Behavior Contract
 
 ### 1. Source Creation (Remote)
-If `--repo` is supplied, clone the repository into the app path on the target
-node. Otherwise, create an empty directory at the app path.
+Apply the source branch resolved before the gateway request:
+
+- **Clone:** clone `--repo` into the app path.
+- **New from template:** create `--new-repo` as a private GitHub repository
+  from `--template-repo`, then clone the new repository into the app path.
+
+`app:new` never creates an empty app directory. Existing source is adopted with
+`app:register`.
+
 - App path is derived from the app name and the target node's app root.
 - Remote source creation is applied through the gateway's classified host
   execution lane.
@@ -82,6 +102,9 @@ node. Otherwise, create an empty directory at the app path.
   target node. Full Git URLs for other hosts are cloned with `git clone` as
   supplied after validation and may point at any Git host the target node
   can access.
+- New-from-template mode runs `gh repo create <owner/new> --private --template
+  <owner/template>` on the target node before cloning. Both repository values
+  are fixed argv values, not interpolated shell fragments.
 - Cloning is non-interactive on the target node and uses whatever
   credentials that node already has provisioned. GitHub activity uses the
   node's GitHub CLI authentication; non-GitHub activity uses host SSH keys,
@@ -91,11 +114,22 @@ node. Otherwise, create an empty directory at the app path.
   failure surfaces as a structured source-creation error with a
   `transport=github|ssh|https` indicator so the operator can address node-side
   credentials directly.
-- If the target app path already exists, contains files, and is a git checkout
-  whose `origin` matches the requested repository, source creation treats that
-  checkout as already complete and proceeds to gateway app configuration. If
-  the path exists but is not a matching checkout, source creation fails before
-  gateway app configuration is written.
+- GitHub commands are pinned to `github.com`. Git and GitHub CLI prompting are
+  disabled so the operation fails instead of blocking when credentials are
+  missing on the target node. Repository references with embedded credentials,
+  query strings, fragments, whitespace, or control characters fail validation
+  before remote source work.
+- If the target app path already contains a git checkout whose `origin` matches
+  the requested repository, clone mode treats that checkout as complete.
+  Template mode additionally verifies the destination repository provenance
+  and private visibility before reusing the checkout. Any other existing path
+  fails before gateway app configuration is written.
+- If template generation succeeded but the clone did not, retry may reuse the
+  remote destination only after `gh repo view` reports its
+  `templateRepository.nameWithOwner` equals the requested template and its
+  visibility is `PRIVATE`. An existing destination with a different or absent
+  template identity, or with public visibility, fails rather than being
+  silently adopted.
 - Source creation happens before the gateway app record is written. If source
   creation fails, `app:new` fails with `app.source_creation_failed`, does not
   create app configuration, and the retry path is to fix the node-side source problem
@@ -150,19 +184,21 @@ If `--domain` is supplied:
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
 
-- **Authorization:** Fails with `error.code=authorization_failed` before
-  registry reads, prompts, SSH, or app writes when the caller lacks `app:new`
-  on the target app node.
+- **Authorization:** Fails with `error.code=authorization_failed` before remote
+  source creation or app writes when the caller lacks `app:new` on the target
+  app node. The CLI may resolve its complete interactive input before the
+  gateway evaluates that request.
 - **Node Ineligible:** Fails if the resolved node is not an `app` node.
 - **Resolution Failure:** Fails if no node can be resolved.
 - **Collision:** Fails if the app name is already registered in the gateway
   app registry on any node (`error.code=app.collision`,
   `error.meta.name`, `error.meta.node`).
-- **Transport Error:** Fails if the gateway cannot reach the node over SSH.
-- **Source Creation Failure:** Clone or directory creation failures occur before
+- **Transport Error:** Fails if the gateway cannot reach the node through its
+  selected execution transport.
+- **Source Creation Failure:** Template generation or clone failures occur before
   gateway app configuration is written. They use
   `error.code=app.source_creation_failed` with `error.meta.reason` and
-  `error.meta.transport=github|ssh|https` for clone failures so operators can address
+  `error.meta.transport=github|ssh|https` so operators can address
   node-side credentials directly. No app row is preserved for this failure.
 - **Apply Drift:** If configuration is written but registration (runtime
   container, runtime configuration, or proxy handoff) encounters retryable conditions, the
@@ -202,8 +238,12 @@ slice.
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php` | CLI pre-gateway validation, stream payload forwarding, and gateway error pass-through. |
-| `apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php` | Interactive node/name prompts and slug validation with `--json`. |
-| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation: authorized POST creates source and registry, `app.source_creation_failed`, and warning payloads. |
+| `apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php` | Exact zero-argument prompt order, both source branches, and slug validation with `--json`. |
+| `apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php` | Human progress rendering and final JSON terminal-frame behavior. |
+| `apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php` | Token-gated clone and private template-repository creation, source-shape validation, provenance verification, and retry reuse. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API creation: source-plan validation, authorized POST creates source and registry, `app.source_creation_failed`, and warning payloads. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php` | Gateway-authored progress tree and clone/template target-command options. |
+| `packages/core/tests/SourceControl/GitCloneReferenceTest.php` | Shared safe clone-reference forms and rejection of credentials, query strings, fragments, whitespace, and control characters. |
 
 Context-specific behavior and test mapping live in:
 

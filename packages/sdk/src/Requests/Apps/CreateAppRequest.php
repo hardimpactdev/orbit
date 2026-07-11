@@ -25,6 +25,8 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         public readonly string $root,
         public readonly string $phpVersion,
         public readonly ?string $domain,
+        public readonly ?string $templateRepository = null,
+        public readonly ?string $newRepository = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -41,6 +43,8 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
             'name' => $this->name,
             'node' => $this->node,
             'repository' => $this->repository,
+            'template_repository' => $this->templateRepository,
+            'new_repository' => $this->newRepository,
             'root' => $this->root,
             'php_version' => $this->phpVersion,
             'domain' => $this->domain,

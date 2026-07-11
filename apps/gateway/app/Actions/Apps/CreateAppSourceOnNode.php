@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
+use App\Data\Apps\AppSourcePlan;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\Apps\RemoteAppSourceCreator;
@@ -17,14 +18,23 @@ final readonly class CreateAppSourceOnNode
     /**
      * @return array{path: string, result: RemoteShellResult}
      */
-    public function handle(Node $node, string $name, ?string $repository, ?string $domain = null): array
-    {
+    public function handle(
+        Node $node,
+        string $name,
+        AppSourcePlan $source,
+        ?string $domain = null,
+    ): array {
         $path = $this->appPath($node, $name, $domain);
         $user = $node->user ?: 'orbit';
 
         return [
             'path' => $path,
-            'result' => $this->sourceCreator->create($node, $user, $path, $repository),
+            'result' => $this->sourceCreator->create(
+                $node,
+                $user,
+                $path,
+                $source,
+            ),
         ];
     }
 

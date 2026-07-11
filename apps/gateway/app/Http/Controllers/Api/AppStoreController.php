@@ -9,6 +9,7 @@ use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\Loggable;
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
 use App\Data\Apps\AppRuntimeConfig;
+use App\Data\Apps\AppSourcePlan;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Apps\AppInstanceDriver;
@@ -105,7 +106,12 @@ final class AppStoreController implements Loggable
             );
         }
 
-        $source = $createAppSourceOnNode->handle($node, $input['name'], $input['repository'], $input['domain']);
+        $source = $createAppSourceOnNode->handle(
+            $node,
+            $input['name'],
+            $input['source'],
+            $input['domain'],
+        );
 
         if (! $source['result']->successful()) {
             return $this->error(
@@ -113,11 +119,7 @@ final class AppStoreController implements Loggable
                 "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
                 [
                     'reason' => trim($source['result']->output()) ?: 'source creation failed',
-                    ...(
-                        $input['repository'] !== null
-                            ? ['transport' => GitRepositoryReference::transport($input['repository'])]
-                            : []
-                    ),
+                    'transport' => GitRepositoryReference::transport($input['source']->repository),
                 ],
                 500,
             );
@@ -130,7 +132,7 @@ final class AppStoreController implements Loggable
             'domain' => $input['domain'],
             'path' => $source['path'],
             'document_root' => $input['root'],
-            'repository' => $input['repository'],
+            'repository' => $input['source']->repository,
             'php_version' => $input['php_version'],
             'runtime_config' => $this->runtimeConfigForStorage($input['runtime_proxy_transport']),
             'adopted' => false,
@@ -153,7 +155,7 @@ final class AppStoreController implements Loggable
     }
 
     /**
-     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
+     * @param  array{name: string, node: string, source: AppSourcePlan, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function stream(
         Request $request,
@@ -185,9 +187,9 @@ final class AppStoreController implements Loggable
             $node,
         ): void {
             $events->tree('Creating App', [
-                ['key' => 'operation', 'label' => 'Record operation state'],
+                ['key' => 'operation', 'label' => 'Prepare app creation'],
                 ['key' => 'source', 'label' => 'Create app source'],
-                ['key' => 'registry', 'label' => 'Write app registry'],
+                ['key' => 'registry', 'label' => 'Register app'],
                 ['key' => 'runtime', 'label' => 'Apply app runtime'],
             ]);
 
@@ -196,7 +198,12 @@ final class AppStoreController implements Loggable
             $events->stepEvent('source', 'running', "Creating source for {$input['name']}");
 
             try {
-                $source = $createAppSourceOnNode->handle($node, $input['name'], $input['repository'], $input['domain']);
+                $source = $createAppSourceOnNode->handle(
+                    $node,
+                    $input['name'],
+                    $input['source'],
+                    $input['domain'],
+                );
 
                 if (! $source['result']->successful()) {
                     $error = [
@@ -204,11 +211,7 @@ final class AppStoreController implements Loggable
                         'message' => "Source creation for app '{$input['name']}' failed on node '{$node->name}'.",
                         'meta' => [
                             'reason' => trim($source['result']->output()) ?: 'source creation failed',
-                            ...(
-                                $input['repository'] !== null
-                                    ? ['transport' => GitRepositoryReference::transport($input['repository'])]
-                                    : []
-                            ),
+                            'transport' => GitRepositoryReference::transport($input['source']->repository),
                         ],
                     ];
 
@@ -232,7 +235,7 @@ final class AppStoreController implements Loggable
                     'domain' => $input['domain'],
                     'path' => $source['path'],
                     'document_root' => $input['root'],
-                    'repository' => $input['repository'],
+                    'repository' => $input['source']->repository,
                     'php_version' => $input['php_version'],
                     'runtime_config' => $this->runtimeConfigForStorage($input['runtime_proxy_transport']),
                     'adopted' => false,
@@ -303,13 +306,15 @@ final class AppStoreController implements Loggable
     }
 
     /**
-     * @return array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}|JsonResponse
+     * @return array{name: string, node: string, source: AppSourcePlan, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
         $name = $this->stringInput($request, 'name');
         $node = $this->stringInput($request, 'node');
-        $repository = GitRepositoryReference::canonicalize($this->stringInput($request, 'repository'));
+        $repositoryInput = $this->stringInput($request, 'repository');
+        $templateRepositoryInput = $this->stringInput($request, 'template_repository');
+        $newRepositoryInput = $this->stringInput($request, 'new_repository');
         $root = $this->stringInput($request, 'root') ?? 'public';
         $phpVersion = $this->stringInput($request, 'php_version') ?? PhpRuntimeCatalog::DEFAULT;
         $domain = $this->stringInput($request, 'domain');
@@ -327,11 +332,14 @@ final class AppStoreController implements Loggable
             return $this->validationFailed('node', 'The node field is required.');
         }
 
-        if ($repository === false) {
-            return $this->validationFailed(
-                'repository',
-                'Repository must be a full Git URL or GitHub owner/repo shorthand.',
-            );
+        $source = $this->validatedSource(
+            $repositoryInput,
+            $templateRepositoryInput,
+            $newRepositoryInput,
+        );
+
+        if ($source instanceof JsonResponse) {
+            return $source;
         }
 
         if ($root === '' || preg_match('/[\x00-\x1F;`$|&<>"\'\\\\]/', $root)) {
@@ -360,12 +368,79 @@ final class AppStoreController implements Loggable
         return [
             'name' => $name,
             'node' => $node,
-            'repository' => $repository,
+            'source' => $source,
             'root' => $root,
             'php_version' => $phpVersion,
             'domain' => $domain,
             'runtime_proxy_transport' => $runtimeProxyTransport,
         ];
+    }
+
+    /**
+     * @return AppSourcePlan|JsonResponse
+     */
+    private function validatedSource(
+        ?string $repository,
+        ?string $templateRepository,
+        ?string $newRepository,
+    ): AppSourcePlan|JsonResponse {
+        $hasCloneSource = $repository !== null;
+        $hasTemplateSource = $templateRepository !== null || $newRepository !== null;
+
+        if ($hasCloneSource === $hasTemplateSource) {
+            return $this->sourceValidationFailed();
+        }
+
+        if ($hasCloneSource) {
+            $canonicalRepository = GitRepositoryReference::canonicalize($repository);
+
+            if (! is_string($canonicalRepository)) {
+                return $this->validationFailed(
+                    'repository',
+                    'Repository must be a full Git URL or GitHub owner/repo shorthand.',
+                );
+            }
+
+            return AppSourcePlan::clone($canonicalRepository);
+        }
+
+        if ($templateRepository === null || $newRepository === null) {
+            return $this->sourceValidationFailed();
+        }
+
+        if (! GitRepositoryReference::isGithubSlug($templateRepository)) {
+            return $this->validationFailed(
+                'template_repository',
+                'Template repository must use GitHub owner/repo syntax.',
+            );
+        }
+
+        if (! GitRepositoryReference::isGithubSlug($newRepository)) {
+            return $this->validationFailed(
+                'new_repository',
+                'New repository must use GitHub owner/repo syntax.',
+            );
+        }
+
+        $canonicalRepository = GitRepositoryReference::canonicalize($newRepository);
+
+        if (! is_string($canonicalRepository)) {
+            return $this->sourceValidationFailed();
+        }
+
+        return AppSourcePlan::template(
+            repository: $canonicalRepository,
+            templateRepository: $templateRepository,
+            newRepository: $newRepository,
+        );
+    }
+
+    private function sourceValidationFailed(
+        string $message = 'Supply repository, or supply both template_repository and new_repository.',
+    ): JsonResponse {
+        return $this->validationFailed('source', $message, [
+            'fields' => ['repository', 'template_repository', 'new_repository'],
+        ]);
     }
 
     /**
@@ -411,7 +486,7 @@ final class AppStoreController implements Loggable
     }
 
     /**
-     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
+     * @param  array{name: string, node: string, source: AppSourcePlan, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function proxyRouteDomain(array $input, Node $node): string
     {
@@ -447,9 +522,20 @@ final class AppStoreController implements Loggable
         return app(AppResponsePayload::class)->forApp($app);
     }
 
-    private function validationFailed(string $field, string $message): JsonResponse
+    /**
+     * @param  array<string, mixed>  $extraMeta
+     */
+    private function validationFailed(string $field, string $message, array $extraMeta = []): JsonResponse
     {
-        return $this->error('validation_failed', $message, ['field' => $field], 400);
+        return $this->error(
+            'validation_failed',
+            $message,
+            [
+                'field' => $field,
+                ...$extraMeta,
+            ],
+            400,
+        );
     }
 
     /**

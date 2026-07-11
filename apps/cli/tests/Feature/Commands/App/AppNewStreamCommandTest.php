@@ -3,6 +3,46 @@
 declare(strict_types=1);
 
 describe('AppNewStream command', function (): void {
+    it('renders gateway-authored app:new progress in human mode', function (): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Creating App',
+                'steps' => [
+                    ['key' => 'operation', 'label' => 'Prepare app creation'],
+                    ['key' => 'source', 'label' => 'Create app source'],
+                    ['key' => 'registry', 'label' => 'Register app'],
+                    ['key' => 'runtime', 'label' => 'Apply app runtime'],
+                ],
+            ])
+                .gatewayProgressFrame('step', [
+                    'key' => 'source',
+                    'status' => 'running',
+                    'message' => 'Creating source for docs',
+                ])
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => ['footer' => "App 'docs' created."],
+                ]),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'app:new', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            '--repo' => 'hardimpact/docs',
+        ]);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Creating App')
+            ->toContain('Prepare app creation')
+            ->toContain('Create app source')
+            ->toContain('Register app')
+            ->toContain('Apply app runtime')
+            ->toContain('Creating source for docs')
+            ->toContain("App 'docs' created.");
+    });
+
     it('emits only the final AppNewStream complete frame in json mode', function (): void {
         $complete = [
             'exit_code' => 0,
@@ -25,6 +65,7 @@ describe('AppNewStream command', function (): void {
         [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
+            '--repo' => 'hardimpact/docs',
             '--json' => true,
         ]);
 
@@ -55,6 +96,7 @@ describe('AppNewStream command', function (): void {
         [$exitCode, $output] = runCommand($this, 'app:new', [
             'name' => 'docs',
             '--node' => 'app-1',
+            '--repo' => 'hardimpact/docs',
             '--json' => true,
         ]);
 

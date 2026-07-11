@@ -1031,6 +1031,8 @@
                 "node",
                 "node-transport",
                 "repo",
+                "template-repo",
+                "new-repo",
                 "root",
                 "php-version",
                 "domain",
@@ -1060,7 +1062,10 @@
                 "apps/cli/tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php",
                 "apps/cli/tests/Feature/Commands/App/AppNewStreamCommandTest.php",
                 "apps/cli/tests/Feature/Commands/App/AppWriteCommandTest.php",
-                "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php"
+                "apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
+                "apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
+                "packages/core/tests/SourceControl/GitCloneReferenceTest.php"
             ],
             "verification_hints": [
                 {
@@ -1085,11 +1090,32 @@
                     "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/Commands/App/AppWriteCommandTest.php"
                 },
                 {
+                    "repo_test_path": "apps/cli/tests/Feature/InternalAppSourceCreateCommandTest.php",
+                    "working_directory": "apps/cli",
+                    "runner": "bin/orbit-cli-pest",
+                    "runner_test_path": "tests/Feature/InternalAppSourceCreateCommandTest.php",
+                    "suggested_command": "bin/orbit-cli-pest --compact tests/Feature/InternalAppSourceCreateCommandTest.php"
+                },
+                {
                     "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php",
                     "working_directory": "apps/gateway",
                     "runner": "bin/orbit-gateway-pest",
                     "runner_test_path": "tests/Feature/Http/Api/AppStoreControllerTest.php",
                     "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppStoreControllerTest.php"
+                },
+                {
+                    "repo_test_path": "apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
+                    "working_directory": "apps/gateway",
+                    "runner": "bin/orbit-gateway-pest",
+                    "runner_test_path": "tests/Feature/Http/Api/AppStoreStreamControllerTest.php",
+                    "suggested_command": "bin/orbit-gateway-pest --compact tests/Feature/Http/Api/AppStoreStreamControllerTest.php"
+                },
+                {
+                    "repo_test_path": "packages/core/tests/SourceControl/GitCloneReferenceTest.php",
+                    "working_directory": "packages/core",
+                    "runner": "vendor/bin/pest",
+                    "runner_test_path": "tests/SourceControl/GitCloneReferenceTest.php",
+                    "suggested_command": "cd packages/core && vendor/bin/pest --compact tests/SourceControl/GitCloneReferenceTest.php"
                 }
             ],
             "p4_mapping": {

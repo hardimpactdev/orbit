@@ -6,6 +6,9 @@ namespace App\Commands\App;
 
 use App\Commands\Concerns\PromptsForGatewayRegistryEntities;
 use App\Exceptions\OrbitConfigStoreException;
+use App\Services\Apps\AppNameInputValidator;
+use App\Services\Apps\AppNewSourceInputResolver;
+use App\Services\Apps\AppNewSourceValidationFailed;
 use App\Services\OrbitConfigStore;
 use Orbit\Core\Progress\ProgressEventType;
 
@@ -21,6 +24,8 @@ final class AppNewCommand extends AppGatewayCommand
         {--node= : Target app node}
         {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--repo= : Repository to clone}
+        {--template-repo= : GitHub template repository (owner/repo)}
+        {--new-repo= : New private GitHub repository (owner/repo)}
         {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
@@ -33,6 +38,12 @@ final class AppNewCommand extends AppGatewayCommand
 
     public function handle(): int
     {
+        $outputModeValidation = $this->validateProgressOutputMode();
+
+        if ($outputModeValidation !== null) {
+            return $outputModeValidation;
+        }
+
         $node = $this->resolveNode();
 
         if (is_int($node)) {
@@ -45,10 +56,22 @@ final class AppNewCommand extends AppGatewayCommand
             return $this->failValidation('name', 'App name is required.');
         }
 
-        $nameValidation = $this->validateName($name);
+        $nameValidation = app(AppNameInputValidator::class)->validate($name);
 
         if ($nameValidation !== null) {
             return $this->failValidation('name', $nameValidation);
+        }
+
+        try {
+            $sources = app(AppNewSourceInputResolver::class);
+            $repository = $this->stringOption('repo');
+            $templateRepository = $this->stringOption('template-repo');
+            $newRepository = $this->stringOption('new-repo');
+            $source = $this->allowsInteractiveInput()
+                ? $sources->resolveInteractive($repository, $templateRepository, $newRepository)
+                : $sources->resolveNonInteractive($repository, $templateRepository, $newRepository);
+        } catch (AppNewSourceValidationFailed $exception) {
+            return $this->failValidation($exception->field, $exception->getMessage(), $exception->meta);
         }
 
         return $this->streamProgress(
@@ -56,7 +79,7 @@ final class AppNewCommand extends AppGatewayCommand
             [
                 'name' => $name,
                 'node' => $node,
-                'repository' => $this->stringOption('repo'),
+                ...$source,
                 'root' => $this->stringOption('root') ?? 'public',
                 'php_version' => $this->stringOption('php-version') ?? '8.5',
                 'domain' => $this->stringOption('domain'),
@@ -106,24 +129,13 @@ final class AppNewCommand extends AppGatewayCommand
         }
 
         if ($this->allowsInteractiveInput()) {
+            $names = app(AppNameInputValidator::class);
+
             return trim(text(
                 label: 'App name (slug):',
                 required: true,
-                validate: fn (string $value): ?string => $this->validateName(trim($value)),
+                validate: static fn (string $value): ?string => $names->validate(trim($value)),
             ));
-        }
-
-        return null;
-    }
-
-    private function validateName(string $name): ?string
-    {
-        if (! preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $name)) {
-            return 'App name must match ^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$ (lowercase letters, digits, hyphens; no leading or trailing hyphen).';
-        }
-
-        if (strlen($name) > 40) {
-            return 'App name must not exceed 40 characters.';
         }
 
         return null;

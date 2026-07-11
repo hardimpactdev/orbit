@@ -27,7 +27,7 @@ function appPruneGrantAccess(E2ETopologyHarness $topology): void
             'consumer_node_id' => $nodes->get('operator-1'),
             'serving_node_id' => $nodes->get('app-dev-1'),
         ], [
-            'permissions' => json_encode(['app:new', 'app:agent', 'app:prune'], JSON_THROW_ON_ERROR),
+            'permissions' => json_encode(['app:register', 'app:agent', 'app:prune'], JSON_THROW_ON_ERROR),
             'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),
@@ -63,20 +63,31 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
 
         appPruneGrantAccess($topology);
 
-        // Create app with opencode adapter so prune can query it.
-        $create = $topology->ssh(
+        $topology->ssh(
+            'dev',
+            sprintf('sudo install -d -o orbit -g orbit %s', escapeshellarg($path)),
+            timeoutSeconds: 60,
+        );
+
+        // Register an app with the opencode adapter so prune can query it.
+        $registration = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
+                escapeshellarg($path),
             ),
             timeoutSeconds: 180,
         );
 
-        $createPayload = json_decode(trim($create->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $createData = e2eJsonCommandResultData($createPayload);
-        expect($createData['result']['action'])->toBe('created');
+        $registrationPayload = json_decode(
+            trim($registration->output()),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $registrationData = e2eJsonCommandResultData($registrationPayload);
+        expect($registrationData['result']['action'])->toBe('adopted');
 
         // Set opencode adapter so the app has a configured agent IDE.
         $topology->ssh(
@@ -137,19 +148,30 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
 
         appPruneGrantAccess($topology);
 
-        $create = $topology->ssh(
+        $topology->ssh(
+            'dev',
+            sprintf('sudo install -d -o orbit -g orbit %s', escapeshellarg($path)),
+            timeoutSeconds: 60,
+        );
+
+        $registration = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
+                escapeshellarg($path),
             ),
             timeoutSeconds: 180,
         );
 
-        $createPayload = json_decode(trim($create->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $createData = e2eJsonCommandResultData($createPayload);
-        expect($createData['result']['action'])->toBe('created');
+        $registrationPayload = json_decode(
+            trim($registration->output()),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $registrationData = e2eJsonCommandResultData($registrationPayload);
+        expect($registrationData['result']['action'])->toBe('adopted');
 
         $topology->ssh(
             'operator',

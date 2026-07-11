@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
+use Orbit\Core\SourceControl\GitHubRepositorySlug;
+
 final readonly class LocalGitRepositoryReference
 {
+    public function isGithubSlug(string $repository): bool
+    {
+        return GitHubRepositorySlug::isValid($repository);
+    }
+
     public function githubSlug(string $repository): ?string
     {
-        if (preg_match('/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/', $repository) === 1) {
+        if ($this->isGithubSlug($repository)) {
             return $repository;
         }
 
@@ -35,6 +42,23 @@ final readonly class LocalGitRepositoryReference
         }
 
         return null;
+    }
+
+    public function sameGithubRepository(string $first, string $second): bool
+    {
+        $firstSlug = $this->githubSlug($first);
+        $secondSlug = $this->githubSlug($second);
+
+        return $firstSlug !== null && $secondSlug !== null && strcasecmp($firstSlug, $secondSlug) === 0;
+    }
+
+    public function matchesOrigin(string $repository, string $origin): bool
+    {
+        if ($this->sameGithubRepository($repository, $origin)) {
+            return true;
+        }
+
+        return in_array($origin, $this->expectedOrigins($repository), strict: true);
     }
 
     /**

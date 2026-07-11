@@ -58,7 +58,8 @@ it('streams app creation from an operation_run source', function (): void {
     assignAppStoreStreamRole($targetNode, 'app-dev', ['tld' => 'test']);
     grantAppStoreStreamAccess($caller, $targetNode);
 
-    app()->instance(RemoteShell::class, new AppStoreStreamRecordingRemoteShell);
+    $remoteShell = new AppStoreStreamRecordingRemoteShell;
+    app()->instance(RemoteShell::class, $remoteShell);
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
     $response = $this->call(
@@ -67,6 +68,8 @@ it('streams app creation from an operation_run source', function (): void {
         [
             'name' => 'docs',
             'node' => 'app-1',
+            'template_repository' => 'hardimpact/laravel-template',
+            'new_repository' => 'hardimpact/docs',
             'root' => 'public',
             'php_version' => '8.5',
             'runtime_proxy_transport' => 'https',
@@ -83,11 +86,15 @@ it('streams app creation from an operation_run source', function (): void {
 
     $content = $response->streamedContent();
     $operationRun = OperationRun::query()->where('operation_type', 'app:new')->firstOrFail();
+    $sourceScript = collect($remoteShell->scripts)
+        ->first(
+            fn (string $script): bool => str_contains($script, 'internal:app-source:create'),
+        );
 
     expect($content)
         ->toContain('event: tree')
         ->and($content)
-        ->toContain('Record operation state')
+        ->toContain('Prepare app creation')
         ->and($content)
         ->toContain('Create app source')
         ->and($content)
@@ -104,14 +111,29 @@ it('streams app creation from an operation_run source', function (): void {
         ->toBe('docs')
         ->and($operationRun->result['app']['runtime_config']['proxy_transport'])
         ->toBe('https')
+        ->and($operationRun->result['app']['repository'])
+        ->toBe('git@github.com:hardimpact/docs.git')
         ->and(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
-        ->toBe(['proxy_transport' => 'https']);
+        ->toBe(['proxy_transport' => 'https'])
+        ->and(App::query()->where('name', 'docs')->firstOrFail()->repository)
+        ->toBe('git@github.com:hardimpact/docs.git')
+        ->and($sourceScript)
+        ->toBeString()
+        ->toContain("internal:app-source:create 'orbit' '/home/orbit/apps/docs'")
+        ->toContain("--template-repository='hardimpact/laravel-template'")
+        ->toContain("--new-repository='hardimpact/docs'")
+        ->not->toContain('--repository=');
 });
 
 final class AppStoreStreamRecordingRemoteShell implements RemoteShell
 {
+    /** @var list<string> */
+    public array $scripts = [];
+
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        $this->scripts[] = $script;
+
         return new RemoteShellResult(
             exitCode: 0,
             stdout: '',

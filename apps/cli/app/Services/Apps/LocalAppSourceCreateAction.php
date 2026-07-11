@@ -10,16 +10,22 @@ final readonly class LocalAppSourceCreateAction
 {
     public function __construct(
         private LocalAppSourceCloneAction $cloner = new LocalAppSourceCloneAction,
+        private LocalAppSourceTemplateAction $templateCreator = new LocalAppSourceTemplateAction,
     ) {}
 
     /**
      * @return array<string, mixed>
      */
-    public function create(mixed $user, mixed $path, mixed $repository): array
-    {
+    public function create(
+        mixed $user,
+        mixed $path,
+        mixed $repository,
+        mixed $templateRepository,
+        mixed $newRepository,
+    ): array {
         $user = $this->user($user);
         $path = $this->absolutePath($path, 'path');
-        $repository = $this->repository($repository);
+        $source = LocalAppSourcePlan::fromInput($repository, $templateRepository, $newRepository);
         $commands = [];
 
         $commands[] = $this->mustRun([
@@ -35,34 +41,27 @@ final readonly class LocalAppSourceCreateAction
             dirname($path),
         ]);
 
-        if ($repository !== null) {
-            $commands[] = $this->cloner->clone($repository, $path);
+        if ($source->templateRepository === null) {
+            $commands[] = $this->cloner->clone($source->repository, $path);
 
             return [
                 'user' => $user,
                 'path' => $path,
-                'repository' => $repository,
+                'repository' => $source->repository,
                 'commands' => $commands,
             ];
         }
 
-        $commands[] = $this->mustRun([
-            'sudo',
-            'install',
-            '-d',
-            '-m',
-            '755',
-            '-o',
-            $user,
-            '-g',
-            $user,
-            $path,
-        ]);
+        array_push(
+            $commands,
+            ...$this->templateCreator->create($source->templateRepository, $source->repository, $path),
+        );
 
         return [
             'user' => $user,
             'path' => $path,
-            'repository' => $repository,
+            'repository' => $source->repository,
+            'template_repository' => $source->templateRepository,
             'commands' => $commands,
         ];
     }
@@ -128,23 +127,6 @@ final readonly class LocalAppSourceCreateAction
             errorCode: 'validation_failed',
             message: "{$field} must be an absolute path.",
             meta: ['field' => $field],
-        );
-    }
-
-    private function repository(mixed $value): ?string
-    {
-        if ($value === null || $value === false || $value === '') {
-            return null;
-        }
-
-        if (is_string($value) && ! str_contains($value, "\0")) {
-            return $value;
-        }
-
-        throw new LocalAppSourceCreateFailure(
-            errorCode: 'validation_failed',
-            message: 'Repository is invalid.',
-            meta: ['field' => 'repository'],
         );
     }
 }

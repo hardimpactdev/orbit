@@ -11,8 +11,8 @@ is invoked from a peer the gateway identifies as a gateway node.
   identity. When the peer's gateway-owned node role is `gateway`, gateway
   implicit authority authorizes the request.
 - **Apply:** The gateway writes app configuration to its local SQLite database
-  and applies app-role artifacts over SSH to the target node via
-  `RemoteShell`. The observable result is identical to the operator-caller path.
+  and applies app-role artifacts through the selected node execution transport.
+  The observable result is identical to the operator-caller path.
 - **No CLI shortcut:** The CLI still calls the gateway API. There is no
   client-side bypass that skips the API just because the operator happens to be
   running the command on the gateway host.
@@ -24,3 +24,4 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/AppStoreControllerTest.php` | Gateway API path writes registry and applies via mocked `RemoteShell`. |
+| `apps/gateway/tests/Feature/Http/Api/AppStoreStreamControllerTest.php` | Gateway stream tree and source-command forwarding for clone and template branches. |

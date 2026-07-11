@@ -30,6 +30,16 @@ trait StreamsGatewayProgress
     abstract protected function nodeTransportPreference(): ?string;
 
     /**
+     * @param  array<string, mixed>  $meta
+     * @param  array<string, mixed>  $data
+     */
+    abstract protected function renderFailure(string $code, string $message, array $meta = [], array $data = []): int;
+
+    abstract protected function wantsJson(): bool;
+
+    abstract protected function wantsStreamingJson(): bool;
+
+    /**
      * Stream progress events from the gateway path.
      *
      * $onFinalFrame is called once with the terminal (complete / error) frame payload
@@ -44,6 +54,12 @@ trait StreamsGatewayProgress
         callable $onFinalFrame,
         string $method = 'post',
     ): int {
+        $outputModeValidation = $this->validateProgressOutputMode();
+
+        if ($outputModeValidation !== null) {
+            return $outputModeValidation;
+        }
+
         $client = $this->gatewayStreamClient();
         $wantsJson = $this->wantsJson();
         $wantsStreamJson = $this->wantsStreamingJson();
@@ -51,14 +67,6 @@ trait StreamsGatewayProgress
         $finalType = null;
         $finalPayload = [];
         $streamStarted = false;
-
-        if ($wantsJson && $wantsStreamJson) {
-            return $this->renderFailure(
-                'validation_failed',
-                'Use either --json or --stream-json, not both.',
-                ['fields' => ['json', 'stream-json'], 'reason' => 'conflicting_options'],
-            );
-        }
 
         try {
             $client->streamEvents(
@@ -110,6 +118,19 @@ trait StreamsGatewayProgress
         return $this->renderFailure(
             'gateway_unavailable',
             'Gateway progress stream closed without a terminal frame.',
+        );
+    }
+
+    protected function validateProgressOutputMode(): ?int
+    {
+        if (! ($this->wantsJson() && $this->wantsStreamingJson())) {
+            return null;
+        }
+
+        return $this->renderFailure(
+            'validation_failed',
+            'Use either --json or --stream-json, not both.',
+            ['fields' => ['json', 'stream-json'], 'reason' => 'conflicting_options'],
         );
     }
 

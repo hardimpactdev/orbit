@@ -60,21 +60,30 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
 
         opencodeWorkspaceWaitForServer($topology);
 
-        $app = $topology->ssh(
+        $topology->ssh(
+            'dev',
+            sprintf('sudo install -d -o orbit -g orbit %s', escapeshellarg($appPath)),
+            timeoutSeconds: 60,
+        );
+
+        $registration = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --root=public --php-version=8.5 --json',
+                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --root=public --php-version=8.5 --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($appName),
+                escapeshellarg($appPath),
             ),
             timeoutSeconds: 240,
         );
-        $appPayload = e2eJsonCommandPayload($app->output());
-        $appData = e2eJsonCommandData($appPayload);
+        $registrationPayload = e2eJsonCommandPayload($registration->output());
+        $registrationData = e2eJsonCommandData($registrationPayload);
 
-        expect($app->successful())
+        expect($registration->successful())
             ->toBeTrue()
-            ->and($appData['app'])
+            ->and($registrationData['result']['action'])
+            ->toBe('adopted')
+            ->and($registrationData['app'])
             ->toMatchArray([
                 'name' => $appName,
                 'node' => 'app-dev-1',

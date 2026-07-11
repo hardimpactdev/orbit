@@ -14,7 +14,7 @@ pest()->group(
     'e2e-feature-operator-gateway-dev',
 );
 
-it('serves an app created on a prepared app-dev topology', function (): void {
+it('serves a registered app on a prepared app-dev topology', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true)
         ->withCurrentCheckout(roles: ['operator', 'gateway']);
@@ -38,18 +38,30 @@ it('serves an app created on a prepared app-dev topology', function (): void {
         appServingPrepareRedisProbe($topology);
         appServingRestoreDoctorFamily($topology, 'tool');
 
-        $appNewResult = $topology->ssh(
+        $topology->ssh(
+            'dev',
+            sprintf('sudo install -d -o orbit -g orbit %s', escapeshellarg($appPath)),
+            timeoutSeconds: 60,
+        );
+
+        $appRegisterResult = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:register %s --node=app-dev-1 --path=%s --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($appName),
+                escapeshellarg($appPath),
             ),
             timeoutSeconds: 180,
         );
-        $appNewData = e2eJsonCommandResultData(e2eJsonCommandPayload($appNewResult->output()));
+        $appRegisterData = e2eJsonCommandResultData(e2eJsonCommandPayload($appRegisterResult->output()));
 
-        expect($appNewData['app']['name'])->toBe($appName)->and($appNewData['app']['node'])->toBe('app-dev-1');
+        expect($appRegisterData['result']['action'])
+            ->toBe('adopted')
+            ->and($appRegisterData['app']['name'])
+            ->toBe($appName)
+            ->and($appRegisterData['app']['node'])
+            ->toBe('app-dev-1');
 
         $indexPhp = "<?php\nhttp_response_code(200);\necho 'orbit-e2e-serving-ok';\n";
         $composerJson = json_encode([
@@ -254,7 +266,7 @@ function appServingGrantAccess(E2ETopologyHarness $topology): void
             'consumer_node_id' => $nodes->get('operator-1'),
             'serving_node_id' => $nodes->get('app-dev-1'),
         ], [
-            'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
+            'permissions' => json_encode(['app:register'], JSON_THROW_ON_ERROR),
             'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
             'created_at' => now(),
             'updated_at' => now(),

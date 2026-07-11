@@ -10,14 +10,15 @@ Create a new Orbit-managed app on a node with an app role.
 orbit app:new [name]
 orbit app:new [name] --node=app-1
 orbit app:new [name] --repo=hardimpactdev/orbit --php-version=8.5
-orbit app:new [name] --domain=example.com --json
-orbit app:new [name] --domain=example.com --stream-json
+orbit app:new [name] --template-repo=hardimpactdev/laravel-template --new-repo=hardimpactdev/my-app
+orbit app:new [name] --repo=hardimpactdev/orbit --domain=example.com --json
+orbit app:new [name] --repo=hardimpactdev/orbit --domain=example.com --stream-json
 ```
 
 ## Description
 
-`app:new` creates or clones a new application on a target node through the
-gateway over SSH. After creating the app source, it writes initial gateway configuration
+`app:new` creates a new application on a target node from an explicit source
+plan. After creating the app source, it writes initial gateway configuration
 and runs the standard app registration pipeline to converge app runtime artifacts,
 proxy routes, and process definitions.
 
@@ -28,13 +29,22 @@ service instance in Orbit.
 
 The steps below describe what the command does during a successful run.
 
-- **Source Creation:** Creates an empty directory or clones a repository onto
-  the target node. Cloning runs non-interactively on the target node using the
-  credentials that node already has in place; `app:new` does not prompt for or
-  forward git credentials. GitHub repositories, including `owner/repo`
-  shorthand and `github.com` URLs, are cloned with `gh repo clone` using the
-  target node's GitHub CLI authentication. Full Git URLs for other hosts are
-  cloned with `git clone`.
+- **Source Resolution:** Before it starts creating anything, interactive
+  `app:new` resolves the target node, app slug, and whether to create a new
+  repository from a template or clone an existing repository. There is no
+  implicit empty-directory path. Use [`app:register`](../2_app-register/app-register.md)
+  to adopt source that already exists on a node.
+- **New Repository:** Creates a private GitHub repository from the selected
+  GitHub template, then clones the new repository into the app path. The
+  template and destination use `owner/repo` identities.
+- **Existing Repository:** Clones the selected repository into the app path.
+  GitHub repositories, including `owner/repo` shorthand and `github.com` URLs,
+  use `gh repo clone`; full Git URLs for other hosts use `git clone`.
+- **Credentials:** Repository creation and cloning run non-interactively on the
+  target node with credentials already configured there. Repository URLs with
+  embedded credentials, query strings, or fragments are rejected. `app:new`
+  never asks for, stores, or forwards git credentials, SSH keys, or access
+  tokens.
 - **Registry Write:** Writes authoritative app configuration to the gateway database.
   App names are identity slugs and must be globally unique in the gateway app
   registry.
@@ -55,19 +65,28 @@ The steps below describe what the command does during a successful run.
   `app:register` or `doctor --family=app --restore` will attempt to complete
   artifact convergence. If a previous `app:new` run already cloned the requested
   repository but failed before writing app configuration, rerunning `app:new`
-  reuses that matching checkout instead of cloning again.
+  reuses that matching checkout instead of cloning again. Template mode reuses
+  a matching checkout or an already-created destination only when GitHub
+  reports that the destination repository is private and came from the
+  requested template.
 
 ## Requirements
 
 - The CLI caller must be able to reach the Orbit gateway.
-- The gateway must be able to reach the target node over SSH.
-- The target node must be an active node.
+- The gateway must be able to reach the target node through its selected node
+  execution transport.
+- The target node must be active with the applicable app role: `app-dev`
+  without `--domain`, or `app-prod` when `--domain` is supplied.
+- Creating from a template requires authenticated GitHub CLI access on the
+  target node for `github.com` and a repository that GitHub exposes as a
+  template.
 
 ## Output
 
 You will receive one of the following output formats depending on the flags you supply.
 
-- **Human:** Progress covering source creation, registry write, setup, proxy route application, and apply verification.
+- **Human:** Progress covering operation state, source creation, registry write,
+  and runtime application.
 - **JSON:** A machine-readable result containing the new app's registry data, or
   a machine-readable failure with diagnostic metadata.
 - **Stream JSON:** `--stream-json` emits newline-delimited progress JSON and is

@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-07-11 — `app:new` resolves an explicit source plan before any side effect: operators either create a private GitHub repository from a named template or clone an existing repository, and empty-directory adoption remains the responsibility of `app:register`.
 - 2026-07-09 — `workspace:setup` resolves a missing workspace name locally from structured Codex Git-worktree metadata for `~/.codex/worktrees/<key>/<repo>` paths: a synced branch reference becomes its valid slug and thread-backed worktrees fall back to `codex-<key>`; Codex remains outside the Agent IDE adapter model.
 - 2026-07-09 — `workspace:setup` may adopt adapter-managed external worktrees from explicit `--app=<app.instance>` plus `--path=<absolute-worktree>` input without a positional workspace name; when no `[name]` is supplied, Orbit asks the app's effective Agent IDE adapter for workspace identity before falling back to path basename.
 - 2026-07-09 — Orbit CLI and Orbit Agent self-updates are owner-user local by default: each node has one configured Orbit owner user whose `$HOME/.local/bin/orbit`, `$HOME/.local/bin/orbit-agent`, `$HOME/.config/orbit/config.json`, and `$HOME/.config/orbit/install.json` are the update targets; the `agent` Unix user is a consumer reached through a read-only owner-config shim, and stale protected `/usr/local/bin/orbit` launchers may be reported or explicitly adopted but are not mutated by normal `update` or `update:all` flows.

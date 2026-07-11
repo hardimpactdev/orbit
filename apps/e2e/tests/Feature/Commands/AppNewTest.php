@@ -41,10 +41,11 @@ function appNewGrantAccess(E2ETopologyHarness $topology): void
     );
 }
 
-it('creates a real app source directory from a operator caller through the gateway api', function (): void {
+it('creates a real app source directory from an operator caller through the gateway api', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
     $name = 'e2e-app-'.strtolower(bin2hex(random_bytes(3)));
+    $path = "/home/orbit/apps/{$name}";
 
     try {
         $topology->withCurrentCheckout(roles: ['operator', 'gateway', 'dev']);
@@ -63,7 +64,7 @@ it('creates a real app source directory from a operator caller through the gatew
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-dev-1 --json',
+                'cd %s && orbit app:new %s --node=app-dev-1 --repo=octocat/Hello-World --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
             ),
@@ -82,15 +83,27 @@ it('creates a real app source directory from a operator caller through the gatew
             ->and($app['node'])
             ->toBe('app-dev-1')
             ->and($app['path'])
-            ->toBe("/home/orbit/apps/{$name}");
+            ->toBe($path);
 
         $source = $topology->ssh(
             'dev',
-            sprintf('test -d %s', escapeshellarg("/home/orbit/apps/{$name}")),
+            sprintf(
+                'test -d %s && git -C %s remote get-url origin',
+                escapeshellarg("{$path}/.git"),
+                escapeshellarg($path),
+            ),
             timeoutSeconds: 60,
         );
+        $normalizedOrigin = preg_replace(
+            ['#^git@github\.com:#', '#^ssh://git@github\.com/#', '#\.git/?$#'],
+            ['https://github.com/', 'https://github.com/', ''],
+            trim($source->output()),
+        );
 
-        expect($source->successful())->toBeTrue();
+        expect($source->successful())
+            ->toBeTrue()
+            ->and($normalizedOrigin)
+            ->toBe('https://github.com/octocat/Hello-World');
 
         $gatewayRecord = $topology->ssh(
             'gateway',
@@ -106,7 +119,7 @@ it('creates a real app source directory from a operator caller through the gatew
             'app' => true,
         ]);
     } finally {
-        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg("/home/orbit/apps/{$name}"), timeoutSeconds: 60);
+        $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');

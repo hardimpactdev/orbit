@@ -54,6 +54,7 @@ it('serves a production app through a prepared ingress topology', function (): v
     $suffix = strtolower(bin2hex(random_bytes(3)));
     $name = "ingress-{$suffix}";
     $domain = "docs-{$suffix}.example.test";
+    $path = "/home/orbit/apps/{$name}";
 
     try {
         expect($topology->lease()->devApp())
@@ -87,12 +88,19 @@ it('serves a production app through a prepared ingress topology', function (): v
         e2eGrantNodeAccess($topology, serving: 'app-prod-1');
         prepareIngressProductionRuntime($topology);
 
+        $topology->ssh(
+            'prod',
+            sprintf('sudo install -d -o orbit -g orbit %s', escapeshellarg($path)),
+            timeoutSeconds: 60,
+        );
+
         $result = $topology->ssh(
             'operator',
             sprintf(
-                'cd %s && orbit app:new %s --node=app-prod-1 --domain=%s --root=public --php-version=8.5 --json',
+                'cd %s && orbit app:register %s --node=app-prod-1 --path=%s --domain=%s --root=public --php-version=8.5 --json',
                 escapeshellarg($topology->checkout('operator')),
                 escapeshellarg($name),
+                escapeshellarg($path),
                 escapeshellarg($domain),
             ),
             timeoutSeconds: 240,
@@ -127,7 +135,7 @@ it('serves a production app through a prepared ingress topology', function (): v
     } finally {
         $topology->ssh(
             'prod',
-            'sudo rm -rf '.escapeshellarg("/home/orbit/apps/{$name}"),
+            'sudo rm -rf '.escapeshellarg($path),
             timeoutSeconds: 60,
             allowFailure: true,
         );

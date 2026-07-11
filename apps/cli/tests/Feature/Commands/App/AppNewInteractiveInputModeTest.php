@@ -25,7 +25,7 @@ describe('app:new interactive input mode', function (): void {
         }
     });
 
-    it('prompts for node and app name before posting to the gateway', function (): void {
+    it('resolves the complete zero-argument template flow before posting to the gateway', function (): void {
         fakeGatewayProgressStreamClient(
             gatewayProgressFrame('complete', appNewInteractiveCompleteFrame('docs', 'app-1')),
         );
@@ -46,6 +46,13 @@ describe('app:new interactive input mode', function (): void {
         $this
             ->artisan('app:new')
             ->expectsQuestion('App name (slug):', 'docs')
+            ->expectsChoice(
+                'How should the app source be created?',
+                'new',
+                ['New repository from template', 'Clone existing repository', 'new', 'clone'],
+            )
+            ->expectsQuestion('Template repository (GitHub owner/repo):', 'hardimpact/laravel-template')
+            ->expectsQuestion('New private repository (GitHub owner/repo):', 'hardimpact/docs')
             ->assertSuccessful();
 
         Http::assertSent(
@@ -60,6 +67,8 @@ describe('app:new interactive input mode', function (): void {
                     'name' => 'docs',
                     'node' => 'app-1',
                     'repository' => null,
+                    'template_repository' => 'hardimpact/laravel-template',
+                    'new_repository' => 'hardimpact/docs',
                     'root' => 'public',
                     'php_version' => '8.5',
                     'domain' => null,
@@ -67,6 +76,87 @@ describe('app:new interactive input mode', function (): void {
                 ]
             ),
         );
+    });
+
+    it('resolves a new private repository from a template before posting to the gateway', function (): void {
+        fakeGatewayProgressStreamClient(
+            gatewayProgressFrame('complete', appNewInteractiveCompleteFrame('docs', 'app-1')),
+        );
+
+        $this
+            ->artisan('app:new', [
+                'name' => 'docs',
+                '--node' => 'app-1',
+            ])
+            ->expectsChoice(
+                'How should the app source be created?',
+                'new',
+                ['New repository from template', 'Clone existing repository', 'new', 'clone'],
+            )
+            ->expectsQuestion('Template repository (GitHub owner/repo):', 'hardimpact/laravel-template')
+            ->expectsQuestion('New private repository (GitHub owner/repo):', 'hardimpact/docs')
+            ->assertSuccessful();
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'repository' => null,
+                'template_repository' => 'hardimpact/laravel-template',
+                'new_repository' => 'hardimpact/docs',
+                'root' => 'public',
+                'php_version' => '8.5',
+                'domain' => null,
+                'runtime_proxy_transport' => 'http',
+            ],
+        );
+    });
+
+    it('resolves an existing repository clone before posting to the gateway', function (): void {
+        fakeGatewayProgressStreamClient(
+            gatewayProgressFrame('complete', appNewInteractiveCompleteFrame('docs', 'app-1')),
+        );
+
+        $this
+            ->artisan('app:new', [
+                'name' => 'docs',
+                '--node' => 'app-1',
+            ])
+            ->expectsChoice(
+                'How should the app source be created?',
+                'clone',
+                ['New repository from template', 'Clone existing repository', 'new', 'clone'],
+            )
+            ->expectsQuestion('Repository URL (or GitHub owner/repo):', 'hardimpact/docs')
+            ->assertSuccessful();
+
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->data() === [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
+                'template_repository' => null,
+                'new_repository' => null,
+                'root' => 'public',
+                'php_version' => '8.5',
+                'domain' => null,
+                'runtime_proxy_transport' => 'http',
+            ],
+        );
+    });
+
+    it('validates an explicit template before prompting for its missing destination', function (): void {
+        Http::fake();
+
+        $this
+            ->artisan('app:new', [
+                'name' => 'docs',
+                '--node' => 'app-1',
+                '--template-repo' => 'not-a-template',
+            ])
+            ->assertFailed();
+
+        Http::assertNothingSent();
     });
 
     it('fails slug validation for an explicit app name before contacting the gateway', function (): void {
@@ -135,7 +225,7 @@ describe('app:new interactive input mode', function (): void {
         Prompt::fake([Key::ENTER]);
 
         $this
-            ->artisan('app:new')
+            ->artisan('app:new', ['--repo' => 'hardimpact/docs'])
             ->expectsQuestion('App name (slug):', 'docs')
             ->assertSuccessful();
 
@@ -166,7 +256,7 @@ describe('app:new interactive input mode', function (): void {
         Prompt::fake([Key::DOWN, Key::ENTER]);
 
         $this
-            ->artisan('app:new')
+            ->artisan('app:new', ['--repo' => 'hardimpact/docs'])
             ->expectsQuestion('App name (slug):', 'docs')
             ->assertSuccessful();
 

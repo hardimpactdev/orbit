@@ -13,9 +13,15 @@ abstract class AppGatewayCommand extends GatewayCommand
     use ResolvesHostContext;
     use StreamsGatewayProgress;
 
-    protected function failValidation(string $field, string $message): int
+    /**
+     * @param  array<string, mixed>  $extraMeta
+     */
+    protected function failValidation(string $field, string $message, array $extraMeta = []): int
     {
-        return $this->renderFailure('validation_failed', $message, ['field' => $field]);
+        return $this->renderFailure('validation_failed', $message, [
+            'field' => $field,
+            ...$extraMeta,
+        ]);
     }
 
     protected function apiAppPath(string $selector, string $suffix = ''): string

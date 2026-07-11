@@ -10,10 +10,10 @@ use App\Services\Apps\LocalAppSourceCreateFailure;
 final class AppSourceCreateCommand extends InternalExecutorCommand
 {
     #[\Override]
-    protected $signature = 'internal:app-source:create {user} {path} {--repository=} {--operation-token=} {--json}';
+    protected $signature = 'internal:app-source:create {user} {path} {--repository=} {--template-repository=} {--new-repository=} {--operation-token=} {--json}';
 
     #[\Override]
-    protected $description = 'Create an app source directory or clone an app repository on the local node';
+    protected $description = 'Clone an app repository or create one from a template on the local node';
 
     public function handle(LocalAppSourceCreateAction $action): int
     {
@@ -26,6 +26,8 @@ final class AppSourceCreateCommand extends InternalExecutorCommand
                 user: $this->argument('user'),
                 path: $this->argument('path'),
                 repository: $this->option('repository'),
+                templateRepository: $this->option('template-repository'),
+                newRepository: $this->option('new-repository'),
             ));
         } catch (LocalAppSourceCreateFailure $failure) {
             return $this->renderFailure($failure->errorCode, $failure->getMessage(), $failure->meta);

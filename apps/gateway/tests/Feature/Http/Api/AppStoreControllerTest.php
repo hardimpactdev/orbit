@@ -82,6 +82,156 @@ function app_store_fallback_server(): array
 }
 
 describe('AppStoreController', function (): void {
+    it('rejects incomplete or conflicting source plans before remote work', function (array $source): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                ...$source,
+            ],
+            [],
+            [],
+            app_store_fallback_server(),
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'source')
+            ->assertJsonPath('error.meta.fields', [
+                'repository',
+                'template_repository',
+                'new_repository',
+            ]);
+
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+    })->with([
+        'missing source' => [[]],
+        'template without destination' => [[
+            'template_repository' => 'hardimpact/laravel-template',
+        ]],
+        'destination without template' => [[
+            'new_repository' => 'hardimpact/docs',
+        ]],
+        'clone and template branches' => [[
+            'repository' => 'hardimpact/docs',
+            'template_repository' => 'hardimpact/laravel-template',
+            'new_repository' => 'hardimpact/new-docs',
+        ]],
+    ]);
+
+    it('identifies the malformed template source field before remote work', function (
+        array $source,
+        string $field,
+    ): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                ...$source,
+            ],
+            [],
+            [],
+            app_store_fallback_server(),
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', $field);
+
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+    })->with([
+        'non-GitHub template' => [
+            [
+                'template_repository' => 'https://gitlab.example.com/hardimpact/laravel-template.git',
+                'new_repository' => 'hardimpact/docs',
+            ],
+            'template_repository',
+        ],
+        'GitHub template URL instead of shorthand' => [
+            [
+                'template_repository' => 'https://github.com/hardimpact/laravel-template.git',
+                'new_repository' => 'hardimpact/docs',
+            ],
+            'template_repository',
+        ],
+        'invalid new repository' => [
+            [
+                'template_repository' => 'hardimpact/laravel-template',
+                'new_repository' => 'https://github.com/hardimpact/docs.git',
+            ],
+            'new_repository',
+        ],
+    ]);
+
+    it('rejects credential-bearing clone URLs before remote work', function (string $repository): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'repository' => $repository,
+            ],
+            [],
+            [],
+            app_store_fallback_server(),
+        );
+
+        $response
+            ->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'repository');
+
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
+    })->with([
+        'token in HTTPS username' => ['https://secret-token@git.example.com/docs.git'],
+        'HTTPS username and password' => ['https://user:secret@git.example.com/docs.git'],
+        'SSH password' => ['ssh://git:secret@git.example.com/docs.git'],
+        'token in query string' => ['https://git.example.com/docs.git?token=secret'],
+    ]);
+
     it('creates app source and registry intent for authorized callers', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
@@ -101,6 +251,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
                 'root' => 'public',
                 'php_version' => '8.4',
             ],
@@ -134,6 +285,51 @@ describe('AppStoreController', function (): void {
             ->toBeTrue();
     });
 
+    it('creates a template source without forwarding the stored destination as a clone source', function (): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'template_repository' => 'hardimpact/laravel-template',
+                'new_repository' => 'hardimpact/docs',
+            ],
+            [],
+            [],
+            app_store_fallback_server(),
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.app.repository', 'git@github.com:hardimpact/docs.git');
+
+        $sourceScript = collect($remoteShell->runs)
+            ->pluck('script')
+            ->first(fn (string $script): bool => str_contains($script, 'internal:app-source:create'));
+
+        expect($sourceScript)
+            ->toBeString()
+            ->toContain("--template-repository='hardimpact/laravel-template'")
+            ->toContain("--new-repository='hardimpact/docs'")
+            ->not
+            ->toContain('--repository=')
+            ->and(App::query()->where('name', 'docs')->firstOrFail()->repository)
+            ->toBe('git@github.com:hardimpact/docs.git');
+    });
+
     it('stores the opt-in HTTPS runtime proxy transport for new apps', function (): void {
         $caller = createAppStoreCallerNode();
         $targetNode = Node::factory()->create([
@@ -152,6 +348,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
                 'root' => 'public',
                 'php_version' => '8.4',
                 'runtime_proxy_transport' => 'https',
@@ -189,6 +386,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
                 'runtime_proxy_transport' => 'ftp',
             ],
             [],
@@ -229,6 +427,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
             ],
             [],
             [],
@@ -264,6 +463,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
                 'root' => 'public',
                 'php_version' => '8.5',
             ],
@@ -310,6 +510,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
             ],
             [],
             [],
@@ -408,6 +609,7 @@ describe('AppStoreController', function (): void {
             [
                 'name' => 'docs',
                 'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
                 'domain' => 'docs.example.com',
                 'root' => 'public',
                 'php_version' => '8.5',
@@ -519,7 +721,7 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
         if (str_contains($script, 'internal:app-source:create')) {
             return app_store_shell_success([
                 'path' => '/home/orbit/apps/docs',
-                'repository' => null,
+                'repository' => 'git@github.com:hardimpact/docs.git',
             ]);
         }
 
