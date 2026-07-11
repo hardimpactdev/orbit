@@ -306,6 +306,8 @@ it('inventories stale networks templates images and tmp artifacts when those sco
             return Process::result(output: implode("\n", [
                 '/tmp/orbit-e2e-docker-image-export-old	2026-05-01T00:00:00+0000	1024',
                 '/tmp/orbit-e2e-sources/old-worktree	2026-05-01T00:00:00+0000	2048',
+                '/tmp/orbit-e2e-sources/current-worktree/retained/dev-old123	2026-05-01T00:00:00+0000	4096',
+                '/tmp/orbit-e2e-source-locks	2026-05-01T00:00:00+0000	4096',
                 '',
             ]));
         }
@@ -348,9 +350,11 @@ it('inventories stale networks templates images and tmp artifacts when those sco
             'template:orbit-template-prepared-agent',
             'image:orbit-blank-ubuntu-26.04',
             'tmp_path:/tmp/orbit-e2e-docker-image-export-old',
-            'tmp_path:/tmp/orbit-e2e-sources/old-worktree',
         )
         ->not->toContain(
+            'tmp_path:/tmp/orbit-e2e-sources/old-worktree',
+            'tmp_path:/tmp/orbit-e2e-sources/current-worktree/retained/dev-old123',
+            'tmp_path:/tmp/orbit-e2e-source-locks',
             'network:orbit-e2e-n-2',
             'network:other-n-1',
             'template:orbit-template-operator-base',
@@ -364,6 +368,11 @@ it('inventories stale networks templates images and tmp artifacts when those sco
     Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'incus network delete'));
     Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'incus image delete'));
     Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'rm -rf --'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'find /tmp') && str_contains($process->command, 'orbit-e2e-source-locks')
+        ),
+    );
 });
 
 it('deletes only explicitly scoped stale Incus artifacts when forced', function (): void {

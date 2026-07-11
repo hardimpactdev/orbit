@@ -106,15 +106,22 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         $resourceLease = $this->acquireResourceLease($kind);
         $host = new IncusHost($this->config->forHost($resourceLease->host()));
         $instances = [];
+        $sourcePath = null;
 
         try {
             $workerNetwork = IncusWorkerNetwork::forSlot($this->config, $resourceLease->slot());
             $timer->measure('incus.worker-network', fn () => $workerNetwork->ensureOn($host));
 
-            $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync(
-                $host->config->host,
-                'incus',
-            ));
+            $sourcePath = $options->sourceMountedCheckout
+                ? $this->sourceSyncer()->sourcePath($host->config->host, 'incus', $runId)
+                : null;
+            $sourcePath = $this->syncSourcePath(
+                $host,
+                $runId,
+                $timer,
+                $options->sourceMountedCheckout,
+                $sourcePath,
+            );
 
             $instances = IncusTopologyTemplate::clone(
                 $host,
@@ -123,6 +130,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $timer,
                 sourceMounted: $options->sourceMountedCheckout,
                 network: $workerNetwork,
+                sourcePath: $options->sourceMountedCheckout ? $sourcePath : null,
             );
 
             $sshKeyPair = $this->createSshKeyPair($host, $runId);
@@ -138,13 +146,12 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $options->sourceMountedCheckout,
             );
         } catch (\Throwable $exception) {
-            foreach ($instances as $instance) {
-                try {
-                    $instance->delete();
-                } catch (\Throwable) {
-                    // Keep the original acquisition failure visible.
-                }
-            }
+            $exception = $this->acquisitionFailureAfterCleanup(
+                $exception,
+                $host,
+                $this->cloneNames($kind, $runId),
+                $options->sourceMountedCheckout && is_string($sourcePath) ? $sourcePath : null,
+            );
 
             $resourceLease->release();
 
@@ -161,9 +168,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         ): array {
             $cycleTimer->measure('reset.worker-network', fn () => $workerNetwork->ensureOn($host));
 
-            $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync(
+            $sourcePath = $cycleTimer->measure('reset.source-sync', fn (): string => $this->sourceSyncer()->sync(
                 $host->config->host,
                 'incus',
+                scope: $options->sourceMountedCheckout ? $runId : null,
             ));
 
             $newInstances = IncusTopologyTemplate::clone(
@@ -173,6 +181,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $cycleTimer,
                 sourceMounted: $options->sourceMountedCheckout,
                 network: $workerNetwork,
+                sourcePath: $options->sourceMountedCheckout ? $sourcePath : null,
             );
             $newPrimaryUsers = $this->prepareInstances(
                 $newInstances,
@@ -210,7 +219,11 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             sshKeyPair: $sshKeyPair,
             rebuild: $rebuild,
             snapshotReset: $snapshotReset,
-            bulkCleanup: $this->bulkCleanupFor($host, $instances),
+            bulkCleanup: $this->bulkCleanupFor(
+                $host,
+                $instances,
+                $options->sourceMountedCheckout ? $sourcePath : null,
+            ),
             gatewayApiIp: self::GatewayWireGuardIp,
             resourceLease: $resourceLease,
             agent: $leaseInstances['agent'] ?? null,
@@ -226,16 +239,159 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
      *
      * @param  array<string, IncusInstance>  $instances
      */
-    private function bulkCleanupFor(IncusHost $host, array $instances): \Closure
+    private function bulkCleanupFor(IncusHost $host, array $instances, ?string $sourcePath = null): \Closure
     {
         $names = array_values(array_unique(array_map(
             static fn (IncusInstance $instance): string => $instance->name(),
             array_values($instances),
         )));
 
-        return function (E2EPhaseTimer $cycleTimer) use ($host, $names): void {
-            $cycleTimer->measure('cleanup.bulk', fn () => $host->deleteInstancesIfPresent($names));
+        return function (E2EPhaseTimer $cycleTimer) use ($host, $names, $sourcePath): void {
+            $cleanup = function (?SourceMountedCheckoutMutationFence $mutationFence) use (
+                $cycleTimer,
+                $host,
+                $names,
+                $sourcePath,
+            ): void {
+                $cycleTimer->measure('cleanup.bulk', fn () => $this->deleteInstancesOrFail($host, $names));
+
+                if ($sourcePath !== null) {
+                    if ($mutationFence === null) {
+                        throw new \LogicException('Scoped source cleanup requires an active mutation generation.');
+                    }
+
+                    $cycleTimer->measure(
+                        'cleanup.source',
+                        fn () => $this->removeScopedSourcePath($host, $sourcePath, $mutationFence),
+                    );
+                }
+            };
+
+            $this->withScopedSourceLock($host, $sourcePath, $cleanup);
         };
+    }
+
+    /** @param list<string> $names */
+    private function deleteInstancesOrFail(IncusHost $host, array $names): void
+    {
+        $result = $host->deleteInstancesIfPresent($names);
+
+        if (! $result->successful()) {
+            $error = trim($result->errorOutput());
+
+            throw new \RuntimeException(
+                'Could not verify cleanup of Incus instances'.($error !== '' ? ": {$error}" : '.'),
+            );
+        }
+    }
+
+    /** @param list<string> $expectedNames */
+    private function acquisitionFailureAfterCleanup(
+        \Throwable $exception,
+        IncusHost $host,
+        array $expectedNames,
+        ?string $sourcePath,
+    ): \Throwable {
+        try {
+            $cleanup = function (?SourceMountedCheckoutMutationFence $mutationFence) use (
+                $host,
+                $expectedNames,
+                $sourcePath,
+            ): void {
+                $this->deleteInstancesOrFail($host, $expectedNames);
+
+                if ($sourcePath !== null) {
+                    if ($mutationFence === null) {
+                        throw new \LogicException('Scoped source cleanup requires an active mutation generation.');
+                    }
+
+                    $this->removeScopedSourcePath($host, $sourcePath, $mutationFence);
+                }
+            };
+
+            $this->withScopedSourceLock($host, $sourcePath, $cleanup);
+
+            return $exception;
+        } catch (\Throwable $cleanupException) {
+            return new \RuntimeException(
+                $exception->getMessage().' Acquisition cleanup also failed: '.$cleanupException->getMessage(),
+                previous: $exception,
+            );
+        }
+    }
+
+    /** @return list<string> */
+    private function cloneNames(E2ETopologyKind $kind, string $runId): array
+    {
+        return array_map(
+            static fn (string $role): string => IncusTopologyTemplate::cloneName($runId, $role),
+            IncusTopologyTemplate::rolesFor($kind),
+        );
+    }
+
+    /**
+     * @template TResult
+     * @param  \Closure(?SourceMountedCheckoutMutationFence): TResult  $operation
+     * @return TResult
+     */
+    private function withScopedSourceLock(
+        IncusHost $host,
+        ?string $sourcePath,
+        \Closure $operation,
+    ): mixed {
+        if (
+            $sourcePath === null
+            || basename(dirname(rtrim(string: $sourcePath, characters: '/'))) !== 'retained'
+        ) {
+            return $operation(null);
+        }
+
+        return new SourceMountedCheckoutLifecycleLock($host->config->host, $sourcePath)->run($operation);
+    }
+
+    private function syncSourcePath(
+        IncusHost $host,
+        string $runId,
+        E2EPhaseTimer $timer,
+        bool $sourceMounted,
+        ?string $expectedPath,
+    ): string {
+        $syncedPath = $timer->measure('incus.source-sync', fn (): string => $this->sourceSyncer()->sync(
+            $host->config->host,
+            'incus',
+            scope: $sourceMounted ? $runId : null,
+        ));
+
+        if ($expectedPath !== null && ! hash_equals($expectedPath, $syncedPath)) {
+            throw new \RuntimeException(
+                "Source sync returned [{$syncedPath}] instead of expected path [{$expectedPath}].",
+            );
+        }
+
+        return $syncedPath;
+    }
+
+    private function removeScopedSourcePath(
+        IncusHost $host,
+        string $sourcePath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): void {
+        if (basename(dirname($sourcePath)) !== 'retained') {
+            return;
+        }
+
+        $result = $host->run(
+            $mutationFence->guardedScript(
+                SourceMountedCheckoutMutationFence::protectedSourceCleanupScript($sourcePath),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        if (! $result->successful()) {
+            throw new \RuntimeException(
+                "Could not remove scoped Incus source path [{$sourcePath}]: {$result->errorOutput()}",
+            );
+        }
     }
 
     public function prepareWarmSnapshots(

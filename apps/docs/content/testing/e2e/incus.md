@@ -207,6 +207,11 @@ composer e2e:reap-incus -- --scope=all --older-than=1d
 reported as skipped rather than deleted. Every destructive scope still requires
 `--force`; without it the command is inventory-only.
 
+Source-mounted checkout trees and their lifecycle locks are not generic scratch
+paths and are never removed by `--scope=tmp`. Retained topology release owns
+that cleanup so instance deletion, source deletion, and manifest removal remain
+one locked operation.
+
 Branch-specific Incus artifacts use the same role suffix model as Docker:
 `orbit-template-<role>-<slug>` plus `clean-<source-topology>-<slug>`. Missing
 branch role artifacts fall back to the matching `base` template and snapshot, so

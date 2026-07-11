@@ -251,6 +251,8 @@ final readonly class E2EProvisionFingerprint
             'apps/e2e/app/E2E/Support/IncusHost.php',
             'apps/e2e/app/E2E/Support/IncusTopologyBuilder.php',
             'apps/e2e/app/E2E/Support/OrbitCliBinaryBundle.php',
+            'apps/e2e/app/E2E/Support/SourceMountedCheckoutLifecycleLock.php',
+            'apps/e2e/app/E2E/Support/SourceMountedCheckoutMutationFence.php',
             'apps/e2e/app/E2E/Support/SourceMountedCheckoutSyncer.php',
         ];
     }

@@ -18,6 +18,7 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
+use Symfony\Component\Process\Process as SymfonyProcess;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
@@ -39,6 +40,36 @@ function currentCheckoutProcessResult(bool $successful = true): ProcessResult
     $result->shouldReceive('errorOutput')->andReturn('');
 
     return $result;
+}
+
+function current_checkout_overlay_fake_bin(
+    string $root,
+    int $mountpointExitCode,
+    int $unmountExitCode,
+): string {
+    $bin = "{$root}/bin";
+    File::ensureDirectoryExists($bin);
+    $scripts = [
+        'grep' => "#!/usr/bin/env bash\nexit 0\n",
+        'mountpoint' => '#!/usr/bin/env bash'.PHP_EOL.'exit '.$mountpointExitCode.PHP_EOL,
+        'umount' => '#!/usr/bin/env bash'.PHP_EOL.'exit '.$unmountExitCode.PHP_EOL,
+        'mount' => <<<'BASH'
+            #!/usr/bin/env bash
+            printf '%s\n' "$*" >>"${OVERLAY_MOUNT_LOG:?}"
+            BASH,
+        'sudo' => <<<'BASH'
+            #!/usr/bin/env bash
+            [ "${1:-}" != -n ] || shift
+            exec "$@"
+            BASH,
+    ];
+
+    foreach ($scripts as $name => $contents) {
+        file_put_contents(filename: "{$bin}/{$name}", data: $contents);
+        chmod(filename: "{$bin}/{$name}", permissions: 0o755);
+    }
+
+    return $bin;
 }
 
 function currentCheckoutFakeInstance(
@@ -270,7 +301,8 @@ it('runs source-mounted Incus checkouts from a VM-local overlay runtime path', f
         ->toContain("upper='/home/orbit/.orbit-run-overlay/upper'")
         ->toContain("work='/home/orbit/.orbit-run-overlay/work'")
         ->toContain('mount -t overlay overlay')
-        ->toContain('$sudo_prefix rm -rf "$target" "$upper" "$work"')
+        ->toContain('$sudo_prefix rm -rf "$upper" "$work"')
+        ->not->toContain('$sudo_prefix rm -rf "$target"')
         ->not->toContain('tar -C "${target}" -xf -')->toContain(
             '.orbit-e2e-vendor-archives/apps-gateway-vendor.tar',
         )->toContain('.orbit-e2e-vendor-archives/apps-cli-vendor.tar')->toContain(
@@ -284,17 +316,119 @@ it('runs source-mounted Incus checkouts from a VM-local overlay runtime path', f
         ))->toContain('checkout.source-overlay');
 });
 
-it('avoids recursively changing preserved overlay contents during source sync', function (): void {
+it('avoids recursively changing overlay directories during source sync', function (): void {
     $command = E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
         '/home/orbit/orbit',
         '/home/orbit/orbit-run',
-        resetUpper: false,
     );
 
     expect($command)
-        ->toContain(': preserve overlay upperdir')
+        ->toContain('while mountpoint -q "$target"; do')
+        ->toContain('Runtime checkout [$target] is busy')
         ->toContain('chown "$(id -u):$(id -g)" "$target" "$upper" "$work"')
         ->not->toContain('chown -R');
+});
+
+it('resets a synced overlay so the transport checkout stays authoritative', function (): void {
+    $root = sys_get_temp_dir().'/orbit-overlay-refresh-'.bin2hex(random_bytes(8));
+    $target = "{$root}/orbit-run";
+    $upper = "{$root}/.orbit-run-overlay/upper";
+    $mountLog = "{$root}/mount.log";
+    $staleOverlayFiles = [
+        'apps/gateway/vendor/autoload.php' => 'gateway vendor',
+        'apps/cli/vendor/autoload.php' => 'cli vendor',
+        'apps/gateway/storage/logs/laravel.log' => 'runtime log',
+        'apps/gateway/bootstrap/cache/services.php' => 'runtime cache',
+    ];
+
+    try {
+        $bin = current_checkout_overlay_fake_bin(
+            root: $root,
+            mountpointExitCode: 1,
+            unmountExitCode: 0,
+        );
+        $path = getenv('PATH');
+        $staleSource = "{$upper}/apps/e2e/app/stale.php";
+        $targetMarker = "{$target}/keep.txt";
+        File::ensureDirectoryExists(dirname($staleSource));
+        File::ensureDirectoryExists($target);
+        file_put_contents(filename: $staleSource, data: 'stale source');
+        file_put_contents(filename: $targetMarker, data: 'mountpoint marker');
+
+        foreach ($staleOverlayFiles as $relative => $contents) {
+            File::ensureDirectoryExists(dirname("{$upper}/{$relative}"));
+            file_put_contents(filename: "{$upper}/{$relative}", data: $contents);
+        }
+
+        $process = new SymfonyProcess(
+            [
+                '/bin/bash',
+                '-c',
+                E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
+                    "{$root}/source",
+                    $target,
+                ),
+            ],
+            env: [
+                'OVERLAY_MOUNT_LOG' => $mountLog,
+                'PATH' => "{$bin}:".(is_string($path) ? $path : ''),
+            ],
+        );
+        $process->mustRun();
+
+        expect($staleSource)
+            ->not
+            ->toBeFile()
+            ->and($targetMarker)
+            ->toBeFile()
+            ->and(file_get_contents(filename: $mountLog))
+            ->toContain('lowerdir='.$root.'/source');
+
+        foreach (array_keys($staleOverlayFiles) as $relative) {
+            expect("{$upper}/{$relative}")->not->toBeFile();
+        }
+    } finally {
+        File::deleteDirectory($root);
+    }
+});
+
+it('refuses to stack an overlay when the runtime checkout stays busy', function (): void {
+    $root = sys_get_temp_dir().'/orbit-overlay-busy-'.bin2hex(random_bytes(8));
+    $target = "{$root}/orbit-run";
+    $mountLog = "{$root}/mount.log";
+
+    try {
+        $bin = current_checkout_overlay_fake_bin(
+            root: $root,
+            mountpointExitCode: 0,
+            unmountExitCode: 1,
+        );
+        $path = getenv('PATH');
+        $process = new SymfonyProcess(
+            [
+                '/bin/bash',
+                '-c',
+                E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
+                    "{$root}/source",
+                    $target,
+                ),
+            ],
+            env: [
+                'OVERLAY_MOUNT_LOG' => $mountLog,
+                'PATH' => "{$bin}:".(is_string($path) ? $path : ''),
+            ],
+        );
+        $process->run();
+
+        expect($process->isSuccessful())
+            ->toBeFalse()
+            ->and($process->getErrorOutput())
+            ->toContain('Runtime checkout ['.$target.'] is busy')
+            ->and($mountLog)
+            ->not->toBeFile();
+    } finally {
+        File::deleteDirectory($root);
+    }
 });
 
 it('refreshes source-mounted Incus gateway settings and CLI trust config', function (): void {

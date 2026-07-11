@@ -187,10 +187,21 @@ class E2EIncusCommand extends Command
             );
         }
 
+        $host = trim($host);
+
         try {
-            $host = trim($host);
-            $sourcePath = new SourceMountedCheckoutSyncer()->sync($host, 'incus');
-            $runtimeCheckouts = $this->refreshRuntimeCheckouts($manifest, $host);
+            $sourcePath = $this->validatedRetainedSourcePath($manifest, $id, $host);
+        } catch (Throwable $exception) {
+            return $this->renderError('validation_failed', $exception->getMessage(), $json);
+        }
+
+        try {
+            $runtimeCheckouts = $this->synchronizeRuntimeCheckouts(
+                $store,
+                $host,
+                $id,
+                $sourcePath,
+            );
         } catch (Throwable $exception) {
             return $this->renderError('source_sync_failed', $exception->getMessage(), $json);
         }
@@ -729,10 +740,66 @@ class E2EIncusCommand extends Command
      */
     private function refreshRuntimeCheckouts(array $manifest, string $host): array
     {
+        $runtimeCheckouts = [];
+        $failures = [];
+
+        foreach ($this->runtimeCheckoutTargets($manifest, $host) as $runtime) {
+            try {
+                $runtimeCheckouts[$runtime['role']] = $this->mountFreshRuntimeCheckout($runtime, $host);
+            } catch (Throwable $exception) {
+                $failures[] = $exception->getMessage();
+            }
+        }
+
+        if ($failures !== []) {
+            throw new RuntimeException('Runtime checkout refresh failed: '.implode(' | ', $failures));
+        }
+
+        return $runtimeCheckouts;
+    }
+
+    /** @param array<string, mixed> $manifest */
+    private function unmountRuntimeCheckouts(array $manifest, string $host): void
+    {
+        $unmounted = [];
+
+        foreach ($this->runtimeCheckoutTargets($manifest, $host) as $runtime) {
+            $result = $this->runRuntimeCheckoutCommand(
+                $runtime,
+                $host,
+                E2ECurrentCheckout::sourceMountedRuntimeOverlayUnmountCommand($runtime['target_path']),
+            );
+
+            if ($result->successful()) {
+                $unmounted[] = $runtime;
+
+                continue;
+            }
+
+            $restoreFailures = $this->restoreRuntimeCheckouts($unmounted, $host);
+
+            $restoreDetail = $restoreFailures === []
+                ? ''
+                : ' Previously unmounted checkouts also failed to restore: '.implode(' | ', $restoreFailures);
+
+            throw new RuntimeException(
+                "Could not unmount runtime checkout [{$runtime['target_path']}] in [{$runtime['instance']}]: "
+                .$this->processError($result)
+                .$restoreDetail,
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @return list<array{role: string, instance: string, user: string, target_path: string, timeout_seconds: int}>
+     */
+    private function runtimeCheckoutTargets(array $manifest, string $host): array
+    {
         $instances = is_array($manifest['instances'] ?? null) ? $manifest['instances'] : [];
         $checkouts = is_array($manifest['checkouts'] ?? null) ? $manifest['checkouts'] : [];
         $config = E2EConfig::fromEnvironment()->forHost($host);
-        $runtimeCheckouts = [];
+        $targets = [];
 
         foreach ($checkouts as $role => $checkout) {
             if (! is_string($role) || ! is_string($checkout) || trim($checkout) === '') {
@@ -752,29 +819,210 @@ class E2EIncusCommand extends Command
                 $targetPath = E2ECurrentCheckout::sourceMountedRuntimePath($user);
             }
 
-            $command = E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
+            $targets[] = [
+                'role' => $role,
+                'instance' => trim($instance),
+                'user' => $user,
+                'target_path' => $targetPath,
+                'timeout_seconds' => $config->timeoutSeconds,
+            ];
+        }
+
+        return $targets;
+    }
+
+    /**
+     * @param array{role: string, instance: string, user: string, target_path: string, timeout_seconds: int} $runtime
+     */
+    private function mountFreshRuntimeCheckout(array $runtime, string $host): string
+    {
+        return $this->mountRuntimeCheckout(
+            $runtime,
+            $host,
+            E2ECurrentCheckout::sourceMountedRuntimeOverlayCommand(
                 E2ECurrentCheckout::sourceMountedGuestPath(),
-                $targetPath,
-                resetUpper: false,
+                $runtime['target_path'],
+            ),
+        );
+    }
+
+    /**
+     * @param array{role: string, instance: string, user: string, target_path: string, timeout_seconds: int} $runtime
+     */
+    private function restoreRuntimeCheckout(array $runtime, string $host): string
+    {
+        return $this->mountRuntimeCheckout(
+            $runtime,
+            $host,
+            E2ECurrentCheckout::sourceMountedRuntimeOverlayRestoreCommand(
+                E2ECurrentCheckout::sourceMountedGuestPath(),
+                $runtime['target_path'],
+            ),
+        );
+    }
+
+    /**
+     * @param array{role: string, instance: string, user: string, target_path: string, timeout_seconds: int} $runtime
+     */
+    private function mountRuntimeCheckout(array $runtime, string $host, string $command): string
+    {
+        $result = $this->runRuntimeCheckoutCommand($runtime, $host, $command);
+
+        if (! $result->successful()) {
+            throw new RuntimeException(
+                "Could not refresh runtime checkout [{$runtime['target_path']}] in [{$runtime['instance']}]: "
+                    .$this->processError($result),
             );
-            $result = $this->hostFor($host)->run(sprintf(
-                'incus exec %s -- sudo -u %s bash -lc %s',
-                escapeshellarg(trim($instance)),
-                escapeshellarg($user),
-                escapeshellarg($command),
-            ), timeoutSeconds: $config->timeoutSeconds);
+        }
 
-            if (! $result->successful()) {
-                throw new RuntimeException(
-                    "Could not refresh runtime checkout [{$targetPath}] in [{$instance}]: "
-                        .$this->processError($result),
-                );
+        return $runtime['target_path'];
+    }
+
+    /**
+     * @param array{role: string, instance: string, user: string, target_path: string, timeout_seconds: int} $runtime
+     */
+    private function runRuntimeCheckoutCommand(array $runtime, string $host, string $command): ProcessResult
+    {
+        return $this->hostFor($host)->run(sprintf(
+            'incus exec %s -- sudo -u %s bash -lc %s',
+            escapeshellarg($runtime['instance']),
+            escapeshellarg($runtime['user']),
+            escapeshellarg($command),
+        ), timeoutSeconds: $runtime['timeout_seconds']);
+    }
+
+    /**
+     * @param  list<array{role: string, instance: string, user: string, target_path: string, timeout_seconds: int}>  $runtimes
+     * @return list<string>
+     */
+    private function restoreRuntimeCheckouts(array $runtimes, string $host): array
+    {
+        $failures = [];
+
+        foreach ($runtimes as $runtime) {
+            try {
+                $this->restoreRuntimeCheckout($runtime, $host);
+            } catch (Throwable $exception) {
+                $failures[] = $exception->getMessage();
             }
+        }
 
-            $runtimeCheckouts[$role] = $targetPath;
+        return $failures;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function synchronizeRuntimeCheckouts(
+        E2EDevTopologyManifestStore $store,
+        string $host,
+        string $id,
+        string $sourcePath,
+    ): array {
+        $runtimeCheckouts = [];
+        $syncer = new SourceMountedCheckoutSyncer;
+
+        $syncedPath = $syncer->withSyncLock(
+            host: $host,
+            provider: 'incus',
+            criticalSection: function (Closure $syncSource) use (
+                $store,
+                $host,
+                $id,
+                $sourcePath,
+                &$runtimeCheckouts,
+            ): string {
+                $manifest = $this->currentRetainedManifestForSync($store, $id, $host, $sourcePath);
+                $this->unmountRuntimeCheckouts($manifest, $host);
+
+                try {
+                    $syncedPath = $syncSource();
+                } catch (Throwable $exception) {
+                    throw new RuntimeException(
+                        $exception->getMessage()
+                            .' Runtime checkouts remain detached so an incomplete source tree is not exposed. Retry the same sync command.',
+                        previous: $exception,
+                    );
+                }
+
+                $runtimeCheckouts = $this->refreshRuntimeCheckouts($manifest, $host);
+
+                return $syncedPath;
+            },
+            scope: $id,
+            sourcePath: $sourcePath,
+        );
+
+        if (! hash_equals($sourcePath, $syncedPath)) {
+            throw new RuntimeException(
+                "Source sync returned [{$syncedPath}] instead of recorded path [{$sourcePath}].",
+            );
         }
 
         return $runtimeCheckouts;
+    }
+
+    /** @return array<string, mixed> */
+    private function currentRetainedManifestForSync(
+        E2EDevTopologyManifestStore $store,
+        string $id,
+        string $host,
+        string $sourcePath,
+    ): array {
+        $manifest = $store->read($id);
+
+        if ($manifest === null) {
+            throw new RuntimeException(
+                "Retained topology [{$id}] was released while source sync waited for its lifecycle lock.",
+            );
+        }
+
+        $currentHost = is_string($manifest['host'] ?? null) ? trim($manifest['host']) : '';
+        $provider = $manifest['provider'] ?? null;
+        $currentSourcePath = $this->validatedRetainedSourcePath($manifest, $id, $currentHost);
+
+        if (
+            $provider !== 'incus'
+            || ! hash_equals($host, $currentHost)
+            || ! hash_equals($sourcePath, $currentSourcePath)
+        ) {
+            throw new RuntimeException(
+                "Retained topology [{$id}] changed while source sync waited for its lifecycle lock.",
+            );
+        }
+
+        return $manifest;
+    }
+
+    /** @param array<string, mixed> $manifest */
+    private function validatedRetainedSourcePath(array $manifest, string $id, string $host): string
+    {
+        $manifestId = is_string($manifest['id'] ?? null) ? trim($manifest['id']) : '';
+        $runId = is_string($manifest['run_id'] ?? null) ? trim($manifest['run_id']) : '';
+
+        if ($manifestId !== $id || $runId !== $id) {
+            throw new RuntimeException(
+                "Retained topology identity mismatch: requested [{$id}], manifest id [{$manifestId}], run id [{$runId}].",
+            );
+        }
+
+        $sourcePath = is_string($manifest['source_path'] ?? null) ? trim($manifest['source_path']) : '';
+
+        if ($sourcePath === '') {
+            throw new RuntimeException(
+                "Retained topology [{$id}] predates isolated source paths; release and reacquire it before syncing.",
+            );
+        }
+
+        $expectedPath = new SourceMountedCheckoutSyncer()->sourcePath($host, 'incus', $id);
+
+        if (! hash_equals($expectedPath, $sourcePath)) {
+            throw new RuntimeException(
+                "Retained topology [{$id}] records unexpected source path [{$sourcePath}]; expected [{$expectedPath}].",
+            );
+        }
+
+        return $sourcePath;
     }
 
     private function runtimeCheckoutUser(string $role, E2EConfig $config): string

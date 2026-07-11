@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\E2E\Support;
 
+use Closure;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
+use LogicException;
 use RuntimeException;
 
 final readonly class SourceMountedCheckoutSyncer
@@ -26,83 +28,66 @@ final readonly class SourceMountedCheckoutSyncer
 
     private const int SyncTimeoutSeconds = 1200;
 
-    private const int LockWaitSeconds = 30;
+    public function sync(
+        string $host,
+        string $provider,
+        ?E2EPhaseTimer $timer = null,
+        ?string $scope = null,
+    ): string {
+        $operation = fn (): string => $this->withSyncLock(
+            host: $host,
+            provider: $provider,
+            criticalSection: static fn (Closure $syncSource): string => $syncSource(),
+            scope: $scope,
+        );
 
-    private const int LegacyLockStaleSeconds = 60;
-
-    private const int LockAcquireTimeoutSeconds = self::LockWaitSeconds + 15;
-
-    public function sync(string $host, string $provider, ?E2EPhaseTimer $timer = null): string
-    {
-        $targetPath = $this->sourcePath($host, $provider);
-
-        if ($this->isLocalHost($host)) {
-            return $targetPath;
-        }
-
-        $sync = function () use ($host, $targetPath): void {
-            $this->prepareTargetAndAcquireLock($host, $targetPath);
-
-            try {
-                $this->mustRun(
-                    $this->sshCommand($host, $this->ownershipRepairCommand($targetPath)),
-                    "Could not repair source checkout ownership on {$host}:{$targetPath}",
-                );
-                $rsync = $this->mustRun(
-                    $this->rsyncCommand($host, $targetPath),
-                    "Could not rsync source checkout to {$host}:{$targetPath}",
-                );
-                $changed = trim($rsync->output()) !== '';
-                $this->mustRun(
-                    $this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)),
-                    "Could not clear stale source checkout state on {$host}:{$targetPath}",
-                );
-                $hydration = $this->dependencyHydrationSshCommand($host, $targetPath);
-                $this->mustRun(
-                    $hydration['command'],
-                    "Could not hydrate source checkout dependencies on {$host}:{$targetPath}",
-                    input: $hydration['input'],
-                );
-                $vendorArchive = $this->vendorArchiveSshCommand($host, $targetPath);
-                $this->mustRun(
-                    $vendorArchive['command'],
-                    "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}",
-                    input: $vendorArchive['input'],
-                );
-
-                if ($changed) {
-                    $this->mustRun(
-                        $this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)),
-                        "Could not normalize source checkout permissions on {$host}:{$targetPath}",
-                    );
-                }
-            } finally {
-                $this->releaseLock($host, $targetPath);
-            }
-        };
-
-        if ($timer !== null) {
-            $timer->measure('source-sync', $sync);
-        } else {
-            $sync();
-        }
-
-        return $targetPath;
+        return $timer !== null
+            ? $timer->measure('source-sync', $operation)
+            : $operation();
     }
 
-    public function sourcePath(string $host, string $provider): string
+    /**
+     * @template TResult
+     * @param  Closure(Closure(): string): TResult  $criticalSection
+     * @return TResult
+     */
+    public function withSyncLock(
+        string $host,
+        string $provider,
+        Closure $criticalSection,
+        ?string $scope = null,
+        ?string $sourcePath = null,
+    ): mixed {
+        $expectedPath = $this->sourcePath($host, $provider, $scope);
+
+        if ($sourcePath !== null && ! hash_equals($expectedPath, $sourcePath)) {
+            throw new RuntimeException(
+                "Recorded source path [{$sourcePath}] does not match expected scoped path [{$expectedPath}].",
+            );
+        }
+
+        return $this->runLockedOperation(
+            $host,
+            $sourcePath ?? $expectedPath,
+            $criticalSection,
+        );
+    }
+
+    public function sourcePath(string $host, string $provider, ?string $scope = null): string
     {
         $configuredPath = $this->configuredSourcePath($host, $provider);
 
-        if ($configuredPath !== null) {
-            return $configuredPath;
+        $path = match (true) {
+            $configuredPath !== null => $configuredPath,
+            $this->isLocalHost($host) => repo_path(),
+            default => self::DefaultRemoteRoot.'/'.$this->worktreeSlug($provider),
+        };
+
+        if ($scope === null || trim($scope) === '' || $this->isLocalHost($host)) {
+            return $path;
         }
 
-        if ($this->isLocalHost($host)) {
-            return repo_path();
-        }
-
-        return self::DefaultRemoteRoot.'/'.$this->worktreeSlug($provider);
+        return rtrim($path, '/').'/retained/'.self::pathSlug($scope, 'topology');
     }
 
     public static function vendorArchiveRelativePath(string $appPath): string
@@ -159,7 +144,7 @@ final readonly class SourceMountedCheckoutSyncer
 
     private static function normalizeExcludePattern(string $pattern): string
     {
-        $pattern = str_replace('\\', '/', $pattern);
+        $pattern = str_replace(search: '\\', replace: '/', subject: $pattern);
 
         return str_starts_with($pattern, './') ? substr($pattern, 2) : $pattern;
     }
@@ -187,78 +172,131 @@ final readonly class SourceMountedCheckoutSyncer
         return $slug !== '' ? $slug : $fallback;
     }
 
-    private function prepareTargetAndAcquireLock(string $host, string $targetPath): void
+    /**
+     * @template TResult
+     * @param  Closure(Closure(): string): TResult  $criticalSection
+     * @return TResult
+     */
+    private function runLockedOperation(string $host, string $targetPath, Closure $criticalSection): mixed
     {
-        $lockPath = "{$targetPath}/.orbit-e2e-source-sync.lock";
-        $command = implode("\n", [
-            'target='.escapeshellarg($targetPath),
-            'lock='.escapeshellarg($lockPath),
-            'max_wait='.self::LockWaitSeconds,
-            'legacy_stale_after='.self::LegacyLockStaleSeconds,
-            'mkdir -p "$target"',
-            'attempt=0',
-            'while ! mkdir "$lock" 2>/dev/null; do',
-            '  now="$(date +%s)"',
-            '  created_at=0',
-            '  if [ -f "$lock/created_at" ]; then',
-            '    created_at="$(cat "$lock/created_at" 2>/dev/null || printf 0)"',
-            '    case "$created_at" in ""|*[!0-9]*) created_at=0;; esac',
-            '  fi',
-            '  lock_age="$((now - created_at))"',
-            '  if [ -f "$lock/pid" ]; then',
-            '    owner_pid="$(cat "$lock/pid" 2>/dev/null || printf "")"',
-            '    owner_host="$(cat "$lock/host" 2>/dev/null || printf "")"',
-            '    current_host="$(hostname)"',
-            '    case "$owner_pid" in ""|*[!0-9]*) owner_pid="";; esac',
-            '    if [ -n "$owner_pid" ] && [ "$owner_host" = "$current_host" ] && ! kill -0 "$owner_pid" 2>/dev/null && [ "$lock_age" -gt "$legacy_stale_after" ]; then rm -rf "$lock"; continue; fi',
-            '  elif [ "$created_at" -gt 0 ]; then',
-            '    if [ "$lock_age" -gt "$legacy_stale_after" ]; then rm -rf "$lock"; continue; fi',
-            '  fi',
-            '  attempt="$((attempt + 1))"',
-            '  if [ "$attempt" -ge "$max_wait" ]; then echo "Timed out waiting ${max_wait}s for source sync lock $lock" >&2; exit 1; fi',
-            '  sleep 1',
-            'done',
-            'date +%s > "$lock/created_at"',
-            'printf \'%s\n\' "$$" > "$lock/pid"',
-            'hostname > "$lock/host"',
-        ]);
+        $syncInvoked = false;
+        $operation = function (?SourceMountedCheckoutMutationFence $mutationFence = null) use (
+            $host,
+            $targetPath,
+            $criticalSection,
+            &$syncInvoked,
+        ): mixed {
+            $syncSource = function () use ($host, $targetPath, $mutationFence, &$syncInvoked): string {
+                if ($syncInvoked) {
+                    throw new LogicException('The locked source sync operation may only be invoked once.');
+                }
 
+                $syncInvoked = true;
+
+                if (! $this->isLocalHost($host)) {
+                    if ($mutationFence === null) {
+                        throw new LogicException('Remote source sync requires an active mutation generation.');
+                    }
+
+                    $this->syncRemoteSource($host, $targetPath, $mutationFence);
+                }
+
+                return $targetPath;
+            };
+
+            $result = $criticalSection($syncSource);
+
+            if (! $syncInvoked) {
+                throw new LogicException('The locked source sync operation was not invoked.');
+            }
+
+            return $result;
+        };
+
+        return $this->isLocalHost($host)
+            ? $operation()
+            : new SourceMountedCheckoutLifecycleLock($host, $targetPath)->run($operation);
+    }
+
+    private function syncRemoteSource(
+        string $host,
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): void {
         $this->mustRun(
-            $this->sshCommand($host, $command),
-            "Could not acquire source checkout sync lock on {$host}:{$targetPath}",
-            timeoutSeconds: self::LockAcquireTimeoutSeconds,
+            $this->sourceMutationSshCommand(
+                $host,
+                $mutationFence,
+                $this->ownershipRepairCommand($targetPath, $mutationFence),
+            ),
+            "Could not repair source checkout ownership on {$host}:{$targetPath}",
         );
+        $rsync = $this->mustRun(
+            $this->rsyncCommand($host, $targetPath, $mutationFence),
+            "Could not rsync source checkout to {$host}:{$targetPath}",
+        );
+        $changed = trim($rsync->output()) !== '';
+        $this->mustRun(
+            $this->sourceMutationSshCommand($host, $mutationFence, $this->staleMutableStateCleanupCommand($targetPath)),
+            "Could not clear stale source checkout state on {$host}:{$targetPath}",
+        );
+        $hydration = $this->dependencyHydrationSshCommand($host, $targetPath, $mutationFence);
+        $this->mustRun(
+            $hydration['command'],
+            "Could not hydrate source checkout dependencies on {$host}:{$targetPath}",
+            input: $hydration['input'],
+        );
+        $vendorArchive = $this->vendorArchiveSshCommand($host, $targetPath, $mutationFence);
+        $this->mustRun(
+            $vendorArchive['command'],
+            "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}",
+            input: $vendorArchive['input'],
+        );
+
+        if ($changed) {
+            $this->mustRun(
+                $this->sourceMutationSshCommand(
+                    $host,
+                    $mutationFence,
+                    $this->permissionNormalizationCommand($targetPath),
+                ),
+                "Could not normalize source checkout permissions on {$host}:{$targetPath}",
+            );
+        }
     }
 
-    private function releaseLock(string $host, string $targetPath): void
-    {
-        $this->run(
-            $this->sshCommand($host, 'rm -rf '.escapeshellarg("{$targetPath}/.orbit-e2e-source-sync.lock").' || true'),
-            timeoutSeconds: 30,
-        );
-    }
-
-    private function rsyncCommand(string $host, string $targetPath): string
-    {
+    private function rsyncCommand(
+        string $host,
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): string {
         $excludes = implode(' ', array_map(
             fn (string $pattern): string => '--exclude '.escapeshellarg($pattern),
             self::rsyncExcludePatterns(),
         ));
 
         return sprintf(
-            'rsync -az --delete --itemize-changes %s %s %s',
+            'rsync -az --delete --itemize-changes %s --rsync-path %s %s %s',
             $excludes,
+            escapeshellarg($mutationFence->rsyncRemotePath()),
             escapeshellarg(repo_path().'/'),
             escapeshellarg("{$host}:{$targetPath}/"),
         );
     }
 
-    private function ownershipRepairCommand(string $targetPath): string
-    {
+    private function ownershipRepairCommand(
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): string {
         $image = DockerTopologyBuilder::composerHelperImage();
+        $guardedChown = $mutationFence->dockerGuardedScript(implode("\n", [
+            'set -eu',
+            'chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work',
+        ]));
 
         return implode("\n", [
             'target='.escapeshellarg($targetPath),
+            'mkdir -p "$target"',
             'foreign=""',
             'if [ -d "$target" ]; then',
             '  foreign="$(find "$target" ! -user "$(id -un)" -print -quit 2>/dev/null || true)"',
@@ -272,10 +310,18 @@ final readonly class SourceMountedCheckoutSyncer
                 .' >/dev/null 2>&1; then docker pull '
                 .escapeshellarg($image)
                 .'; fi',
+            '    '.$this->dockerMutationFencePreflightCommand($image),
+            '    '
+                .str_replace(
+                    search: "\n",
+                    replace: "\n    ",
+                    subject: $mutationFence->releaseGuardScript(),
+                ),
             sprintf(
-                '    docker run --rm --mount "type=bind,src=${target},dst=/work" --env "ORBIT_E2E_SOURCE_SYNC_UID=${ORBIT_E2E_SOURCE_SYNC_UID}" --env "ORBIT_E2E_SOURCE_SYNC_GID=${ORBIT_E2E_SOURCE_SYNC_GID}" %s sh -lc %s',
+                '    docker run --rm --mount "type=bind,src=${target},dst=/work" --mount %s --env "ORBIT_E2E_SOURCE_SYNC_UID=${ORBIT_E2E_SOURCE_SYNC_UID}" --env "ORBIT_E2E_SOURCE_SYNC_GID=${ORBIT_E2E_SOURCE_SYNC_GID}" %s sh -lc %s',
+                escapeshellarg($mutationFence->dockerLockMount()),
                 escapeshellarg($image),
-                escapeshellarg('chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work'),
+                escapeshellarg($guardedChown),
             ),
             '  elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then',
             '    sudo chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" "$target"',
@@ -336,13 +382,15 @@ final readonly class SourceMountedCheckoutSyncer
         ]);
     }
 
-    private function dependencyHydrationCommand(string $targetPath): string
-    {
+    private function dependencyHydrationCommand(
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): string {
         return implode("\n", [
             'if command -v composer >/dev/null 2>&1; then',
             $this->hostDependencyHydrationCommand($targetPath),
             'else',
-            $this->containerizedDependencyHydrationCommand($targetPath),
+            $this->containerizedDependencyHydrationCommand($targetPath, $mutationFence),
             'fi',
         ]);
     }
@@ -364,8 +412,10 @@ final readonly class SourceMountedCheckoutSyncer
         ]);
     }
 
-    private function containerizedDependencyHydrationCommand(string $targetPath): string
-    {
+    private function containerizedDependencyHydrationCommand(
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): string {
         $image = DockerTopologyBuilder::composerHelperImage();
         $innerCommand = implode("\n", [
             'set -eu',
@@ -378,6 +428,11 @@ final readonly class SourceMountedCheckoutSyncer
             $this->dependencyHydrationCommandForApp('apps/cli'),
         ]);
         $githubEnvironment = implode(' ', E2EGitHubAuth::dockerEnvOptions());
+        $guardedOwnershipRepair = $mutationFence->dockerGuardedScript(implode("\n", [
+            'set -eu',
+            'chown -R "${ORBIT_E2E_HOST_UID}:${ORBIT_E2E_HOST_GID}" /work',
+        ]));
+        $guardedHydration = $mutationFence->dockerGuardedScript($innerCommand);
 
         return implode("\n", [
             'if ! command -v docker >/dev/null 2>&1; then echo "Remote source sync requires composer or docker with '
@@ -390,24 +445,45 @@ final readonly class SourceMountedCheckoutSyncer
                 .' >/dev/null 2>&1; then docker pull '
                 .escapeshellarg($image)
                 .'; fi',
+            $this->dockerMutationFencePreflightCommand($image),
+            $mutationFence->releaseGuardScript(),
             sprintf(
-                'docker run --rm --mount %s --env "ORBIT_E2E_HOST_UID=${uid}" --env "ORBIT_E2E_HOST_GID=${gid}" %s sh -lc %s',
+                'docker run --rm --mount %s --mount %s --env "ORBIT_E2E_HOST_UID=${uid}" --env "ORBIT_E2E_HOST_GID=${gid}" %s sh -lc %s',
                 escapeshellarg("type=bind,src={$targetPath},dst=/work"),
+                escapeshellarg($mutationFence->dockerLockMount()),
                 escapeshellarg($image),
-                escapeshellarg('chown -R "${ORBIT_E2E_HOST_UID}:${ORBIT_E2E_HOST_GID}" /work'),
+                escapeshellarg($guardedOwnershipRepair),
             ),
             sprintf(
-                'docker run --rm --user "${uid}:${gid}" --mount %s --workdir /work --env %s --env %s --env %s --env %s%s %s sh -lc %s',
+                'docker run --rm --user "${uid}:${gid}" --mount %s --mount %s --workdir /work --env %s --env %s --env %s --env %s%s %s sh -lc %s',
                 escapeshellarg("type=bind,src={$targetPath},dst=/work"),
+                escapeshellarg($mutationFence->dockerLockMount()),
                 escapeshellarg('COMPOSER_ALLOW_SUPERUSER=1'),
                 escapeshellarg('COMPOSER_PROCESS_TIMEOUT=1200'),
                 escapeshellarg('COMPOSER_HOME='.self::ContainerComposerHome),
                 escapeshellarg('COMPOSER_CACHE_DIR='.self::ContainerComposerCache),
                 $githubEnvironment !== '' ? ' '.$githubEnvironment : '',
                 escapeshellarg($image),
-                escapeshellarg($innerCommand),
+                escapeshellarg($guardedHydration),
             ),
         ]);
+    }
+
+    private function dockerMutationFencePreflightCommand(string $image): string
+    {
+        $message = "Source helper image [{$image}] must provide compatible timeout and flock commands.";
+        $preflight = implode(' && ', [
+            'command -v flock >/dev/null 2>&1',
+            'command -v timeout >/dev/null 2>&1',
+            'timeout 2 flock /tmp/orbit-e2e-flock-preflight.lock sh -lc true',
+        ]);
+
+        return sprintf(
+            'if ! docker run --rm %s sh -lc %s; then echo %s >&2; exit 1; fi',
+            escapeshellarg($image),
+            escapeshellarg($preflight),
+            escapeshellarg($message),
+        );
     }
 
     private function permissionNormalizationCommand(string $targetPath): string
@@ -484,15 +560,20 @@ final readonly class SourceMountedCheckoutSyncer
     /**
      * @return array{command: string, input: string}
      */
-    private function vendorArchiveSshCommand(string $host, string $targetPath): array
-    {
+    private function vendorArchiveSshCommand(
+        string $host,
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): array {
         return [
             'command' => sprintf(
                 'ssh -o BatchMode=yes -o ConnectTimeout=10 %s %s',
                 escapeshellarg($host),
                 escapeshellarg('bash -s'),
             ),
-            'input' => "set -euo pipefail\n".$this->vendorArchiveCommand($targetPath),
+            'input' => $mutationFence->guardedScript(
+                "set -euo pipefail\n".$this->vendorArchiveCommand($targetPath),
+            ),
         ];
     }
 
@@ -538,17 +619,28 @@ final readonly class SourceMountedCheckoutSyncer
         );
     }
 
+    private function sourceMutationSshCommand(
+        string $host,
+        SourceMountedCheckoutMutationFence $mutationFence,
+        string $command,
+    ): string {
+        return $this->sshCommand($host, $mutationFence->guardedScript($command));
+    }
+
     /**
      * @return array{command: string, input: ?string}
      */
-    private function dependencyHydrationSshCommand(string $host, string $targetPath): array
-    {
-        $command = $this->dependencyHydrationCommand($targetPath);
+    private function dependencyHydrationSshCommand(
+        string $host,
+        string $targetPath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): array {
+        $command = $this->dependencyHydrationCommand($targetPath, $mutationFence);
         $input = E2EGitHubAuth::shellInputScript($command);
 
         if ($input === null) {
             return [
-                'command' => $this->sshCommand($host, $command),
+                'command' => $this->sourceMutationSshCommand($host, $mutationFence, $command),
                 'input' => null,
             ];
         }
@@ -559,7 +651,7 @@ final readonly class SourceMountedCheckoutSyncer
                 escapeshellarg($host),
                 escapeshellarg('bash -s'),
             ),
-            'input' => $input,
+            'input' => $mutationFence->guardedScript($input),
         ];
     }
 

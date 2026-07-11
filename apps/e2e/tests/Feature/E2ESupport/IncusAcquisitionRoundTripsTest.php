@@ -10,10 +10,26 @@ use App\E2E\Support\IncusInstance;
 use App\E2E\Support\IncusTopologyProvider;
 use App\E2E\Support\IncusTopologyTemplate;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
 afterEach(function (): void {
     m::close();
+});
+
+beforeEach(function (): void {
+    Process::preventStrayProcesses();
+    Process::fake(static function (PendingProcess $process): ProcessResult {
+        if (str_contains((string) $process->command, 'flock -w 30 9')) {
+            return Process::result(implode("\n", [
+                '__ORBIT_SOURCE_SYNC_LOCK_READY__',
+                '__ORBIT_SOURCE_SYNC_LOCK_RELEASED__',
+            ]));
+        }
+
+        return Process::result();
+    });
 });
 
 function incusRoundTripsConfig(): E2EConfig
@@ -87,6 +103,50 @@ it('resolves every role snapshot source through one host call', function (): voi
         ->toContain(
             "incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
         );
+});
+
+it('mounts an explicit topology-scoped source path into every clone', function (): void {
+    $config = incusRoundTripsConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+
+    $host->shouldReceive('run')
+        ->andReturnUsing(function (string $command): ProcessResult {
+            if (str_contains($command, '__orbit_snapshot_source')) {
+                return incusRoundTripsResult(implode("\n", [
+                    '__orbit_snapshot_source operator orbit-template-operator-base clean-operator_gateway-base',
+                    '__orbit_snapshot_source gateway orbit-template-gateway-base clean-operator_gateway-base',
+                ]));
+            }
+
+            return incusRoundTripsResult();
+        });
+
+    $script = IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::OperatorGateway,
+        'dev-aaa111',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
+        sourceMounted: true,
+        sourcePath: '/tmp/orbit-source/retained/dev-aaa111',
+    );
+
+    expect($script)
+        ->toContain("orbit-source source='/tmp/orbit-source/retained/dev-aaa111'")
+        ->not->toContain('source=/tmp/orbit-source/retained/dev-bbb222');
+});
+
+it('refuses a source-mounted clone plan without an explicit host source path', function (): void {
+    $config = incusRoundTripsConfig();
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+
+    expect(fn () => IncusTopologyTemplate::buildBatchScript(
+        $host,
+        E2ETopologyKind::OperatorGateway,
+        'dev-aaa111',
+        IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
+        sourceMounted: true,
+    ))
+        ->toThrow(InvalidArgumentException::class, 'requires an explicit host source path');
 });
 
 it('falls back to base snapshot sources per role inside the single resolution call', function (): void {
@@ -198,4 +258,129 @@ it('cleans up acquisition instances through one bulk host call', function (): vo
         ->and($host->commands[0])
         ->toContain("incus delete --force 'clone-operator'")
         ->toContain("incus delete --force 'clone-gateway'");
+});
+
+it('cleans up a scoped source path with its source-mounted lease', function (): void {
+    $commands = [];
+    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {
+        /** @param array<int, string> $commands */
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusRoundTripsResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusRoundTripsConfig());
+    $method = new ReflectionMethod($provider, 'bulkCleanupFor');
+    $method->setAccessible(true);
+    $cleanup = $method->invoke(
+        $provider,
+        $host,
+        ['operator' => new IncusInstance($host, 'clone-operator', commandTransport: true)],
+        '/tmp/orbit-source/retained/dev-abc123',
+    );
+
+    $cleanup(new E2EPhaseTimer);
+
+    expect($host->commands)
+        ->toHaveCount(2)
+        ->and($host->commands[1])
+        ->toContain('mutation_lock=')
+        ->toContain('flock -w 1200 -x 8')
+        ->toContain("target='/tmp/orbit-source/retained/dev-abc123'")
+        ->toContain('find "$target" -mindepth 1 -maxdepth 1');
+});
+
+it('does not remove a scoped source when instance absence cannot be verified', function (): void {
+    $commands = [];
+    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {
+        /** @param array<int, string> $commands */
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function deleteInstancesIfPresent(array $names): ProcessResult
+        {
+            return incusRoundTripsResult(successful: false);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusRoundTripsResult();
+        }
+    };
+
+    $provider = new IncusTopologyProvider(incusRoundTripsConfig());
+    $method = new ReflectionMethod($provider, 'bulkCleanupFor');
+    $method->setAccessible(true);
+    $cleanup = $method->invoke(
+        $provider,
+        $host,
+        ['operator' => new IncusInstance($host, 'clone-operator', commandTransport: true)],
+        '/tmp/orbit-source/retained/dev-abc123',
+    );
+
+    expect(fn () => $cleanup(new E2EPhaseTimer))
+        ->toThrow(RuntimeException::class, 'Could not verify cleanup of Incus instances')
+        ->and($commands)
+        ->toBeEmpty();
+});
+
+it('does not start scoped cleanup when its lifecycle lock is unavailable', function (): void {
+    $commands = [];
+    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {
+        /** @param array<int, string> $commands */
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return incusRoundTripsResult();
+        }
+    };
+    Process::fake(static fn (PendingProcess $process): ProcessResult => str_contains(
+        (string) $process->command,
+        'flock -w 30 9',
+    )
+            ? Process::result(errorOutput: 'lock timeout', exitCode: 1)
+            : Process::result());
+
+    $provider = new IncusTopologyProvider(incusRoundTripsConfig());
+    $method = new ReflectionMethod($provider, 'bulkCleanupFor');
+    $method->setAccessible(true);
+    $cleanup = $method->invoke(
+        $provider,
+        $host,
+        ['operator' => new IncusInstance($host, 'clone-operator', commandTransport: true)],
+        '/tmp/orbit-source/retained/dev-abc123',
+    );
+
+    expect(fn () => $cleanup(new E2EPhaseTimer))
+        ->toThrow(RuntimeException::class, 'lock timeout')
+        ->and($commands)
+        ->toBeEmpty();
 });

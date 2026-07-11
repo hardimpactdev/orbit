@@ -117,7 +117,14 @@ final readonly class IncusTopologyTemplate
         bool $stateful = false,
         bool $sourceMounted = false,
         ?IncusWorkerNetwork $network = null,
+        ?string $sourcePath = null,
     ): array {
+        if ($sourceMounted && (! is_string($sourcePath) || trim($sourcePath) === '')) {
+            throw new \InvalidArgumentException(
+                'A source-mounted Incus topology requires an explicit host source path.',
+            );
+        }
+
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
@@ -129,6 +136,7 @@ final readonly class IncusTopologyTemplate
             stateful: $stateful,
             sourceMounted: $sourceMounted,
             network: $network,
+            sourcePath: $sourcePath,
         );
 
         $result = $timer->measure('batch.copy-start', fn () => $host->runWithoutMultiplexing($script));
@@ -156,6 +164,7 @@ final readonly class IncusTopologyTemplate
                 self::cloneName($runId, $role),
                 commandTransport: true,
                 sourceMountedCheckout: $sourceMounted,
+                hostSourcePath: $sourcePath,
             );
         }
 
@@ -223,7 +232,14 @@ final readonly class IncusTopologyTemplate
         ?bool $stateful = null,
         bool $sourceMounted = false,
         ?IncusWorkerNetwork $network = null,
+        ?string $sourcePath = null,
     ): string {
+        if ($sourceMounted && (! is_string($sourcePath) || trim($sourcePath) === '')) {
+            throw new \InvalidArgumentException(
+                'A source-mounted Incus topology requires an explicit host source path.',
+            );
+        }
+
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
         $rootSize = escapeshellarg($host->config->topologyRootSize);
@@ -242,7 +258,7 @@ final readonly class IncusTopologyTemplate
         $startLines = [];
         $waitStartLines = [];
         $stateful ??= getenv('ORBIT_E2E_TOPOLOGY_RESET') === 'stateful-restore';
-        $sourcePath = $sourceMounted ? $host->sourcePath() : null;
+        $sourcePath = $sourceMounted ? $sourcePath : null;
 
         $sources = self::resolveSnapshotSources($host, $kind, $roles);
 

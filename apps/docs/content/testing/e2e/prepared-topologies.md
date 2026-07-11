@@ -135,23 +135,63 @@ For retained Incus, `/home/orbit/orbit` is the transport checkout and
 the only path Incus can mount from the runner host into the VM, so it remains
 part of the flow even though Orbit commands should run from the VM-local
 runtime overlay. The overlay mounts `/home/orbit/orbit-run` with `/home/orbit/orbit` as the
-lowerdir and an upperdir/workdir that lives inside the VM. Acquisition resets
-the upperdir for a clean retained runtime; sync remounts the overlay while
-preserving that upperdir so installed dependencies and runtime state survive
-source refreshes.
+lowerdir and an upperdir/workdir that lives inside the VM.
+
+Both acquisition and sync reset the upperdir for a clean retained runtime.
+Sync does so after refreshing the transport checkout and its lock-keyed
+dependencies. Generated checkout files, caches, and source copy-ups are
+discarded. Orbit stores durable node state outside the overlay under
+`~/.config/orbit`, so it survives the reset.
+
+Each retained Incus topology receives its own host source path below
+`<source-base>/retained/<topology-id>`. Orbit records that exact path in the
+retained manifest and refuses to sync a missing or mismatched value. This keeps
+one retained topology's refresh from mutating a lowerdir mounted by another.
+Retained topologies without this metadata must be released and reacquired
+before they can be synced.
 
 `--sync` is one-way from the initiating worktree to the retained topology. On a
-remote Incus host it has two stages:
+remote Incus host it has three stages:
 
-1. Rsync the initiating checkout to the retained host source path that backs
+1. Strictly unmount every recorded VM runtime overlay before changing its
+   lowerdir. A busy checkout fails here without syncing or stacking another
+   overlay.
+2. Rsync the initiating checkout to the retained host source path that backs
    `/home/orbit/orbit`. This stage is filesystem-incremental for included
    files; it is not based on Git status and it also deletes files removed from
    the initiating checkout. Gateway and CLI Composer dependencies are hydrated
    only when their lock hashes changed.
-2. Remount each recorded VM runtime overlay from `/home/orbit/orbit`, usually
-   at `/home/orbit/orbit-run`. This stage preserves the VM-local overlay
-   upperdir so gateway and CLI `vendor` directories and runtime state survive
-   source refreshes.
+3. Rebuild and remount each recorded VM runtime overlay from
+   `/home/orbit/orbit`, usually
+   at `/home/orbit/orbit-run`. This stage starts with a clean VM-local upperdir;
+   the updated transport checkout supplies current source and dependencies.
+
+A live remote `flock` lease covers all three stages. Its stable lock file lives
+outside the deletable checkout under `/tmp/orbit-e2e-source-locks/` and is keyed
+by the exact source path. The lease is held by an SSH process until every
+source mutator and remount attempt finishes.
+
+A second mutation lock keeps an orphaned remote mutator inside the lifecycle
+boundary if the initiating process exits. Each lifecycle also publishes a
+generation token. A delayed child checks that token after taking the mutation
+lock and refuses to run when it differs from the active lifecycle.
+Retained release uses the same lease while it verifies instance deletion,
+removes the isolated source, and removes the manifest, so a waiting sync cannot
+recreate a released source. During the transition, the holder also honors the
+former checkout-local lock directory so older and current sync processes cannot
+overlap.
+
+Fallback helper containers mount the lock directory and acquire the same
+generation fence themselves. The host shell releases its mutation lock before
+starting a helper, so the Docker daemon's work stays fenced if the client exits.
+Orbit verifies that the helper supports the required `timeout` and `flock`
+command forms before handing off the lock.
+
+If source mutation fails, Orbit leaves every runtime overlay detached rather
+than remounting a potentially incomplete lowerdir. Retry the same `--sync`
+command; it reconciles the exact initiating checkout before mounting runtimes
+again. A failure while unmounting occurs before source mutation and restores any
+runtime overlays that were already detached.
 
 The recommended development loop is: keep the Mac worktree as source of truth,
 sync it into the retained topology, inspect through `incus exec` or an
@@ -162,6 +202,12 @@ scratch work and are overwritten by the next sync. Changes made in
 also liable to be overwritten by the next local sync. If a VM-side experiment
 finds a useful patch, copy that patch back explicitly and reapply it in the
 local worktree before syncing forward.
+
+An interactive terminal may remain open between syncs, but its current working
+directory must be outside `/home/orbit/orbit-run` while the overlay is
+remounted. A busy runtime checkout makes `--sync` fail without changing the
+existing mount; move the terminal to `/home/orbit`, retry, then return to the
+runtime checkout.
 
 Plain retained Incus start mode does not need local WireGuard for inspection:
 use SSH to the configured Incus host and `incus exec` into the retained VM. Use

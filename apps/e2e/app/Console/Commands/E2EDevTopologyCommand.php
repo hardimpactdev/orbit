@@ -17,8 +17,8 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\E2ETopologyLease;
 use App\E2E\Support\E2ETopologyProvider;
-use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusHostPool;
+use App\E2E\Support\IncusInstance;
 use App\E2E\Support\IncusTopologyProvider;
 use Closure;
 use Illuminate\Console\Attributes\Description;
@@ -68,6 +68,7 @@ class E2EDevTopologyCommand extends Command
      * @var (Closure(E2ETopologyKind, list<string>): array{
      *     host: string,
      *     run_id: string,
+     *     source_path?: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -84,6 +85,7 @@ class E2EDevTopologyCommand extends Command
      * @param  Closure(E2ETopologyKind, list<string>): array{
      *     host: string,
      *     run_id: string,
+     *     source_path?: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -147,6 +149,7 @@ class E2EDevTopologyCommand extends Command
      *     provider: string,
      *     host: string,
      *     run_id: string,
+     *     source_path: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -167,6 +170,7 @@ class E2EDevTopologyCommand extends Command
      *     provider: string,
      *     host: string,
      *     run_id: string,
+     *     source_path?: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -198,6 +202,7 @@ class E2EDevTopologyCommand extends Command
      * @param  array{
      *     host: string,
      *     run_id: string,
+     *     source_path?: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -228,6 +233,16 @@ class E2EDevTopologyCommand extends Command
 
         if (isset($prepared['timings']) && is_array($prepared['timings'])) {
             $manifest['timings'] = $this->normalizeTimings($prepared['timings']);
+        }
+
+        if ($provider === 'incus') {
+            $sourcePath = $prepared['source_path'] ?? null;
+
+            if (! is_string($sourcePath) || trim($sourcePath) === '') {
+                throw new \RuntimeException('A retained Incus topology requires its exact host source path.');
+            }
+
+            $manifest['source_path'] = $sourcePath;
         }
 
         if ($provider === 'docker') {
@@ -262,6 +277,7 @@ class E2EDevTopologyCommand extends Command
      * @return array{
      *     host: string,
      *     run_id: string,
+     *     source_path: string|null,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,
@@ -312,10 +328,13 @@ class E2EDevTopologyCommand extends Command
         try {
             $timer->measure('checkout.overlay', fn () => $harness->withCurrentCheckout($overlayRoles));
         } catch (Throwable $exception) {
-            if ($providerName === 'incus') {
-                $this->reapAfterFailure($config, $host, $lease->instanceNames());
-            } else {
+            try {
                 $lease->cleanup();
+            } catch (Throwable $cleanupException) {
+                $exception = new \RuntimeException(
+                    $exception->getMessage().' Topology cleanup also failed: '.$cleanupException->getMessage(),
+                    previous: $exception,
+                );
             }
 
             throw $exception;
@@ -324,6 +343,10 @@ class E2EDevTopologyCommand extends Command
         return [
             'host' => $host,
             'run_id' => $runId,
+            'source_path' =>
+                $providerName === 'incus' && $lease->operator() instanceof IncusInstance
+                    ? $lease->operator()->hostSourcePath()
+                    : null,
             'ssh_key_path' => $lease->sshKeyPair()->privateKeyPath,
             'gateway_ip' => $lease->gatewayApiIp(),
             'instances' => $this->instanceNamesByRole($lease, $this->manifestRolesForKind($kind)),
@@ -362,19 +385,6 @@ class E2EDevTopologyCommand extends Command
     /**
      * @param  list<string>  $names
      */
-    private function reapAfterFailure(E2EConfig $config, string $host, array $names): void
-    {
-        if ($names === []) {
-            return;
-        }
-
-        try {
-            new IncusHost($config->forHost($host))->deleteInstancesIfPresent($names);
-        } catch (Throwable) {
-            // Surface the original overlay failure rather than the cleanup error.
-        }
-    }
-
     /**
      * @param  list<string>  $overlayRoles
      * @return array<string, string>
@@ -498,6 +508,7 @@ class E2EDevTopologyCommand extends Command
      *     provider: string,
      *     host: string,
      *     run_id: string,
+     *     source_path?: string,
      *     ssh_key_path: string,
      *     gateway_ip: string,
      *     instances: array<string, string>,

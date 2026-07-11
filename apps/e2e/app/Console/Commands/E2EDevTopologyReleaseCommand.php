@@ -8,7 +8,12 @@ use App\E2E\Support\DockerHost;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2EResourceLease;
+use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
+use App\E2E\Support\IncusTopologyTemplate;
+use App\E2E\Support\SourceMountedCheckoutLifecycleLock;
+use App\E2E\Support\SourceMountedCheckoutMutationFence;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Closure;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -118,9 +123,63 @@ class E2EDevTopologyReleaseCommand extends Command
         $id = is_string($manifest['id'] ?? null) ? $manifest['id'] : '';
         $host = is_string($manifest['host'] ?? null) ? $manifest['host'] : '';
         $names = $this->instanceNames($manifest);
+        $sourcePath = $this->validatedScopedSourcePath($manifest, $host);
 
-        if ($host !== '' && $names !== []) {
-            $incusHost = $this->resolveHost($host);
+        if ($sourcePath !== null) {
+            $names = $this->expectedScopedInstanceNames($manifest, $id, $names);
+        }
+
+        if ($host === '') {
+            $this->removeManifest($store, $id);
+
+            return $this->releasedIncusPayload($id, $names);
+        }
+
+        $incusHost = $this->resolveHost($host);
+        $releaseResources =
+            fn (?SourceMountedCheckoutMutationFence $mutationFence = null) => $this->releaseIncusHostResources(
+                $incusHost,
+                $manifest,
+                $names,
+                $sourcePath,
+                $mutationFence,
+            );
+
+        if ($sourcePath === null) {
+            $releaseResources(null);
+            $this->removeManifest($store, $id);
+
+            return $this->releasedIncusPayload($id, $names);
+        }
+
+        new SourceMountedCheckoutLifecycleLock($host, $sourcePath)->run(static function (
+            SourceMountedCheckoutMutationFence $mutationFence,
+        ) use ($releaseResources, $store, $id): void {
+            $releaseResources($mutationFence);
+
+            if ($id !== '') {
+                $store->remove($id);
+            }
+        });
+
+        return $this->releasedIncusPayload($id, $names);
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @param  list<string>  $names
+     */
+    private function releaseIncusHostResources(
+        IncusHost $incusHost,
+        array $manifest,
+        array $names,
+        ?string $sourcePath,
+        ?SourceMountedCheckoutMutationFence $mutationFence,
+    ): void {
+        $id = is_string($manifest['id'] ?? null) ? $manifest['id'] : '';
+        $host = $incusHost->config->host;
+
+        if ($names !== []) {
             $result = $incusHost->deleteInstancesIfPresent($names);
 
             if (! $result->successful()) {
@@ -128,14 +187,32 @@ class E2EDevTopologyReleaseCommand extends Command
                     "Failed to reap retained topology [{$id}] on {$host}: {$result->errorOutput()}",
                 );
             }
-
-            $this->removeSshKey($incusHost, $manifest);
         }
 
+        $this->removeSshKey($incusHost, $manifest);
+
+        if ($sourcePath !== null) {
+            if ($mutationFence === null) {
+                throw new \LogicException('Retained source cleanup requires an active mutation generation.');
+            }
+
+            $this->removeScopedSourcePath($incusHost, $id, $sourcePath, $mutationFence);
+        }
+    }
+
+    private function removeManifest(E2EDevTopologyManifestStore $store, string $id): void
+    {
         if ($id !== '') {
             $store->remove($id);
         }
+    }
 
+    /**
+     * @param  list<string>  $names
+     * @return array{id: string, reaped: list<string>, dry_run: bool}
+     */
+    private function releasedIncusPayload(string $id, array $names): array
+    {
         return [
             'id' => $id,
             'reaped' => $names,
@@ -216,6 +293,66 @@ class E2EDevTopologyReleaseCommand extends Command
         }
     }
 
+    /** @param array<string, mixed> $manifest */
+    private function validatedScopedSourcePath(array $manifest, string $host): ?string
+    {
+        $id = is_string($manifest['id'] ?? null) ? $manifest['id'] : '';
+        $runId = is_string($manifest['run_id'] ?? null) ? $manifest['run_id'] : '';
+        $sourcePath = is_string($manifest['source_path'] ?? null) ? $manifest['source_path'] : '';
+
+        if ($id === '' || $sourcePath === '') {
+            return null;
+        }
+
+        if (! hash_equals($id, $runId)) {
+            throw new \RuntimeException(
+                "Retained topology identity mismatch: manifest id [{$id}], run id [{$runId}].",
+            );
+        }
+
+        if ($this->isLocalHost($host)) {
+            return null;
+        }
+
+        $expectedPath = new SourceMountedCheckoutSyncer()->sourcePath($host, 'incus', $id);
+
+        if (! hash_equals($expectedPath, $sourcePath)) {
+            throw new \RuntimeException(
+                "Refusing to remove unexpected retained source path [{$sourcePath}] for topology [{$id}].",
+            );
+        }
+
+        return $sourcePath;
+    }
+
+    private function isLocalHost(string $host): bool
+    {
+        return (
+            in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], strict: true)
+            || strtolower($host) === strtolower((string) gethostname())
+        );
+    }
+
+    private function removeScopedSourcePath(
+        IncusHost $host,
+        string $id,
+        string $sourcePath,
+        SourceMountedCheckoutMutationFence $mutationFence,
+    ): void {
+        $result = $host->run(
+            $mutationFence->guardedScript(
+                SourceMountedCheckoutMutationFence::protectedSourceCleanupScript($sourcePath),
+            ),
+            timeoutSeconds: 120,
+        );
+
+        if (! $result->successful()) {
+            throw new \RuntimeException(
+                "Failed to remove retained source path [{$sourcePath}] for topology [{$id}]: ".$result->errorOutput(),
+            );
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $manifest
      * @return list<string>
@@ -237,6 +374,37 @@ class E2EDevTopologyReleaseCommand extends Command
         }
 
         return array_values(array_unique($names));
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest
+     * @param  list<string>  $recordedNames
+     * @return list<string>
+     */
+    private function expectedScopedInstanceNames(array $manifest, string $id, array $recordedNames): array
+    {
+        $kindValue = is_string($manifest['kind'] ?? null) ? $manifest['kind'] : '';
+        $kind = E2ETopologyKind::tryFromInput($kindValue);
+
+        if ($id === '' || $kind === null) {
+            throw new \RuntimeException(
+                "Retained topology [{$id}] does not record a valid topology kind; refusing source cleanup.",
+            );
+        }
+
+        $expectedNames = array_map(
+            static fn (string $role): string => IncusTopologyTemplate::cloneName($id, $role),
+            IncusTopologyTemplate::rolesFor($kind),
+        );
+        $unexpectedNames = array_diff($recordedNames, $expectedNames);
+
+        if ($unexpectedNames !== []) {
+            throw new \RuntimeException(
+                "Retained topology [{$id}] records unexpected instance names; refusing source cleanup.",
+            );
+        }
+
+        return $expectedNames;
     }
 
     /**

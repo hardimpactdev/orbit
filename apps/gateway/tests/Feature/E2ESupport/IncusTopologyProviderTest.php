@@ -331,8 +331,20 @@ it('prepares gateway state before source-mounted incus retarget bootstrap', func
     $method->invoke(
         $provider,
         [
-            'operator' => new IncusInstance($host, 'operator', commandTransport: true, sourceMountedCheckout: true),
-            'gateway' => new IncusInstance($host, 'gateway', commandTransport: true, sourceMountedCheckout: true),
+            'operator' => new IncusInstance(
+                $host,
+                'operator',
+                commandTransport: true,
+                sourceMountedCheckout: true,
+                hostSourcePath: '/tmp/orbit-source/retained/dev-test',
+            ),
+            'gateway' => new IncusInstance(
+                $host,
+                'gateway',
+                commandTransport: true,
+                sourceMountedCheckout: true,
+                hostSourcePath: '/tmp/orbit-source/retained/dev-test',
+            ),
         ],
         incusTopologyProviderTestConfig(),
         new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),

@@ -471,23 +471,57 @@ final class E2ECurrentCheckout
     public static function sourceMountedRuntimeOverlayCommand(
         string $sourcePath,
         string $targetPath,
-        bool $resetUpper = true,
+    ): string {
+        return self::sourceMountedRuntimeOverlayMountCommand(
+            sourcePath: $sourcePath,
+            targetPath: $targetPath,
+            prepareOverlayCommand: '$sudo_prefix rm -rf "$upper" "$work"',
+        );
+    }
+
+    public static function sourceMountedRuntimeOverlayRestoreCommand(
+        string $sourcePath,
+        string $targetPath,
+    ): string {
+        return self::sourceMountedRuntimeOverlayMountCommand(
+            sourcePath: $sourcePath,
+            targetPath: $targetPath,
+            prepareOverlayCommand: ': preserve overlay upperdir',
+        );
+    }
+
+    public static function sourceMountedRuntimeOverlayUnmountCommand(string $targetPath): string
+    {
+        return implode("\n", [
+            'set -eu',
+            'target='.escapeshellarg(rtrim($targetPath, '/')),
+            'sudo_prefix=',
+            'if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi',
+            'while mountpoint -q "$target"; do',
+            '  if ! $sudo_prefix umount "$target"; then',
+            '    echo "Runtime checkout [$target] is busy; move open shells outside it and retry." >&2',
+            '    exit 1',
+            '  fi',
+            'done',
+        ]);
+    }
+
+    private static function sourceMountedRuntimeOverlayMountCommand(
+        string $sourcePath,
+        string $targetPath,
+        string $prepareOverlayCommand,
     ): string {
         $targetPath = rtrim($targetPath, '/');
         $overlayBase = dirname($targetPath).'/.'.basename($targetPath).'-overlay';
-        $resetCommand = $resetUpper ? '$sudo_prefix rm -rf "$target" "$upper" "$work"' : ': preserve overlay upperdir';
 
         return implode("\n", [
+            self::sourceMountedRuntimeOverlayUnmountCommand($targetPath),
             'source='.escapeshellarg(rtrim($sourcePath, '/')),
-            'target='.escapeshellarg($targetPath),
             'upper='.escapeshellarg("{$overlayBase}/upper"),
             'work='.escapeshellarg("{$overlayBase}/work"),
-            'sudo_prefix=',
-            'if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi',
             'if ! grep -qw overlay /proc/filesystems; then echo "overlayfs is not available on this node." >&2; exit 127; fi',
-            'if mountpoint -q "$target"; then $sudo_prefix umount "$target"; fi',
-            $resetCommand,
-            'mkdir -p "$target" "$upper" "$work"',
+            $prepareOverlayCommand,
+            '$sudo_prefix mkdir -p "$target" "$upper" "$work"',
             'if [ -n "$sudo_prefix" ]; then $sudo_prefix chown "$(id -u):$(id -g)" "$target" "$upper" "$work"; fi',
             '$sudo_prefix mount -t overlay overlay -o "lowerdir=$source,upperdir=$upper,workdir=$work" "$target"',
         ]);

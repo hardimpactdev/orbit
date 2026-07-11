@@ -47,3 +47,28 @@ it('prefers the live guest IPv4 over stale Incus state', function (): void {
         ->and(implode("\n", $commands))
         ->not->toContain('/1.0/instances/orbit-e2e-gateway/state');
 });
+
+it('carries the exact host source path for a source-mounted instance', function (): void {
+    $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
+    $instance = new IncusInstance(
+        $host,
+        'orbit-e2e-gateway',
+        commandTransport: true,
+        sourceMountedCheckout: true,
+        hostSourcePath: '/tmp/orbit-source/retained/dev-abc123',
+    );
+
+    expect($instance->hostSourcePath())->toBe('/tmp/orbit-source/retained/dev-abc123');
+});
+
+it('requires an exact host source path for a source-mounted instance', function (): void {
+    $host = m::mock(IncusHost::class, [E2EConfig::fromEnvironment()])->makePartial();
+
+    expect(fn () => new IncusInstance(
+        $host,
+        'orbit-e2e-gateway',
+        commandTransport: true,
+        sourceMountedCheckout: true,
+    ))
+        ->toThrow(InvalidArgumentException::class, 'requires its exact host source path');
+});

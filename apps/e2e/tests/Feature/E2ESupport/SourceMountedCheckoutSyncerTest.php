@@ -2,8 +2,23 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\SourceMountedCheckoutMutationFence;
 use App\E2E\Support\SourceMountedCheckoutSyncer;
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+
+function source_mounted_sync_process_result(PendingProcess $process, string $output = ''): ProcessResult
+{
+    if (str_contains((string) $process->command, 'flock -w 30 9')) {
+        return Process::result(implode("\n", [
+            '__ORBIT_SOURCE_SYNC_LOCK_READY__',
+            '__ORBIT_SOURCE_SYNC_LOCK_RELEASED__',
+        ]));
+    }
+
+    return Process::result($output);
+}
 
 it('syncs the initiating worktree to a generated remote path without dependency directories', function (): void {
     $previousTestToken = getenv('TEST_TOKEN');
@@ -14,14 +29,17 @@ it('syncs the initiating worktree to a generated remote path without dependency 
         $command = implode("\n", array_filter([
             (string) $process->command,
             is_string($process->input) ? $process->input : null,
-        ], 'is_string'));
+        ], callback: 'is_string'));
         $commands[] = $command;
 
         if (str_contains($command, 'rsync -az --delete')) {
-            return Process::result(">f+++++++++ apps/gateway/app/Example.php\n");
+            return source_mounted_sync_process_result(
+                process: $process,
+                output: ">f+++++++++ apps/gateway/app/Example.php\n",
+            );
         }
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
     });
 
     try {
@@ -29,7 +47,7 @@ it('syncs the initiating worktree to a generated remote path without dependency 
         $commandsOutput = implode("\n", $commands);
         $ownershipRepairOffset = strpos($commandsOutput, 'ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"');
         $rsyncOffset = strpos($commandsOutput, 'rsync -az --delete');
-        $cleanupOffset = strpos($commandsOutput, 'rm -f');
+        $cleanupOffset = is_int($rsyncOffset) ? strpos($commandsOutput, 'rm -f', $rsyncOffset) : false;
         $hydrationOffset = strpos($commandsOutput, 'if command -v composer >/dev/null 2>&1; then');
         $vendorArchiveOffset = strpos($commandsOutput, 'archive_dir=');
         $permissionOffset = strpos($commandsOutput, 'find . -type d -exec chmod a+rx {} +');
@@ -136,7 +154,7 @@ it('passes GitHub auth to remote dependency hydration through SSH input', functi
         $commands[] = (string) $process->command;
         $inputs[] = is_string($process->input) ? $process->input : null;
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
     });
 
     withE2EConfigEnvironment([
@@ -167,7 +185,7 @@ it('passes GitHub auth to remote dependency hydration through SSH input', functi
 it('isolates generated remote source paths by provider and parallel worker', function (): void {
     $previousTestToken = getenv('TEST_TOKEN');
 
-    Process::fake(fn () => Process::result());
+    Process::fake(fn (PendingProcess $process) => source_mounted_sync_process_result($process));
 
     try {
         putenv('TEST_TOKEN=3');
@@ -188,8 +206,21 @@ it('isolates generated remote source paths by provider and parallel worker', fun
     }
 });
 
+it('isolates retained source paths by topology id', function (): void {
+    $syncer = new SourceMountedCheckoutSyncer;
+    $first = $syncer->sourcePath('beast', 'incus', 'dev-aaa111');
+    $second = $syncer->sourcePath('beast', 'incus', 'dev-bbb222');
+
+    expect($first)
+        ->toEndWith('/retained/dev-aaa111')
+        ->not
+        ->toBe($second)
+        ->and($second)
+        ->toEndWith('/retained/dev-bbb222');
+});
+
 it('uses explicit provider source paths as the sync target', function (): void {
-    Process::fake(fn () => Process::result());
+    Process::fake(fn (PendingProcess $process) => source_mounted_sync_process_result($process));
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/global-orbit-source',
@@ -200,8 +231,48 @@ it('uses explicit provider source paths as the sync target', function (): void {
     });
 });
 
+it('treats an explicit provider source path as the base for retained scopes', function (): void {
+    withE2EConfigEnvironment([
+        'ORBIT_E2E_INCUS_SOURCE_PATH_BEAST' => '/srv/beast-orbit-source',
+    ], function (): void {
+        expect(new SourceMountedCheckoutSyncer()->sourcePath('beast', 'incus', 'dev-abc123'))
+            ->toBe('/srv/beast-orbit-source/retained/dev-abc123');
+    });
+});
+
+it('rejects a recorded scoped path that differs from the current safe path', function (): void {
+    Process::fake();
+
+    expect(fn () => new SourceMountedCheckoutSyncer()->withSyncLock(
+        host: 'beast',
+        provider: 'incus',
+        criticalSection: static fn (Closure $syncSource): string => $syncSource(),
+        scope: 'dev-abc123',
+        sourcePath: '/tmp/unrelated/retained/dev-abc123',
+    ))
+        ->toThrow(RuntimeException::class, 'does not match expected scoped path');
+
+    Process::assertNothingRan();
+});
+
+it('allows the locked source sync operation to run only once', function (): void {
+    Process::fake(fn (PendingProcess $process) => source_mounted_sync_process_result($process));
+
+    expect(fn () => new SourceMountedCheckoutSyncer()->withSyncLock(
+        host: 'beast',
+        provider: 'incus',
+        criticalSection: static function (Closure $syncSource): string {
+            $syncSource();
+
+            return $syncSource();
+        },
+        scope: 'dev-abc123',
+    ))
+        ->toThrow(LogicException::class, 'may only be invoked once');
+});
+
 it('uses the local worktree directly for local source mounts', function (): void {
-    Process::fake(fn () => Process::result());
+    Process::fake(fn (PendingProcess $process) => source_mounted_sync_process_result($process));
 
     expect(new SourceMountedCheckoutSyncer()->sync('local', 'docker'))->toBe(repo_path());
 
@@ -216,7 +287,7 @@ it('guards the ownership repair chown behind a foreign-owner probe', function ()
             is_string($process->input) ? $process->input : null,
         ], 'is_string'));
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
     });
 
     new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
@@ -233,30 +304,98 @@ it('guards the ownership repair chown behind a foreign-owner probe', function ()
         ));
 });
 
-it('bounds source sync lock waits and records the remote lock owner', function (): void {
+it('holds a live remote flock for the complete source sync', function (): void {
     $commands = [];
     Process::fake(function ($process) use (&$commands) {
         $commands[] = (string) $process->command;
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
+    });
+
+    $sourcePath = new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
+
+    $commandsOutput = implode("\n", $commands);
+    $expectedLockPath =
+        '/tmp/orbit-e2e-source-locks/'.hash('sha256', rtrim(string: $sourcePath, characters: '/')).'.lock';
+    $expectedMutationLockPath =
+        '/tmp/orbit-e2e-source-locks/'.hash('sha256', rtrim(string: $sourcePath, characters: '/')).'.mutation.lock';
+
+    expect($commandsOutput)
+        ->toContain('/tmp/orbit-e2e-source-locks')
+        ->toContain($expectedLockPath)
+        ->toContain($expectedMutationLockPath)
+        ->toContain('exec 9>"$lock"')
+        ->toContain('flock -w 30 9')
+        ->toContain('Timed out waiting 30s for source sync lock $lock')
+        ->toContain('legacy_lock="$target/.orbit-e2e-source-sync.lock"')
+        ->toContain('while ! mkdir "$legacy_lock" 2>/dev/null')
+        ->toContain('legacy_stale_after=86400')
+        ->toContain('hostname > "$legacy_lock/host"')
+        ->toContain('activate_generation()')
+        ->toContain('invalidate_generation()')
+        ->toContain('generation_file=')
+        ->toContain('actual_generation=')
+        ->toContain('Source lifecycle generation changed before mutation; refusing stale mutation.')
+        ->toContain('--rsync-path')
+        ->toContain('flock -w 1200 -x')
+        ->toContain('__ORBIT_SOURCE_SYNC_LOCK_READY__')
+        ->toContain('cat >/dev/null')
+        ->toContain('__ORBIT_SOURCE_SYNC_LOCK_RELEASED__')
+        ->not->toContain('lock='.escapeshellarg("{$sourcePath}/.orbit-e2e-source-sync.lock"))
+        ->not->toContain('"$$" > "$lock/pid"')->toContain('kill -0 "$owner_pid"');
+});
+
+it('hands the mutation fence into daemon-owned source helper containers', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = implode("\n", array_filter([
+            (string) $process->command,
+            is_string($process->input) ? $process->input : null,
+        ], callback: 'is_string'));
+
+        return source_mounted_sync_process_result($process);
     });
 
     new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     $commandsOutput = implode("\n", $commands);
+    $lockMount =
+        'type=bind,src='
+        .SourceMountedCheckoutMutationFence::LOCK_DIRECTORY
+        .',dst='
+        .SourceMountedCheckoutMutationFence::LOCK_DIRECTORY;
+    $dockerRunLines = array_values(array_filter(
+        explode("\n", $commandsOutput),
+        static fn (string $line): bool => str_contains($line, 'docker run --rm'),
+    ));
+    $helperPreflightLines = array_values(array_filter(
+        $dockerRunLines,
+        static fn (string $line): bool => str_contains($line, 'command -v flock') && ! str_contains($line, 'dst=/work'),
+    ));
+    $sourceMutationLines = array_values(array_filter(
+        $dockerRunLines,
+        static fn (string $line): bool => str_contains($line, 'dst=/work'),
+    ));
 
-    expect($commandsOutput)
-        ->toContain('max_wait=30')
-        ->toContain('legacy_stale_after=60')
-        ->toContain('owner_pid="$(cat "$lock/pid"')
-        ->toContain('kill -0 "$owner_pid"')
-        ->toContain('lock_age="$((now - created_at))"')
-        ->toContain('! kill -0 "$owner_pid" 2>/dev/null && [ "$lock_age" -gt "$legacy_stale_after" ]')
-        ->toContain('"$$" > "$lock/pid"')
-        ->toContain('hostname > "$lock/host"')
-        ->toContain('Timed out waiting ${max_wait}s for source sync lock $lock')
-        ->not->toContain('-ge 900')
-        ->not->toContain('-gt 1800');
+    expect($helperPreflightLines)
+        ->toHaveCount(2)
+        ->and($sourceMutationLines)
+        ->toHaveCount(3)
+        ->and(preg_match_all('/flock -u 8\s+exec 8>&-/', $commandsOutput))
+        ->toBe(2);
+
+    foreach ($helperPreflightLines as $helperPreflightLine) {
+        expect($helperPreflightLine)->toContain('timeout 2 flock');
+    }
+
+    foreach ($sourceMutationLines as $sourceMutationLine) {
+        expect($sourceMutationLine)
+            ->toContain($lockMount)
+            ->toContain('sh -lc')
+            ->toContain('mutation_lock=')
+            ->toContain('timeout 1200 flock')
+            ->not->toContain('flock -w');
+    }
 });
 
 it('itemizes rsync changes so unchanged syncs can skip maintenance work', function (): void {
@@ -264,7 +403,7 @@ it('itemizes rsync changes so unchanged syncs can skip maintenance work', functi
     Process::fake(function ($process) use (&$commands) {
         $commands[] = (string) $process->command;
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
     });
 
     new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
@@ -278,9 +417,9 @@ it('skips permission normalization when rsync reports no changes', function (): 
         $commands[] = implode("\n", array_filter([
             (string) $process->command,
             is_string($process->input) ? $process->input : null,
-        ], 'is_string'));
+        ], callback: 'is_string'));
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
     });
 
     new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
@@ -296,14 +435,17 @@ it('normalizes permissions when rsync reports changed files', function (): void 
         $command = implode("\n", array_filter([
             (string) $process->command,
             is_string($process->input) ? $process->input : null,
-        ], 'is_string'));
+        ], callback: 'is_string'));
         $commands[] = $command;
 
         if (str_contains($command, 'rsync -az --delete')) {
-            return Process::result(">f+++++++++ apps/gateway/app/Example.php\n");
+            return source_mounted_sync_process_result(
+                process: $process,
+                output: ">f+++++++++ apps/gateway/app/Example.php\n",
+            );
         }
 
-        return Process::result();
+        return source_mounted_sync_process_result($process);
     });
 
     new SourceMountedCheckoutSyncer()->sync('beast', 'incus');

@@ -10,8 +10,10 @@ use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\LiveIncusLocalMachine;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -37,6 +39,7 @@ function fakeIncusPreparedTopology(string $runId = 'dev-abc123'): array
     return [
         'host' => 'beast',
         'run_id' => $runId,
+        'source_path' => new SourceMountedCheckoutSyncer()->sourcePath('beast', 'incus', $runId),
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$runId}/id_ed25519",
         'gateway_ip' => '10.6.0.2',
         'instances' => [
@@ -81,6 +84,63 @@ function incusReleaseConfig(string $host = 'beast'): E2EConfig
         dockerHosts: ['local'],
         keep: false,
     );
+}
+
+/** @param list<string> $commands */
+function incus_command_index_containing(array $commands, string $needle, ?string $excluded = null): ?int
+{
+    foreach ($commands as $index => $command) {
+        if (! str_contains($command, $needle)) {
+            continue;
+        }
+
+        if ($excluded !== null && str_contains($command, $excluded)) {
+            continue;
+        }
+
+        return $index;
+    }
+
+    return null;
+}
+
+/**
+ * @param  list<string>  $commands
+ * @return list<int>
+ */
+function incus_command_indexes_containing(array $commands, string $needle, ?string $excluded = null): array
+{
+    $indexes = [];
+
+    foreach ($commands as $index => $command) {
+        if (! str_contains($command, $needle)) {
+            continue;
+        }
+
+        if ($excluded !== null && str_contains($command, $excluded)) {
+            continue;
+        }
+
+        $indexes[] = $index;
+    }
+
+    return $indexes;
+}
+
+function incus_command_process_result(
+    PendingProcess $process,
+    string $output = '',
+    string $errorOutput = '',
+    int $exitCode = 0,
+): ProcessResult {
+    if (str_contains((string) $process->command, 'flock -w 30 9')) {
+        return Process::result(implode("\n", [
+            '__ORBIT_SOURCE_SYNC_LOCK_READY__',
+            '__ORBIT_SOURCE_SYNC_LOCK_RELEASED__',
+        ]));
+    }
+
+    return Process::result(output: $output, errorOutput: $errorOutput, exitCode: $exitCode);
 }
 
 function recordingIncusReleaseHost(E2EConfig $config, ArrayObject $log): IncusHost
@@ -278,6 +338,7 @@ function writeIncusRetainedManifest(
         'provider' => 'incus',
         'host' => 'beast',
         'run_id' => $id,
+        'source_path' => new SourceMountedCheckoutSyncer()->sourcePath('beast', 'incus', $id),
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$id}/id_ed25519",
         'gateway_ip' => '10.6.0.2',
         'instances' => [
@@ -382,7 +443,7 @@ it('creates a live accessible Incus topology and prints local onboarding instruc
         $output,
     );
 
-    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+    $payload = json_decode(trim($output->fetch()), associative: true, flags: JSON_THROW_ON_ERROR);
     $liveTopology = $payload['success']['live_topology'];
 
     $wireGuardConfigPath = "{$this->manifestDirectory}/oe2eabc123.conf";
@@ -604,7 +665,7 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
     Process::fake(function ($process) use (&$commands) {
         $commands[] = (string) $process->command;
 
-        return Process::result();
+        return incus_command_process_result($process);
     });
 
     $output = new BufferedOutput;
@@ -633,7 +694,7 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->and($sync['host'])
         ->toBe('beast')
         ->and($sync['source_path'])
-        ->toContain('-incus-')
+        ->toEndWith('/retained/dev-abc123')
         ->and($sync['checkouts']['operator'])
         ->toBe('/home/orbit/orbit-current')
         ->and($sync['runtime_checkouts']['operator'])
@@ -654,8 +715,109 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->toContain('/home/orbit/.orbit-current-overlay/upper')
         ->toContain('/home/orbit/.orbit-current-overlay/work')
         ->toContain('mount -t overlay overlay')
-        ->not->toContain('tar -C "${target}" -xf -')
-        ->not->toContain('$sudo_prefix rm -rf "$target" "$upper" "$work"');
+        ->not
+        ->toContain('tar -C "${target}" -xf -')
+        ->toContain('$sudo_prefix rm -rf "$upper" "$work"');
+});
+
+it('rejects a legacy retained topology before touching its runtime checkout', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+    unset($manifest['source_path']);
+    $store->write($manifest);
+    Process::fake();
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['error']['code'])
+        ->toBe('validation_failed')
+        ->and($payload['error']['message'])
+        ->toContain('predates isolated source paths')
+        ->toContain('release and reacquire');
+
+    Process::assertNothingRan();
+});
+
+it('rejects an unexpected retained source path before touching its runtime checkout', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+    $manifest['source_path'] = '/tmp/orbit-e2e-sources/unrelated/retained/dev-abc123';
+    $store->write($manifest);
+    Process::fake();
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['error']['code'])
+        ->toBe('validation_failed')
+        ->and($payload['error']['message'])
+        ->toContain('records unexpected source path');
+
+    Process::assertNothingRan();
+});
+
+it('rechecks the retained manifest after acquiring the lifecycle lock', function (): void {
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $commands = [];
+
+    Process::fake(function (PendingProcess $process) use ($store, &$commands): ProcessResult {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (str_contains($command, 'flock -w 30 9')) {
+            $store->remove('dev-abc123');
+        }
+
+        return incus_command_process_result($process);
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
+    $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['error']['code'])
+        ->toBe('source_sync_failed')
+        ->and($payload['error']['message'])
+        ->toContain('was released while source sync waited for its lifecycle lock')
+        ->and(implode("\n", $commands))
+        ->not->toContain('incus exec')
+        ->not->toContain('rsync -az --delete');
 });
 
 it('syncs source-mounted retained Incus checkouts into overlay runtime paths', function (): void {
@@ -670,7 +832,7 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
     Process::fake(function ($process) use (&$commands) {
         $commands[] = (string) $process->command;
 
-        return Process::result();
+        return incus_command_process_result($process);
     });
 
     $output = new BufferedOutput;
@@ -687,6 +849,18 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
     $sync = $payload['success']['source_sync'];
     $commandsOutput = implode("\n", $commands);
+    $lockAcquireIndex = incus_command_index_containing(
+        commands: $commands,
+        needle: 'flock -w 30 9',
+    );
+    $detachIndexes = incus_command_indexes_containing(
+        commands: $commands,
+        needle: 'while mountpoint -q "$target"; do',
+        excluded: 'mount -t overlay',
+    );
+    $rsyncIndex = incus_command_index_containing(commands: $commands, needle: 'rsync -az --delete');
+    $remountIndexes = incus_command_indexes_containing(commands: $commands, needle: 'mount -t overlay overlay');
+    $lockCommand = is_int($lockAcquireIndex) ? $commands[$lockAcquireIndex] : '';
 
     expect($exitCode)
         ->toBe(0)
@@ -705,14 +879,239 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
         ->toContain('orbit-e2e-dev-abc123-operator')
         ->toContain('orbit-e2e-dev-abc123-gateway')
         ->toContain('orbit-e2e-dev-abc123-dev')
-        ->not->toContain('tar -C "${target}" -xf -')
-        ->not->toContain('$sudo_prefix rm -rf "$target" "$upper" "$work"');
+        ->not->toContain('tar -C "${target}" -xf -')->toContain('$sudo_prefix rm -rf "$upper" "$work"')->and(
+            $lockCommand,
+        )->toContain('__ORBIT_SOURCE_SYNC_LOCK_READY__')->toContain('cat >/dev/null')->toContain(
+            '__ORBIT_SOURCE_SYNC_LOCK_RELEASED__',
+        )->and([
+            $lockAcquireIndex,
+            $rsyncIndex,
+        ])
+        ->each->toBeInt()->and($detachIndexes)->toHaveCount(3)
+        ->each->toBeInt()->and($remountIndexes)->toHaveCount(3)
+        ->each->toBeInt();
+
+    if (
+        ! is_int($lockAcquireIndex)
+        || ! is_int($rsyncIndex)
+        || count($detachIndexes) !== 3
+        || count($remountIndexes) !== 3
+    ) {
+        return;
+    }
+
+    expect($lockAcquireIndex)
+        ->toBeLessThan(min($detachIndexes))
+        ->and(max($detachIndexes))
+        ->toBeLessThan($rsyncIndex)
+        ->and($rsyncIndex)
+        ->toBeLessThan(min($remountIndexes));
+});
+
+it('restores earlier runtime overlays when a later checkout is busy', function (): void {
+    writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123', checkouts: [
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
+        'dev' => '/home/orbit/orbit',
+    ]);
+
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (
+            str_contains($command, 'orbit-e2e-dev-abc123-gateway')
+            && str_contains($command, 'while mountpoint -q')
+            && ! str_contains($command, 'mount -t overlay')
+        ) {
+            return Process::result(errorOutput: 'target is busy', exitCode: 1);
+        }
+
+        return incus_command_process_result($process);
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
+
+    $payload = json_decode(trim($output->fetch()), associative: true, flags: JSON_THROW_ON_ERROR);
+    $operatorUnmount = collect($commands)->search(
+        fn (string $command): bool => (
+            str_contains($command, 'orbit-e2e-dev-abc123-operator')
+            && str_contains($command, 'while mountpoint -q')
+            && ! str_contains($command, 'mount -t overlay')
+        ),
+    );
+    $gatewayUnmount = collect($commands)->search(
+        fn (string $command): bool => (
+            str_contains($command, 'orbit-e2e-dev-abc123-gateway')
+            && str_contains($command, 'while mountpoint -q')
+            && ! str_contains($command, 'mount -t overlay')
+        ),
+    );
+    $operatorRestore = collect($commands)->search(
+        fn (string $command): bool => (
+            str_contains($command, 'orbit-e2e-dev-abc123-operator') && str_contains($command, 'mount -t overlay')
+        ),
+    );
+    $operatorRestoreCommand = is_int($operatorRestore) ? $commands[$operatorRestore] : '';
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['error']['code'])
+        ->toBe('source_sync_failed')
+        ->and($payload['error']['message'])
+        ->toContain('target is busy')
+        ->and(implode("\n", $commands))
+        ->not->toContain('rsync -az --delete')->and($operatorRestoreCommand)->toContain(': preserve overlay upperdir')
+        ->not->toContain('$sudo_prefix rm -rf "$target" "$upper" "$work"')->and([
+            $operatorUnmount,
+            $gatewayUnmount,
+            $operatorRestore,
+        ])
+        ->each->toBeInt();
+
+    if (! is_int($operatorUnmount) || ! is_int($gatewayUnmount) || ! is_int($operatorRestore)) {
+        return;
+    }
+
+    expect($operatorUnmount)
+        ->toBeLessThan($gatewayUnmount)
+        ->and($gatewayUnmount)
+        ->toBeLessThan($operatorRestore);
+});
+
+it('leaves every runtime overlay detached when source sync fails', function (): void {
+    writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123', checkouts: [
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
+        'dev' => '/home/orbit/orbit',
+    ]);
+    $commands = [];
+
+    Process::fake(function (PendingProcess $process) use (&$commands): ProcessResult {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (str_contains($command, 'rsync -az --delete')) {
+            return incus_command_process_result(
+                process: $process,
+                errorOutput: 'rsync failed',
+                exitCode: 1,
+            );
+        }
+
+        return incus_command_process_result($process);
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
+    $payload = json_decode(trim($output->fetch()), associative: true, flags: JSON_THROW_ON_ERROR);
+    $rsyncIndex = incus_command_index_containing(commands: $commands, needle: 'rsync -az --delete');
+    $restoreIndexes = incus_command_indexes_containing(
+        commands: $commands,
+        needle: ': preserve overlay upperdir',
+    );
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['error']['code'])
+        ->toBe('source_sync_failed')
+        ->and($payload['error']['message'])
+        ->toContain('rsync failed')
+        ->toContain('remain detached')
+        ->toContain('Retry the same sync command')
+        ->and($rsyncIndex)
+        ->toBeInt()
+        ->and($restoreIndexes)
+        ->toBeEmpty()
+        ->and(implode("\n", $commands))
+        ->not->toContain('$sudo_prefix rm -rf "$upper" "$work"');
+});
+
+it('attempts every fresh remount when a middle runtime checkout fails', function (): void {
+    writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123', checkouts: [
+        'operator' => '/home/orbit/orbit',
+        'gateway' => '/home/orbit/orbit',
+        'dev' => '/home/orbit/orbit',
+    ]);
+    $commands = [];
+
+    Process::fake(function (PendingProcess $process) use (&$commands): ProcessResult {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (
+            str_contains($command, 'orbit-e2e-dev-abc123-gateway')
+            && str_contains($command, 'mount -t overlay overlay')
+            && str_contains($command, '$sudo_prefix rm -rf "$upper" "$work"')
+        ) {
+            return incus_command_process_result(
+                process: $process,
+                errorOutput: 'gateway remount failed',
+                exitCode: 1,
+            );
+        }
+
+        return incus_command_process_result($process);
+    });
+
+    $output = new BufferedOutput;
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
+    $payload = json_decode(trim($output->fetch()), associative: true, flags: JSON_THROW_ON_ERROR);
+    $freshMountIndexes = incus_command_indexes_containing(
+        commands: $commands,
+        needle: '$sudo_prefix rm -rf "$upper" "$work"',
+    );
+    $gatewayMountIndex = count($freshMountIndexes) === 3 ? $freshMountIndexes[1] : null;
+    $devMountIndex = count($freshMountIndexes) === 3 ? $freshMountIndexes[2] : null;
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['error']['code'])
+        ->toBe('source_sync_failed')
+        ->and($payload['error']['message'])
+        ->toContain('gateway remount failed')
+        ->and($freshMountIndexes)
+        ->toHaveCount(3)
+        ->each->toBeInt();
+
+    if (! is_int($gatewayMountIndex) || ! is_int($devMountIndex)) {
+        return;
+    }
+
+    expect($gatewayMountIndex)->toBeLessThan($devMountIndex);
 });
 
 it('prints a human retained Incus sync summary', function (): void {
-    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
 
-    Process::fake(fn () => Process::result());
+    Process::fake(fn (PendingProcess $process) => incus_command_process_result($process));
 
     $this
         ->artisan('e2e:incus', [
@@ -739,7 +1138,7 @@ it('requires an id when syncing a retained Incus topology', function (): void {
 });
 
 it('stops a retained Incus topology by id', function (): void {
-    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
 
     $log = new ArrayObject(['deleted' => [], 'runs' => []]);
     incusReleaseCommandWith($log);
@@ -761,7 +1160,7 @@ it('stops a retained Incus topology by id', function (): void {
 });
 
 it('stops a recorded live wg quick tunnel before releasing the topology', function (): void {
-    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    writeIncusRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
 
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
     $manifest = $store->read('dev-abc123');
@@ -840,12 +1239,12 @@ it('rejects ambiguous start and stop mode selection', function (): void {
 it('routes composer incus scripts through apps e2e only', function (): void {
     $rootComposer = json_decode(
         (string) file_get_contents(repo_path('composer.json')),
-        true,
+        associative: true,
         flags: JSON_THROW_ON_ERROR,
     );
     $e2eComposer = json_decode(
         (string) file_get_contents(repo_path('apps/e2e/composer.json')),
-        true,
+        associative: true,
         flags: JSON_THROW_ON_ERROR,
     );
 

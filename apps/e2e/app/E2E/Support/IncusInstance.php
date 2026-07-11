@@ -16,7 +16,18 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         private readonly string $name,
         private readonly bool $commandTransport = false,
         private readonly bool $sourceMountedCheckout = false,
-    ) {}
+        private readonly ?string $hostSourcePath = null,
+    ) {
+        if (
+            $this->sourceMountedCheckout
+            && (! is_string($this->hostSourcePath)
+            || trim($this->hostSourcePath) === '')
+        ) {
+            throw new \InvalidArgumentException(
+                'A source-mounted Incus instance requires its exact host source path.',
+            );
+        }
+    }
 
     public function name(): string
     {
@@ -190,7 +201,7 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
     public function hostSourcePath(): string
     {
-        return $this->host->sourcePath();
+        return $this->hostSourcePath ?? $this->host->sourcePath();
     }
 
     public function waitForAgent(): void

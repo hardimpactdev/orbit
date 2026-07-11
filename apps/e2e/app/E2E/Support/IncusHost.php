@@ -768,6 +768,10 @@ class IncusHost
      */
     public function deleteInstancesIfPresent(array $names): ProcessResult
     {
+        if ($names === []) {
+            return $this->run('true', timeoutSeconds: 180);
+        }
+
         $lines = array_map(
             static fn (string $name): string => sprintf(
                 'incus delete --force %s >/dev/null 2>&1 || true',
@@ -775,6 +779,13 @@ class IncusHost
             ),
             $names,
         );
+        $lines[] = 'remaining_instances="$(incus list --format csv -c n)"';
+        $lines[] = 'for name in '.implode(' ', array_map(escapeshellarg(...), $names)).'; do';
+        $lines[] = '  if printf \'%s\\n\' "$remaining_instances" | grep -Fxq -- "$name"; then';
+        $lines[] = '    echo "Retained Incus instance still exists after deletion: $name" >&2';
+        $lines[] = '    exit 1';
+        $lines[] = '  fi';
+        $lines[] = 'done';
 
         return $this->run(implode("\n", $lines), timeoutSeconds: 180);
     }

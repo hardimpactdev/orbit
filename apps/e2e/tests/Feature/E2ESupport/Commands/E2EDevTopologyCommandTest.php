@@ -27,7 +27,7 @@ afterEach(function (): void {
  *
  * @param  array<string, string>  $instances
  * @param  array<string, string>  $checkouts
- * @return array{host: string, run_id: string, ssh_key_path: string, gateway_ip: string, instances: array<string, string>, checkouts: array<string, string>}
+ * @return array{host: string, run_id: string, source_path: string, ssh_key_path: string, gateway_ip: string, instances: array<string, string>, checkouts: array<string, string>}
  */
 function fakePreparedTopology(
     string $runId = 'dev-abc123',
@@ -55,6 +55,11 @@ function fakePreparedTopology(
     $topology = [
         'host' => $host,
         'run_id' => $runId,
+        'source_path' => new \App\E2E\Support\SourceMountedCheckoutSyncer()->sourcePath(
+            $host,
+            'incus',
+            $runId,
+        ),
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$runId}/id_ed25519",
         'gateway_ip' => '10.6.0.2',
         'instances' => $instances,
@@ -329,7 +334,9 @@ it('reports source-mounted retained Incus checkouts in output and manifests', fu
             'operator' => '/home/orbit/orbit',
             'gateway' => '/home/orbit/orbit',
             'dev' => '/home/orbit/orbit',
-        ]);
+        ])
+        ->and($manifest['source_path'])
+        ->toEndWith('/retained/dev-abc123');
 });
 
 it('reports source-mounted retained Incus runtime overlays in output and handles', function (): void {

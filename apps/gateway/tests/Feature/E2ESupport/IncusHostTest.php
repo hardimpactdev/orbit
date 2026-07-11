@@ -124,6 +124,25 @@ it('sets the configured root disk size when launching topology instances', funct
         );
 });
 
+it('verifies bulk-deleted instances are absent before reporting success', function (): void {
+    $commands = [];
+    $host = recordingIncusHost(incusHostTestConfig(), $commands);
+
+    $host->deleteInstancesIfPresent([
+        'orbit-e2e-dev-abc123-operator',
+        'orbit-e2e-dev-abc123-gateway',
+    ]);
+
+    expect($commands)
+        ->toHaveCount(1)
+        ->and($commands[0])
+        ->toContain("incus delete --force 'orbit-e2e-dev-abc123-operator'")
+        ->toContain("incus delete --force 'orbit-e2e-dev-abc123-gateway'")
+        ->toContain('incus list --format csv -c n')
+        ->toContain('Retained Incus instance still exists after deletion')
+        ->toContain('grep -Fxq -- "$name"');
+});
+
 it('uses incus snapshot restore and supports stateful restore', function (): void {
     $commands = [];
     $host = recordingIncusHost(incusHostTestConfig(), $commands);

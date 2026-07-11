@@ -6,13 +6,25 @@ use App\Console\Commands\E2EDevTopologyReleaseCommand;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EDevTopologyManifestStore;
 use App\E2E\Support\IncusHost;
+use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    Process::fake(static function (PendingProcess $process): ProcessResult {
+        if (str_contains((string) $process->command, 'flock -w 30 9')) {
+            return Process::result(implode("\n", [
+                '__ORBIT_SOURCE_SYNC_LOCK_READY__',
+                '__ORBIT_SOURCE_SYNC_LOCK_RELEASED__',
+            ]));
+        }
+
+        return Process::result();
+    });
     $this->manifestDirectory = make_temp_directory('release-manifests');
     putenv("ORBIT_E2E_DEV_TOPOLOGY_MANIFEST_DIRECTORY={$this->manifestDirectory}");
 });
@@ -83,6 +95,7 @@ function writeRetainedManifest(string $directory, string $id, string $host = 'be
         'provider' => 'incus',
         'host' => $host,
         'run_id' => $id,
+        'source_path' => new SourceMountedCheckoutSyncer()->sourcePath($host, 'incus', $id),
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$id}/id_ed25519",
         'gateway_ip' => '10.6.0.2',
         'instances' => [
@@ -182,12 +195,221 @@ it('reaps the recorded instances and removes the manifest and ssh key', function
         // The dedicated per-run ssh key directory is removed on the host.
         ->and($log['runs'])
         ->toContain("rm -rf '/tmp/orbit-e2e-topology-dev-abc123'")
+        ->and(implode("\n", $log['runs']))
+        ->toContain(
+            'target='
+                .escapeshellarg(
+                    new SourceMountedCheckoutSyncer()->sourcePath('beast', 'incus', 'dev-abc123'),
+                ),
+        )
+        ->toContain('find "$target" -mindepth 1 -maxdepth 1')
         ->and(new E2EDevTopologyManifestStore($this->manifestDirectory)->read('dev-abc123'))
         ->toBeNull();
 });
 
+it('rejects a malformed source path before deleting retained instances', function (): void {
+    writeRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+    $manifest['source_path'] = '/tmp/unrelated/retained/dev-abc123';
+    $store->write($manifest);
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this
+        ->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertExitCode(1)
+        ->expectsOutputToContain('Refusing to remove unexpected retained source path');
+
+    expect($log['deleted'])
+        ->toBe([])
+        ->and($store->read('dev-abc123'))
+        ->not->toBeNull();
+});
+
+it('rejects a mismatched retained identity before deleting instances', function (): void {
+    writeRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+    $manifest['run_id'] = 'dev-other';
+    $store->write($manifest);
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this
+        ->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertExitCode(1)
+        ->expectsOutputToContain('identity mismatch');
+
+    expect($log['deleted'])
+        ->toBeEmpty()
+        ->and($log['runs'])
+        ->toBeEmpty()
+        ->and($store->read('dev-abc123'))
+        ->not->toBeNull();
+});
+
+it('removes a scoped source path even when no instances remain', function (): void {
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+    $manifest['instances'] = [];
+    $store->write($manifest);
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertSuccessful();
+
+    expect($log['deleted'])
+        ->toBe([[
+            'orbit-e2e-dev-abc123-operator',
+            'orbit-e2e-dev-abc123-gateway',
+            'orbit-e2e-dev-abc123-dev',
+        ]])
+        ->and(implode("\n", $log['runs']))
+        ->toContain(
+            'target='
+                .escapeshellarg(
+                    new SourceMountedCheckoutSyncer()->sourcePath('beast', 'incus', 'dev-abc123'),
+                ),
+        )
+        ->toContain('find "$target" -mindepth 1 -maxdepth 1')
+        ->and($store->read('dev-abc123'))
+        ->toBeNull();
+});
+
+it('releases a legacy topology without deleting an unrecorded source path', function (): void {
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $manifest = $store->read('dev-abc123');
+    unset($manifest['source_path']);
+    $store->write($manifest);
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertSuccessful();
+
+    expect(implode("\n", $log['runs']))
+        ->not
+        ->toContain('/retained/dev-abc123')
+        ->and($store->read('dev-abc123'))
+        ->toBeNull();
+});
+
+it('never deletes a local source-mounted worktree during release', function (): void {
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123', host: 'localhost');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+
+    $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertSuccessful();
+
+    expect(implode("\n", $log['runs']))
+        ->not
+        ->toContain('rm -rf -- '.escapeshellarg(repo_path()))
+        ->and($store->read('dev-abc123'))
+        ->toBeNull();
+});
+
+it('preserves the manifest when scoped source cleanup fails', function (): void {
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $command = app(E2EDevTopologyReleaseCommand::class);
+    $command->hostFactoryUsing(fn (string $host): IncusHost => new class(devReleaseConfig($host)) extends IncusHost {
+        #[Override]
+        public function deleteInstancesIfPresent(array $names): ProcessResult
+        {
+            return Process::result();
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            return str_contains($command, '/retained/dev-abc123')
+                ? Process::result(errorOutput: 'source cleanup failed', exitCode: 1)
+                : Process::result();
+        }
+    });
+    app()->instance(E2EDevTopologyReleaseCommand::class, $command);
+
+    $this
+        ->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertExitCode(1)
+        ->expectsOutputToContain('source cleanup failed');
+
+    expect($store->read('dev-abc123'))->not->toBeNull();
+});
+
+it('preserves the source and manifest when instance absence cannot be verified', function (): void {
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $commands = new ArrayObject([]);
+    $command = app(E2EDevTopologyReleaseCommand::class);
+    $command->hostFactoryUsing(fn (string $host): IncusHost => new class(devReleaseConfig($host), $commands) extends
+        IncusHost {
+        public function __construct(
+            E2EConfig $config,
+            private readonly ArrayObject $commands,
+        ) {
+            parent::__construct($config);
+        }
+
+        #[Override]
+        public function deleteInstancesIfPresent(array $names): ProcessResult
+        {
+            return Process::result(errorOutput: 'instance remains', exitCode: 1);
+        }
+
+        #[Override]
+        public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            $this->commands[] = $command;
+
+            return Process::result();
+        }
+    });
+    app()->instance(E2EDevTopologyReleaseCommand::class, $command);
+
+    $this
+        ->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertExitCode(1)
+        ->expectsOutputToContain('instance remains');
+
+    expect(implode("\n", $commands->getArrayCopy()))
+        ->not->toContain('/retained/dev-abc123')->and($store->read('dev-abc123'))
+        ->not->toBeNull();
+});
+
+it('does not mutate a retained topology when its lifecycle lock cannot be acquired', function (): void {
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
+    $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
+    $log = new ArrayObject(['deleted' => [], 'runs' => []]);
+    releaseCommandWith($log);
+    Process::fake(static fn (PendingProcess $process): ProcessResult => str_contains(
+        (string) $process->command,
+        'flock -w 30 9',
+    )
+            ? Process::result(errorOutput: 'lock timeout', exitCode: 1)
+            : Process::result());
+
+    $this
+        ->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
+        ->assertExitCode(1)
+        ->expectsOutputToContain('lock timeout');
+
+    expect($log['deleted'])
+        ->toBeEmpty()
+        ->and($log['runs'])
+        ->toBeEmpty()
+        ->and($store->read('dev-abc123'))
+        ->not->toBeNull();
+});
+
 it('releases docker retained topology resources from the manifest', function (): void {
-    writeRetainedDockerManifest($this->manifestDirectory, 'dev-abc123');
+    writeRetainedDockerManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
 
     Process::fake(['*' => Process::result()]);
 
@@ -209,7 +431,7 @@ it('releases docker retained topology resources from the manifest', function ():
 });
 
 it('returns the reaped instances in the json payload', function (): void {
-    writeRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    writeRetainedManifest(directory: $this->manifestDirectory, id: 'dev-abc123');
 
     $log = new ArrayObject(['deleted' => [], 'runs' => []]);
     releaseCommandWith($log);
@@ -243,7 +465,7 @@ it('releases every recorded topology with --all', function (): void {
 
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
 
-    expect($log['deleted'])->toHaveCount(2)->and($store->list())->toBe([]);
+    expect($log['deleted'])->toHaveCount(2)->and($store->list())->toBeEmpty();
 });
 
 it('treats releasing the dry-run placeholder as a no-op success', function (): void {
@@ -255,7 +477,7 @@ it('treats releasing the dry-run placeholder as a no-op success', function (): v
         ->expectsOutputToContain('"id":"dry-run"')
         ->assertSuccessful();
 
-    expect($log['deleted'])->toBe([]);
+    expect($log['deleted'])->toBeEmpty();
 });
 
 it('fails clearly when a retained topology manifest is missing', function (): void {

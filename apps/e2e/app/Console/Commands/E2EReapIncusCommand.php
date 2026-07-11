@@ -714,15 +714,16 @@ class E2EReapIncusCommand extends Command
 
     private function isPrunableTmpPath(string $path): bool
     {
-        if ($path === '/tmp/orbit-e2e-sources') {
+        if (
+            $path === '/tmp/orbit-e2e-sources'
+            || str_starts_with($path, '/tmp/orbit-e2e-sources/')
+            || $path === '/tmp/orbit-e2e-source-locks'
+            || str_starts_with($path, '/tmp/orbit-e2e-source-locks/')
+        ) {
             return false;
         }
 
-        return (
-            str_starts_with($path, '/tmp/orbit-e2e-')
-            || str_starts_with($path, '/tmp/orbit-current-transfer-')
-            || str_starts_with($path, '/tmp/orbit-e2e-sources/')
-        );
+        return str_starts_with($path, '/tmp/orbit-e2e-') || str_starts_with($path, '/tmp/orbit-current-transfer-');
     }
 
     private function listInstances($host): ProcessResult
@@ -747,10 +748,7 @@ class E2EReapIncusCommand extends Command
         return $this->runRemote($host, sprintf(
             <<<'BASH'
                 set -euo pipefail
-                find /tmp -mindepth 1 -maxdepth 1 \( \( -name 'orbit-e2e-*' ! -name 'orbit-e2e-sources' \) -o -name 'orbit-current-transfer-*' \) -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
-                if [ -d /tmp/orbit-e2e-sources ]; then
-                    find /tmp/orbit-e2e-sources -mindepth 1 -maxdepth 1 -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
-                fi
+                find /tmp -mindepth 1 -maxdepth 1 \( \( -name 'orbit-e2e-*' ! -name 'orbit-e2e-sources' ! -name 'orbit-e2e-source-locks' \) -o -name 'orbit-current-transfer-*' \) -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
                 BASH,
             $minutes,
         ));
