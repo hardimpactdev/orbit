@@ -1,7 +1,7 @@
 {
     "schema_version": 2,
     "generated_from": ".orbit/sessions/YYYY-MM-DD-HHMMSS-<slug>",
-    "record_count": 93,
+    "record_count": 94,
     "records": [
         {
             "archive": "2026-06-26-122115-session-archive-contract",
@@ -3145,6 +3145,27 @@
                 },
                 "capture_status": "partial"
             }
+        },
+        {
+            "archive": "2026-07-11-111619-compact-feature-loop",
+            "slug": "compact-feature-loop",
+            "timestamp": "2026-07-11-111619",
+            "schema": "compact-v1",
+            "archive_mode": "compact",
+            "state": "accepted",
+            "review_status": "passed",
+            "acceptance_status": "accepted",
+            "acceptance_venue": "retained-incus",
+            "feedback_count": 21,
+            "feedback": {
+                "status": "valid",
+                "event_count": 21,
+                "raw_count": 11,
+                "promoted_count": 10,
+                "waived_count": 0,
+                "protection_failures": 0
+            },
+            "legacy": null
         }
     ]
 }

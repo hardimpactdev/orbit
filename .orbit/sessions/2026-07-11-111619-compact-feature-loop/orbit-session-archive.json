@@ -1,0 +1,23 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-11T09:16:19+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/compact-feature-loop/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-11-111619-compact-feature-loop",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "feedback.jsonl",
+        "loop.md"
+    ],
+    "entry_digests": {
+        "feedback.jsonl": "22e117cd61378dc70d011f6c89bd59fdecd2d2c562a2f92d3f94f4bb5a7ec8c9",
+        "loop.md": "944e83235d8b89b225f8fd77e2bd3f700339ec249c6dfc5068f03425f938daca"
+    },
+    "branch": "compact-feature-loop",
+    "candidate_commit": "9f5b0a8ed4fe50585e9d5f0708a36b254c5c01c4",
+    "accepted_feature_tip": "9f5b0a8ed4fe50585e9d5f0708a36b254c5c01c4",
+    "accepted_main_tip": "b99b4d781abd6987df006d99009e7fadc59e6592",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
