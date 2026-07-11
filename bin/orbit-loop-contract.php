@@ -240,7 +240,8 @@ function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip):
 
 function orbitLoopVenueSatisfies(string $actual, string $required): bool
 {
-    return orbitLoopStrongerVenue($required, $actual) === $actual;
+    return in_array($actual, ORBIT_LOOP_ACCEPTANCE_VENUES, true)
+        && ($actual === $required || $required === 'automated');
 }
 
 function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string

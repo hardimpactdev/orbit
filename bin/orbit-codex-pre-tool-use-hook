@@ -72,7 +72,11 @@ if ($command === null || $command === '') {
 
 $trimmedCommand = trim($command);
 
-if (str_starts_with($trimmedCommand, '*** Begin Patch') && str_ends_with($trimmedCommand, '*** End Patch')) {
+if (
+    str_starts_with($trimmedCommand, '*** Begin Patch')
+    && str_ends_with($trimmedCommand, '*** End Patch')
+    && preg_match('/^\*\*\* (?:Add|Update|Delete) File: .+$/m', $trimmedCommand) === 1
+) {
     exit(unclassifiable_exit('patch payload is not an executable command'));
 }
 

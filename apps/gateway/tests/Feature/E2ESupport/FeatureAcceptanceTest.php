@@ -55,6 +55,10 @@ it('allows stronger acceptance venues without allowing downgrades', function ():
     expect(orbitLoopVenueSatisfies('retained-incus', 'automated'))
         ->toBeTrue()
         ->and(orbitLoopVenueSatisfies('automated', 'retained-incus'))
+        ->toBeFalse()
+        ->and(orbitLoopVenueSatisfies('browser', 'retained-incus'))
+        ->toBeFalse()
+        ->and(orbitLoopVenueSatisfies('host-macos', 'browser'))
         ->toBeFalse();
 });
 
