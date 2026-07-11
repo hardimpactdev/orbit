@@ -1,0 +1,41 @@
+COMMAND: bin/orbit-cli-pest --compact --filter=writes site configs and reloads through fixed argv commands
+
+  [90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m1 passed[39;22m[90m (6 assertions)[39m
+  [90mDuration:[39m [39m0.96s[39m
+
+RESULT: focused_exit=0
+
+COMMAND: cd apps/cli && vendor/bin/mago format tests/Feature/InternalCaddyConfigCommandTest.php
+[32m INFO[0m All files are already formatted.
+RESULT: cli_mago_format_exit=0
+
+COMMAND: cd apps/cli && vendor/bin/mago format --check tests/Feature/InternalCaddyConfigCommandTest.php
+[32m INFO[0m All files are already formatted.
+RESULT: cli_mago_check_exit=0
+
+COMMAND: bin/orbit-cli-pest --compact tests/Feature/InternalCaddyConfigCommandTest.php
+
+  [90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m[90;1m.[39;22m
+
+  [90mTests:[39m    [32;1m12 passed[39;22m[90m (86 assertions)[39m
+  [90mDuration:[39m [39m5.97s[39m
+
+RESULT: owning_cli_file_exit=0
+
+COMMAND: bin/orbit-gateway-vendor-bin mago format --check tests/Feature/E2ESupport/VerificationScriptsTest.php
+[32m INFO[0m All files are already formatted.
+RESULT: gateway_mago_check_exit=0
+
+COMMAND: bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/VerificationScriptsTest.php --filter=maps every aggregate subgate to a quality-check progress area
+{"tool":"pest","result":"passed","tests":1,"passed":1,"assertions":1,"duration_ms":469}
+RESULT: gateway_self_test_exit=0
+
+COMMAND: bash -n bin/quality-check.sh
+RESULT: bash_n_exit=0
+
+COMMAND: git diff --check
+RESULT: git_diff_check_exit=0
+
+FINAL_OWNED_ORPHAN_AUDIT: count=0

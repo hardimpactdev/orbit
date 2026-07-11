@@ -1,0 +1,18 @@
+Reconstructed from the complete chunks.jsonl after exit.
+
+   1: > Composer\Config::disableProcessTimeout
+   3:   ┌  Running quality checks
+   5:   ●  apps/gateway    Passed
+   7:   ●  apps/cli        Passed
+   9:   ●  apps/docs       Passed
+  11:   ●  apps/e2e        Passed
+  13:   ●  apps/reverb     Passed
+  15:   ●  apps/agent      Passed
+  17:   ●  apps/macos      Passed
+  19:   ●  packages/core   Passed
+  21:   ●  packages/sdk    Passed
+  23:   └  Quality checks passed
+  25: Pest profiles: /Users/nckrtl/orbit/.worktrees/fix-quality-check-macos-rendering/.orbit/quality-gates/profiles/2026-07-10T23-15-20Z-6486f1fbdf7e
+
+The final screen has exactly one visible header and no duplicated or partially retained initial frame.
+

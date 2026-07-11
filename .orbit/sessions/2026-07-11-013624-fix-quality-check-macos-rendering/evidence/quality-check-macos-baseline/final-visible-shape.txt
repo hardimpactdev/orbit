@@ -1,0 +1,28 @@
+> Composer\Config::disableProcessTimeout
+
+  ┌  Running quality checks
+  │
+  ┌  Running quality checks
+  │
+  ◉  apps/gateway    Running
+  │
+  ◉  apps/cli        Running
+  │
+  ●  apps/docs       Passed
+  │
+  ●  apps/e2e        Passed
+  │
+  ●  apps/reverb     Passed
+  │
+  ○  apps/agent      Queued
+  │
+  ○  apps/macos      Queued
+  │
+  ◉  packages/core   Running
+  │
+  ○  packages/sdk    Queued
+  │
+  └  Working...
+
+The deliberate SIGTERM used to end the stuck reproduction then appended the
+termination diagnostics below this duplicated tree.

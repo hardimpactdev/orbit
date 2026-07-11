@@ -1,0 +1,23 @@
+
+  [31;1m⨯[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\E2ESupport\VerificationScriptsTest[22m [90m>[39m it exercises quality-check script paths under macOS system bash 3.2 set -u without u…   
+[39;1m  Expecting '/Users/nckrtl/orbit/.worktree…able' not to contain 'COMPONENT_WORKERS[@]: unbound variable'.[39;22m
+
+  at [32mtests/Feature/E2ESupport/VerificationScriptsTest.php[39m:[32m632[39m
+    628▕     $selfTest->run();
+    629▕ 
+    630▕     $selfErr = $selfTest->getErrorOutput();
+    631▕     expect($selfErr)
+  ➜ 632▕         ->not->toContain('COMPONENT_WORKERS[@]: unbound variable')
+    633▕         ->not->toContain('unbound variable');
+    634▕ 
+    635▕     // Short run exercises QUALITY_CHECK_ARGS=("$@") empty expansion + early scheduler/repaint paths
+    636▕     // Errors appear early (within first second) before heavy subgates; duplicate header is symptom of cursor shift from leaked lines
+
+  [33m1   [39m[39;1mtests/Feature/E2ESupport/VerificationScriptsTest.php[39;22m:[39;1m632[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m (1 assertions)[39m
+  [90mDuration:[39m [39m0.63s[39m
+

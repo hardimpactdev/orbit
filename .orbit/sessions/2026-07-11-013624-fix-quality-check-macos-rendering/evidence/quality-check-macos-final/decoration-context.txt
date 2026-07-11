@@ -1,0 +1,17 @@
+solo_process_id=1034
+platform=macOS 26.5.1 (Darwin 25.5.0 arm64)
+shell=/bin/zsh
+captured_child_shell=/bin/bash 3.2.57
+TERM=xterm-ghostty
+NO_COLOR=<unset>
+COLUMNS=150
+LINES=58
+stdin_tty=true
+stdout_tty=true
+stderr_tty=true
+command=composer quality-check
+exit_code=3
+duration=390.161s
+timed_out=false
+idle_timed_out=false
+

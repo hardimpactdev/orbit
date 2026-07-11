@@ -1,0 +1,12 @@
+{
+    "schema_version": 1,
+    "provider": "terminal",
+    "status": "unsupported",
+    "slug": "quality-check-macos-reviewer-1038",
+    "solo_process_id": 1038,
+    "kind": "terminal",
+    "started_at": "2026-07-10 23:16:57",
+    "reason": "terminal_kind_requires_waiver",
+    "checked": [],
+    "marker": "Solo process ID: 1038"
+}

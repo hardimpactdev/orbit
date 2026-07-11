@@ -1,0 +1,12 @@
+launcher: /usr/local/bin/composer quality-check
+shell: GNU bash 3.2.57(1)-release (arm64-apple-darwin25)
+host: nick.local
+os: macOS 26.5.1 (Darwin 25.5.0 arm64)
+term: xterm-ghostty
+no_color: unset
+columns: 150
+lines: 58
+stdout_is_tty: true (the PTY child rendered the quality-check live tree, whose gate is [ -t 1 ])
+decorated: true (ANSI color, erase-line, cursor-up, and cursor-visibility sequences are present in chunks.jsonl)
+solo_terminal_process: 1034
+termination: deliberate SIGTERM after the Bash 3.2 errors left the gate stuck; capture exit 143

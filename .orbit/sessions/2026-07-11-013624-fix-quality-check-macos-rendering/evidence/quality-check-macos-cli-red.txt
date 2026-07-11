@@ -1,0 +1,25 @@
+
+  [31;1m⨯[39;22m
+  [31m──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m  
+  [41;1m FAILED [49;22m [1mTests\Feature\InternalCaddyConfigCommandTest[22m [90m>[39m `internal caddy config command` → it writes site configs and r… [41;1m ProcessTimedOutException [49;22m  
+[39;1m  The process "'docker' 'container' 'inspect' '--format' '{{json .}}' 'orbit-caddy'" exceeded the timeout of 30 seconds.[39;22m
+
+  at [32mvendor/symfony/process/Process.php[39m:[32m1215[39m
+    1211▕ 
+    1212▕         if (null !== $this->timeout && $this->timeout < microtime(true) - $this->starttime) {
+    1213▕             $this->stop(0);
+    1214▕ 
+  ➜ 1215▕             throw new ProcessTimedOutException($this, ProcessTimedOutException::TYPE_GENERAL);
+    1216▕         }
+    1217▕ 
+    1218▕         if (null !== $this->idleTimeout && $this->idleTimeout < microtime(true) - $this->lastOutputTime) {
+    1219▕             $this->stop(0);
+
+      [2m+3 vendor frames [22m
+  [33m4   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m1142[39;22m
+  [33m5   [39m[39;1mapp/Services/Caddy/LocalCaddyConfigAction.php[39;22m:[39;1m636[39;22m
+
+
+  [90mTests:[39m    [31;1m1 failed[39;22m[90m (0 assertions)[39m
+  [90mDuration:[39m [39m30.41s[39m
+

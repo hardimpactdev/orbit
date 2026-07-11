@@ -67,25 +67,23 @@ quality_check_cleanup() {
         wait "$PROGRESS_TICKER_PID" 2>/dev/null || true
     fi
 
-    if [ "${#COMPONENT_WORKERS[@]}" -gt 0 ]; then
-        for key in "${COMPONENT_WORKERS[@]}"; do
-            pid_var="${key}_COMPONENT_PID"
-            pid="${!pid_var:-}"
+    for key in ${COMPONENT_WORKERS[@]+"${COMPONENT_WORKERS[@]}"}; do
+        pid_var="${key}_COMPONENT_PID"
+        pid="${!pid_var:-}"
 
-            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                terminate_process_tree "$pid"
-            fi
-        done
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            terminate_process_tree "$pid"
+        fi
+    done
 
-        for key in "${COMPONENT_WORKERS[@]}"; do
-            pid_var="${key}_COMPONENT_PID"
-            pid="${!pid_var:-}"
+    for key in ${COMPONENT_WORKERS[@]+"${COMPONENT_WORKERS[@]}"}; do
+        pid_var="${key}_COMPONENT_PID"
+        pid="${!pid_var:-}"
 
-            if [ -n "$pid" ]; then
-                wait "$pid" 2>/dev/null || true
-            fi
-        done
-    fi
+        if [ -n "$pid" ]; then
+            wait "$pid" 2>/dev/null || true
+        fi
+    done
 
     if [ "${PROGRESS_CURSOR_HIDDEN:-0}" -eq 1 ]; then
         printf '\e[?25h'
@@ -611,6 +609,30 @@ quality_check_progress_area_label_count() {
     echo "$count"
 }
 
+run_with_quality_check_args() {
+    if [ "${#QUALITY_CHECK_ARGS[@]}" -eq 0 ]; then
+        "$@"
+
+        return
+    fi
+
+    "$@" "${QUALITY_CHECK_ARGS[@]}"
+}
+
+quality_check_args_self_test() {
+    local case_label="$1"
+    local argument
+    shift
+
+    printf 'quality_check_args_%s=%s' "$case_label" "$#"
+
+    for argument in "$@"; do
+        printf '|%s' "$argument"
+    done
+
+    printf '\n'
+}
+
 quality_check_progress_self_test() {
     local area
     local count
@@ -619,6 +641,15 @@ quality_check_progress_self_test() {
 
     LOG_DIR="$(mktemp -d)"
     touch "$LOG_DIR/progress.stop"
+
+    COMPONENT_WORKERS=()
+    echo "component_workers_empty=$(component_cpu_in_use)"
+
+    QUALITY_CHECK_ARGS=()
+    run_with_quality_check_args quality_check_args_self_test empty
+
+    QUALITY_CHECK_ARGS=("--filter=alpha beta" "--compact")
+    run_with_quality_check_args quality_check_args_self_test non_empty
 
     for area in "${PROGRESS_AREAS[@]}"; do
         count="$(quality_check_progress_area_label_count "$area")"
@@ -856,11 +887,6 @@ CHECK_LABELS=(
     sdk_pest
 )
 
-if [ "${ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST:-}" = "1" ]; then
-    quality_check_progress_self_test
-    exit 0
-fi
-
 if [ "${ORBIT_QUALITY_CHECK_PROGRESS_STATE_SELF_TEST:-}" = "1" ]; then
     quality_check_progress_state_self_test
     exit 0
@@ -902,12 +928,7 @@ component_cpu_in_use() {
     local pid
     local demand
 
-    if [ "${#COMPONENT_WORKERS[@]}" -eq 0 ]; then
-        echo 0
-        return
-    fi
-
-    for key in "${COMPONENT_WORKERS[@]}"; do
+    for key in ${COMPONENT_WORKERS[@]+"${COMPONENT_WORKERS[@]}"}; do
         pid_var="${key}_COMPONENT_PID"
         demand_var="${key}_COMPONENT_CPU"
         pid="${!pid_var:-}"
@@ -920,6 +941,11 @@ component_cpu_in_use() {
 
     echo "$total"
 }
+
+if [ "${ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST:-}" = "1" ]; then
+    quality_check_progress_self_test
+    exit 0
+fi
 
 wait_for_cpu_capacity() {
     local demand="$1"
@@ -1034,7 +1060,7 @@ gateway_component() {
     bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
 
     if [ "$HEAVY_PEST_PHASE_COORDINATION" -eq 1 ]; then
-        run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" ${QUALITY_CHECK_ARGS[@]+"${QUALITY_CHECK_ARGS[@]}"} &
+        run_with_quality_check_args run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" &
         gateway_pest_pid=$!
 
         while [ ! -f "$LOG_DIR/cli_heavy_phase_released" ]; do
@@ -1057,7 +1083,7 @@ gateway_component() {
     else
         run_static_subgates gateway_mago_analyze_subgate gateway_mago_lint_subgate gateway_rector_subgate gateway_mago_format_subgate
     fi
-    run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml" ${QUALITY_CHECK_ARGS[@]+"${QUALITY_CHECK_ARGS[@]}"}
+    run_with_quality_check_args run_subgate gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --processes="$GATEWAY_PEST_PROCESSES" --passthru-php="'-d' 'memory_limit=512M'" --profile --compact --log-junit="$LOG_DIR/gateway_pest.junit.xml"
     append_gateway_pest_profile
 }
 

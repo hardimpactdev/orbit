@@ -59,7 +59,11 @@ function quality_check_script_labels(string $script, string $arrayName): array
 function quality_check_background_labels(string $script): array
 {
     $backgroundLabelMatches = [];
-    preg_match_all('/^\s*run_subgate (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
+    preg_match_all(
+        '/^\s*(?:run_with_quality_check_args )?run_subgate (?P<label>[a-z0-9_]+) /m',
+        $script,
+        $backgroundLabelMatches,
+    );
 
     return array_values(array_unique($backgroundLabelMatches['label']));
 }
@@ -350,7 +354,13 @@ it('handles an empty aggregate quality-check worker set under nounset', function
 it('uses Bash 3.2-safe expansion for optional aggregate quality-check arguments', function (): void {
     $script = quality_check_script_source();
 
-    foreach (['QUALITY_CHECK_ARGS', 'RECTOR_ARGS', 'MAGO_FORMAT_ARGS'] as $array) {
+    expect($script)
+        ->toContain('run_with_quality_check_args()')
+        ->toContain('if [ "${#QUALITY_CHECK_ARGS[@]}" -eq 0 ]; then')
+        ->and(substr_count($script, '"${QUALITY_CHECK_ARGS[@]}"'))
+        ->toBe(1);
+
+    foreach (['RECTOR_ARGS', 'MAGO_FORMAT_ARGS'] as $array) {
         expect(preg_match('/(?<!\+)"\$\{'.preg_quote($array, '/').'\[@\]\}"/', $script))
             ->toBe(0)
             ->and($script)
@@ -667,6 +677,9 @@ it('maps every aggregate subgate to a quality-check progress area', function ():
         ->all();
 
     expect($lines)->toBe([
+        'component_workers_empty=0',
+        'quality_check_args_empty=0',
+        'quality_check_args_non_empty=2|--filter=alpha beta|--compact',
         'apps/gateway=5',
         'apps/cli=5',
         'apps/docs=8',

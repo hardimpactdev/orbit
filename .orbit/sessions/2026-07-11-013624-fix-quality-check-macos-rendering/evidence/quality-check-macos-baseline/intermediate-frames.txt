@@ -1,0 +1,30 @@
+At 0.67s the first 21-line queued tree is coherent.
+
+At 0.88s Bash 3.2 has inserted two unexpected lines into the repaint region:
+
+  ┌  Running quality checks
+  │
+bin/quality-check.sh: line 891: COMPONENT_WORKERS[@]: unbound variable
+  ○  apps/gateway    Running
+  │
+  ○  apps/cli        Running
+  │
+  ○  apps/docs       Running
+  │
+  ○  apps/e2e        Queued
+  │
+  ○  apps/reverb     Queued
+  │
+  ○  apps/agent      Queued
+  │
+  ○  apps/macos      Queued
+  │
+bin/quality-check.sh: line 1026: QUALITY_CHECK_ARGS[@]: unbound variable
+  ○  packages/core   Queued
+  │
+  ○  packages/sdk    Queued
+  │
+  └  Working...
+
+At 1.40s the next fixed 21-line cursor-up repaint starts two rows too low,
+leaving the original header and separator visible above the active tree.

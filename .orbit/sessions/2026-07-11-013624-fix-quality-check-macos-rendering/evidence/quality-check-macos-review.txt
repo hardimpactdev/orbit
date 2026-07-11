@@ -1,0 +1,40 @@
+CHECKOUT_PROOF: cwd=/Users/nckrtl/orbit/.worktrees/fix-quality-check-macos-rendering, branch=fix-quality-check-macos-rendering, HEAD=6486f1fbdf7e0d977e7641062bd639fd8d3f1165, dirty_files="apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php apps/gateway/tests/Feature/E2ESupport/VerificationScriptsTest.php bin/quality-check.sh", solo_process_id=1038
+
+## Findings
+
+- Severity: low
+  File: bin/quality-check-progress-frame-check:167-169
+  Issue: The progress frame validator `quality-check-progress-frame-check` asserts that `packages/core` should not be `Running` before Pest-owning components have completed. However, the production `quality-check.sh` scheduler admits `packages/core` early to run its static analysis subgates (`core_mago_analyze`, `core_mago_lint`, `core_rector`, `core_mago_format`) in parallel with other tests, only delaying `core_pest`. This mismatch causes the checker to report a failure on real-world log captures despite a successful execution.
+  Fix: This is a separate checker-contract signal rather than a blocker for the rendering/portability contract under review. The macOS PTY rendering fix itself is correct and fully functional.
+
+- Severity: low
+  File: apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php:628-748
+  Issue: Test harness recursion in `InternalCaddyConfigCommandTest` where fake commands like `cat` and `rm` call themselves recursively due to `PATH` prepending.
+  Fix: The test-only worker correction resolves this by looking up absolute paths of the real system utilities before prepending the fake-bin path and substituting them via `strtr()`. This correction is fully acceptable, keeps tests clean, and leaves zero orphan processes.
+
+## Open Questions
+
+- None
+
+## Evidence Reviewed
+
+- Tests:
+  - `apps/gateway/tests/Feature/E2ESupport/VerificationScriptsTest.php` (focused and full file passed; covers empty arrays and argument forwarding)
+  - `apps/cli/tests/Feature/InternalCaddyConfigCommandTest.php` (focused and full file passed; prevents fake-bin recursion timeout)
+- PTY artifacts:
+  - Baseline: `.orbit/evidence/quality-check-macos-baseline/{summary.txt,chunks.jsonl,transcript.txt}`
+  - Final green: `.orbit/evidence/quality-check-macos-final-green/{summary.txt,chunks.jsonl,transcript.txt,intermediate-frames.txt,final-visible-shape.txt}`
+- PTY analysis before user inspection:
+  - Baseline exit 143, duration 99.5s (timed out/stuck because errors printed to stdout/stderr shifted the 21-line repaint origin and broke the cursor/status tracking).
+  - Final green exit 0, duration 41.2s. Reconstructed visible frames (at 1s, 20s, 30s, 40s, and final) contain exactly one header and no shell error lines.
+- Raw contract and deferrals:
+  - The diff satisfies the done contract. It resolves Bash 3.2 unbound variable array expansion failures under `set -u` (`COMPONENT_WORKERS` and `QUALITY_CHECK_ARGS`).
+  - Argument forwarding handles empty arguments, non-empty arguments, and spaced arguments (`--filter=alpha beta`) correctly without word-splitting.
+- Stale/downgraded evidence checked:
+  - None; all reviewed evidence files correspond to the current commit `6486f1fbdf7e0d977e7641062bd639fd8d3f1165`.
+- E2E/live proof:
+  - Not applicable (feature only alters development quality-gate script compatibility).
+- JSON samples:
+  - Checked `.orbit/quality-gates/quality-check-2026-07-10T231601Z-47f26dd5afb1.json` confirming 0 exit code and 0 failures for all 43 recorded subgates.
+
+VERDICT: pass
