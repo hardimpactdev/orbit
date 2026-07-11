@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-11T16:12:30+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-finalization-authority-trial-b/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-11-181230-codex-finalization-authority-trial-b",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "55be3a4abffa17e545f78293686a9a536c12dbc6b309d513a4da5e8c38e6e933"
+    },
+    "branch": "codex/finalization-authority-trial-b",
+    "candidate_commit": "ee864f85cc4ec35b870656ec57d4298e601a7bab",
+    "accepted_feature_tip": "ee864f85cc4ec35b870656ec57d4298e601a7bab",
+    "accepted_main_tip": "dcdf77c2a701468873adce5adab459a2fa293c75",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
