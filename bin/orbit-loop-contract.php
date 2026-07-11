@@ -240,7 +240,7 @@ function orbitLoopReviewedIdentityProblem(string $markdown, string $featureTip):
 
 function orbitLoopVenueSatisfies(string $actual, string $required): bool
 {
-    return $actual === $required;
+    return orbitLoopStrongerVenue($required, $actual) === $actual;
 }
 
 function orbitLoopRuntimeProofProblem(string $markdown, string $venue): ?string
@@ -326,6 +326,7 @@ function orbitLoopPathIsAutomationOnly(string $path): bool
         str_ends_with($path, '.md')
         || str_contains($path, '/tests/')
         || str_starts_with($path, 'tests/')
+        || str_starts_with($path, 'bin/')
         || str_starts_with($path, '.agents/')
         || str_starts_with($path, '.github/')
         || in_array(

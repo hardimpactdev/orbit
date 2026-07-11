@@ -35,12 +35,28 @@ it('derives the minimum acceptance venue from changed files', function (array $f
 })->with([
     'docs only' => [['apps/docs/content/mission.md'], 'automated'],
     'test only' => [['apps/cli/tests/Feature/Commands/FooTest.php'], 'automated'],
-    'repository executable' => [['bin/orbit-example'], 'retained-incus'],
+    'repository tooling' => [['bin/orbit-example'], 'automated'],
     'cli command' => [['apps/cli/app/Commands/FooCommand.php'], 'retained-incus'],
     'node runtime' => [['apps/gateway/app/Actions/Node/RepairNode.php'], 'retained-incus'],
+    'tooling and cli command' => [
+        [
+            'bin/orbit-example',
+            'apps/cli/app/Commands/FooCommand.php',
+        ],
+        'retained-incus',
+    ],
     'gateway frontend' => [['apps/gateway/resources/js/app.js'], 'browser'],
     'native mac app' => [['apps/macos/src/main.rs'], 'host-macos'],
 ]);
+
+it('allows stronger acceptance venues without allowing downgrades', function (): void {
+    require_once repo_path('bin/orbit-loop-contract.php');
+
+    expect(orbitLoopVenueSatisfies('retained-incus', 'automated'))
+        ->toBeTrue()
+        ->and(orbitLoopVenueSatisfies('automated', 'retained-incus'))
+        ->toBeFalse();
+});
 
 it('records user acceptance against the clean feature and current main tips', function (): void {
     $fixture = acceptance_test_workspace('user', 'apps/cli/app/Commands/FooCommand.php');
@@ -95,13 +111,13 @@ it('requires reviewer-confirmed no human judgment before automatically accepting
             $observable,
             state: 'accept',
             review: 'passed - reviewer 1 - human-judgment=required',
-            venue: 'retained-incus',
+            venue: 'automated',
         );
         acceptance_test_seed_loop(
             $nonObservable,
             state: 'accept',
             review: 'passed - reviewer 2 - human-judgment=not-required',
-            venue: 'retained-incus',
+            venue: 'automated',
         );
 
         $blocked = acceptance_test_run($observable, ['accept', '--actor=automated']);
@@ -122,9 +138,52 @@ it('requires reviewer-confirmed no human judgment before automatically accepting
     }
 });
 
+it('does not require retained runtime proof for repository tooling', function (): void {
+    $fixture = acceptance_test_workspace('automated-tooling', 'bin/orbit-example');
+
+    try {
+        acceptance_test_seed_loop(
+            $fixture,
+            state: 'prove',
+            review: 'passed - reviewer - human-judgment=not-required',
+            venue: 'automated',
+        );
+        $loop = (string) file_get_contents("{$fixture}/.orbit/loop.md");
+        file_put_contents(
+            "{$fixture}/.orbit/loop.md",
+            str_replace(
+                '- runtime: passed - retained fixture',
+                '- runtime: not applicable - repository tooling',
+                $loop,
+            ),
+        );
+
+        $ready = acceptance_test_run($fixture, ['ready']);
+        $accepted = acceptance_test_run($fixture, ['accept', '--actor=automated']);
+
+        expect($ready->getExitCode())
+            ->toBe(0, $ready->getErrorOutput())
+            ->and($ready->getOutput())
+            ->toContain('ACCEPTANCE READY venue=automated actor=automated')
+            ->and($accepted->getExitCode())
+            ->toBe(0, $accepted->getErrorOutput())
+            ->and((string) file_get_contents("{$fixture}/.orbit/loop.md"))
+            ->toContain('- Acceptance venue: automated')
+            ->toContain('- Acceptance: accepted - automated - reviewer-confirmed no-human-judgment');
+    } finally {
+        acceptance_test_remove($fixture);
+    }
+});
+
 it('keeps diff-derived proof separate from the automated acceptance actor', function (): void {
-    $fixture = acceptance_test_workspace('automated-retained-proof', 'bin/orbit-example');
-    $weakVenue = acceptance_test_workspace('automated-weak-proof', 'bin/orbit-example');
+    $fixture = acceptance_test_workspace(
+        'automated-retained-proof',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
+    $weakVenue = acceptance_test_workspace(
+        'automated-weak-proof',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
 
     try {
         acceptance_test_seed_loop(
@@ -205,7 +264,10 @@ it('matches the acceptance actor to the reviewer human-judgment decision', funct
 });
 
 it('requires the diff-derived runtime proof before any retained acceptance', function (): void {
-    $fixture = acceptance_test_workspace('missing-runtime-proof', 'bin/orbit-example');
+    $fixture = acceptance_test_workspace(
+        'missing-runtime-proof',
+        'apps/cli/app/Commands/FooCommand.php',
+    );
 
     try {
         acceptance_test_seed_loop(
