@@ -31,10 +31,11 @@ The node family owns these facts:
   roleless non-gateway operator; workload intent is derived from active roles,
   and installed-Agent expectation must not remain after the last workload role
   is removed unless the roleless node is explicitly managed;
-- node-related defaults: `app-dev` and `agent` assignment TLD
-  settings, development and agent DNS mappings for those TLDs, DNS resolver
-  safety, `vpn` role settings and runtime, local `node:default` preferences for `--self`,
-  Orbit launcher/runtime readiness, and agent IDE defaults at the node level.
+- node identity and related defaults: every active node has a mandatory valid
+  node-owned TLD; development and agent roles consume it for DNS mappings,
+  alongside DNS resolver safety, `vpn` role settings and runtime, local
+  `node:default` preferences for `--self`, Orbit launcher/runtime readiness,
+  and agent IDE defaults at the node level.
 
 Tools, firewall rules, apps, workspaces, processes, proxy routes, schedules,
 and deployments depend on node reachability, but their own artifacts are not
@@ -50,9 +51,10 @@ preserving the public family split between node-owned and tool-owned findings.
 
 The node probe reads gateway node records and checks these layers:
 
-1. **Registry configuration:** every selected node record has valid role
-   assignments, assignment statuses, platform-version identifier such as
-   `ubuntu_24-04`, required host/endpoint metadata, and WireGuard address.
+1. **Registry configuration:** every selected active node record has a valid
+   unique node-owned TLD, valid role assignments and assignment statuses, a
+   platform-version identifier such as `ubuntu_24-04`, required host/endpoint
+   metadata, and a WireGuard address.
    Eligibility checks use only active role assignments. Compatibility checks
    treat `active`, `pending`, and `error` assignments as unresolved conflicts
    and ignore `removing`.
@@ -204,7 +206,7 @@ Each code below identifies a specific kind of node-family drift that `doctor --f
 
 | Code | Detected when |
 | --- | --- |
-| `node.record_incomplete` | A selected node record lacks required platform-version identifier, required host/endpoint metadata, or WireGuard address. |
+| `node.record_incomplete` | A selected active node record lacks a mandatory valid node-owned TLD, required platform-version identifier, required host/endpoint metadata, or WireGuard address. |
 | `node.role_assignment_missing` | A selected active node has no compatible active role assignment for the role implied by its registry record. |
 | `node.role_assignment_invalid` | A persisted role assignment names an unknown role or otherwise cannot be validated as a real role row. |
 | `node.role_conflict` | Active, pending, or error role assignments violate the compatibility matrix. Assignments already in `removing` are ignored. |

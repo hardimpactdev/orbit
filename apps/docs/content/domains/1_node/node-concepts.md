@@ -208,9 +208,10 @@ not transfer ownership to the role.
 | `analytics` | `postgres_node_id`, `clickhouse_node_id` | — |
 
 A node can hold at most one `tld` value at a time. Roles that depend on `tld`
-read and write the same node-level field. This shared field keeps the data
-model coherent if a future version allows `app-dev` and `agent` to
-coexist on one node (the v1 compatibility matrix forbids that today).
+read and consume the same node-level field; only node-owned command paths write
+it. This shared field keeps the data model coherent if a future version allows
+`app-dev` and `agent` to coexist on one node (the v1 compatibility matrix
+forbids that today).
 Changing the node-level `tld` is a desired-state change and triggers
 baseline convergence
 for every active role assignment that depends on it.
