@@ -6,13 +6,13 @@ namespace App\Services\Firewall;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
 final readonly class RemoteFirewallRuleProbe
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function output(Node $node): RemoteShellResult

@@ -15,7 +15,7 @@ use App\Models\ScheduleRun;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use Carbon\CarbonInterface;
 use Throwable;
@@ -30,7 +30,7 @@ final readonly class SchedulesProbe
 
     public function __construct(
         private RuntimeBackendProbe $_runtimeBackendProbe,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
         private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
         private GatewaySwarmManager $swarm = new GatewaySwarmManager,
     ) {}
@@ -125,9 +125,9 @@ final readonly class SchedulesProbe
         ]);
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     /**

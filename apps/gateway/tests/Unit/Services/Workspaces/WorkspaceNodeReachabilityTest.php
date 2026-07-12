@@ -10,10 +10,8 @@ use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
-use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\Workspaces\WorkspaceNodeReachability;
-use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -79,17 +77,6 @@ it('throws a transport-neutral workspace failure when reachability fails', funct
 function workspace_reachability_local_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new class implements RemoteExecutor {
-            public function run(Node $node, string $script, array $options = []): RemoteShellResult
-            {
-                throw new RuntimeException('SSH transport should not be called for workspace node reachability.');
-            }
-
-            public function start(Node $node, string $script, array $options = []): InvokedProcess
-            {
-                throw new RuntimeException('Workspace node reachability tests do not start long-running transports.');
-            }
-        },
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

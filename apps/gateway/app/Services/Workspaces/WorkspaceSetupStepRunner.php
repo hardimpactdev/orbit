@@ -4,26 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceRunStep;
 use App\Models\WorkspaceStep;
 use App\Services\Apps\AppCommandRouter;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class WorkspaceSetupStepRunner
 {
-    // @orbit-ssh-lane transitional-ssh
     private WorkspaceSetupStepLocalExecutor $setupStepLocalExecutor;
 
     public function __construct(
-        private RemoteShell $remoteShell,
-        ?RemoteLocalExecutor $localExecutor = null,
+        ?RunsInternalCommands $localExecutor = null,
         private AppCommandRouter $commandRouter = new AppCommandRouter,
-        private ExplicitRemoteShellFallback $transport = new ExplicitRemoteShellFallback,
     ) {
         $this->setupStepLocalExecutor = new WorkspaceSetupStepLocalExecutor($localExecutor);
     }
@@ -61,19 +56,13 @@ final readonly class WorkspaceSetupStepRunner
                 ? $this->commandRouter->routeLifecycleForNodePath($app, $node, $step->command, $path, $env)
                 : $step->command;
 
-            $result = $this->transport->allowed()
-                ? $this->remoteShell->run($node, $command, $this->remoteShellOptions(
-                    cwd: $path,
-                    timeout: $step->timeoutSeconds(),
-                    metadata: $env,
-                ))
-                : $this->setupStepLocalExecutor->run(
-                    node: $node,
-                    command: $command,
-                    cwd: $path,
-                    timeout: $step->timeoutSeconds(),
-                    environment: $env,
-                );
+            $result = $this->setupStepLocalExecutor->run(
+                node: $node,
+                command: $command,
+                cwd: $path,
+                timeout: $step->timeoutSeconds(),
+                environment: $env,
+            );
 
             $runStep->update([
                 'exit_code' => $result->exitCode,
@@ -99,23 +88,5 @@ final readonly class WorkspaceSetupStepRunner
         $run->update(['status' => 'completed', 'completed_at' => now()]);
 
         return true;
-    }
-
-    /**
-     * @param  array<string, string>  $metadata
-     * @return array{cwd?: string, timeout: int, metadata: array<string, string>}
-     */
-    private function remoteShellOptions(?string $cwd, int $timeout, array $metadata): array
-    {
-        $options = [
-            'timeout' => $timeout,
-            'metadata' => $metadata,
-        ];
-
-        if ($cwd !== null && $cwd !== '') {
-            $options['cwd'] = $cwd;
-        }
-
-        return $options;
     }
 }

@@ -6,8 +6,8 @@ namespace App\Services\WebSockets;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\File;
 use InvalidArgumentException;
 use PharData;
@@ -25,7 +25,7 @@ class WebSocketRuntimeSourceInstaller
     private readonly string $sourcePath;
 
     public function __construct(
-        private readonly RemoteLocalExecutor $localExecutor,
+        private readonly RunsInternalCommands $localExecutor,
         private readonly ?WebSocketRoleBaselineTiming $timing = null,
         ?string $sourcePath = null,
     ) {

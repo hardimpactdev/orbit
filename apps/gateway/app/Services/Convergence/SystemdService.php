@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Convergence;
 
-use App\Contracts\RemoteShell;
 use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\Convergence\SystemdServicePlan;
 use App\Data\Convergence\SystemdServiceProbe;
@@ -12,12 +11,12 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
 use JsonException;
 
 final readonly class SystemdService
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         public string $unitName,
         public string $content,
@@ -26,7 +25,7 @@ final readonly class SystemdService
         $this->serviceName();
     }
 
-    public function probe(Node $node, RemoteShell $remoteShell): SystemdServiceProbe
+    public function probe(Node $node): SystemdServiceProbe
     {
         $result = $this->localExecutor()->runInternal(
             node: $node,
@@ -135,7 +134,7 @@ final readonly class SystemdService
         );
     }
 
-    public function apply(Node $node, RemoteShell $remoteShell, SystemdServicePlan $plan): ConvergenceApplyResult
+    public function apply(Node $node, SystemdServicePlan $plan): ConvergenceApplyResult
     {
         if (! $plan->shouldApply()) {
             return new ConvergenceApplyResult(
@@ -201,7 +200,7 @@ final readonly class SystemdService
         return hash('sha256', $this->content);
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
         return app(RemoteLocalExecutor::class);
     }

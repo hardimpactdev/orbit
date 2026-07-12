@@ -12,13 +12,11 @@ use function Laravel\Prompts\table;
 
 final class MetricsStatusCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]
     protected $signature = 'metrics:status
         {--node= : Metrics node to inspect}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

@@ -4,35 +4,32 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\NodeHostPaths;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\Runtime\DockerCommandBuilder;
+use App\Services\Tools\ToolScriptDispatcher;
 use JsonException;
 use RuntimeException;
 use Throwable;
 
 final readonly class AppRuntimeContainerManager
 {
-    // @orbit-ssh-lane transitional-ssh
     /**
      * @mago-expect lint:excessive-parameter-list
      */
     public function __construct(
-        private RemoteShell $remoteShell,
         private DockerCommandBuilder $commands,
         private OrbitCaService $ca = new OrbitCaService,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
-        private ExplicitRemoteShellFallback $explicitFallback = new ExplicitRemoteShellFallback,
         private NodeHostPaths $nodeHostPaths = new NodeHostPaths,
         private mixed $localExecutor = null,
+        private ?ToolScriptDispatcher $scripts = null,
     ) {}
 
     public function apply(Node $node, AppRuntimeContainer $container): AppRuntimeContainerApplyOutcome
@@ -1025,11 +1022,12 @@ final readonly class AppRuntimeContainerManager
 
     private function run(Node $node, string $script): RemoteShellResult
     {
-        if (! $this->explicitFallback->allowed()) {
-            throw new RuntimeException($this->explicitFallback->message('app runtime container convergence'));
-        }
-
-        return $this->remoteShell->run($node, $script);
+        return ($this->scripts ?? app(ToolScriptDispatcher::class))->run(
+            $node,
+            'orbit-app-runtime',
+            'reconfigure',
+            $script,
+        );
     }
 
     private function runRequired(Node $node, string $script, string $step): void
@@ -1048,15 +1046,7 @@ final readonly class AppRuntimeContainerManager
 
     private function localExecutor(Node $node): ?RemoteLocalExecutor
     {
-        if ($this->explicitFallback->allowed()) {
-            return null;
-        }
-
         if (! $this->localExecutor instanceof RemoteLocalExecutor) {
-            return null;
-        }
-
-        if (! $node->isAgentEligible()) {
             return null;
         }
 

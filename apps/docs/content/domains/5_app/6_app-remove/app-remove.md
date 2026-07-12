@@ -9,7 +9,7 @@ Use this command to decommission a service or move it to a different node.
 ## Usage
 
 ```bash
-orbit app:remove [app] [--force] [--node-transport=<transport>] [--json]
+orbit app:remove [app] [--force] [--json]
 ```
 
 ### Arguments
@@ -19,9 +19,6 @@ orbit app:remove [app] [--force] [--node-transport=<transport>] [--json]
 ### Options
 
 - `--force`: Skip interactive confirmation.
-- `--node-transport=<transport>`: Uses Agent push for typed runtime cleanup by
-  default. The exact `transitional-ssh-fallback` value opts into the tracked
-  residual SSH cleanup seam; no other SSH selector is accepted.
 - `--json`: Output JSON.
 
 ## Examples
@@ -34,7 +31,7 @@ orbit app:remove my-app
 orbit app:remove my-app --force
 
 # Opt into the exact-marked transitional residual cleanup seam
-orbit app:remove my-app --force --node-transport=transitional-ssh-fallback
+orbit app:remove my-app --force
 ```
 
 ## Behavior Summary

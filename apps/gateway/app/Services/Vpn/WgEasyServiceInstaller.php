@@ -6,7 +6,7 @@ namespace App\Services\Vpn;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -49,7 +49,7 @@ class WgEasyServiceInstaller
     public function __construct(
         private readonly string $rootPath,
         private readonly ?string $statePath = null,
-        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
         private readonly ?VpnNodeResolver $vpnNodeResolver = null,
     ) {}
 
@@ -440,8 +440,10 @@ class WgEasyServiceInstaller
             ],
             transportOptions: [
                 'timeout' => 30,
-                'metadata' => [
+                'environment' => [
                     'ORBIT_WG_EASY_DB_PATH' => $this->statePath().'/wg-easy.db',
+                ],
+                'metadata' => [
                     'ORBIT_OPERATION_ID' => (string) Str::uuid(),
                 ],
                 ...$transportOptions,
@@ -536,9 +538,9 @@ class WgEasyServiceInstaller
         return is_string($secret) && trim($secret) !== '';
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     private function vpnNode(): Node

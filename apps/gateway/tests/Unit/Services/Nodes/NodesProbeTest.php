@@ -19,7 +19,6 @@ use App\Models\NodeTool;
 use App\Models\WireGuardPeer;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeToolBaselineConfigRenderer;
@@ -29,6 +28,7 @@ use App\Services\Platform\PlatformDetector;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Security\OperationTokenSigner;
 use RuntimeException;
+use Tests\Fakes\RemoteShellBackedInternalExecutor;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -45,7 +46,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     bindDevelopmentDnsMappingTestDoubles('nodes-probe-dns');
-    $this->probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
+    $this->probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([]));
 });
 
 afterEach(function (): void {
@@ -77,13 +78,7 @@ function assignNodesProbeAppHostRole(Node $node, array $settings = []): void
     ]);
 }
 
-function nodesProbeUseAgentPush(): void
-{
-    request()->headers->set(
-        \App\Services\RemoteShell\ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-}
+function nodesProbeUseAgentPush(): void {}
 
 function assignNodesProbeGatewayRole(Node $node): void
 {
@@ -107,15 +102,18 @@ function assignNodesProbeAgentRole(Node $node, array $settings = []): void
 function nodesProbeWithRemoteShell(NodesProbeRecordingRemoteShell $remoteShell): NodesProbe
 {
     return new NodesProbe(
-        remoteShell: $remoteShell,
         localExecutor: nodesProbeLocalExecutor($remoteShell),
     );
 }
 
-function nodesProbeLocalExecutor(NodesProbeRecordingRemoteShell $remoteShell): RemoteLocalExecutor
+function nodesProbeLocalExecutor(NodesProbeRecordingRemoteShell $remoteShell): RunsInternalCommands
 {
-    return new RemoteLocalExecutor(
-        transport: new NodesProbeRemoteExecutor($remoteShell),
+    return new RemoteShellBackedInternalExecutor(new LocalExecutorCommandBuilder, $remoteShell);
+}
+
+function nodesProbeWithAgentPush(): NodesProbe
+{
+    return new NodesProbe(localExecutor: new RemoteLocalExecutor(
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -126,8 +124,7 @@ function nodesProbeLocalExecutor(NodesProbeRecordingRemoteShell $remoteShell): R
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
-    );
+    ));
 }
 
 function createNodesProbeGatewayNode(): Node
@@ -645,7 +642,7 @@ describe('external service stubs', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
-        $probe = new NodesProbe(remoteShell: $remoteShell);
+        $probe = nodesProbeWithAgentPush();
 
         $node = nodes_probe_node([
             'name' => 'test',
@@ -680,7 +677,7 @@ describe('external service stubs', function (): void {
                 stderr: 'connection refused',
             ),
         ]);
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
+        $probe = nodesProbeWithAgentPush();
 
         $node = nodes_probe_node([
             'name' => 'test',
@@ -723,10 +720,7 @@ describe('external service stubs', function (): void {
                 stderr: 'agent connection timed out',
             ),
         ]);
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+        $probe = nodesProbeWithAgentPush();
 
         $node = nodes_probe_node([
             'name' => 'agent',
@@ -1520,7 +1514,6 @@ describe('adoption', function (): void {
 
         $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
@@ -1867,7 +1860,6 @@ describe('adoption', function (): void {
 
         $probe = nodesProbeWithRemoteShell(new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
@@ -2063,7 +2055,7 @@ describe('agent role baseline', function (): void {
                 'orbit_cli' => false,
             ]),
         ]);
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
+        $probe = nodesProbeWithAgentPush();
 
         $node = nodes_probe_node([
             'name' => 'agent-1',
@@ -2117,7 +2109,7 @@ describe('agent role baseline', function (): void {
                 'orbit_cli' => false,
             ]),
         ]);
-        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([]));
+        $probe = nodesProbeWithAgentPush();
 
         $node = nodes_probe_node([
             'name' => 'agent-1',

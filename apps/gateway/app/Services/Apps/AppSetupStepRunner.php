@@ -4,25 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Apps;
 
-use App\Contracts\RemoteShell;
 use App\Models\App;
 use App\Models\AppSetupRun;
 use App\Models\AppSetupRunStep;
 use App\Models\AppSetupStep;
 use App\Models\Node;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class AppSetupStepRunner
 {
-    // @orbit-ssh-lane transitional-ssh
     private AppSetupStepLocalExecutor $setupStepLocalExecutor;
 
     public function __construct(
-        private RemoteShell $remoteShell,
         private AppCommandRouter $commandRouter,
-        ?RemoteLocalExecutor $localExecutor = null,
-        private ExplicitRemoteShellFallback $transport = new ExplicitRemoteShellFallback,
+        ?RunsInternalCommands $localExecutor = null,
     ) {
         $this->setupStepLocalExecutor = new AppSetupStepLocalExecutor($localExecutor);
     }
@@ -56,19 +51,13 @@ final readonly class AppSetupStepRunner
             }
 
             $command = $this->commandRouter->routeLifecycleForPath($app, $step->command, $app->path, $environment);
-            $result = $this->transport->allowed()
-                ? $this->remoteShell->run($node, $command, $this->remoteShellOptions(
-                    cwd: $app->path,
-                    timeout: $step->timeoutSeconds(),
-                    metadata: $environment,
-                ))
-                : $this->setupStepLocalExecutor->run(
-                    node: $node,
-                    command: $command,
-                    cwd: $app->path,
-                    timeout: $step->timeoutSeconds(),
-                    environment: $environment,
-                );
+            $result = $this->setupStepLocalExecutor->run(
+                node: $node,
+                command: $command,
+                cwd: $app->path,
+                timeout: $step->timeoutSeconds(),
+                environment: $environment,
+            );
 
             $runStep->update([
                 'exit_code' => $result->exitCode,
@@ -94,24 +83,5 @@ final readonly class AppSetupStepRunner
         $run->update(['status' => 'completed', 'completed_at' => now()]);
 
         return true;
-    }
-
-    /**
-     * @param  array<string, string>  $metadata
-     * @return array{cwd?: string, timeout: int, strict: true, metadata: array<string, string>}
-     */
-    private function remoteShellOptions(?string $cwd, int $timeout, array $metadata): array
-    {
-        $options = [
-            'timeout' => $timeout,
-            'strict' => true,
-            'metadata' => $metadata,
-        ];
-
-        if ($cwd !== null && $cwd !== '') {
-            $options['cwd'] = $cwd;
-        }
-
-        return $options;
     }
 }

@@ -3,9 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -14,12 +12,7 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
+beforeEach(function (): void {});
 
 it('recognizes a Linux local WireGuard self route through loopback', function (): void {
     Http::preventStrayRequests();

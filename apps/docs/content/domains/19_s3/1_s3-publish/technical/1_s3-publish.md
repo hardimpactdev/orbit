@@ -1,4 +1,4 @@
-# Technical Contract: `orbit s3:publish [host] [--node=<node>] [--node-transport=<transport>] [--json|--stream-json]`
+# Technical Contract: `orbit s3:publish [host] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `s3:publish` documentation.](../s3-publish.md)
 
@@ -16,7 +16,7 @@
 ## Signature
 
 ```bash
-orbit s3:publish [host] [--node=<node>] [--node-transport=<transport>] [--json|--stream-json]
+orbit s3:publish [host] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -27,7 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `host` | `argument` | Required in non-interactive mode. | Never. | None. | Public DNS hostname, not a URL, not a wildcard, and not already owned by a non-S3 route. |
 | `node` | `--node` | Optional. | Never. | The only visible active s3 node when exactly one exists. | Visible active node with the `s3` role. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 | `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 

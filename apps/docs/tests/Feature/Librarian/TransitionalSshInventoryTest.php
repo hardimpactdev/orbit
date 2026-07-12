@@ -7,9 +7,8 @@ use App\Librarian\TransitionalSshConsumerFinder;
 use App\Librarian\TransitionalSshInventoryBuilder;
 use Illuminate\Support\Facades\Artisan;
 
-it('classifies every production SSH consumer with an exact policy marker', function (): void {
+it('keeps SSH limited to the provisioning and bootstrap lane', function (): void {
     $inventory = app(TransitionalSshInventoryBuilder::class)->build();
-    $transitionalPaths = array_column($inventory['transitional_ssh'], 'path');
 
     expect($inventory['unmarked_consumers'])
         ->toBeEmpty()
@@ -19,36 +18,21 @@ it('classifies every production SSH consumer with an exact policy marker', funct
             'apps/cli/app',
         ])
         ->and(array_column($inventory['provisioning_ssh'], 'path'))
-        ->toContain('apps/gateway/app/Services/Nodes/GatewayNodeCreator.php')
-        ->and($transitionalPaths)
-        ->toContain(
-            'apps/cli/app/Commands/Node/NodeManageCommand.php',
-            'apps/cli/app/Commands/Tool/ToolShowCommand.php',
-        )
-        ->not->toContain(
-            'apps/cli/app/Commands/Tool/ToolCredentialsCommand.php',
-            'apps/cli/app/Commands/Tool/ToolInstallCommand.php',
-            'apps/cli/app/Commands/Tool/ToolReconfigureCommand.php',
-            'apps/cli/app/Commands/Tool/ToolRemoveCommand.php',
-            'apps/cli/app/Commands/Tool/ToolUpdateCommand.php',
-        );
-});
-
-it('discovers public CLI transitional selectors without treating fixed tool lanes as consumers', function (): void {
-    $consumers = array_keys(app(TransitionalSshConsumerFinder::class)->find());
-
-    expect($consumers)
-        ->toContain(
-            'apps/cli/app/Commands/Node/NodeManageCommand.php',
-            'apps/cli/app/Commands/Tool/ToolShowCommand.php',
-        )
-        ->not->toContain(
-            'apps/cli/app/Commands/Tool/ToolCredentialsCommand.php',
-            'apps/cli/app/Commands/Tool/ToolInstallCommand.php',
-            'apps/cli/app/Commands/Tool/ToolReconfigureCommand.php',
-            'apps/cli/app/Commands/Tool/ToolRemoveCommand.php',
-            'apps/cli/app/Commands/Tool/ToolUpdateCommand.php',
-        );
+        ->toBe([
+            'apps/gateway/app/Services/Nodes/GatewayNodeCreator.php',
+            'apps/gateway/app/Services/OrbitHostInstaller.php',
+            'apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php',
+            'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php',
+            'apps/gateway/app/Services/Security/HomeDirectoryLockdownInstaller.php',
+            'apps/gateway/app/Services/Security/PublicSshDenyInstaller.php',
+            'apps/gateway/app/Services/Security/SecurityInstaller.php',
+            'apps/gateway/app/Services/Security/SecurityInstallerTransport.php',
+            'apps/gateway/app/Services/Security/SshdHardenedInstaller.php',
+            'apps/gateway/app/Services/Security/SysctlBaselineInstaller.php',
+            'apps/gateway/app/Services/Security/UnattendedUpgradesInstaller.php',
+        ])
+        ->and($inventory['transitional_ssh'])
+        ->toBeEmpty();
 });
 
 it('keeps the committed transitional SSH inventory fresh', function (): void {

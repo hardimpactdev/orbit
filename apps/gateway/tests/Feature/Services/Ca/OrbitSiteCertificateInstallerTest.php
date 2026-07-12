@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Services\Ca\OrbitCaService;
 use App\Services\Ca\OrbitSiteCertificateInstaller;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Process\Factory;
@@ -16,7 +14,10 @@ use Illuminate\Support\Facades\Process;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
 
     $storage = sys_get_temp_dir().'/orbit-site-cert-test-'.uniqid();
     mkdir($storage.'/app/orbit', 0777, true);
@@ -32,8 +33,6 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
     $storage = getenv('ORBIT_SITE_CERTIFICATE_TEST_STORAGE');
 
     if (is_string($storage) && is_dir($storage)) {

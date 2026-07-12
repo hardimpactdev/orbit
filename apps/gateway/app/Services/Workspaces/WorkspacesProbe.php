@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
@@ -15,12 +14,12 @@ use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
+use App\Services\Tools\ToolScriptDispatcher;
 
 final readonly class WorkspacesProbe
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
+        private ?ToolScriptDispatcher $scripts = null,
         private ?WorkspaceRuntimeUser $workspaceRuntimeUser = null,
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
@@ -149,10 +148,7 @@ final readonly class WorkspacesProbe
             '__CONTAINER_SPEC_HASH_LABEL__' => escapeshellarg($spec['container_spec_hash_label']),
         ]);
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
-            'throw' => true,
-            'input' => json_encode($spec, JSON_THROW_ON_ERROR),
-        ]);
+        $result = $this->scripts()->run($node, 'orbit-workspace', 'probe', $script, throw: true);
 
         $items = [];
 
@@ -198,6 +194,11 @@ final readonly class WorkspacesProbe
         }
 
         return new ProbeSnapshot($items);
+    }
+
+    private function scripts(): ToolScriptDispatcher
+    {
+        return $this->scripts ?? app(ToolScriptDispatcher::class);
     }
 
     /**

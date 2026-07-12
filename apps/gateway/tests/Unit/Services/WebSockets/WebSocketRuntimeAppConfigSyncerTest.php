@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Models\App;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\WebSockets\WebSocketRuntimeAppConfigSyncer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -17,9 +15,9 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
     );
 });
 

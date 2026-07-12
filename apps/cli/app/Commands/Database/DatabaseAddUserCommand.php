@@ -8,13 +8,11 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseAddUserCommand extends DatabaseGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     #[\Override]
     protected $signature = 'database:add-user
         {connection? : Database connection slug to create or update}
         {--service= : Managed MySQL process name}
         {--node= : Node owning the managed MySQL process}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--database= : MySQL database name}
         {--username= : MySQL username}
         {--password= : MySQL password}

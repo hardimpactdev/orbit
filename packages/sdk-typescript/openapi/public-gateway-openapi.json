@@ -2173,18 +2173,18 @@
                                     "properties": {
                                       "code": {
                                         "type": "string",
-                                        "const": "node_transport_required"
+                                        "const": "app.cleanup_failed"
                                       },
                                       "family": {
                                         "type": "string",
-                                        "const": "transport"
+                                        "const": "app"
                                       },
                                       "message": {
                                         "type": "string"
                                       },
                                       "next_command": {
                                         "type": "string",
-                                        "const": "app:remove --node-transport=transitional-ssh-fallback"
+                                        "const": "doctor --family=app --restore"
                                       }
                                     },
                                     "required": [
@@ -7580,257 +7580,6 @@
         }
       }
     },
-    "/nodes/self/manage-key": {
-      "get": {
-        "operationId": "nodeManage.key",
-        "tags": [
-          "NodeManage"
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "object",
-                      "properties": {
-                        "data": {
-                          "type": "object",
-                          "properties": {
-                            "management_ssh_key": {
-                              "type": "object",
-                              "properties": {
-                                "public_key": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "public_key"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "management_ssh_key"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "data"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "success"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "authorization_failed"
-                        },
-                        "message": {
-                          "type": "string",
-                          "const": "Peer identity unknown."
-                        },
-                        "meta": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "node_transport_required"
-                            },
-                            "message": {
-                              "type": "string"
-                            },
-                            "meta": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "object",
-                                  "properties": {
-                                    "field": {
-                                      "type": "string",
-                                      "const": "node-transport"
-                                    },
-                                    "required": {
-                                      "type": "string",
-                                      "const": "transitional-ssh-fallback"
-                                    }
-                                  },
-                                  "required": [
-                                    "field",
-                                    "required"
-                                  ]
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "error": {
-                          "type": "object",
-                          "properties": {
-                            "code": {
-                              "type": "string",
-                              "const": "node.not_operator"
-                            },
-                            "message": {
-                              "type": "string",
-                              "const": "Only active roleless nodes can manage themselves."
-                            },
-                            "meta": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  },
-                                  "minItems": 0,
-                                  "maxItems": 0,
-                                  "additionalItems": false
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "code",
-                            "message",
-                            "meta"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "error"
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "object",
-                      "properties": {
-                        "code": {
-                          "type": "string",
-                          "const": "node.management_key_unavailable"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "meta": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              },
-                              "minItems": 0,
-                              "maxItems": 0,
-                              "additionalItems": false
-                            }
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code",
-                        "message",
-                        "meta"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "error"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/nodes/self/manage": {
       "post": {
         "operationId": "nodeManage.manage",
@@ -7872,13 +7621,7 @@
                                 "managed": {
                                   "type": "boolean"
                                 },
-                                "ssh_host": {
-                                  "type": "string"
-                                },
-                                "host_key_pinned": {
-                                  "type": "boolean"
-                                },
-                                "ssh_verified": {
+                                "agent_verified": {
                                   "type": "boolean"
                                 }
                               },
@@ -7887,9 +7630,7 @@
                                 "user",
                                 "platform",
                                 "managed",
-                                "ssh_host",
-                                "host_key_pinned",
-                                "ssh_verified"
+                                "agent_verified"
                               ]
                             }
                           },
@@ -15146,32 +14887,6 @@
                                     "properties": {
                                       "code": {
                                         "type": "string",
-                                        "const": "node_transport_required"
-                                      },
-                                      "family": {
-                                        "type": "string",
-                                        "const": "transport"
-                                      },
-                                      "message": {
-                                        "type": "string"
-                                      },
-                                      "next_command": {
-                                        "type": "string",
-                                        "const": "workspace:remove --node-transport=transitional-ssh-fallback"
-                                      }
-                                    },
-                                    "required": [
-                                      "code",
-                                      "family",
-                                      "message",
-                                      "next_command"
-                                    ]
-                                  },
-                                  {
-                                    "type": "object",
-                                    "properties": {
-                                      "code": {
-                                        "type": "string",
                                         "const": "process.runtime_unit_extra"
                                       },
                                       "family": {
@@ -19013,7 +18728,7 @@
   },
   "x-orbit-sdk-surface": {
     "source": "apps/gateway/openapi-sdk-surface.json",
-    "public_schema_only_operations": 20,
+    "public_schema_only_operations": 19,
     "removed_internal_or_deferred_operations": 46
   }
 }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolReconfigurer;
 use App\Services\Tools\ToolUpdater;
@@ -51,7 +50,7 @@ it('dispatches reconfigure tool scripts through internal tool run without transi
         ->and($executor->commands)
         ->toBe([InternalCommand::ToolRunScript->value])
         ->and($executor->transportOptions[0]['transport'] ?? null)
-        ->toBe(NodeTransportPreference::AgentPush)
+        ->toBeNull()
         ->and($executor->transportOptions[0]['bind_input'] ?? null)
         ->toBeTrue()
         ->and($executor->transportOptions[0]['strict'] ?? null)

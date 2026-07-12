@@ -8,7 +8,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolCatalog;
 use RuntimeException;
 
@@ -20,7 +20,7 @@ class AgentRoleBaseline implements RoleBaseline
         private readonly DevelopmentDnsMappingEnactor $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
-        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -104,9 +104,9 @@ class AgentRoleBaseline implements RoleBaseline
         }
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     private function isValidTld(string $tld): bool

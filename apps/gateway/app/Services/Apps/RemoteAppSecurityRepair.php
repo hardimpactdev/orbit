@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
 
 final readonly class RemoteAppSecurityRepair
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function repair(Node $node, string $user, string $home, string $path): void

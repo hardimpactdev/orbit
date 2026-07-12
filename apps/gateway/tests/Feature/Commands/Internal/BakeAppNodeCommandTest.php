@@ -12,7 +12,6 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,12 +43,9 @@ describe('orbit:internal:bake-app-node', function (): void {
         app()->instance(RemoteShell::class, new BakeAppNodeRemoteShell);
         bind_tool_script_dispatcher_to_remote_shell();
         bindDevelopmentDnsMappingTestDoubles('bake-app-node-dns');
-        request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     });
 
     afterEach(function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
         File::deleteDirectory(app(DevelopmentDnsMappingEnactor::class)->configDir());
     });
 
@@ -439,7 +435,13 @@ final class BakeAppNodeRemoteShell implements RemoteShell
      */
     private function probeResult(Node $node, array $options): RemoteShellResult
     {
-        $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+        $payload = json_decode((string) ($options['input'] ?? ''), associative: true);
+
+        if (! is_array($payload)) {
+            $payload = [
+                'tools' => array_fill_keys(array_keys($this->installed), []),
+            ];
+        }
 
         if (is_array($payload['tools'] ?? null)) {
             return new RemoteShellResult(

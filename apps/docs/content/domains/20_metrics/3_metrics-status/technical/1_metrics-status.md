@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit metrics:status [--node=<node>] [--node-transport=<transport>] [--json]
+orbit metrics:status [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | None. | Active node with the `metrics` role. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract

@@ -12,14 +12,12 @@ use function Laravel\Prompts\confirm;
 
 final class AppRemoveCommand extends AppGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]
     protected $signature = 'app:remove
         {app? : App name or hostname}
         {--force : Confirm destructive operation without prompting}
-        {--node-transport= : Transitional cleanup transport (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

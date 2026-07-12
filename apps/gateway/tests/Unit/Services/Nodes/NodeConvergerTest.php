@@ -10,18 +10,18 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\NodeConverger;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Orbit\Core\Enums\InternalCommand;
+use Orbit\Core\Http\JsonEnvelope;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
     bind_tool_script_dispatcher_to_remote_shell();
     bindDevelopmentDnsMappingTestDoubles('node-converger-dns');
 });
@@ -41,6 +41,7 @@ describe('NodeConverger', function (): void {
         $shell = new NodeConvergerSetupRemoteShell;
 
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, new NodeConvergerInternalExecutor($shell));
 
         $result = app(NodeConverger::class)->converge(
             node: $node,
@@ -108,6 +109,7 @@ describe('NodeConverger', function (): void {
         $shell = new NodeConvergerFailingRemoteShell;
 
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, new NodeConvergerInternalExecutor($shell));
 
         $result = app(NodeConverger::class)->converge(
             node: $node,
@@ -214,7 +216,13 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
      */
     private function probeResult(Node $node, array $options): RemoteShellResult
     {
-        $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
+        $payload = json_decode((string) ($options['input'] ?? ''), associative: true);
+
+        if (! is_array($payload)) {
+            $payload = [
+                'tools' => array_fill_keys(array_keys($this->installed), []),
+            ];
+        }
 
         if (is_array($payload['tools'] ?? null)) {
             return new RemoteShellResult(
@@ -359,6 +367,49 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             str_contains($script, '# orbit install laravel-installer') => 'laravel-installer',
             default => null,
         };
+    }
+}
+
+final readonly class NodeConvergerInternalExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private NodeConvergerSetupRemoteShell|NodeConvergerFailingRemoteShell $shell,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        if ($commandName === 'internal:caddy-config') {
+            return $this->shell->run($node, "internal:caddy-config {$arguments[0]}", $transportOptions);
+        }
+
+        if ($commandName !== InternalCommand::ToolRunScript->value) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        $payload = json_decode(
+            (string) ($transportOptions['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $script = is_array($payload) && is_string($payload['script'] ?? null) ? $payload['script'] : '';
+        $result = $this->shell->run($node, $script, ['throw' => false]);
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(JsonEnvelope::success([
+                'exit_code' => $result->exitCode,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'duration_ms' => $result->durationMs,
+            ]), JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
+        );
     }
 }
 

@@ -22,7 +22,6 @@ final class GatewayConnector extends Connector
         private readonly string|bool|null $caPemPath = null,
         private readonly int $timeout = 900,
         private readonly mixed $correlationIdResolver = null,
-        private readonly ?string $nodeTransportPreference = null,
     ) {}
 
     public static function forScheduler(
@@ -57,21 +56,6 @@ final class GatewayConnector extends Connector
         return [
             'Accept' => 'application/json',
             'X-Orbit-Client' => $this->orbitClientName(),
-            ...$this->nodeTransportHeaders(),
-        ];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function nodeTransportHeaders(): array
-    {
-        if (! is_string($this->nodeTransportPreference) || trim($this->nodeTransportPreference) === '') {
-            return [];
-        }
-
-        return [
-            'X-Orbit-Node-Transport-Preference' => trim($this->nodeTransportPreference),
         ];
     }
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Convergence;
 
-use App\Contracts\RemoteShell;
 use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\Convergence\ManagedFilePlan;
 use App\Data\Convergence\ManagedFileProbe;
@@ -12,18 +11,19 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
 use JsonException;
 
 final readonly class ManagedFile
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         public string $path,
         public string $content,
         public string $mode = '0644',
         public string $directoryMode = '0755',
         public bool $sensitive = false,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {
         $this->ensureAbsolutePath($path);
         $this->ensureMode($mode, 'mode');
@@ -38,6 +38,7 @@ final readonly class ManagedFile
         string $defaultMode = '0644',
         string $defaultDirectoryMode = '0755',
         bool $sensitive = false,
+        ?RunsInternalCommands $localExecutor = null,
     ): self {
         $path = $intent['path'] ?? null;
         $declaredHash = $intent['hash'] ?? null;
@@ -77,6 +78,7 @@ final readonly class ManagedFile
             mode: $mode,
             directoryMode: $directoryMode,
             sensitive: $sensitive,
+            localExecutor: $localExecutor,
         );
 
         if (! hash_equals($declaredHash, $file->hash())) {
@@ -86,7 +88,7 @@ final readonly class ManagedFile
         return $file;
     }
 
-    public function probe(Node $node, RemoteShell $remoteShell): ManagedFileProbe
+    public function probe(Node $node): ManagedFileProbe
     {
         $result = $this->localExecutor()->runInternal(
             node: $node,
@@ -176,7 +178,7 @@ final readonly class ManagedFile
         );
     }
 
-    public function apply(Node $node, RemoteShell $remoteShell, ManagedFilePlan $plan): ConvergenceApplyResult
+    public function apply(Node $node, ManagedFilePlan $plan): ConvergenceApplyResult
     {
         if (! $plan->shouldApply()) {
             return new ConvergenceApplyResult(
@@ -243,9 +245,9 @@ final readonly class ManagedFile
         );
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }
 
     public function hash(): string

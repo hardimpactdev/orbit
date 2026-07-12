@@ -7,13 +7,13 @@ namespace App\Services\Operations;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class FleetUpdateAgentVerifier
 {
     public function __construct(
         private FleetUpdateTargetSelector $targets,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -96,8 +96,8 @@ final readonly class FleetUpdateAgentVerifier
         ];
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 }

@@ -11,12 +11,13 @@ use App\Models\Node;
 use App\Models\WireGuardPeer;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
 
 final readonly class NodeIdentityArtifactProbe
 {
     public function __construct(
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function read(Node $node): NodeIdentityArtifact
@@ -102,7 +103,7 @@ final readonly class NodeIdentityArtifactProbe
         ];
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
         return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }

@@ -201,6 +201,19 @@ final class NodeStoreStreamConvergenceRemoteShell implements RemoteShell
 
         $payload = json_decode((string) ($options['input'] ?? ''), associative: true, flags: JSON_THROW_ON_ERROR);
 
+        if (is_string($payload['script'] ?? null)) {
+            $payload = [
+                'tools' => [
+                    'caddy' => ['binary' => 'docker', 'container' => 'orbit-caddy'],
+                    'composer' => ['binary' => '/usr/local/bin/composer'],
+                    'gh' => ['binary' => 'gh'],
+                    'git' => ['binary' => 'git'],
+                    'laravel-installer' => ['binary' => '/usr/local/bin/laravel'],
+                    'php-cli' => ['binary' => '/opt/orbit/php/8.5/bin/php'],
+                ],
+            ];
+        }
+
         if (is_array($payload['tools'] ?? null)) {
             return new RemoteShellResult(
                 exitCode: 0,

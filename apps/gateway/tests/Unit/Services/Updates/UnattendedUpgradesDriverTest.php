@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\Security\SecurityInstallerTransport;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Updates\UnattendedUpgradesDriver;
 use App\Services\Updates\UpdateTarget;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,15 +17,8 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
-
 it('supports managed Ubuntu node update targets only', function (): void {
-    $driver = new UnattendedUpgradesDriver(new UnattendedUpgradesDriverShell);
+    $driver = unattendedUpgradesDriver();
     $node = Node::factory()->make();
 
     expect($driver->supports(new UpdateTarget('node', $node, 'ubuntu_24-04', 'managed-server-node')))
@@ -162,7 +154,7 @@ it('runs the unattended-upgrade dry-run only after expected config is present', 
         ]),
     ]);
 
-    new UnattendedUpgradesDriver(new UnattendedUpgradesDriverShell)->probe(updateTarget());
+    unattendedUpgradesDriver()->probe(updateTarget());
 
     Http::assertSent(fn (Request $request): bool => unattended_upgrades_probe_request_matches($request));
 });
@@ -225,7 +217,7 @@ it('reports unverifiable posture when the shell probe fails', function (): void 
         ),
     ]);
 
-    $snapshot = new UnattendedUpgradesDriver(new UnattendedUpgradesDriverShell)->probe(updateTarget());
+    $snapshot = unattendedUpgradesDriver()->probe(updateTarget());
     $issue = $snapshot->issues[0];
 
     expect($issue->code)
@@ -241,22 +233,14 @@ it('reports unverifiable posture when the shell probe fails', function (): void 
 it('repairs configuration and runs unattended-upgrade during apply', function (): void {
     Http::preventStrayRequests();
     Http::fake(fn (Request $request): mixed => unattended_upgrades_apply_http_response($request));
-    $shell = new UnattendedUpgradesDriverShell([
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    ]);
-
-    $result = new UnattendedUpgradesDriver($shell)->apply(updateTarget());
+    $result = unattendedUpgradesDriver()->apply(updateTarget());
 
     expect($result->status)
         ->toBe('completed')
         ->and($result->driver)
-        ->toBe('unattended-upgrades')
-        ->and($shell->scripts)
-        ->toHaveCount(1)
-        ->and($shell->scripts[0])
-        ->toContain('install -y -qq unattended-upgrades');
+        ->toBe('unattended-upgrades');
 
-    Http::assertSentCount(5);
+    Http::assertSentCount(6);
     Http::assertSent(fn (Request $request): bool => unattended_upgrades_managed_file_request_matches(
         request: $request,
         action: 'probe',
@@ -281,18 +265,19 @@ it('repairs configuration and runs unattended-upgrade during apply', function ()
 });
 
 it('does not run unattended-upgrade when config repair fails', function (): void {
-    $shell = new UnattendedUpgradesDriverShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'apt failed', durationMs: 1),
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.42:9477/v1/commands' => unattended_upgrades_apply_agent_response(1, 'apt failed'),
     ]);
 
-    $result = new UnattendedUpgradesDriver($shell)->apply(updateTarget());
+    $result = unattendedUpgradesDriver()->apply(updateTarget());
 
     expect($result->status)
         ->toBe('failed')
         ->and($result->summary)
-        ->toContain('Failed to install unattended security upgrades')
-        ->and($shell->scripts)
-        ->toHaveCount(1);
+        ->toContain('Failed to install unattended security upgrades');
+
+    Http::assertSentCount(1);
 });
 
 function probeSnapshot(array $facts)
@@ -302,7 +287,17 @@ function probeSnapshot(array $facts)
         'http://10.44.0.42:9477/v1/commands' => unattended_upgrades_agent_response($facts),
     ]);
 
-    return new UnattendedUpgradesDriver(new UnattendedUpgradesDriverShell)->probe(updateTarget());
+    return unattendedUpgradesDriver()->probe(updateTarget());
+}
+
+function unattendedUpgradesDriver(): UnattendedUpgradesDriver
+{
+    app()->instance(
+        SecurityInstallerTransport::class,
+        new SecurityInstallerTransport(new ToolScriptDispatcher(app(RemoteLocalExecutor::class))),
+    );
+
+    return new UnattendedUpgradesDriver(localExecutor: app(RemoteLocalExecutor::class));
 }
 
 function updateTarget(): UpdateTarget
@@ -385,6 +380,10 @@ function unattended_upgrades_apply_http_response(Request $request): mixed
 
     $command = $request['argv'][0] ?? null;
 
+    if ($command === 'internal:tool:run-script') {
+        return unattended_upgrades_tool_agent_response($request);
+    }
+
     if ($command === 'internal:managed-file') {
         return unattended_upgrades_managed_file_agent_response($request);
     }
@@ -394,6 +393,37 @@ function unattended_upgrades_apply_http_response(Request $request): mixed
     }
 
     return Http::response('Unexpected command '.json_encode($command), 500);
+}
+
+function unattended_upgrades_tool_agent_response(Request $request): mixed
+{
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => $request['operation_id'],
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            [
+                'type' => 'stdout',
+                'message' => json_encode([
+                    'success' => [
+                        'data' => [
+                            'exit_code' => 0,
+                            'stdout' => '',
+                            'stderr' => '',
+                            'duration_ms' => 1,
+                        ],
+                        'meta' => [],
+                    ],
+                ], JSON_THROW_ON_ERROR),
+            ],
+            [
+                'type' => 'exit',
+                'message' => '0',
+            ],
+        ],
+    ]);
 }
 
 function unattended_upgrades_managed_file_agent_response(Request $request): mixed
@@ -484,46 +514,4 @@ function unattended_upgrades_managed_file_request_matches(Request $request, stri
     $input = json_decode((string) $request['input'], associative: true);
 
     return is_array($input) && ($input['path'] ?? null) === $path;
-}
-
-function managedFileProbeResult(bool $exists, ?string $hash = null, ?string $mode = null): RemoteShellResult
-{
-    return new RemoteShellResult(
-        exitCode: 0,
-        stdout: json_encode([
-            'exists' => $exists,
-            'hash' => $hash,
-            'mode' => $mode,
-        ], JSON_THROW_ON_ERROR),
-        stderr: '',
-        durationMs: 1,
-    );
-}
-
-final class UnattendedUpgradesDriverShell implements RemoteShell
-{
-    /**
-     * @var list<string>
-     */
-    public array $scripts = [];
-
-    /**
-     * @var list<array<string, mixed>>
-     */
-    public array $options = [];
-
-    /**
-     * @param  list<RemoteShellResult>  $results
-     */
-    public function __construct(
-        private array $results = [],
-    ) {}
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
-        $this->options[] = $options;
-
-        return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
 }

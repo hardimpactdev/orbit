@@ -7,8 +7,6 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Convergence\ManagedFile;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -17,12 +15,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
+beforeEach(function (): void {});
 
 it('plans ok when the remote managed file already matches intent', function (): void {
     $content = "grafana: enabled\n";
@@ -44,9 +37,9 @@ it('plans ok when the remote managed file already matches intent', function (): 
         ),
     ]);
 
-    $probe = $file->probe($node, new ManagedFileUnexpectedShell);
+    $probe = $file->probe($node);
     $plan = $file->plan($probe);
-    $result = $file->apply($node, new ManagedFileUnexpectedShell, $plan);
+    $result = $file->apply($node, $plan);
 
     expect($probe->exists)
         ->toBeTrue()
@@ -95,9 +88,9 @@ it('applies a missing managed file through a redacted remote shell script', func
             ],
         ));
 
-    $probe = $file->probe($node, new ManagedFileUnexpectedShell);
+    $probe = $file->probe($node);
     $plan = $file->plan($probe);
-    $result = $file->apply($node, new ManagedFileUnexpectedShell, $plan);
+    $result = $file->apply($node, $plan);
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -138,7 +131,7 @@ it('reports unreachable when probing the managed file cannot reach the node', fu
         ),
     ]);
 
-    $probe = $file->probe($node, new ManagedFileUnexpectedShell);
+    $probe = $file->probe($node);
     $plan = $file->plan($probe);
 
     expect($probe->reachable)

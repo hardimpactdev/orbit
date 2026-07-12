@@ -10,21 +10,15 @@ use RuntimeException;
 
 final readonly class NodeCommandTransportSelector
 {
-    // @orbit-ssh-lane transitional-ssh
     public function select(
         Node $node,
         NodeCommandEnvelope $envelope,
-        NodeTransportPreference $preference = NodeTransportPreference::Auto,
     ): NodeTransport {
         if (
             $node->hasActiveRole(NodeRoleName::Gateway->value)
             || ! $envelope->requiresNodeExecution
         ) {
             return NodeTransport::GatewayOnly;
-        }
-
-        if ($preference === NodeTransportPreference::TransitionalSshFallback) {
-            return NodeTransport::TransitionalSshFallback;
         }
 
         if ($this->canUseAgentPush($node, $envelope)) {

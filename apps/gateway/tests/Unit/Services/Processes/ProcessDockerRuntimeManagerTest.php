@@ -242,7 +242,6 @@ function processDockerRuntimeManagerContainer(): ProcessDockerContainer
 function process_docker_runtime_manager_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new ProcessDockerRuntimeManagerUnusedTransport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

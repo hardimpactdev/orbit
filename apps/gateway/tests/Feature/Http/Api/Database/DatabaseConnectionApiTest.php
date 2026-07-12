@@ -16,15 +16,16 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Core\Security\OperationTokenSigner;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 
 uses(RefreshDatabase::class);
 
@@ -95,7 +96,6 @@ function database_api_fallback_server(): array
 {
     return [
         'REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP,
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
     ];
 }
 
@@ -834,8 +834,8 @@ describe('database connection api', function (): void {
 
 function bindDatabaseApiLocalExecutor(DatabaseApiQueryRemoteShell $transport): void
 {
+    app()->instance(RunsInternalCommands::class, new RemoteExecutorBackedInternalExecutor($transport));
     app()->instance(RemoteLocalExecutor::class, new RemoteLocalExecutor(
-        transport: $transport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

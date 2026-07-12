@@ -7,11 +7,9 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
@@ -20,15 +18,16 @@ use Illuminate\Support\Facades\Http;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
 
     $this->configDir = storage_path('framework/testing/agent-dns');
     File::deleteDirectory($this->configDir);
 });
 
 afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
     File::deleteDirectory($this->configDir);
 });
 

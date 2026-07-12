@@ -8,7 +8,7 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 
 class FleetUpdateVerifier
 {
@@ -17,7 +17,7 @@ class FleetUpdateVerifier
         private readonly NodeRoleAssignments $roles,
         private readonly OperationRunRecorder $operationRuns,
         private readonly FleetUpdateTargetSelector $targets,
-        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function verify(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -150,9 +150,9 @@ class FleetUpdateVerifier
         return null;
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     private function runVerificationStep(

@@ -2,89 +2,103 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\Nodes\OperatorNodeManagementException;
 use App\Services\Nodes\OperatorNodeManager;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
-uses(TestCase::class);
-uses(RefreshDatabase::class);
+uses(TestCase::class, RefreshDatabase::class);
 
-describe(OperatorNodeManager::class, function (): void {
-    afterEach(function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-    });
+it('fails when the operator node has no WireGuard address', function (): void {
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
+            'wireguard_address' => null,
+            'status' => 'active',
+        ]);
 
-    it('fails with the documented code when the operator node has no WireGuard address', function (): void {
-        $node = Node::factory()
-            ->operator()
-            ->create([
-                'name' => 'mini',
-                'wireguard_address' => '10.44.0.24',
-                'status' => 'active',
-            ]);
-        $node->forceFill(['wireguard_address' => null])->save();
-        $shell = new OperatorNodeManagerRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
+    expect(fn () => app(OperatorNodeManager::class)->manage($node, 'nicky', 'macos_15-5'))
+        ->toThrow(function (OperatorNodeManagementException $exception): void {
+            expect($exception->errorCode)->toBe('node.wireguard_address_missing');
+        });
+});
 
-        try {
-            app(OperatorNodeManager::class)->manage($node->fresh(), 'nicky', 'macos_15-5');
-        } catch (OperatorNodeManagementException $exception) {
-            expect($exception->errorCode)->toBe('node.wireguard_address_missing')->and($shell->scripts)->toBe([]);
+it('opts a roleless operator into management after an Agent-push probe succeeds', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.24:9477/v1/commands' => operator_node_agent_response(),
+    ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
+            'wireguard_address' => '10.44.0.24',
+            'status' => 'active',
+            'managed' => false,
+        ]);
 
-            return;
-        }
+    $result = app(OperatorNodeManager::class)->manage($node, 'nicky', 'macos_15-5');
 
-        throw new RuntimeException('Expected operator node management to fail.');
-    });
+    expect($result)
+        ->toMatchArray([
+            'node' => 'mini',
+            'user' => 'nicky',
+            'platform' => 'macos_15-5',
+            'managed' => true,
+            'agent_verified' => true,
+        ])
+        ->and($node->fresh()->managed)
+        ->toBeTrue();
 
-    it('requires explicit transitional SSH fallback before mutating operator node management state', function (): void {
-        $node = Node::factory()
-            ->operator()
-            ->create([
-                'name' => 'mini',
-                'user' => null,
-                'platform' => null,
-                'wireguard_address' => '10.44.0.24',
-                'status' => 'active',
-            ]);
-        $shell = new OperatorNodeManagerRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
+    Http::assertSent(
+        fn (Request $request): bool => $request->url() === 'http://10.44.0.24:9477/v1/commands'
+        && $request['argv'][0] === 'internal:agent-runtime:probe'
+        && ! $request->hasHeader('X-Orbit-Node-Transport-Preference'),
+    );
+});
 
-        try {
-            app(OperatorNodeManager::class)->manage($node->fresh(), 'nicky', 'macos_15-5');
-        } catch (OperatorNodeManagementException $exception) {
+it('restores prior management metadata when Agent push fails', function (): void {
+    Http::fake([
+        'http://10.44.0.24:9477/v1/commands' => Http::response(['error' => 'unreachable'], 503),
+    ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
+            'user' => null,
+            'platform' => null,
+            'wireguard_address' => '10.44.0.24',
+            'status' => 'active',
+            'managed' => false,
+        ]);
+
+    expect(fn () => app(OperatorNodeManager::class)->manage($node, 'nicky', 'macos_15-5'))
+        ->toThrow(function (OperatorNodeManagementException $exception) use ($node): void {
             expect($exception->errorCode)
-                ->toBe('node_transport_required')
-                ->and($exception->getMessage())
-                ->toContain('requires explicit --node-transport=transitional-ssh-fallback')
-                ->and($shell->scripts)
-                ->toBe([])
+                ->toBe('node.agent_unreachable')
                 ->and($node->fresh()->user)
                 ->toBeNull()
                 ->and($node->fresh()->platform)
-                ->toBeNull();
-
-            return;
-        }
-
-        throw new RuntimeException('Expected operator node management to require explicit transport fallback.');
-    });
+                ->toBeNull()
+                ->and($node->fresh()->managed)
+                ->toBeFalse();
+        });
 });
 
-final class OperatorNodeManagerRecordingShell implements RemoteShell
+function operator_node_agent_response(): mixed
 {
-    /** @var list<string> */
-    public array $scripts = [];
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->scripts[] = $script;
-
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node.manage.agent-probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [
+            ['type' => 'exit', 'message' => '0'],
+        ],
+    ]);
 }

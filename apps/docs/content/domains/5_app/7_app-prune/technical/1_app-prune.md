@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit app:prune [app] [--dry-run] [--force] [--node-transport=<transport>] [--json]
+orbit app:prune [app] [--dry-run] [--force] [--json]
 ```
 
 ## Input Contract
@@ -27,7 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `[app]` | Always. | Never. | None. | Must resolve to an existing app record. |
 | `dry_run` | `--dry-run` | Optional. | Never. | `false`. | Boolean flag. If `true`, side effects are skipped. |
 | `force` | `--force` | Non-interactive mode (without `--dry-run`). | Never. | `false`. | Boolean flag. Explicit destructive consent. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | Workspace runtime cleanup uses Agent push. The exact `transitional-ssh-fallback` value opts each stale workspace into the tracked residual SSH cleanup seam. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive mode. |
 
 ## Input Resolution
@@ -88,8 +87,8 @@ If `dry_run` is `false`:
   - Phase B runs the workspace removal cleanup order: stop traffic, stop
     inherited processes, run teardown steps, remove the workspace runtime container, and
     remove the worktree.
-  - Agent reachability is not a pre-prune prerequisite. Residual shell cleanup
-    is attempted only with the exact `transitional-ssh-fallback` marker.
+  - Agent reachability is not a pre-prune prerequisite. Residual cleanup is
+    attempted through Agent push.
   - A Phase B step that cannot finish after workspace configuration removal still completes the workspace removal with warnings.
   - Partial Phase B failures become `success.meta.warnings[]` using the same
     family warning vocabulary and `next_command` handoffs as

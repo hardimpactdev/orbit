@@ -21,7 +21,6 @@ const TOOL_UPDATE_API_CALLER_WG_IP = '10.6.0.93';
 function tool_update_api_server_headers(array $overrides = []): array
 {
     return [
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
         'REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP,
         ...$overrides,
     ];

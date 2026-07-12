@@ -9,8 +9,8 @@ use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleProbe;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Firewall\RemoteFirewallRuleProbe;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,9 +21,9 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        RemoteFirewallRuleProbe::class,
+        new RemoteFirewallRuleProbe(app(RemoteLocalExecutor::class)),
     );
 });
 

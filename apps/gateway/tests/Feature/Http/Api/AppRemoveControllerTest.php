@@ -9,7 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -45,7 +45,6 @@ function appRemoveRemoteShellFallbackHeader(): array
 {
     return [
         'REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP,
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
     ];
 }
 
@@ -104,6 +103,7 @@ describe('AppRemoveController', function (): void {
             ),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
 
         $response = $this->call(
             'DELETE',
@@ -132,19 +132,11 @@ describe('AppRemoveController', function (): void {
                 ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))
             ->toBeTrue()
             ->and(collect($shell->scripts)
-                ->contains(
-                    fn (string $script): bool => str_contains(
-                        $script,
-                        "rm -f '/home/orbit/.config/orbit/apps/docs.ini'",
-                    ),
-                ))
-            ->toBeTrue()
-            ->and(collect($shell->scripts)
                 ->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))
             ->toBeTrue();
     });
 
-    it('removes app intent but skips legacy cleanup when transitional fallback is not explicit', function (): void {
+    it('removes app intent through the fixed Agent-push cleanup lane', function (): void {
         $caller = createAppRemoveCallerNode();
         $targetNode = Node::factory()->create([
             'name' => 'app-1',
@@ -171,6 +163,7 @@ describe('AppRemoveController', function (): void {
 
         $shell = new AppRemoveApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
 
         $response = $this->call(
             'DELETE',
@@ -188,18 +181,14 @@ describe('AppRemoveController', function (): void {
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1)
-            ->assertJsonPath('success.meta.warnings.0.code', 'node_transport_required')
-            ->assertJsonPath(
-                'success.meta.warnings.0.message',
-                'app:remove cleanup still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-            );
+            ->assertJsonMissingPath('success.meta.warnings');
 
         expect(App::query()->whereKey($app->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
             ->toBeFalse()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toHaveCount(1);
     });
 
     it('requires destructive consent before removing app intent', function (): void {
@@ -262,7 +251,7 @@ describe('AppRemoveController', function (): void {
     });
 });
 
-final class AppRemoveApiSequencedRemoteShell implements RemoteShell
+final class AppRemoveApiSequencedRemoteShell implements RemoteShell, RunsInternalCommands
 {
     /**
      * @var list<string>
@@ -287,6 +276,39 @@ final class AppRemoveApiSequencedRemoteShell implements RemoteShell
                 stderr: '',
                 durationMs: 1,
             )
+        );
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode(
+            (string) ($transportOptions['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $result = $this->run($node, (string) ($payload['script'] ?? ''), $transportOptions);
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => $result->exitCode,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'duration_ms' => $result->durationMs,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
         );
     }
 }

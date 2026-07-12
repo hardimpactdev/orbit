@@ -18,22 +18,7 @@ final readonly class GatewayLogStreamClient
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
-        private ?string $nodeTransportPreference = null,
     ) {}
-
-    public function withNodeTransportPreference(?string $preference): self
-    {
-        if ($preference === $this->nodeTransportPreference) {
-            return $this;
-        }
-
-        return new self(
-            baseUrl: $this->baseUrl,
-            timeout: $this->timeout,
-            caPemPath: $this->caPemPath,
-            nodeTransportPreference: $preference,
-        );
-    }
 
     /**
      * @param  array<string, mixed>  $query
@@ -65,10 +50,6 @@ final readonly class GatewayLogStreamClient
             ->withHeaders(['Accept' => 'text/plain'])
             ->timeout($this->timeout)
             ->withOptions($this->streamOptions());
-
-        if ($this->nodeTransportPreference !== null) {
-            $request = $request->withHeader('X-Orbit-Node-Transport-Preference', $this->nodeTransportPreference);
-        }
 
         return $request;
     }

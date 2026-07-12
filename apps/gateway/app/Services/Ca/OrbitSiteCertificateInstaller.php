@@ -7,7 +7,7 @@ namespace App\Services\Ca;
 use App\Contracts\SiteCertificateInstaller;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
@@ -15,7 +15,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
 {
     public function __construct(
         private OrbitCaService $ca,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     /**
@@ -70,9 +70,9 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         ];
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     private function owner(Node $node): ?string

@@ -16,14 +16,12 @@ use Orbit\Core\Extensions\OrbitExtensionRegistry;
  */
 final class ExtensionEnableCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]
     protected $signature = 'extension:enable
         {extension : Extension slug to enable}
         {--node= : Enable the extension on a specific node target}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--gateway : Enable the extension on the gateway when it is disabled}
         {--json : Output JSON}';
 

@@ -8,14 +8,12 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\FleetUpdateVerificationFailed;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunner;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -27,9 +25,15 @@ use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+function fleet_update_verifier_use_agent_push(): void
+{
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
+}
 
+beforeEach(function (): void {
     Process::preventStrayProcesses();
     app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
@@ -69,11 +73,10 @@ beforeEach(function (): void {
     });
 });
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 it('verifies gateway scheduler workload CLI and required role images', function (): void {
+    fleet_update_verifier_use_agent_push();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
@@ -160,6 +163,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
 });
 
 it('verifies macos workload CLI through the user launcher and skips required role images', function (): void {
+    fleet_update_verifier_use_agent_push();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
@@ -203,6 +207,7 @@ it('verifies macos workload CLI through the user launcher and skips required rol
 });
 
 it('verifies Orbit Agent artifacts on agent-capable workload nodes and excludes the gateway', function (): void {
+    fleet_update_verifier_use_agent_push();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
@@ -281,6 +286,7 @@ it('verifies Orbit Agent artifacts on agent-capable workload nodes and excludes 
 });
 
 it('fails when Orbit Agent artifact verification fails', function (): void {
+    fleet_update_verifier_use_agent_push();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "gateway-image\n",
@@ -319,6 +325,7 @@ it('fails when Orbit Agent artifact verification fails', function (): void {
 });
 
 it('fails when workload CLI verification fails', function (): void {
+    fleet_update_verifier_use_agent_push();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "gateway-image\n",
@@ -347,6 +354,7 @@ it('fails when workload CLI verification fails', function (): void {
 });
 
 it('fails when a required role image is missing on a workload node', function (): void {
+    fleet_update_verifier_use_agent_push();
     Process::fake([
         "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
             output: "gateway-image\n",
@@ -375,7 +383,6 @@ it('fails when a required role image is missing on a workload node', function ()
 });
 
 it('emits terminal success only after runner verification passes', function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     Http::preventStrayRequests();
     Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request));
 
@@ -456,7 +463,6 @@ it('emits terminal success only after runner verification passes', function (): 
 });
 
 it('emits terminal failure when runner verification fails', function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     Http::preventStrayRequests();
     Http::fake(fn (Request $request): mixed => fleet_verifier_agent_response($request, failCheck: 'cli'));
 

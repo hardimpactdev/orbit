@@ -14,7 +14,6 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdatePlanBuilder;
 use App\Services\Operations\UpdateRunner;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -62,8 +61,6 @@ beforeEach(function (): void {
 });
 
 it('hands the manifest backed plan to gateway and workload update phases exactly once', function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
     $manifest = updateRunnerManifestPlanHandoffManifest();
     $gatewayUpdater = new UpdateRunnerManifestPlanGatewayUpdater;
     $remoteShell = new UpdateRunnerManifestPlanShell;

@@ -10,16 +10,14 @@ binary allowlist.
 Gateway-owned work stays `gateway-only`; node-local work uses `agent-push`.
 There is no public node-transport selector. Agent delivery fails clearly when
 the resolved node is ineligible or unreachable. SSH is permanent only while
-provisioning or bootstrapping a node. Every current non-provisioning SSH
-consumer carries the exact `transitional-ssh` marker, accepts no new consumers,
-and is removed when its Agent-push port lands. See [Tech
-Stack](tech-stack.md#gateway-to-node). Break-glass SSH is operator-owned
-super-admin recovery outside normal Orbit command execution.
+provisioning or bootstrapping a node; normal command execution has no SSH
+fallback. See [Tech Stack](tech-stack.md#gateway-to-node). Break-glass SSH is
+operator-owned super-admin recovery outside normal Orbit command execution.
 
-The generated [SSH migration inventory](generated/transitional-ssh-inventory.json)
-lists every provisioning and transitional consumer. Docs quality checks rebuild
-the inventory model from production PHP sources and reject unmarked or stale
-entries.
+The generated [SSH inventory](generated/transitional-ssh-inventory.json) lists
+the provisioning/bootstrap consumers and proves that the transitional consumer
+set is empty. Docs quality checks rebuild the inventory model from production
+PHP sources and reject unmarked or stale entries.
 
 ## Scope
 
@@ -84,9 +82,8 @@ Forbidden work:
 - Gateway Laravel/artisan/PDO work or ad hoc host Python/database helpers.
 - A compatibility or break-glass transport selected by a public Orbit command.
 
-Any existing non-provisioning caller is inventory debt marked
-`transitional-ssh`; it is ported to `RemoteLocalExecutor`/Agent push or to
-gateway-local execution rather than admitted as new `RemoteHostExecutor` work.
+Non-provisioning callers are not admitted as `RemoteHostExecutor` work. They use
+`RemoteLocalExecutor`/Agent push or gateway-local execution.
 
 ### RemoteGatewayRuntimeExecutor
 
@@ -151,24 +148,12 @@ for this verify endpoint only. Identity resolution never consumes the token;
 the controller consumes it only after authorization. Non-gateway targets and
 all other gateway API routes continue to require WireGuard peer identity.
 
-During `update:all`, the remaining SSH-based fleet CLI/Agent self-update bridge
-is `transitional-ssh` debt: the gateway service may already be running a
-verifier that requires bound command context while the installed Agent still
-sends the older verify payload, or the installed CLI may not contain the new
-internal fleet-update command. Fleet convergence must update those nodes and
-then remove this bridge; the steady-state install step uses Agent push and the
+During `update:all`, fleet CLI and Agent installation uses Agent push and the
 candidate `internal:fleet-update:install-cli` command without relaxing token
-verification.
-
-For this SSH bootstrap, the JSON install payload is written to a temporary
-payload file and the file path plus SHA-256 are bound in command argv through
-`--payload-file` and `--payload-sha256`. The verifier continues to bind argv,
-cwd, and the non-secret executor environment; stdin itself is not part of this
-bootstrap token context because the CLI guard verifies before the install
-command reads the payload. The verify endpoint has no unbound payload
-form. Bootstrap staging diagnostics must not prefix the wrapped command stdout;
-the transport result stdout remains the candidate internal command's stdout
-verbatim.
+verification. The JSON install payload, its SHA-256, argv, cwd, environment,
+and input remain bound to the scoped operation token. A node whose Agent cannot
+accept that envelope fails with the standard Agent transport error; Orbit does
+not retry it over SSH.
 
 #### Result-boundary redaction patterns
 
@@ -306,8 +291,7 @@ Use these rules for every new or migrated gateway-to-node execution path.
   stdout/stderr chunks for scoped long-running commands. Gateway-only envelopes
   stay on the gateway; every other steady-state envelope uses Agent push and
   fails clearly when unavailable. `RemoteShell` remains only for provisioning
-  and bootstrap. Non-provisioning consumers are exact-marked
-  `transitional-ssh` implementation debt, not a supported transport.
+  and bootstrap.
 - A host-lane command may control containers, including `docker exec`, but it
   must not execute Orbit's own framework PHP on the host.
 - A runtime-lane command may read/write Orbit state through Laravel/PDO inside
@@ -335,19 +319,17 @@ The FrankenPHP base-image switch is deferred and out of scope for this
 contract. This page does not change app/workspace FrankenPHP image selection,
 worker mode, or app runtime rendering.
 
-## Current Consumer Classification
+## SSH Consumer Classification
 
-The generated [SSH migration inventory](generated/transitional-ssh-inventory.json)
-is the current consumer list. Its source scan covers production dependencies,
-explicit fallback selectors, bootstrap payloads, and the concrete SSH executor
-implementations.
+The generated [SSH inventory](generated/transitional-ssh-inventory.json) is the
+current consumer list. Its source scan covers production dependencies and the
+concrete SSH executor implementations.
 
 Each inventory entry points to an exact source marker:
 
 - `@orbit-ssh-lane provisioning-ssh` is allowed only for node provisioning or
   bootstrap.
-- `@orbit-ssh-lane transitional-ssh` identifies implementation debt that must
-  move to Agent push or gateway-local execution.
+- The `transitional_ssh` inventory list must remain empty.
 
 The generator rejects consumers without a marker. The committed artifact is
 checked for byte-for-byte freshness by `composer docs-lint`, so this section

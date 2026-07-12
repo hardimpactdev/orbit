@@ -12,10 +12,9 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\RemoteFirewallRule;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Firewall\RemoteFirewallRuleProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -30,9 +29,9 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        RemoteFirewallRuleProbe::class,
+        new RemoteFirewallRuleProbe(app(RemoteLocalExecutor::class)),
     );
 });
 
@@ -66,7 +65,7 @@ describe('FirewallRuleFixer', function (): void {
         ]);
         $shell = new FirewallFixerRecordingRemoteShell([]);
 
-        $action = new FirewallRuleFixer($shell, firewall_rule_remote())->fix($rule, new DriftEntry(
+        $action = new FirewallRuleFixer(firewall_rule_remote())->fix($rule, new DriftEntry(
             family: 'firewall_rule',
             key: 'firewall_rule.rule_missing',
             kind: DriftKind::Missing,
@@ -133,7 +132,7 @@ describe('FirewallRuleFixer', function (): void {
         ]);
         $shell = new FirewallFixerRecordingRemoteShell([]);
 
-        new FirewallRuleFixer($shell, firewall_rule_remote())->fix($rule, new DriftEntry(
+        new FirewallRuleFixer(firewall_rule_remote())->fix($rule, new DriftEntry(
             family: 'firewall_rule',
             key: 'firewall_rule.rule_mismatch',
             kind: DriftKind::Divergent,
@@ -172,29 +171,7 @@ describe('FirewallRuleFixer', function (): void {
 
 function firewall_rule_remote(): RemoteFirewallRule
 {
-    return new RemoteFirewallRule(new RemoteLocalExecutor(
-        transport: new class implements RemoteExecutor {
-            public function run(Node $node, string $script, array $options = []): RemoteShellResult
-            {
-                throw new RuntimeException('SSH transport should not be called for firewall rule mutations.');
-            }
-
-            public function start(Node $node, string $script, array $options = []): InvokedProcess
-            {
-                throw new RuntimeException('Firewall rule mutation tests do not start long-running transports.');
-            }
-        },
-        commands: new LocalExecutorCommandBuilder,
-        operationTokens: new OperationTokenFactory(
-            signer: new OperationTokenSigner,
-            secret: firewall_rule_operation_secret(),
-            ttlSeconds: 120,
-            clock: static fn (): int => 1_798_105_200,
-        ),
-        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
-        operationRuns: app(OperationRunRecorder::class),
-        applicationKey: firewall_rule_operation_secret(),
-    ));
+    return new RemoteFirewallRule(app(RemoteLocalExecutor::class));
 }
 
 function firewall_rule_agent_response(string $action): mixed

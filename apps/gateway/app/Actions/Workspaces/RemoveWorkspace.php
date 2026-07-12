@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\WorkspaceLifecyclePhase;
 use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
@@ -14,7 +13,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceStepPolicyService;
@@ -23,15 +22,13 @@ use Throwable;
 
 final readonly class RemoveWorkspace
 {
-    // @orbit-ssh-lane transitional-ssh
     /**
      * @mago-expect lint:excessive-parameter-list
      */
     public function __construct(
-        private RemoteShell $remoteShell,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
         private WorkspaceRuntimeContainerManager $workspaceRuntimeContainerManager,
-        private ExplicitRemoteShellFallback $transport,
+        private ToolScriptDispatcher $scripts,
         private WorkspacePlacement $placement,
         private WorkspaceStepPolicyService $stepPolicy,
     ) {}
@@ -127,71 +124,65 @@ final readonly class RemoveWorkspace
                 }
             }
 
-            if (! $this->transport->allowed()) {
-                $warnings[] = [
-                    'code' => 'node_transport_required',
-                    'family' => 'transport',
-                    'message' => $this->transport->message('workspace:remove cleanup'),
-                    'next_command' => 'workspace:remove --node-transport=transitional-ssh-fallback',
-                ];
-            } else {
-                $processResult = $this->remoteShell->run(
-                    $node,
-                    $this->renderProcessRemovalScript($processCleanupScripts),
-                );
-                $processesRemoved = $processResult->successful() ? count($processCleanupScripts) : 0;
+            $processResult = $this->scripts->run(
+                $node,
+                'orbit',
+                'remove',
+                $this->renderProcessRemovalScript($processCleanupScripts),
+            );
+            $processesRemoved = $processResult->successful() ? count($processCleanupScripts) : 0;
 
-                if (! $processResult->successful()) {
+            if (! $processResult->successful()) {
+                $warnings[] = [
+                    'code' => 'process.runtime_unit_extra',
+                    'family' => 'process',
+                    'message' => 'Workspace inherited runtime units could not be removed during cleanup.',
+                    'next_command' => 'doctor --family=process --restore',
+                ];
+            }
+
+            foreach ($teardownSteps as $teardownStep) {
+                $teardownStepsRun++;
+                $command = $app instanceof App
+                    ? app(AppCommandRouter::class)->routeLifecycleForNodePath(
+                        $app,
+                        $node,
+                        $teardownStep->command,
+                        $workspace->path,
+                        $this->teardownEnvironment($workspace),
+                    )
+                    : $teardownStep->command;
+                $teardownScript = 'cd '.escapeshellarg($workspace->path)."\n".$command;
+                $teardownResult = $this->scripts->run($node, 'orbit', 'remove', $teardownScript);
+
+                if (! $teardownResult->successful()) {
                     $warnings[] = [
-                        'code' => 'process.runtime_unit_extra',
-                        'family' => 'process',
-                        'message' => 'Workspace inherited runtime units could not be removed during cleanup.',
-                        'next_command' => 'doctor --family=process --restore',
+                        'code' => 'workspace.teardown_step_failed',
+                        'family' => 'workspace',
+                        'message' => "Workspace teardown step {$teardownStep->id} failed during cleanup.",
+                        'next_command' => 'doctor --family=workspace --restore',
+                        'step_id' => (string) $teardownStep->id,
+                        'exit_code' => (string) $teardownResult->exitCode,
                     ];
                 }
+            }
 
-                foreach ($teardownSteps as $teardownStep) {
-                    $teardownStepsRun++;
-                    $command = $app instanceof App
-                        ? app(AppCommandRouter::class)->routeLifecycleForNodePath(
-                            $app,
-                            $node,
-                            $teardownStep->command,
-                            $workspace->path,
-                            $this->teardownEnvironment($workspace),
-                        )
-                        : $teardownStep->command;
+            if (! $keepFiles) {
+                $worktreeResult = $this->scripts->run(
+                    $node,
+                    'orbit',
+                    'remove',
+                    'sudo rm -rf -- '.escapeshellarg($workspace->path),
+                );
+                $worktreeRemoved = $worktreeResult->successful();
 
-                    $teardownResult = $this->remoteShell->run($node, $command, [
-                        'cwd' => $workspace->path,
-                        'timeout' => (int) $teardownStep->timeoutSeconds(),
-                        'metadata' => $this->teardownEnvironment($workspace),
-                    ]);
-
-                    if (! $teardownResult->successful()) {
-                        $warnings[] = [
-                            'code' => 'workspace.teardown_step_failed',
-                            'family' => 'workspace',
-                            'message' => "Workspace teardown step {$teardownStep->id} failed during cleanup.",
-                            'next_command' => 'doctor --family=workspace --restore',
-                            'step_id' => (string) $teardownStep->id,
-                            'exit_code' => (string) $teardownResult->exitCode,
-                        ];
-                    }
-                }
-
-                if (! $keepFiles) {
-                    $worktreeResult = $this->remoteShell->run($node, 'sudo rm -rf '.escapeshellarg($workspace->path));
-                    $worktreeRemoved = $worktreeResult->successful();
-
-                    if (! $worktreeRemoved) {
-                        $warnings[] = [
-                            'code' => 'workspace.artifact_extra',
-                            'family' => 'workspace',
-                            'message' => 'Workspace worktree could not be removed during cleanup.',
-                            'next_command' => 'doctor --family=workspace --restore',
-                        ];
-                    }
+                if (! $worktreeRemoved) {
+                    $warnings[] = [
+                        'code' => 'workspace.artifact_extra',
+                        'family' => 'workspace',
+                        'message' => 'Workspace worktree could not be removed during cleanup.',
+                        'next_command' => 'doctor --family=workspace --restore',
+                    ];
                 }
             }
         }

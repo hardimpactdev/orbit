@@ -8,14 +8,12 @@ use App\Exceptions\GatewayApiException;
 
 final class DatabaseUpdateCommand extends DatabaseGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     #[\Override]
     protected $signature = 'database:update
         {connection? : Database connection slug}
         {--slug= : New database connection slug}
         {--driver= : Database driver}
         {--node= : Owning database node selector}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--host= : Database host}
         {--port= : Database port}
         {--database= : Database name}

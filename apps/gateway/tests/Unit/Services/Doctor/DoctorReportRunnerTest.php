@@ -32,15 +32,14 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
@@ -59,8 +58,6 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
     $developmentDnsConfigDir = storage_path('framework/testing/doctor-runner-dns/'.bin2hex(random_bytes(6)));
     $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
 
@@ -71,9 +68,12 @@ beforeEach(function (): void {
         fn (): RemoteLocalExecutor => doctorRunnerLocalExecutor(app(RemoteShell::class)),
     );
     app()->bind(
+        RunsInternalCommands::class,
+        fn (): RunsInternalCommands => app(RemoteLocalExecutor::class),
+    );
+    app()->bind(
         \App\Services\Apps\AppRuntimeContainerManager::class,
         fn (): \App\Services\Apps\AppRuntimeContainerManager => new \App\Services\Apps\AppRuntimeContainerManager(
-            app(RemoteShell::class),
             app(\App\Services\Runtime\DockerCommandBuilder::class),
             doctor_runner_fake_ca(),
         ),
@@ -81,7 +81,6 @@ beforeEach(function (): void {
     app()->bind(
         \App\Services\Workspaces\WorkspaceRuntimeContainerManager::class,
         fn (): \App\Services\Workspaces\WorkspaceRuntimeContainerManager => new \App\Services\Workspaces\WorkspaceRuntimeContainerManager(
-            app(RemoteShell::class),
             app(\App\Services\Runtime\DockerCommandBuilder::class),
             doctor_runner_fake_ca(),
         ),
@@ -809,7 +808,6 @@ describe('DoctorReportRunner', function (): void {
         app()->instance(
             \App\Services\Apps\AppRuntimeContainerManager::class,
             new \App\Services\Apps\AppRuntimeContainerManager(
-                app(RemoteShell::class),
                 app(\App\Services\Runtime\DockerCommandBuilder::class),
                 doctor_runner_fake_ca(),
             ),
@@ -893,7 +891,6 @@ describe('DoctorReportRunner', function (): void {
         app()->instance(
             \App\Services\Apps\AppRuntimeContainerManager::class,
             new \App\Services\Apps\AppRuntimeContainerManager(
-                app(RemoteShell::class),
                 app(\App\Services\Runtime\DockerCommandBuilder::class),
                 doctor_runner_fake_ca(),
             ),
@@ -921,9 +918,9 @@ describe('DoctorReportRunner', function (): void {
             ->toBeTrue()
             ->and(collect($shell->scripts)
                 ->contains(
-                    fn (string $script): bool => doctor_runner_script_creates_runtime_container(
-                        $script,
-                        'orbit-app-docs',
+                    fn (string $script): bool => (
+                        str_contains($script, 'internal:app-runtime-container')
+                        && str_contains($script, 'container:apply')
                     ),
                 ))
             ->toBeTrue()
@@ -1005,7 +1002,6 @@ describe('DoctorReportRunner', function (): void {
         app()->instance(
             \App\Services\Workspaces\WorkspaceRuntimeContainerManager::class,
             new \App\Services\Workspaces\WorkspaceRuntimeContainerManager(
-                app(RemoteShell::class),
                 app(\App\Services\Runtime\DockerCommandBuilder::class),
                 doctor_runner_fake_ca(),
             ),
@@ -2612,8 +2608,6 @@ describe('DoctorReportRunner metrics role categories', function (): void {
     });
 
     it('marks node.local_executor_probe_failed as diagnostic-only in fleet probe fallback', function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
         $node = createDoctorRunnerAppHostNode([
             'name' => 'app-prod-1',
             'platform' => 'ubuntu',
@@ -2727,7 +2721,6 @@ final class DoctorReportRunnerThrowingRemoteShell implements RemoteShell
         if (
             $node->name === $this->failingNodeName
             && str_contains($script, $this->failingScriptNeedle)
-            && ($options['throw'] ?? false) === true
         ) {
             $result = new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
 
@@ -2802,7 +2795,6 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
 function doctorRunnerLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new DoctorReportRunnerRemoteExecutor($remoteShell),
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -2813,7 +2805,6 @@ function doctorRunnerLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecuto
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::AgentPush,
     );
 }
 

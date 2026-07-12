@@ -7,7 +7,6 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -66,7 +65,7 @@ describe('ToolShowController', function (): void {
             ->assertJsonPath('success.data.tool.managed', true);
     });
 
-    it('requires the exact transitional SSH selector before live inspection', function (): void {
+    it('fails clearly when Agent push is unavailable for live inspection', function (): void {
         $caller = createToolShowCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
@@ -88,6 +87,20 @@ describe('ToolShowController', function (): void {
         };
 
         app()->instance(RemoteShell::class, $remoteShell);
+        app()->instance(
+            \App\Services\RemoteShell\RunsInternalCommands::class,
+            new class implements \App\Services\RemoteShell\RunsInternalCommands {
+                public function runInternal(
+                    Node $node,
+                    string $commandName,
+                    array $arguments = [],
+                    array $commandOptions = [],
+                    array $transportOptions = [],
+                ): RemoteShellResult {
+                    throw new RuntimeException('Agent push is unavailable.');
+                }
+            },
+        );
 
         $response = $this->call(
             'GET',
@@ -99,10 +112,9 @@ describe('ToolShowController', function (): void {
         );
 
         $response
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node_transport_required')
-            ->assertJsonPath('error.meta.field', 'node-transport')
-            ->assertJsonPath('error.meta.required', ExplicitRemoteShellFallback::REQUIRED);
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'tool.remote_action_failed')
+            ->assertJsonPath('error.meta.reason', 'probe_exception');
 
         expect($remoteShell->wasCalled)->toBeFalse();
     });

@@ -13,9 +13,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Services\Ca\OrbitCaService;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\WebSockets\WebSocketRoleBaselineTiming;
 use App\Services\WebSockets\WebSocketRuntimeContainer;
 use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
@@ -27,7 +25,10 @@ use Illuminate\Support\Facades\Http;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
 
     $this->webSocketBaselineStorage = sys_get_temp_dir().'/orbit-websocket-baseline-test-'.uniqid();
     mkdir($this->webSocketBaselineStorage.'/app/orbit', 0777, true);
@@ -47,8 +48,6 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
     if (isset($this->webSocketBaselineStorage) && is_dir($this->webSocketBaselineStorage)) {
         File::deleteDirectory($this->webSocketBaselineStorage);
     }

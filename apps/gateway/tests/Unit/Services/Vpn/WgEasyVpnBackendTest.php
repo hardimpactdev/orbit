@@ -7,12 +7,12 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\VpnNodeResolver;
 use App\Services\Vpn\WgEasyVpnBackend;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -107,6 +107,10 @@ it('routes password and session secret updates through wg-easy state actions wit
 
     NodeRoleAssignment::factory()->for($node)->create([
         'role' => 'vpn',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'app-dev',
         'status' => 'active',
     ]);
 
@@ -494,6 +498,10 @@ function wgEasyVpnBackendReadyForPasswordRotation(
         'role' => 'vpn',
         'status' => 'active',
     ]);
+    NodeRoleAssignment::factory()->for($node)->create([
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
 
     Http::fake([
         'http://127.0.0.1:51821/api/session' => Http::response(['status' => 'success'], 200, [
@@ -580,8 +588,56 @@ function wgEasyVpnBackendLocalExecutorCompletedProperties(): array
 
 function wgEasyVpnBackendExecutor(WgEasyVpnBackendStateTransport $transport): RemoteLocalExecutor
 {
+    Http::stubUrl('http://10.6.0.2:9477/v1/commands', function (Request $request) use ($transport) {
+        $node = Node::query()->where('wireguard_address', '10.6.0.2')->firstOrFail();
+        $argv = is_array($request['argv'] ?? null) ? $request['argv'] : [];
+        $commandOptions = [];
+        $operationToken = '';
+
+        foreach (array_slice($argv, 1) as $argument) {
+            if (! is_string($argument) || ! str_starts_with($argument, '--')) {
+                continue;
+            }
+
+            [$key, $value] = array_pad(explode('=', substr($argument, 2), 2), 2, true);
+
+            if ($key === 'operation-token') {
+                $operationToken = (string) $value;
+
+                continue;
+            }
+
+            if ($key !== 'json') {
+                $commandOptions[$key] = $value;
+            }
+        }
+
+        $result = $transport->run(
+            $node,
+            new LocalExecutorCommandBuilder()->build(
+                $node,
+                (string) ($argv[0] ?? ''),
+                [],
+                $commandOptions,
+                $operationToken,
+            ),
+        );
+
+        return Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => $request['operation_id'],
+            'binary' => 'orbit',
+            'status' => $result->successful() ? 'succeeded' : 'failed',
+            'exit_code' => $result->exitCode,
+            'frames' => [
+                ['type' => 'stdout', 'message' => $result->stdout],
+                ['type' => 'stderr', 'message' => $result->stderr],
+                ['type' => 'exit', 'message' => (string) $result->exitCode],
+            ],
+        ]);
+    });
+
     return new RemoteLocalExecutor(
-        transport: $transport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -592,11 +648,10 @@ function wgEasyVpnBackendExecutor(WgEasyVpnBackendStateTransport $transport): Re
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 
-final class WgEasyVpnBackendStateTransport implements RemoteExecutor
+final class WgEasyVpnBackendStateTransport implements RemoteExecutor, RunsInternalCommands
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
@@ -625,6 +680,22 @@ final class WgEasyVpnBackendStateTransport implements RemoteExecutor
         }
 
         return $this->result;
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $options = array_map(
+            static fn (mixed $value, string|int $key): string => '--'.$key.'='.(string) $value,
+            $commandOptions,
+            array_keys($commandOptions),
+        );
+
+        return $this->run($node, implode(' ', [$commandName, ...$options]), $transportOptions);
     }
 
     /**

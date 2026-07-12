@@ -550,6 +550,14 @@ final readonly class LocalExecutorCommandBuilder implements LocalExecutorCommand
             throw LocalExecutorCommandBuilderException::commandNotAllowed($commandName);
         }
 
+        if (
+            $command === InternalCommand::AgentRuntimeProbe
+            && $targetNode->isOperator()
+            && $targetNode->managed
+        ) {
+            return;
+        }
+
         foreach ($allowedRoles as $role) {
             if ($this->nodeHasEligibleRole($targetNode, $role->value)) {
                 return;

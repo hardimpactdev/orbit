@@ -7,15 +7,15 @@ namespace App\Services\Proxy;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use JsonException;
 
 final readonly class RemoteCaddyConfig
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function readGlobal(Node $node): ?string

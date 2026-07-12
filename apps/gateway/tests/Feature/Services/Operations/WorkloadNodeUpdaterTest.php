@@ -15,7 +15,6 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
 use App\Services\Ca\OrbitCaService;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
@@ -26,7 +25,6 @@ use App\Services\Operations\UpdateLeaseManager;
 use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\WorkloadNodeUpdateFailed;
 use App\Services\Operations\WorkloadNodeUpdater;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -37,7 +35,6 @@ use Orbit\Core\Enums\OperationStatus;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     app()->instance(GatewayCliArtifactRelay::class, new WorkloadUpdaterFakeArtifactRelay);
     app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor);
     app()->instance(OrbitCaService::class, new WorkloadUpdaterFakeCa);
@@ -49,10 +46,6 @@ beforeEach(function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.2',
         ]);
-});
-
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 });
 
 it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
@@ -149,12 +142,11 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             'ORBIT_OPERATION_ID' => $run->id,
             'ORBIT_BIN_PATH' => '/home/orbit/.local/bin/orbit',
         ])
-        ->and($shell->calls[0]['command_options']['payload-file'] ?? null)
-        ->toBe("/tmp/orbit-fleet-update-install-{$run->id}-agent-1.json")
-        ->and($shell->calls[0]['command_options']['payload-sha256'] ?? null)
-        ->toBe(hash('sha256', $shell->calls[0]['options']['input']))
-        ->and($shell->calls[0]['options']['transport'] ?? null)
-        ->toBe(NodeTransportPreference::TransitionalSshFallback)
+        ->and($shell->calls[0]['command_options'])
+        ->toBe([])
+        ->and($shell->calls[0]['options'])
+        ->not
+        ->toHaveKey('transport')
         ->and($shell->calls[0]['options']['cwd'] ?? null)
         ->toBe('/home/orbit')
         ->and($shell->calls[0]['options']['environment'] ?? null)
@@ -166,17 +158,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->and($shell->calls[0]['options']['bind_application_key'] ?? null)
         ->toBeFalse()
         ->and($shell->calls[0]['options']['bind_input'] ?? null)
-        ->toBeFalse()
-        ->and($shell->calls[0]['options']['ssh_bootstrap_binary'] ?? null)
-        ->toBe([
-            'url' => "http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake",
-            'sha256' => str_repeat('e', times: 64),
-        ])
-        ->and($shell->calls[0]['options']['ssh_bootstrap_input_file'] ?? null)
-        ->toBe([
-            'path' => "/tmp/orbit-fleet-update-install-{$run->id}-agent-1.json",
-            'sha256' => hash('sha256', $shell->calls[0]['options']['input']),
-        ])
+        ->toBeTrue()
         ->and($shell->scriptsFor('agent-1'))
         ->toBe([$shell->scriptFor('agent-1')])
         ->and($shell->activeLeases)
@@ -544,8 +526,7 @@ it('skips a workload node already on the target version and runs no remote updat
         ->toBe(0);
 });
 
-it('runs workload installs through the typed local executor with the ssh bootstrap bridge', function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+it('runs workload installs through the typed Agent-push local executor', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RunsInternalCommands::class, $shell);
 
@@ -575,8 +556,9 @@ it('runs workload installs through the typed local executor with the ssh bootstr
         ->toBe(['app-dev-1'])
         ->and($shell->calls[0]['script'])
         ->toBe('internal:fleet-update:install-cli')
-        ->and($shell->calls[0]['options']['transport'] ?? null)
-        ->toBe(NodeTransportPreference::TransitionalSshFallback)
+        ->and($shell->calls[0]['options'])
+        ->not
+        ->toHaveKey('transport')
         ->and($shell->calls[0]['options']['cwd'] ?? null)
         ->toBe('/home/orbit')
         ->and($node->fresh()->installed_cli?->version)

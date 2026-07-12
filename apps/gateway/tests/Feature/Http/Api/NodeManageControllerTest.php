@@ -2,245 +2,108 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
-use App\Data\RemoteShell\RemoteShellResult;
-use App\Data\Security\PinnedHostKey;
 use App\Models\Node;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
 const NODE_MANAGE_CALLER_WG_IP = '10.44.0.24';
 
-describe('node self management API', function (): void {
-    afterEach(function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-    });
-
-    it('returns the gateway management SSH public key for active roleless callers', function (): void {
-        Node::factory()
-            ->operator()
-            ->create([
-                'name' => 'mini',
-                'host' => NODE_MANAGE_CALLER_WG_IP,
-                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
-                'status' => 'active',
-            ]);
-
-        Process::fake([
-            '*' => Process::result(output: "ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway\n"),
-        ]);
-
-        $response = $this->call(
-            'GET',
-            '/api/nodes/self/manage-key',
-            [],
-            [],
-            [],
-            [
-                'REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP,
-                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
-            ],
-        );
-
-        $response->assertOk()
-            ->assertJsonPath(
-                'success.data.management_ssh_key.public_key',
-                'ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway',
-            );
-    });
-
-    it('requires the exact transitional SSH marker before returning the management key', function (): void {
-        Node::factory()
-            ->operator()
-            ->create([
-                'name' => 'mini',
-                'host' => NODE_MANAGE_CALLER_WG_IP,
-                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
-                'status' => 'active',
-            ]);
-
-        $response = $this->call(
-            'GET',
-            '/api/nodes/self/manage-key',
-            [],
-            [],
-            [],
-            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
-        );
-
-        $response
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node_transport_required')
-            ->assertJsonPath('error.meta.field', 'node-transport')
-            ->assertJsonPath('error.meta.required', ExplicitRemoteShellFallback::REQUIRED);
-    });
-
-    it('persists user and platform, pins by WireGuard address, and verifies SSH reachability', function (): void {
-        $node = Node::factory()
-            ->operator()
-            ->create([
-                'name' => 'mini',
-                'host' => NODE_MANAGE_CALLER_WG_IP,
-                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
-                'status' => 'active',
-            ]);
-        $shell = new NodeManageRecordingShell;
-        $pinner = new NodeManageRecordingHostKeyPinner;
-        app()->instance(RemoteShell::class, $shell);
-        app()->instance(SshHostKeyPinner::class, $pinner);
-
-        $response = $this->call(
-            'POST',
-            '/api/nodes/self/manage',
-            [
-                'user' => 'nicky',
-                'platform' => 'macos_15-5',
-            ],
-            [],
-            [],
-            [
-                'REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP,
-                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
-            ],
-        );
-
-        $response
-            ->assertOk()
-            ->assertJsonPath('success.data.management.node', 'mini')
-            ->assertJsonPath('success.data.management.user', 'nicky')
-            ->assertJsonPath('success.data.management.platform', 'macos_15-5')
-            ->assertJsonPath('success.data.management.managed', true)
-            ->assertJsonPath('success.data.management.ssh_host', NODE_MANAGE_CALLER_WG_IP)
-            ->assertJsonPath('success.data.management.host_key_pinned', true)
-            ->assertJsonPath('success.data.management.ssh_verified', true);
-
-        expect($node->fresh())
-            ->user->toBe('nicky')
-            ->platform->toBe('macos_15-5')
-            ->managed->toBeTrue()
-            ->host_key_fingerprint->toBe('SHA256:test')->and($pinner->hosts)->toBe([
-                NODE_MANAGE_CALLER_WG_IP,
-            ])->and($shell->nodes)->toBe(['mini'])->and($shell->scripts[0] ?? '')->toContain('true');
-    });
-
-    it('requires explicit transitional SSH fallback before self-management verification', function (): void {
-        $node = Node::factory()
-            ->operator()
-            ->create([
-                'name' => 'mini',
-                'user' => null,
-                'platform' => null,
-                'host' => NODE_MANAGE_CALLER_WG_IP,
-                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
-                'status' => 'active',
-            ]);
-        $shell = new NodeManageRecordingShell;
-        $pinner = new NodeManageRecordingHostKeyPinner;
-        app()->instance(RemoteShell::class, $shell);
-        app()->instance(SshHostKeyPinner::class, $pinner);
-
-        $response = $this->call(
-            'POST',
-            '/api/nodes/self/manage',
-            [
-                'user' => 'nicky',
-                'platform' => 'macos_15-5',
-            ],
-            [],
-            [],
-            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
-        );
-
-        $response
-            ->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node_transport_required')
-            ->assertJsonPath(
-                'error.message',
-                'node self-management SSH verification still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-            );
-
-        expect($node->fresh())
-            ->user->toBeNull()
-            ->platform->toBeNull()
-            ->host_key_fingerprint->toBeNull()->and($pinner->hosts)->toBe([])->and($shell->scripts)->toBe([]);
-    });
-
-    it('rejects role-bearing callers before management side effects', function (): void {
-        createTestGatewayNode([
-            'name' => 'gateway-1',
+it('persists management metadata after Agent-push verification', function (): void {
+    Http::fake([
+        'http://10.44.0.24:9477/v1/commands' => node_manage_agent_response(),
+    ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
             'host' => NODE_MANAGE_CALLER_WG_IP,
             'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
             'status' => 'active',
+            'managed' => false,
         ]);
-        $shell = new NodeManageRecordingShell;
-        app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call(
-            'POST',
-            '/api/nodes/self/manage',
-            [
-                'user' => 'orbit',
-                'platform' => 'ubuntu_24-04',
-            ],
-            [],
-            [],
-            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
-        );
+    $response = $this->call(
+        'POST',
+        '/api/nodes/self/manage',
+        ['user' => 'nicky', 'platform' => 'macos_15-5'],
+        server: ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+    );
 
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.not_operator');
+    $response
+        ->assertOk()
+        ->assertJsonPath('success.data.management.node', 'mini')
+        ->assertJsonPath('success.data.management.managed', true)
+        ->assertJsonPath('success.data.management.agent_verified', true);
 
-        expect($shell->scripts)->toBe([]);
-    });
+    expect($node->fresh())
+        ->user->toBe('nicky')
+        ->platform->toBe('macos_15-5')
+        ->managed->toBeTrue()
+        ->host_key_fingerprint->toBeNull();
 });
 
-final class NodeManageRecordingShell implements RemoteShell
+it('rolls management metadata back when Agent push is unavailable', function (): void {
+    Http::fake([
+        'http://10.44.0.24:9477/v1/commands' => Http::response(['error' => 'unreachable'], 503),
+    ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'mini',
+            'user' => null,
+            'platform' => null,
+            'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
+            'status' => 'active',
+            'managed' => false,
+        ]);
+
+    $this
+        ->call(
+            'POST',
+            '/api/nodes/self/manage',
+            ['user' => 'nicky', 'platform' => 'macos_15-5'],
+            server: ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+        )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.agent_unreachable');
+
+    expect($node->fresh())
+        ->user->toBeNull()
+        ->platform->toBeNull()
+        ->managed->toBeFalse();
+});
+
+it('rejects role-bearing callers before management side effects', function (): void {
+    createTestGatewayNode([
+        'name' => 'gateway-1',
+        'host' => NODE_MANAGE_CALLER_WG_IP,
+        'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
+        'status' => 'active',
+    ]);
+
+    $this
+        ->call(
+            'POST',
+            '/api/nodes/self/manage',
+            ['user' => 'orbit', 'platform' => 'ubuntu_24-04'],
+            server: ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+        )
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'node.not_operator');
+
+    Http::assertNothingSent();
+});
+
+function node_manage_agent_response(): mixed
 {
-    /** @var list<string> */
-    public array $nodes = [];
-
-    /** @var list<string> */
-    public array $scripts = [];
-
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->nodes[] = $node->name;
-        $this->scripts[] = $script;
-
-        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
-    }
-}
-
-final class NodeManageRecordingHostKeyPinner
-{
-    /** @var list<string> */
-    public array $hosts = [];
-
-    public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
-    {
-        $this->hosts[] = $host;
-
-        return new PinnedHostKey(
-            host: $host,
-            type: 'ssh-ed25519',
-            publicKey: 'AAAAC3NzaManagedHostKey',
-            fingerprint: 'SHA256:test',
-            pinMode: 'tofu',
-        );
-    }
-
-    public function persist(Node $node, PinnedHostKey $key): void
-    {
-        $node->forceFill([
-            'host_key_type' => $key->type,
-            'host_key_public' => $key->publicKey,
-            'host_key_fingerprint' => $key->fingerprint,
-            'host_key_pin_mode' => $key->pinMode,
-            'host_key_pinned_at' => now(),
-        ])->save();
-    }
+    return Http::response([
+        'transport' => 'agent-push',
+        'operation_id' => 'node.manage.agent-probe',
+        'binary' => 'orbit',
+        'status' => 'succeeded',
+        'exit_code' => 0,
+        'frames' => [['type' => 'exit', 'message' => '0']],
+    ]);
 }

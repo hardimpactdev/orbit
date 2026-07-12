@@ -19,7 +19,9 @@ use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Apps\RemoteAppRuntimeContainersProbe;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Nodes\WireGuardSelfRouteOutput;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
+use App\Services\Tools\ToolScriptDispatcher;
 use InvalidArgumentException;
 use Throwable;
 
@@ -27,6 +29,7 @@ final readonly class ProcessesProbe
 {
     public function __construct(
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
+        private ?ToolScriptDispatcher $scripts = null,
     ) {}
 
     public function key(): string
@@ -193,7 +196,6 @@ final readonly class ProcessesProbe
 
     private function introspectDocker(Process $process, Node $node): ProbeSnapshot
     {
-        $shell = $this->runtimeBackendProbe()->remoteShell();
         $expectedUnits = $this->expectedDockerUnitSpecs($process);
         $runtimeUnits = [];
         $backendAvailable = true;
@@ -201,8 +203,10 @@ final readonly class ProcessesProbe
         $backendOutput = '';
 
         foreach ($expectedUnits as $unit) {
-            $result = $shell->run(
+            $result = $this->scriptDispatcher()->run(
                 $node,
+                'orbit-process',
+                'probe',
                 'docker container inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']),
             );
 
@@ -265,8 +269,10 @@ final readonly class ProcessesProbe
 
         if ($backendAvailable) {
             $expectedNames = array_column($expectedUnits, 'name');
-            $psResult = $shell->run(
+            $psResult = $this->scriptDispatcher()->run(
                 $node,
+                'orbit-process',
+                'probe',
                 $this->dockerRuntimeUnitExtraCommand($process),
             );
 
@@ -295,7 +301,6 @@ final readonly class ProcessesProbe
 
     private function introspectDockerSwarm(Process $process, Node $node): ProbeSnapshot
     {
-        $shell = $this->runtimeBackendProbe()->remoteShell();
         $expectedUnits = $this->expectedDockerSwarmUnitSpecs($process);
         $runtimeUnits = [];
         $backendAvailable = true;
@@ -303,8 +308,10 @@ final readonly class ProcessesProbe
         $backendOutput = '';
 
         foreach ($expectedUnits as $unit) {
-            $result = $shell->run(
+            $result = $this->scriptDispatcher()->run(
                 $node,
+                'orbit-process',
+                'probe',
                 'docker service inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']),
             );
 
@@ -367,8 +374,10 @@ final readonly class ProcessesProbe
 
         if ($backendAvailable) {
             $expectedNames = array_column($expectedUnits, 'name');
-            $psResult = $shell->run(
+            $psResult = $this->scriptDispatcher()->run(
                 $node,
+                'orbit-process',
+                'probe',
                 'docker service ls --filter label=orbit.managed=true --filter label=orbit.process='
                 .escapeshellarg($process->name)
                 ." --format '{{.Name}}'",
@@ -424,12 +433,7 @@ final readonly class ProcessesProbe
 
         $script = $this->systemdProbeScript($spec, $notifier);
 
-        $result = $this
-            ->runtimeBackendProbe()
-            ->remoteShell()
-            ->run($node, $script, [
-                'throw' => true,
-            ]);
+        $result = $this->scriptDispatcher()->run($node, 'orbit-process', 'probe', $script, throw: true);
 
         foreach (explode("\n", rtrim($result->stdout, characters: "\n\r")) as $line) {
             if ($line === '') {
@@ -504,12 +508,13 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot($items);
         }
 
-        $result = $this
-            ->runtimeBackendProbe()
-            ->remoteShell()
-            ->run($node, $this->launchdProbeScript($spec), [
-                'throw' => true,
-            ]);
+        $result = $this->scriptDispatcher()->run(
+            $node,
+            'orbit-process',
+            'probe',
+            $this->launchdProbeScript($spec),
+            throw: true,
+        );
 
         foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
             if ($line === '') {
@@ -1948,6 +1953,11 @@ final readonly class ProcessesProbe
         return $this->runtimeBackendProbe ?? app(RuntimeBackendProbe::class);
     }
 
+    private function scriptDispatcher(): ToolScriptDispatcher
+    {
+        return $this->scripts ?? new ToolScriptDispatcher($this->runtimeBackendProbe()->executor());
+    }
+
     private function processEventNotifierRenderer(): ProcessEventNotifierRenderer
     {
         return app(ProcessEventNotifierRenderer::class);
@@ -1960,6 +1970,9 @@ final readonly class ProcessesProbe
 
     private function wireGuardSelfRouteProbe(): NodeWireGuardSelfRouteProbe
     {
-        return app(NodeWireGuardSelfRouteProbe::class);
+        return new NodeWireGuardSelfRouteProbe(
+            $this->runtimeBackendProbe()->executor(),
+            app(WireGuardSelfRouteOutput::class),
+        );
     }
 }

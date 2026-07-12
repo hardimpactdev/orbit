@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Data\Doctor\ProbeSnapshot;
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RuntimeBackend\GatewayRuntimeBackendProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
@@ -15,12 +13,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
+beforeEach(function (): void {});
 
 it('reports available when the orbit-gateway container exists and is running', function (): void {
     gateway_runtime_backend_fake([

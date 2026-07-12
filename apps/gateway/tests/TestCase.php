@@ -6,18 +6,19 @@ namespace Tests;
 
 use App\Contracts\RemoteShell;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorkspaceReadinessProbe;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use RuntimeException;
 use Tests\Fakes\NullRemoteShell;
+use Tests\Fakes\RemoteShellBackedInternalExecutor;
 use Tests\Fakes\RemoteShellBackedRemoteExecutor;
 
 abstract class TestCase extends BaseTestCase
@@ -45,6 +46,7 @@ abstract class TestCase extends BaseTestCase
 
         $this->app->instance(RemoteShell::class, new NullRemoteShell);
         $this->app->bind(RemoteExecutor::class, RemoteShellBackedRemoteExecutor::class);
+        $this->app->bind(RunsInternalCommands::class, RemoteShellBackedInternalExecutor::class);
         $this->app->bind(RemoteLocalExecutor::class, function (Application $app): RemoteLocalExecutor {
             $secret = config('app.key');
 
@@ -53,13 +55,11 @@ abstract class TestCase extends BaseTestCase
             }
 
             return new RemoteLocalExecutor(
-                transport: $app->make(RemoteExecutor::class),
                 commands: $app->make(LocalExecutorCommandBuilder::class),
                 operationTokens: $app->make(OperationTokenFactory::class),
                 activityLogger: $app->make(ActivityLogger::class),
                 operationRuns: $app->make(OperationRunRecorder::class),
                 applicationKey: $secret,
-                defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
             );
         });
 

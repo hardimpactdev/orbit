@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
@@ -14,6 +13,7 @@ use App\Services\Convergence\ManagedFile;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Proxy\RemoteCaddyConfig;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -22,12 +22,10 @@ use RuntimeException;
  */
 final readonly class ToolsFixer
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private RemoteShell $remoteShell,
         private ?ToolCatalog $catalog = null,
         private ?ProxyRouteRenderer $proxyRouteRenderer = null,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
         private ?RemoteCaddyConfig $caddyConfig = null,
     ) {}
 
@@ -273,8 +271,8 @@ final readonly class ToolsFixer
             throw new RuntimeException("Tool {$tool->name} has no target node.");
         }
 
-        $plan = $file->plan($file->probe($tool->node, $this->remoteShell));
-        $result = $file->apply($tool->node, $this->remoteShell, $plan);
+        $plan = $file->plan($file->probe($tool->node));
+        $result = $file->apply($tool->node, $plan);
 
         if (! $result->successful()) {
             throw new RuntimeException($result->summary);
@@ -443,7 +441,7 @@ final readonly class ToolsFixer
         return $this->fixResult($tool, $entry);
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
         return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }

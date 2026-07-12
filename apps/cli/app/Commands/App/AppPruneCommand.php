@@ -11,7 +11,6 @@ use function Laravel\Prompts\confirm;
 
 final class AppPruneCommand extends AppGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]
@@ -19,7 +18,6 @@ final class AppPruneCommand extends AppGatewayCommand
         {app? : App name or hostname}
         {--dry-run : Preview stale workspaces without removing}
         {--force : Confirm destructive operation without prompting}
-        {--node-transport= : Transitional cleanup transport (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

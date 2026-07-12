@@ -36,8 +36,6 @@ orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/f
 # Stream setup progress as newline-delimited JSON
 orbit workspace:setup feature-a --app=my-app --stream-json
 
-# Force the transitional SSH fallback for node-side setup work
-orbit workspace:setup feature-a --app=my-app --node-transport=transitional-ssh-fallback
 ```
 
 ## Arguments and options
@@ -55,9 +53,6 @@ orbit workspace:setup feature-a --app=my-app --node-transport=transitional-ssh-f
   agent worktrees such as Codex or Claude worktree directories. The parent app
   root itself is not a valid workspace path. A relative or non-absolute value
   fails before side effects.
-- `--node-transport=<transport>`: Node command transport preference for
-  node-side setup work. Allowed values are `auto`, `agent-push`, and
-  `transitional-ssh-fallback`.
 - `--json`: Output JSON.
 - `--stream-json`: Stream newline-delimited progress JSON. Mutually exclusive
   with `--json` and forces non-interactive mode.

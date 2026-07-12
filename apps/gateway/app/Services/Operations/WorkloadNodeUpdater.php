@@ -12,7 +12,6 @@ use App\Exceptions\UpdateLeaseConflict;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use RuntimeException;
@@ -20,7 +19,6 @@ use Throwable;
 
 final readonly class WorkloadNodeUpdater
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private NodeRoleAssignments $roles,
         private NodeHostPaths $hostPaths,
@@ -145,15 +143,10 @@ final readonly class WorkloadNodeUpdater
             $this->installPayload($operationRun, $plan, $node, $cliArtifact),
             JSON_THROW_ON_ERROR,
         );
-        $payloadSha256 = hash('sha256', $installPayload);
-        $payloadPath = $this->installPayloadPath($operationRun, $node);
         $nodeHome = $this->hostPaths->homeDirectory($node);
-        $commandOptions = [
-            'payload-file' => $payloadPath,
-            'payload-sha256' => $payloadSha256,
-        ];
+        $commandOptions = [];
 
-        /** @var array{timeout: int, cwd: string, input: string, environment: array<string, string>, metadata: array<string, string>, transport: NodeTransportPreference, bind_application_key: false, bind_input: false, ssh_bootstrap_binary: array{url: string, sha256: string}, ssh_bootstrap_input_file: array{path: string, sha256: string}} $transportOptions */
+        /** @var array{timeout: int, cwd: string, input: string, environment: array<string, string>, metadata: array<string, string>, bind_application_key: false, bind_input: true} $transportOptions */
         $transportOptions = [
             'timeout' => 300,
             'cwd' => $nodeHome,
@@ -164,17 +157,8 @@ final readonly class WorkloadNodeUpdater
                 'ORBIT_INSTALL_METADATA_PATH' => "{$nodeHome}/.config/orbit/install.json",
             ],
             'metadata' => $this->remoteShellMetadata($operationRun, $node),
-            'transport' => NodeTransportPreference::TransitionalSshFallback,
             'bind_application_key' => false,
-            'bind_input' => false,
-            'ssh_bootstrap_binary' => [
-                'url' => $cliArtifact['url'],
-                'sha256' => $cliArtifact['sha256'],
-            ],
-            'ssh_bootstrap_input_file' => [
-                'path' => $payloadPath,
-                'sha256' => $payloadSha256,
-            ],
+            'bind_input' => true,
         ];
 
         $result = $this->nodeInstaller->run(
@@ -270,13 +254,6 @@ final readonly class WorkloadNodeUpdater
             'agent_service' => $this->agentServicePayload($node),
             'role_images' => $this->requiredRoleImages($plan, $node),
         ];
-    }
-
-    private function installPayloadPath(OperationRun $operationRun, Node $node): string
-    {
-        $safeNodeName = preg_replace('/[^A-Za-z0-9_.-]+/', '-', $node->name) ?? 'node';
-
-        return "/tmp/orbit-fleet-update-install-{$operationRun->id}-{$safeNodeName}.json";
     }
 
     private function recordInstalledCli(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void

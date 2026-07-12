@@ -11,7 +11,7 @@ use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
 final readonly class UnattendedUpgradesInstaller implements SecurityInstaller
 {
-    // @orbit-ssh-lane transitional-ssh
+    // @orbit-ssh-lane provisioning-ssh
     private UnattendedUpgradesAptConfig $config;
 
     public function __construct(?UnattendedUpgradesAptConfig $config = null)
@@ -19,12 +19,43 @@ final readonly class UnattendedUpgradesInstaller implements SecurityInstaller
         $this->config = $config ?? new UnattendedUpgradesAptConfig;
     }
 
-    public function installFor(Node $node, RemoteShell $shell): InstallReport
+    public function installFor(Node $node, ?RemoteShell $provisioningShell = null): InstallReport
     {
-        $result = $shell->run($node, $this->packageInstallScript(), [
-            'timeout' => 900,
-            'throw' => false,
-        ]);
+        if ($node->isProvisioning()) {
+            $result = app(SecurityInstallerTransport::class)->run(
+                $node,
+                $provisioningShell,
+                $this->script(),
+                900,
+            );
+
+            return new InstallReport(
+                successful: $result->successful(),
+                summary: $result->successful()
+                    ? 'Installed unattended security upgrades.'
+                    : 'Failed to install unattended security upgrades.',
+                details: [
+                    'exit_code' => $result->exitCode,
+                    'managed_files' => array_map(
+                        static fn (ManagedFile $file): array => [
+                            'path' => $file->path,
+                            'status' => $result->successful() ? 'changed' : 'failed',
+                            'summary' => $result->successful()
+                                ? "Applied managed file {$file->path}."
+                                : "Failed to apply managed file {$file->path}.",
+                        ],
+                        $this->managedFiles(),
+                    ),
+                ],
+            );
+        }
+
+        $result = app(SecurityInstallerTransport::class)->run(
+            $node,
+            $provisioningShell,
+            $this->packageInstallScript(),
+            900,
+        );
 
         $details = [
             'exit_code' => $result->exitCode,
@@ -41,8 +72,8 @@ final readonly class UnattendedUpgradesInstaller implements SecurityInstaller
         $managedFiles = [];
 
         foreach ($this->managedFiles() as $managedFile) {
-            $plan = $managedFile->plan($managedFile->probe($node, $shell));
-            $applyResult = $managedFile->apply($node, $shell, $plan);
+            $plan = $managedFile->plan($managedFile->probe($node));
+            $applyResult = $managedFile->apply($node, $plan);
             $managedFiles[] = [
                 'path' => $managedFile->path,
                 'status' => $applyResult->status->value,

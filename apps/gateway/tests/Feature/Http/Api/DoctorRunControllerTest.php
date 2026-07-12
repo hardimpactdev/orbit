@@ -26,7 +26,6 @@ use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -99,7 +98,6 @@ function doctor_run_explicit_fallback_server(): array
 {
     return [
         'REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP,
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
     ];
 }
 
@@ -570,6 +568,10 @@ describe('DoctorRunController', function (): void {
     });
 
     it('accepts the process family scope when metrics is co-located with gateway', function (): void {
+        app()->instance(
+            \App\Services\RemoteShell\RunsInternalCommands::class,
+            app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        );
         createDoctorRunCallerNode();
         ProcessFacade::preventStrayProcesses();
         ProcessFacade::fake([
@@ -609,6 +611,10 @@ describe('DoctorRunController', function (): void {
     });
 
     it('runs process family doctor across active role nodes only with explicit all scope', function (): void {
+        app()->instance(
+            \App\Services\RemoteShell\RunsInternalCommands::class,
+            app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+        );
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         Node::factory()->create([

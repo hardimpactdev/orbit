@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Testing\ParallelRunner;
+use Orbit\Core\Enums\InternalCommand;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayIdentityRequest;
 use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
@@ -199,6 +200,14 @@ final readonly class ToolScriptDispatcherRemoteShellExecutor implements RunsInte
         array $commandOptions = [],
         array $transportOptions = [],
     ): RemoteShellResult {
+        if ($commandName !== InternalCommand::ToolRunScript->value) {
+            return $this->remoteShell->run(
+                $node,
+                implode(' ', [$commandName, ...array_map(escapeshellarg(...), array_map(strval(...), $arguments))]),
+                $transportOptions,
+            );
+        }
+
         $payload = json_decode(
             (string) ($transportOptions['input'] ?? ''),
             associative: true,

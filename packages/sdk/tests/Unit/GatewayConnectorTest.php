@@ -32,20 +32,6 @@ it('sends Accept: application/json by default', function (): void {
     expect($headers)->toHaveKey('Accept', 'application/json');
 });
 
-it('can attach an explicit node transport preference header', function (): void {
-    $connector = new GatewayConnector(
-        baseUrl: 'https://10.6.0.2',
-        caPemPath: '/path/to/ca.pem',
-        nodeTransportPreference: 'transitional-ssh-fallback',
-    );
-    $headers = $connector->headers()->all();
-
-    expect($headers)
-        ->toHaveKey('X-Orbit-Node-Transport-Preference', 'transitional-ssh-fallback')
-        ->and($connector->nodeTransportHeaders())
-        ->toBe(['X-Orbit-Node-Transport-Preference' => 'transitional-ssh-fallback']);
-});
-
 it('can identify scheduler-originated gateway clients without changing transport trust', function (): void {
     $connector = GatewayConnector::forScheduler(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $headers = $connector->headers()->all();

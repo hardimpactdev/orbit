@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Convergence;
 
-use App\Contracts\RemoteShell;
 use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\Convergence\ProcessDockerContainerPlan;
 use App\Data\Convergence\ProcessDockerContainerProbe;
@@ -13,19 +12,18 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Enums\Processes\ProcessDockerContainerApplyOutcome;
 use App\Models\Node;
 use App\Services\Processes\ProcessDockerContainer;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use RuntimeException;
 
 final readonly class ProcessDockerContainerResource
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private ProcessDockerContainer $container,
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
-    public function ensureNetwork(Node $node, RemoteShell $remoteShell): void
+    public function ensureNetwork(Node $node): void
     {
         $result = $this->runAction($node, 'ensure-network');
 
@@ -40,7 +38,7 @@ final readonly class ProcessDockerContainerResource
         ));
     }
 
-    public function probe(Node $node, RemoteShell $remoteShell): ProcessDockerContainerProbe
+    public function probe(Node $node): ProcessDockerContainerProbe
     {
         $result = $this->runAction($node, 'probe');
 
@@ -125,7 +123,6 @@ final readonly class ProcessDockerContainerResource
 
     public function apply(
         Node $node,
-        RemoteShell $remoteShell,
         ProcessDockerContainerPlan $plan,
     ): ConvergenceApplyResult {
         if (! $plan->shouldApply()) {

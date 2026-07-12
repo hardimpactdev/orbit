@@ -10,14 +10,12 @@ use App\Exceptions\GatewayApiException;
 
 final class AnalyticsUpdateCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]
     protected $signature = 'analytics:update
         {--requested-version= : Plausible CE version to apply}
         {--node= : Active analytics node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

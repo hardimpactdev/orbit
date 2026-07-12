@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Firewall;
 
-use App\Contracts\RemoteShell;
 use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\Convergence\UfwFirewallRulePlan;
 use App\Data\Doctor\DriftEntry;
@@ -18,9 +17,7 @@ use RuntimeException;
  */
 final readonly class FirewallRuleFixer
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private RemoteShell $_remoteShell,
         private RemoteFirewallRule $remoteFirewallRule,
     ) {}
 

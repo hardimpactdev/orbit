@@ -54,6 +54,26 @@ describe('NodeRoleAddController', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
         createNodeRoleApiContractAssignment($target, 'metrics');
         app()->instance(RemoteShell::class, new NodeRoleAddMetricsRecordingShell);
+        \Illuminate\Support\Facades\Http::fake([
+            '*' => \Illuminate\Support\Facades\Http::response([
+                'transport' => 'agent-push',
+                'operation_id' => 'metrics-role-managed-file',
+                'binary' => 'orbit',
+                'status' => 'succeeded',
+                'exit_code' => 0,
+                'frames' => [[
+                    'type' => 'stdout',
+                    'message' => json_encode([
+                        'success' => ['data' => [
+                            'exists' => false,
+                            'hash' => null,
+                            'mode' => null,
+                            'updated' => true,
+                        ]],
+                    ], JSON_THROW_ON_ERROR),
+                ]],
+            ]),
+        ]);
 
         Process::factory()
             ->forOwner($target)

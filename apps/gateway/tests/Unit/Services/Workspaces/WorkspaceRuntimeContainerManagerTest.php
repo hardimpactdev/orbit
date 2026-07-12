@@ -18,12 +18,13 @@ use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerApplyException;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
@@ -38,13 +39,9 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-});
+beforeEach(function (): void {});
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 function workspaceAndNodeForManagerTest(): array
 {
@@ -86,16 +83,15 @@ function fake_orbit_ca_service_for_workspace_manager_test(): OrbitCaService
 function workspace_runtime_manager_for_test(RemoteShell $shell): WorkspaceRuntimeContainerManager
 {
     return new WorkspaceRuntimeContainerManager(
-        $shell,
-        new DockerCommandBuilder,
-        fake_orbit_ca_service_for_workspace_manager_test(),
+        commands: new DockerCommandBuilder,
+        ca: fake_orbit_ca_service_for_workspace_manager_test(),
+        scripts: new ToolScriptDispatcher(new WorkspaceRuntimeScriptExecutor($shell)),
     );
 }
 
 function workspace_runtime_manager_local_executor_for_test(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new WorkspaceRuntimeRecordingShell()->failOnRun(),
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -129,6 +125,42 @@ function inspectPayloadForWorkspace(
             ],
         ],
     ], JSON_THROW_ON_ERROR);
+}
+
+final readonly class WorkspaceRuntimeScriptExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private RemoteExecutor $shell,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $result = $this->shell->run($node, (string) $payload['script'], $transportOptions);
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => $result->exitCode,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'duration_ms' => $result->durationMs,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
+        );
+    }
 }
 
 final class WorkspaceRuntimeRecordingShell implements RemoteExecutor
@@ -173,420 +205,6 @@ final class WorkspaceRuntimeRecordingShell implements RemoteExecutor
         throw new RuntimeException('Workspace runtime manager tests do not start long-running transports.');
     }
 }
-
-it('requires explicit transitional SSH fallback before workspace runtime container convergence', function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $container = renderTestWorkspaceContainer($workspace);
-    $shell = new WorkspaceRuntimeRecordingShell;
-
-    expect(fn () => workspace_runtime_manager_for_test($shell)->apply($node, $container))
-        ->toThrow(
-            RuntimeException::class,
-            'workspace runtime container convergence still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-        );
-
-    expect($shell->calls)->toBe([]);
-});
-
-it('lets explicit transitional SSH fallback override local executor for agent capable workspace runtime nodes', function (): void {
-    Http::preventStrayRequests();
-
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $node->forceFill([
-        'managed' => true,
-        'wireguard_address' => '10.44.0.90',
-    ])->save();
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: inspectPayloadForWorkspace($container), stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-    );
-
-    $outcome = new WorkspaceRuntimeContainerManager(
-        remoteShell: $shell,
-        commands: new DockerCommandBuilder,
-        ca: fake_orbit_ca_service_for_workspace_manager_test(),
-        localExecutor: workspace_runtime_manager_local_executor_for_test(),
-    )->apply($node, $container);
-
-    expect($outcome)
-        ->toBe(WorkspaceRuntimeContainerApplyOutcome::Unchanged)
-        ->and($shell->calls)
-        ->toHaveCount(3)
-        ->and($shell->calls[0]['script'])
-        ->toContain('docker network inspect')
-        ->and($shell->calls[1]['script'])
-        ->toContain('docker container inspect')
-        ->and($shell->calls[2]['script'])
-        ->toContain('docker image inspect');
-
-    Http::assertNothingSent();
-});
-
-it('creates the orbit network, writes php.ini, and runs the workspace runtime container when none exists', function (): void {
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        // network inspect (missing) + network create
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        // container inspect: absent
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        // image inspect succeeds (image present on node)
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        // create script
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
-
-    expect($scripts[0])
-        ->toContain('docker network inspect')
-        ->and($scripts[1])
-        ->toContain('docker network create')
-        ->and($scripts[2])
-        ->toContain('docker container inspect')
-        ->and($scripts[3])
-        ->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
-        ->and($scripts[4])
-        ->toContain('/home/orbit/.config/orbit/workspaces/demo-feature-a.ini')
-        ->and($scripts[4])
-        ->toContain('docker run -d')
-        ->and($scripts[4])
-        ->toContain("'orbit-ws-demo-feature-a'")
-        ->and($scripts[4])
-        ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'");
-});
-
-it('creates the app-dev packages bind mount source before running the workspace runtime container', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
-        'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-    $workspace->setRelation('app', $app);
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $script = $shell->calls[3]['script'];
-
-    expect($script)
-        ->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'")
-        ->and($script)
-        ->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/packages'")
-        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
-        ->toBeLessThan(strpos($script, 'docker run -d'));
-});
-
-it('creates the macos app-dev packages bind mount source before running the workspace runtime container', function (): void {
-    $node = createTestAppHostNode(['platform' => 'macos_14', 'user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'nckrtl',
-        'path' => '/Users/nckrtl/apps/nckrtl',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
-        'name' => 'feature-a',
-        'path' => '/Users/nckrtl/apps/nckrtl/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-    $workspace->setRelation('app', $app);
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $script = $shell->calls[3]['script'];
-
-    expect($script)
-        ->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/Users/nckrtl/packages'")
-        ->and($script)
-        ->toContain("--mount 'type=bind,source=/Users/nckrtl/packages,target=/packages'")
-        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/Users/nckrtl/packages'"))
-        ->toBeLessThan(strpos($script, 'docker run -d'));
-});
-
-it('creates configured app instance runtime mount sources before running the workspace runtime container', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
-        'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-    $workspace
-        ->appInstance
-        ->runtimeMounts()
-        ->create([
-            'source' => '/home/nckrtl/packages',
-            'target' => '/home/nckrtl/packages',
-            'read_only' => true,
-        ]);
-    $workspace->unsetRelation('appInstance');
-    $workspace->setRelation('app', $app);
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $script = $shell->calls[3]['script'];
-
-    expect($script)
-        ->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'")
-        ->and($script)
-        ->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/home/nckrtl/packages,readonly'")
-        ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
-        ->toBeLessThan(strpos($script, 'docker run -d'));
-});
-
-it('installs the Orbit runtime trust pool on the node and mounts it into app-dev workspace runtime containers', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl']);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'demo',
-        'path' => '/home/nckrtl/apps/demo',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-    ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
-        'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-    $workspace->setRelation('app', $app);
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $script = $shell->calls[3]['script'];
-    $hostTrustPool = '/home/nckrtl/.config/orbit/ca/root.crt';
-
-    expect($script)
-        ->toContain("install -d -m 0755 '/home/nckrtl/.config/orbit/ca'")
-        ->toContain("> '{$hostTrustPool}'")
-        ->toContain(
-            "--mount 'type=bind,source="
-            .$hostTrustPool
-            .',target='
-            .AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath
-            .",readonly'",
-        )
-        ->and($script)
-        ->not
-        ->toContain('sudo tee')
-        ->and(strpos(haystack: $script, needle: "> '{$hostTrustPool}'"))
-        ->toBeLessThan(strpos(haystack: $script, needle: 'docker run -d'));
-});
-
-it('treats app-dev workspace runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
-    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->create([
-        'name' => 'nckrtl',
-        'path' => '/home/nckrtl/apps/nckrtl',
-        'php_version' => '8.5',
-        'runtime' => AppRuntimeKind::Php,
-        'runtime_config' => ['proxy_transport' => 'https'],
-    ]);
-    $workspace = Workspace::factory()->for($app, 'app')->create([
-        'name' => 'feature-a',
-        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
-        'php_version' => null,
-    ]);
-    $workspace->setRelation('app', $app);
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $script = $shell->calls[3]['script'];
-    $certSource = '/home/nckrtl/.config/orbit/certs/feature-a.nckrtl.test.crt';
-    $keySource = '/home/nckrtl/.config/orbit/certs/feature-a.nckrtl.test.key';
-
-    expect($script)
-        ->toContain(
-            "--mount 'type=bind,source={$certSource},target="
-            .AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath
-            .",readonly'",
-        )
-        ->and($script)
-        ->toContain(
-            "--mount 'type=bind,source={$keySource},target="
-            .AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath
-            .",readonly'",
-        )
-        ->and($script)
-        ->not->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '{$certSource}'")->and($script)
-        ->not->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '{$keySource}'");
-});
-
-it('rejects unsafe app-dev packages bind mount sources before running the workspace runtime container', function (): void {
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $container = new WorkspaceRuntimeContainer(
-        name: 'orbit-ws-demo-feature-a',
-        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
-        network: 'orbit-network',
-        restartPolicy: 'unless-stopped',
-        appSlug: $workspace->app->name,
-        workspaceSlug: $workspace->name,
-        environment: ['SERVER_NAME' => ':80'],
-        mounts: [
-            [
-                'source' => '/home/orbit/.config/orbit/workspaces/demo-feature-a.ini',
-                'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
-                'read_only' => true,
-            ],
-            [
-                'source' => '/home/../packages',
-                'target' => '/packages',
-                'read_only' => false,
-            ],
-        ],
-        networkAliases: ['orbit-ws-demo-feature-a'],
-        phpIni: ['memory_limit' => '256M'],
-    );
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-    );
-
-    expect(fn () => workspace_runtime_manager_for_test($shell)->apply($node, $container))
-        ->toThrow(WorkspaceRuntimeContainerApplyException::class, 'unsafe packages mount source');
-
-    expect(collect($shell->calls)
-        ->contains(
-            fn (array $call): bool => str_contains($call['script'], 'docker run -d'),
-        ))->toBeFalse();
-});
-
-it('verifies image presence on the matching-running ("Unchanged") path before returning healthy', function (): void {
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: inspectPayloadForWorkspace($container), stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-    );
-
-    $outcome = workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
-
-    expect($outcome)->toBe(WorkspaceRuntimeContainerApplyOutcome::Unchanged)->and(count($scripts))->toBe(3);
-
-    foreach ($scripts as $script) {
-        expect($script)
-            ->not->toContain('docker run -d')->and($script)
-            ->not->toContain('docker rm -f')->and($script)
-            ->not->toContain('docker start');
-    }
-});
-
-it('verifies image presence on the matching-stopped ("Started") path before starting the container', function (): void {
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: inspectPayloadForWorkspace($container, running: false),
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    $outcome = workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
-
-    expect($outcome)
-        ->toBe(WorkspaceRuntimeContainerApplyOutcome::Started)
-        ->and($scripts[3])
-        ->toContain('docker start')
-        ->and($scripts[3])
-        ->toContain("'orbit-ws-demo-feature-a'");
-});
-
-it('recreates the container when the rendered spec drifts', function (): void {
-    [$workspace, $node] = workspaceAndNodeForManagerTest();
-    $container = renderTestWorkspaceContainer($workspace);
-
-    $shell = new WorkspaceRuntimeRecordingShell(
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(
-            exitCode: 0,
-            stdout: inspectPayloadForWorkspace($container, specHash: 'stale'),
-            stderr: '',
-            durationMs: 1,
-        ),
-        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-    );
-
-    workspace_runtime_manager_for_test($shell)->apply($node, $container);
-
-    $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
-
-    expect($scripts[3])->toContain('docker rm -f')->and($scripts[4])->toContain('docker run -d');
-});
 
 it('returns AlreadyAbsent when removing a workspace container that does not exist on the node', function (): void {
     [$workspace, $node] = workspaceAndNodeForManagerTest();
@@ -663,29 +281,32 @@ it('returns tri-state outcomes for managed workspace runtime config file removal
     $absentShell = new WorkspaceRuntimeRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
-    $absentOutcome = new WorkspaceRuntimeContainerManager(
-        $absentShell,
-        new DockerCommandBuilder,
-    )->removeRuntimeConfigFile($node, 'demo', 'feature-a');
+    $absentOutcome = workspace_runtime_manager_for_test($absentShell)->removeRuntimeConfigFile(
+        $node,
+        'demo',
+        'feature-a',
+    );
 
     $removedShell = new WorkspaceRuntimeRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
-    $removedOutcome = new WorkspaceRuntimeContainerManager(
-        $removedShell,
-        new DockerCommandBuilder,
-    )->removeRuntimeConfigFile($node, 'demo', 'feature-a');
+    $removedOutcome = workspace_runtime_manager_for_test($removedShell)->removeRuntimeConfigFile(
+        $node,
+        'demo',
+        'feature-a',
+    );
 
     $failedShell = new WorkspaceRuntimeRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
     );
-    $failedOutcome = new WorkspaceRuntimeContainerManager(
-        $failedShell,
-        new DockerCommandBuilder,
-    )->removeRuntimeConfigFile($node, 'demo', 'feature-a');
+    $failedOutcome = workspace_runtime_manager_for_test($failedShell)->removeRuntimeConfigFile(
+        $node,
+        'demo',
+        'feature-a',
+    );
 
     expect($absentOutcome)
         ->toBe(WorkspaceRuntimeArtifactRemovalOutcome::AlreadyAbsent)

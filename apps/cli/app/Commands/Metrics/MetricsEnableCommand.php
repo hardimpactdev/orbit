@@ -10,7 +10,6 @@ use App\Exceptions\GatewayApiException;
 
 final class MetricsEnableCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     private const int GatewayTimeoutSeconds = 300;
@@ -18,7 +17,6 @@ final class MetricsEnableCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'metrics:enable
         {--node= : Node to enable the metrics role on}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

@@ -105,7 +105,6 @@ function websocket_runtime_manager_container(): WebSocketRuntimeContainer
 function websocket_runtime_manager_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new WebSocketRuntimeContainerManagerUnusedTransport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

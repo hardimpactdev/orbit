@@ -13,10 +13,9 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Convergence\UfwFirewallRule;
 use App\Services\Firewall\RemoteFirewallRule;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
+use App\Services\Firewall\RemoteFirewallRuleProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -31,9 +30,9 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        RemoteFirewallRuleProbe::class,
+        new RemoteFirewallRuleProbe(app(RemoteLocalExecutor::class)),
     );
 });
 
@@ -60,9 +59,9 @@ it('plans ok when the remote ufw rule already matches gateway intent', function 
     $convergence = UfwFirewallRule::fromRule($rule);
     $shell = new UfwFirewallRuleUnusedShell;
 
-    $probe = $convergence->probe($node, $shell);
+    $probe = $convergence->probe($node);
     $plan = $convergence->plan($probe);
-    $result = $convergence->apply($node, $shell, $plan);
+    $result = $convergence->apply($node, $plan);
 
     expect($probe->reachable)
         ->toBeTrue()
@@ -98,9 +97,9 @@ it('applies a missing ufw rule through the agent-push local executor', function 
     $convergence = UfwFirewallRule::fromRule($rule);
     $shell = new UfwFirewallRuleUnusedShell;
 
-    $probe = $convergence->probe($node, $shell);
+    $probe = $convergence->probe($node);
     $plan = $convergence->plan($probe);
-    $result = $convergence->apply($node, $shell, $plan);
+    $result = $convergence->apply($node, $plan);
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -156,9 +155,9 @@ it('deletes a partial match before re-applying gateway intent', function (): voi
     $convergence = UfwFirewallRule::fromRule($rule);
     $shell = new UfwFirewallRuleUnusedShell;
 
-    $probe = $convergence->probe($node, $shell);
+    $probe = $convergence->probe($node);
     $plan = $convergence->plan($probe);
-    $result = $convergence->apply($node, $shell, $plan);
+    $result = $convergence->apply($node, $plan);
 
     expect($probe->present)
         ->toBeFalse()
@@ -214,7 +213,7 @@ it('reports unreachable when ufw introspection fails', function (): void {
     $convergence = UfwFirewallRule::fromRule($rule);
     $shell = new UfwFirewallRuleUnusedShell;
 
-    $probe = $convergence->probe($node, $shell);
+    $probe = $convergence->probe($node);
     $plan = $convergence->plan($probe);
 
     expect($probe->reachable)
@@ -332,7 +331,6 @@ function ufw_firewall_rule(Node $node, array $attributes = []): FirewallRule
 function ufw_firewall_rule_remote(): RemoteFirewallRule
 {
     return new RemoteFirewallRule(new RemoteLocalExecutor(
-        transport: new UfwFirewallRuleUnusedTransport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

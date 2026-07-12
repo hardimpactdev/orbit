@@ -11,7 +11,7 @@ use RuntimeException;
 final readonly class RemoteEnvFile
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function read(Node $node, string $path): ?string

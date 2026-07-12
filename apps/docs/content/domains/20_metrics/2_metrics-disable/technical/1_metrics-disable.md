@@ -1,4 +1,4 @@
-# Technical Contract: `orbit metrics:disable --node=<node> --force [--node-transport=<transport>] [--purge-data] [--json]`
+# Technical Contract: `orbit metrics:disable --node=<node> --force [--purge-data] [--json]`
 
 [Back to public `metrics:disable` documentation.](../metrics-disable.md)
 
@@ -15,7 +15,7 @@ where the role cleanup contract supports deleting metrics-owned data.
 ## Signature
 
 ```bash
-orbit metrics:disable --node=<node> --force [--node-transport=<transport>] [--purge-data] [--json]
+orbit metrics:disable --node=<node> --force [--purge-data] [--json]
 ```
 
 ## Input Contract
@@ -25,7 +25,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Always. | Never. | None. | Active node with a `metrics` role assignment. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `force` | `--force` | Always. | Never. | `false` | Explicit removal consent. |
 | `purge_data` | `--purge-data` | Optional. | Never. | `false` | Requires `--force`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |

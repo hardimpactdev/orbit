@@ -6,8 +6,8 @@ namespace App\Services\WebSockets;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use RuntimeException;
 use Throwable;
@@ -15,7 +15,7 @@ use Throwable;
 final readonly class WebSocketRuntimeContainerManager
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function apply(Node $node, WebSocketRuntimeContainer $container): void

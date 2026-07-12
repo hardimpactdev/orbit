@@ -10,7 +10,7 @@ use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use Polyscope\Laravel\Polyscope;
 use Throwable;
@@ -36,7 +36,7 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
 
     public function __construct(
         private PolyscopeWorkspaceBranchAligner $branchAligner,
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult

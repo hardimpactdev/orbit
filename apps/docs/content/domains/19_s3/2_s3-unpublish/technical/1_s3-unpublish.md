@@ -1,4 +1,4 @@
-# Technical Contract: `orbit s3:unpublish [host] [--node=<node>] [--node-transport=<transport>] [--force] [--json|--stream-json]`
+# Technical Contract: `orbit s3:unpublish [host] [--node=<node>] [--force] [--json|--stream-json]`
 
 [Back to public `s3:unpublish` documentation.](../s3-unpublish.md)
 
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit s3:unpublish [host] [--node=<node>] [--node-transport=<transport>] [--force] [--json|--stream-json]
+orbit s3:unpublish [host] [--node=<node>] [--force] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -26,7 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `host` | `argument` | Required in non-interactive mode. | Never. | None. | Published public S3 hostname. |
 | `node` | `--node` | Optional. | Never. | The only visible active s3 node when exactly one exists. | Visible active node with the `s3` role. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `force` | `--force` | Required in non-interactive mode. | Never. | `false` | Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 | `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`; does not imply destructive consent. |

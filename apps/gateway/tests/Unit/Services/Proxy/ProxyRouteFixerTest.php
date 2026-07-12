@@ -17,7 +17,6 @@ use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteRenderer;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -30,13 +29,9 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('ProxyRouteFixer', function (): void {
-    beforeEach(function (): void {
-        request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-    });
+    beforeEach(function (): void {});
 
-    afterEach(function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-    });
+    afterEach(function (): void {});
 
     it('re-applies missing custom proxy routes from gateway intent', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
@@ -55,7 +50,6 @@ describe('ProxyRouteFixer', function (): void {
         $renderer = new ProxyRouteRenderer;
 
         $action = new ProxyRouteFixer(
-            $shell,
             $renderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -94,8 +88,6 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('repairs proxy routes without explicit transitional SSH fallback', function (): void {
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
         $node = createTestAppHostNode(['name' => 'app-1']);
         $route = ProxyRoute::factory()->create([
             'node_id' => $node->id,
@@ -111,7 +103,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -165,7 +156,6 @@ describe('ProxyRouteFixer', function (): void {
         $renderer = new ProxyRouteRenderer;
 
         $action = new ProxyRouteFixer(
-            $shell,
             $renderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -220,7 +210,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -288,7 +277,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -354,7 +342,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -447,7 +434,6 @@ describe('ProxyRouteFixer', function (): void {
         ]);
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -526,7 +512,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -592,7 +577,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -631,7 +615,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -700,7 +683,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -754,7 +736,6 @@ describe('ProxyRouteFixer', function (): void {
         $certificates = new SiteCertificateInstallerFake;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             $certificates,
@@ -836,7 +817,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -899,7 +879,6 @@ describe('ProxyRouteFixer', function (): void {
         $certificates = new SiteCertificateInstallerFake;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             $certificates,
@@ -961,7 +940,6 @@ describe('ProxyRouteFixer', function (): void {
 
             $shell = new ProxyFixerRecordingRemoteShell;
             $action = new ProxyRouteFixer(
-                $shell,
                 new ProxyRouteRenderer,
                 new ProxyFixerFakeCa,
                 new SiteCertificateInstallerFake,
@@ -1006,7 +984,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -1058,7 +1035,6 @@ describe('ProxyRouteFixer', function (): void {
             $shell = new ProxyFixerRecordingRemoteShell;
 
             $action = new ProxyRouteFixer(
-                $shell,
                 new ProxyRouteRenderer,
                 new ProxyFixerFakeCa,
                 new SiteCertificateInstallerFake,
@@ -1100,7 +1076,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -1139,7 +1114,6 @@ describe('ProxyRouteFixer', function (): void {
             CADDY);
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -1182,7 +1156,6 @@ describe('ProxyRouteFixer', function (): void {
             CADDY);
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -1219,7 +1192,6 @@ describe('ProxyRouteFixer', function (): void {
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = new ProxyRouteFixer(
-            $shell,
             new ProxyRouteRenderer,
             new ProxyFixerFakeCa,
             new SiteCertificateInstallerFake,
@@ -1281,7 +1253,6 @@ describe('ProxyRouteFixer', function (): void {
 
             $shell = new ProxyFixerRecordingRemoteShell;
             $action = new ProxyRouteFixer(
-                $shell,
                 new ProxyRouteRenderer,
                 new ProxyFixerFakeCa,
                 new SiteCertificateInstallerFake,

@@ -232,7 +232,6 @@ final readonly class GatewayStreamTransport
             CURLOPT_HTTPHEADER => [
                 'Accept: text/event-stream',
                 'Content-Type: application/json',
-                ...$this->curlNodeTransportHeaders(),
             ],
             CURLOPT_POSTFIELDS => $body,
             CURLOPT_RETURNTRANSFER => false,
@@ -367,18 +366,6 @@ final readonly class GatewayStreamTransport
             curl_multi_remove_handle($multi, $curl);
             curl_multi_close($multi);
         }
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function curlNodeTransportHeaders(): array
-    {
-        return array_map(
-            static fn (string $key, string $value): string => "{$key}: {$value}",
-            array_keys($this->connector->nodeTransportHeaders()),
-            $this->connector->nodeTransportHeaders(),
-        );
     }
 
     /**

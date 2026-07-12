@@ -8,16 +8,17 @@ use App\Models\Node;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeWorkspacePathResolver;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
+use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -122,22 +123,9 @@ it('resolves Polyscope workspace paths through the local executor lookup command
         ->not->toContain('php -r');
 });
 
-function coreAgentIdeWorkspacePathResolverExecutor(CoreAgentIdeWorkspacePathResolverTransport $transport): RemoteLocalExecutor
+function coreAgentIdeWorkspacePathResolverExecutor(CoreAgentIdeWorkspacePathResolverTransport $transport): RunsInternalCommands
 {
-    return new RemoteLocalExecutor(
-        transport: $transport,
-        commands: new LocalExecutorCommandBuilder,
-        operationTokens: new OperationTokenFactory(
-            signer: new OperationTokenSigner,
-            secret: 'gateway-secret',
-            ttlSeconds: 120,
-            clock: static fn (): int => 1_798_105_200,
-        ),
-        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
-        operationRuns: app(OperationRunRecorder::class),
-        applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
-    );
+    return new RemoteExecutorBackedInternalExecutor($transport);
 }
 
 final class CoreAgentIdeWorkspacePathResolverTransport implements RemoteExecutor

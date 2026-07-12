@@ -8,8 +8,6 @@ use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Convergence\SystemdService;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -18,12 +16,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
+beforeEach(function (): void {});
 
 it('plans ok when the remote systemd service already matches intent', function (): void {
     $content = "[Unit]\nDescription=Orbit process node-exporter\n";
@@ -44,9 +37,9 @@ it('plans ok when the remote systemd service already matches intent', function (
         ),
     ]);
 
-    $probe = $service->probe($node, new SystemdServiceUnexpectedShell);
+    $probe = $service->probe($node);
     $plan = $service->plan($probe);
-    $result = $service->apply($node, new SystemdServiceUnexpectedShell, $plan);
+    $result = $service->apply($node, $plan);
 
     expect($probe->exists)
         ->toBeTrue()
@@ -96,9 +89,9 @@ it('applies a missing systemd service unit and enables it', function (): void {
             ],
         ));
 
-    $probe = $service->probe($node, new SystemdServiceUnexpectedShell);
+    $probe = $service->probe($node);
     $plan = $service->plan($probe);
-    $result = $service->apply($node, new SystemdServiceUnexpectedShell, $plan);
+    $result = $service->apply($node, $plan);
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -145,7 +138,7 @@ it('plans a changed systemd service when it is disabled', function (): void {
         ),
     ]);
 
-    $plan = $service->plan($service->probe($node, new SystemdServiceUnexpectedShell));
+    $plan = $service->plan($service->probe($node));
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -175,7 +168,7 @@ it('reports unreachable when probing the systemd service cannot reach the node',
         ),
     ]);
 
-    $probe = $service->probe($node, new SystemdServiceUnexpectedShell);
+    $probe = $service->probe($node);
     $plan = $service->plan($probe);
 
     expect($probe->reachable)

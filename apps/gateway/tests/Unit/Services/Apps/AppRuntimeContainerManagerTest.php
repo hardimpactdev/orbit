@@ -22,22 +22,19 @@ use App\Services\Apps\AppRuntimeUserUnavailableException;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Tools\ToolScriptDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-});
+beforeEach(function (): void {});
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 function appAndNodeForManagerTest(): array
 {
@@ -87,9 +84,9 @@ function fake_orbit_ca_service_for_manager_test(): OrbitCaService
 function app_runtime_manager_for_test(RemoteShell $shell): AppRuntimeContainerManager
 {
     return new AppRuntimeContainerManager(
-        $shell,
-        new DockerCommandBuilder,
-        fake_orbit_ca_service_for_manager_test(),
+        commands: new DockerCommandBuilder,
+        ca: fake_orbit_ca_service_for_manager_test(),
+        scripts: new ToolScriptDispatcher(new AppRuntimeScriptExecutor($shell)),
     );
 }
 
@@ -105,6 +102,47 @@ function inspectPayloadForApp(AppRuntimeContainer $container, bool $running = tr
             ],
         ],
     ], JSON_THROW_ON_ERROR);
+}
+
+final readonly class AppRuntimeScriptExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private RemoteShell $shell,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $result = $this->shell->run($node, (string) $payload['script'], $transportOptions);
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return app_runtime_script_envelope($result);
+    }
+}
+
+function app_runtime_script_envelope(RemoteShellResult $result): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => ['data' => [
+                'exit_code' => $result->exitCode,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'duration_ms' => $result->durationMs,
+            ]],
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: $result->durationMs,
+    );
 }
 
 final class AppRuntimeRecordingShell implements RemoteShell
@@ -129,22 +167,6 @@ final class AppRuntimeRecordingShell implements RemoteShell
         );
     }
 }
-
-it('requires explicit transitional SSH fallback before app runtime container convergence', function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
-    [$app, $node] = appAndNodeForManagerTest();
-    $container = renderTestAppContainer($app);
-    $shell = new AppRuntimeRecordingShell;
-
-    expect(fn () => app_runtime_manager_for_test($shell)->apply($node, $container))
-        ->toThrow(
-            RuntimeException::class,
-            'app runtime container convergence still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-        );
-
-    expect($shell->calls)->toBe([]);
-});
 
 it('creates the orbit network, writes php.ini, and runs the app runtime container when none exists', function (): void {
     [$app, $node] = appAndNodeForManagerTest();
@@ -620,7 +642,7 @@ it('returns tri-state outcomes for managed runtime config file removal', functio
     $absentShell = new AppRuntimeRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
-    $absentOutcome = new AppRuntimeContainerManager($absentShell, new DockerCommandBuilder)->removeRuntimeConfigFile(
+    $absentOutcome = app_runtime_manager_for_test($absentShell)->removeRuntimeConfigFile(
         $node,
         'docs',
     );
@@ -630,7 +652,7 @@ it('returns tri-state outcomes for managed runtime config file removal', functio
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
     );
-    $removedOutcome = new AppRuntimeContainerManager($removedShell, new DockerCommandBuilder)->removeRuntimeConfigFile(
+    $removedOutcome = app_runtime_manager_for_test($removedShell)->removeRuntimeConfigFile(
         $node,
         'docs',
     );
@@ -639,7 +661,7 @@ it('returns tri-state outcomes for managed runtime config file removal', functio
         new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:present\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
     );
-    $failedOutcome = new AppRuntimeContainerManager($failedShell, new DockerCommandBuilder)->removeRuntimeConfigFile(
+    $failedOutcome = app_runtime_manager_for_test($failedShell)->removeRuntimeConfigFile(
         $node,
         'docs',
     );

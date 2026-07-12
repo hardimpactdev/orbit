@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Workspaces;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
@@ -23,9 +22,7 @@ use Throwable;
 
 final readonly class EnsureWorkspaceProxyRoute
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private RemoteShell $remoteShell,
         private WorkspaceRuntimeContainerRenderer $runtimeContainerRenderer,
         private SiteCertificateInstaller $siteCertificateInstaller,
         private AppProxyRouteCaddyInstaller $caddyInstaller,
@@ -256,8 +253,8 @@ final readonly class EnsureWorkspaceProxyRoute
             mode: '0644',
             directoryMode: '0755',
         );
-        $plan = $file->plan($file->probe($node, $this->remoteShell));
-        $result = $file->apply($node, $this->remoteShell, $plan);
+        $plan = $file->plan($file->probe($node));
+        $result = $file->apply($node, $plan);
 
         if (! $result->successful()) {
             throw new RuntimeException($result->summary);

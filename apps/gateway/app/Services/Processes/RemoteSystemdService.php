@@ -8,7 +8,7 @@ use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Convergence\ConvergenceStatus;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
 /**
@@ -17,7 +17,7 @@ use JsonException;
 final readonly class RemoteSystemdService
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function apply(Node $node, string $service, string $content, bool $enabled = true): ConvergenceApplyResult

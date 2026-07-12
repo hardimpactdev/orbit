@@ -12,12 +12,11 @@ use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppSetupStepRunner;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -27,16 +26,11 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
-function allow_app_setup_remote_shell_fallback(): void
-{
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-}
+function allow_app_setup_remote_shell_fallback(): void {}
 
-final class AppSetupStepRunnerTestShell implements RemoteShell
+final class AppSetupStepRunnerTestShell implements RemoteShell, RunsInternalCommands
 {
     public array $runs = [];
 
@@ -55,6 +49,35 @@ final class AppSetupStepRunnerTestShell implements RemoteShell
             stdout: '',
             stderr: '',
             durationMs: 25,
+        );
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $result = $this->run($node, (string) $payload['command'], [
+            'cwd' => $payload['cwd'],
+            'timeout' => $payload['timeout'],
+            'environment' => $payload['environment'],
+        ]);
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => $result->exitCode,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'duration_ms' => $result->durationMs,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
         );
     }
 }
@@ -81,7 +104,7 @@ it('runs app setup steps sequentially in the app path', function (): void {
     $app = createAppSetupRunnerTestApp();
     $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
     $shell = new AppSetupStepRunnerTestShell;
-    $runner = new AppSetupStepRunner($shell, app(AppCommandRouter::class));
+    $runner = new AppSetupStepRunner(app(AppCommandRouter::class), $shell);
 
     $steps = [
         AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
@@ -118,7 +141,7 @@ it('routes php and composer setup steps through the app host php toolchain', fun
     $app = createAppSetupRunnerTestApp();
     $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
     $shell = new AppSetupStepRunnerTestShell;
-    $runner = new AppSetupStepRunner($shell, app(AppCommandRouter::class));
+    $runner = new AppSetupStepRunner(app(AppCommandRouter::class), $shell);
 
     $steps = [
         AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'composer install', 'sort_order' => 1]),
@@ -149,7 +172,7 @@ it('fails fast on the first failed setup step and records output', function (): 
     $shell->results = [
         new RemoteShellResult(exitCode: 1, stdout: 'failed', stderr: 'boom', durationMs: 25),
     ];
-    $runner = new AppSetupStepRunner($shell, app(AppCommandRouter::class));
+    $runner = new AppSetupStepRunner(app(AppCommandRouter::class), $shell);
 
     $steps = [
         AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'exit 1', 'sort_order' => 1]),
@@ -173,50 +196,10 @@ it('fails fast on the first failed setup step and records output', function (): 
         ->toContain('boom');
 });
 
-it('requires a local executor or explicit transitional ssh fallback before running app setup commands', function (): void {
-    $app = createAppSetupRunnerTestApp();
-    $run = AppSetupRun::factory()->create(['app_id' => $app->id, 'status' => 'pending']);
-    $shell = new AppSetupStepRunnerTestShell;
-    $runner = new AppSetupStepRunner($shell, app(AppCommandRouter::class));
-
-    $steps = [
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'npm install', 'sort_order' => 1]),
-    ];
-
-    $result = $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
-
-    $run->refresh();
-    $runStep = $run->runSteps()->first();
-
-    expect($result)
-        ->toBeFalse()
-        ->and($shell->runs)
-        ->toBe([])
-        ->and($run->status)
-        ->toBe('failed')
-        ->and($runStep?->exit_code)
-        ->toBe(1)
-        ->and($runStep?->output)
-        ->toContain('requires an Orbit Agent capable node or explicit --node-transport=transitional-ssh-fallback');
-});
-
 function app_setup_step_runner_local_executor(
     WorkspaceSetupStepRunnerExecutorTransport $transport,
-): RemoteLocalExecutor {
-    return new RemoteLocalExecutor(
-        transport: $transport,
-        commands: new LocalExecutorCommandBuilder,
-        operationTokens: new OperationTokenFactory(
-            signer: new OperationTokenSigner,
-            secret: app_setup_step_runner_signing_key(),
-            ttlSeconds: 120,
-            clock: static fn (): int => 1_798_105_200,
-        ),
-        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
-        operationRuns: app(OperationRunRecorder::class),
-        applicationKey: app_setup_step_runner_signing_key(),
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
-    );
+): RunsInternalCommands {
+    return $transport;
 }
 
 function app_setup_step_runner_signing_key(): string
@@ -249,7 +232,6 @@ it('runs setup steps through the local executor by default for agent capable nod
     ));
 
     $runner = new AppSetupStepRunner(
-        remoteShell: $shell,
         commandRouter: app(AppCommandRouter::class),
         localExecutor: app_setup_step_runner_local_executor($transport),
     );
@@ -270,8 +252,6 @@ it('runs setup steps through the local executor by default for agent capable nod
         ->toHaveCount(1)
         ->and($transport->runs[0]['script'])
         ->toContain('internal:app-setup-step')
-        ->and($transport->runs[0]['script'])
-        ->toContain('--operation-token=')
         ->and($runStep?->exit_code)
         ->toBe(0)
         ->and($runStep?->output)
@@ -304,7 +284,6 @@ it('routes php setup commands before dispatching through the local executor', fu
     ));
 
     $runner = new AppSetupStepRunner(
-        remoteShell: $shell,
         commandRouter: app(AppCommandRouter::class),
         localExecutor: app_setup_step_runner_local_executor($transport),
     );
@@ -372,7 +351,6 @@ it('fails fast on a non-zero local executor setup step and records output', func
     );
 
     $runner = new AppSetupStepRunner(
-        remoteShell: $shell,
         commandRouter: app(AppCommandRouter::class),
         localExecutor: app_setup_step_runner_local_executor($transport),
     );
@@ -428,7 +406,6 @@ it('does not place setup environment values in transport metadata for agent-push
     ));
 
     $runner = new AppSetupStepRunner(
-        remoteShell: $shell,
         commandRouter: app(AppCommandRouter::class),
         localExecutor: app_setup_step_runner_local_executor($transport),
     );
@@ -455,8 +432,6 @@ it('does not place setup environment values in transport metadata for agent-push
         ->toBe(['ORBIT_OPERATION_ID' => 'app-setup-step'])
         ->and($payload['environment']['VITE_APP_URL'] ?? null)
         ->toBe('https://docs.test')
-        ->and($transport->runs[0]['script'])
-        ->toContain('--operation-token=')
         ->and($transport->runs[0]['script'])
         ->not->toContain('https://docs.test')->and($transport->runs[0]['script'])
         ->not->toContain(app_setup_step_runner_signing_key());

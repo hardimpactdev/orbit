@@ -15,7 +15,6 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -31,7 +30,6 @@ beforeEach(function (): void {
     app()->bind(
         AppRuntimeContainerManager::class,
         fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
-            app(RemoteShell::class),
             app(DockerCommandBuilder::class),
             app(OrbitCaService::class),
         ),
@@ -77,8 +75,6 @@ describe('AppInstanceEnvApplier', function (): void {
      * @mago-expect lint:halstead
      */
     it('clears Laravel caches and reapplies the runtime container for PHP apps', function (): void {
-        request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
         [$app, $node] = appAndNodeForEnvApplierTest();
         $container = renderEnvApplierTestContainer($app);
         $shell = new AppInstanceEnvApplierRecordingRemoteShell(

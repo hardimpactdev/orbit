@@ -6,9 +6,9 @@ use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeTool;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Proxy\AppProxyRouteCaddyInstaller;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Proxy\RemoteCaddyConfig;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -17,15 +17,13 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 function appProxyRouteCaddyInstallerUseAgentPush(): void
 {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        RemoteCaddyConfig::class,
+        new RemoteCaddyConfig(app(RemoteLocalExecutor::class)),
     );
 }
 

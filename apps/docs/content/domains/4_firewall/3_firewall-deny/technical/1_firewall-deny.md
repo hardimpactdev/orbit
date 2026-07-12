@@ -1,4 +1,4 @@
-# Technical Contract: `orbit firewall:deny [name] --port=<port> [--node=<node>] [--node-transport=<transport>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
+# Technical Contract: `orbit firewall:deny [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]`
 
 [Back to public `firewall-deny` documentation.](../firewall-deny.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit firewall:deny [name] --port=<port> [--node=<node>] [--node-transport=<transport>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
+orbit firewall:deny [name] --port=<port> [--node=<node>] [--direction=<incoming|outgoing>] [--from=<cidr>] [--to=<cidr>] [--protocol=<tcp|udp>] [--reason=<text>] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `name` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | `Firewall rule name unique on the target node.` |
 | `node` | `--node` | `Required when no local default node resolves the target.` | `Never.` | `local node:default when configured` | `Visible active Ubuntu node with at least one active role assignment.` |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `direction` | `--direction` | `Optional.` | `Never.` | `incoming` | `incoming` or `outgoing`. |
 | `source` | `--from` | `Optional.` | `Never.` | `any` | CIDR or `any`. |
 | `destination` | `--to` | `Optional.` | `Never.` | `None.` | CIDR when supported by the backend. |

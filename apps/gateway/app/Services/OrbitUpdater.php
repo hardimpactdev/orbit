@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
+use App\Services\Tools\ToolScriptDispatcher;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 
 class OrbitUpdater
 {
-    // @orbit-ssh-lane transitional-ssh
+    public function __construct(
+        private readonly ToolScriptDispatcher $scripts,
+    ) {}
+
     public function pullSource(): ProcessResult
     {
         return Process::path(repo_path())
@@ -78,7 +81,7 @@ class OrbitUpdater
 
     public function pullRemoteSource(Node $node): RemoteShellResult
     {
-        return $this->runRemote($node, 'git pull --ff-only', 60);
+        return $this->runRemote($node, 'git pull --ff-only');
     }
 
     public function installRemoteDependencies(Node $node): RemoteShellResult
@@ -86,13 +89,12 @@ class OrbitUpdater
         return $this->runRemote(
             $node,
             'docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction',
-            120,
         );
     }
 
     public function runRemoteMigrations(Node $node): RemoteShellResult
     {
-        return $this->runRemote($node, 'docker exec orbit-gateway php apps/gateway/artisan migrate --force', 60);
+        return $this->runRemote($node, 'docker exec orbit-gateway php apps/gateway/artisan migrate --force');
     }
 
     public function remoteStageScript(string $stage): string
@@ -120,11 +122,13 @@ class OrbitUpdater
         return 'git pull --ff-only && docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction && docker exec orbit-gateway php apps/gateway/artisan migrate --force';
     }
 
-    private function runRemote(Node $node, string $script, int $timeout): RemoteShellResult
+    private function runRemote(Node $node, string $script): RemoteShellResult
     {
-        return app(RemoteShell::class)->run($node, $script, [
-            'cwd' => $node->orbit_path,
-            'timeout' => $timeout,
-        ]);
+        return $this->scripts->run(
+            node: $node,
+            tool: 'orbit',
+            action: 'update',
+            script: sprintf('cd %s && %s', escapeshellarg($node->orbit_path), $script),
+        );
     }
 }

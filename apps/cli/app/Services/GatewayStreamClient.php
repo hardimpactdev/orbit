@@ -23,7 +23,7 @@ use ValueError;
  * Per D10: streaming commands POST with Accept: text/event-stream and read frames
  * line-by-line. Each decoded frame is dispatched to the $onEvent callback.
  */
-final readonly class GatewayStreamClient implements GatewayProgressStreamClient, NodeTransportAwareGatewayStreamClient
+final readonly class GatewayStreamClient implements GatewayProgressStreamClient
 {
     public function __construct(
         private ?string $baseUrl,
@@ -31,24 +31,7 @@ final readonly class GatewayStreamClient implements GatewayProgressStreamClient,
         private ?string $caPemPath = null,
         private ?GatewayStreamTransport $transport = null,
         private bool $preferCurl = false,
-        private ?string $nodeTransportPreference = null,
     ) {}
-
-    public function withNodeTransportPreference(?string $preference): self
-    {
-        if ($preference === $this->nodeTransportPreference) {
-            return $this;
-        }
-
-        return new self(
-            baseUrl: $this->baseUrl,
-            timeout: $this->timeout,
-            caPemPath: $this->caPemPath,
-            transport: $this->transport,
-            preferCurl: $this->preferCurl,
-            nodeTransportPreference: $preference,
-        );
-    }
 
     /**
      * Stream progress events from the gateway. Sends $payload to $path with
@@ -113,13 +96,6 @@ final readonly class GatewayStreamClient implements GatewayProgressStreamClient,
                 ->asJson()
                 ->connectTimeout($this->timeout)
                 ->timeout(0);
-
-            if ($this->nodeTransportPreference !== null) {
-                $pending = $pending->withHeader(
-                    'X-Orbit-Node-Transport-Preference',
-                    $this->nodeTransportPreference,
-                );
-            }
 
             $response = match (strtolower($method)) {
                 'delete' => $pending->delete('/'.ltrim($path, '/'), $payload),
@@ -204,7 +180,6 @@ final readonly class GatewayStreamClient implements GatewayProgressStreamClient,
                 baseUrl: $this->normalizedBaseUrl(),
                 caPemPath: $this->verifiedCaPemPath(),
                 timeout: $this->timeout,
-                nodeTransportPreference: $this->nodeTransportPreference,
             ),
             preferCurl: $this->preferCurl,
         );

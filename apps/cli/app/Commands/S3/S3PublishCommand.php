@@ -15,7 +15,6 @@ use function Laravel\Prompts\text;
 
 final class S3PublishCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
     use StreamsGatewayProgress;
 
@@ -23,7 +22,6 @@ final class S3PublishCommand extends GatewayCommand
     protected $signature = 's3:publish
         {host? : Public DNS hostname for S3 (e.g. s3.example.com)}
         {--node= : Active s3 node to publish on}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 

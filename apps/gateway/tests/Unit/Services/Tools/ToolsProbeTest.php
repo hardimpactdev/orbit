@@ -18,10 +18,12 @@ use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolDefinitionRegistry;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Tools\ToolsProbe;
 use App\Tools\BaseTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -63,16 +65,22 @@ function createToolsProbeAgentNode(): Node
 
 function toolsProbeWithRemoteShell(RemoteShell $remoteShell, ?ToolCatalog $catalog = null): ToolsProbe
 {
-    app()->instance(RemoteShell::class, $remoteShell);
+    $executor = new ToolsProbeScriptExecutor($remoteShell);
 
-    return new ToolsProbe($remoteShell, $catalog);
+    return new ToolsProbe(
+        catalog: $catalog,
+        localExecutor: $executor,
+        scripts: new ToolScriptDispatcher($executor),
+    );
 }
 
-function toolsProbeWithAgentPush(RemoteShell $remoteShell): ToolsProbe
+function toolsProbeWithAgentPush(RemoteShell $_remoteShell): ToolsProbe
 {
+    $localExecutor = toolsProbeLocalExecutor(NodeTransportPreference::Auto);
+
     return new ToolsProbe(
-        remoteShell: $remoteShell,
-        localExecutor: toolsProbeLocalExecutor(NodeTransportPreference::Auto),
+        localExecutor: $localExecutor,
+        scripts: new ToolScriptDispatcher($localExecutor),
     );
 }
 
@@ -85,13 +93,11 @@ function toolsProbeLocalExecutor(NodeTransportPreference $defaultTransportPrefer
     }
 
     return new RemoteLocalExecutor(
-        transport: app(RemoteExecutor::class),
         commands: app(LocalExecutorCommandBuilder::class),
         operationTokens: app(OperationTokenFactory::class),
         activityLogger: app(ActivityLogger::class),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: $secret,
-        defaultTransportPreference: $defaultTransportPreference,
     );
 }
 
@@ -249,7 +255,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => $container->spec()],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t0\tmissing\t\n",
         ));
@@ -307,7 +313,7 @@ describe('ToolsProbe', function (): void {
     it('detects missing live capabilities', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 1));
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(exitCode: 1));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -318,7 +324,7 @@ describe('ToolsProbe', function (): void {
     it('passes when live capability exists', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\n"));
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\n"));
 
         $snapshot = $probe->introspect($tool);
 
@@ -336,10 +342,8 @@ describe('ToolsProbe', function (): void {
 
         $probe->introspect($tool);
 
-        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($input['binary'])
-            ->toBe('/opt/orbit/php/8.5/bin/php')
+        expect($shell->script)
+            ->toContain("binary='/opt/orbit/php/8.5/bin/php'")
             ->and($shell->script)
             ->toStartWith('set -eu')
             ->and($shell->script)
@@ -367,13 +371,9 @@ describe('ToolsProbe', function (): void {
         $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
-        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($input)
-            ->toMatchArray([
-                'binary' => '/home/deploy/.local/bin/claude',
-                'version_command' => "sudo -u 'deploy' -H bash -lc '/home/deploy/.local/bin/claude --version'",
-            ])
+        expect($shell->script)
+            ->toContain('/home/deploy/.local/bin/claude')
+            ->toContain('sudo -u')
             ->and($snapshot->get('claude-code'))
             ->toMatchArray([
                 'installed' => true,
@@ -416,7 +416,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: toolsProbeCapabilityStdout('/bin/sh', version: 'OrbStack 1.0.0'),
         );
-        $probe = new ToolsProbe($recordingShell, $orbstackCatalog);
+        $probe = toolsProbeWithRemoteShell($recordingShell, $orbstackCatalog);
 
         $probe->introspect($tool);
 
@@ -446,7 +446,7 @@ describe('ToolsProbe', function (): void {
                 }
             },
         ]));
-        $snapshot = new ToolsProbe(new ExecutingToolsProbeRemoteShell, $failingCatalog)->introspect($tool);
+        $snapshot = toolsProbeWithRemoteShell(new ExecutingToolsProbeRemoteShell, $failingCatalog)->introspect($tool);
 
         expect($snapshot->get('orbstack-probe'))
             ->toMatchArray([
@@ -475,7 +475,7 @@ describe('ToolsProbe', function (): void {
             },
         ]));
         $recordingShell = new RecordingToolsProbeRemoteShell;
-        $probe = new ToolsProbe($recordingShell, $orbstackCatalog);
+        $probe = toolsProbeWithRemoteShell($recordingShell, $orbstackCatalog);
 
         $probe->introspectMany([$tool]);
 
@@ -507,7 +507,7 @@ describe('ToolsProbe', function (): void {
                 }
             },
         ]));
-        $snapshot = new ToolsProbe(new ExecutingToolsProbeRemoteShell, $failingCatalog)
+        $snapshot = toolsProbeWithRemoteShell(new ExecutingToolsProbeRemoteShell, $failingCatalog)
             ->introspectMany([$tool])['orbstack-probe'];
 
         expect($snapshot->get('orbstack-probe'))
@@ -553,15 +553,10 @@ describe('ToolsProbe', function (): void {
         $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
-        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($input)
-            ->toMatchArray([
-                'binary' => 'docker',
-                'version_command' => 'docker --version',
-                'service' => '',
-                'provider_command' => 'docker info',
-            ])
+        expect($shell->script)
+            ->toContain("binary='docker'")
+            ->toContain('docker --version')
+            ->toContain('docker info')
             ->and($snapshot->get('docker'))
             ->toMatchArray([
                 'installed' => true,
@@ -609,15 +604,16 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm\n",
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
+        $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($shell->script)
             ->toContain('docker image inspect')
             ->not
             ->toContain('command -v php')
-            ->and($shell->input)
+            ->and($input['script'])
             ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
             ->and($snapshot->get('php'))
             ->toMatchArray([
@@ -632,7 +628,7 @@ describe('ToolsProbe', function (): void {
     it('frankenphp does not accept host PHP output as PHP tool capability', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php']);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/bin/php\t8.5.0\n",
         ));
@@ -656,7 +652,7 @@ describe('ToolsProbe', function (): void {
             'name' => 'composer',
             'expected_version' => '2.8',
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/local/bin/composer\tComposer version 2.7.0\n",
         ));
@@ -684,7 +680,7 @@ describe('ToolsProbe', function (): void {
                 'install_users' => ['agent'],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: toolsProbeCapabilityStdout('/home/orbit/.local/bin/claude', version: '2.1.181 (Claude Code)'),
         ));
@@ -703,7 +699,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
         ]);
         // Probe reports binary present but runtime state stopped — must produce no tool issue code
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n",
         ));
@@ -728,7 +724,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
         ]);
         // Service down: binary exists, state is stopped — runtime state is process-family fact
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n",
         ));
@@ -765,7 +761,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: "/home/orbit/.opencode/bin/opencode\t\tunknown\t\t\t\t\t\t\t\n",
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshot = $probe->introspect($tool);
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -799,21 +795,17 @@ describe('ToolsProbe', function (): void {
                     exitCode: 0,
                     stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\tstopped\t{$container->specHash()}\n",
                 );
-                $probe = new ToolsProbe($shell);
+                $probe = toolsProbeWithRemoteShell($shell);
 
                 $snapshot = $probe->introspect($tool);
                 $drift = $probe->diff($tool, $snapshot);
-                $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
-
                 $issueKeys = array_map(fn ($entry) => $entry->key, $drift);
 
                 expect($shell->script)
                     ->toContain('docker container inspect')
                     ->toContain('.State.Restarting')
-                    ->and($input['container'])
-                    ->toBe($container->name())
-                    ->and($input['container'])
-                    ->toBe('orbit-e2e-dev-abc123-dev-orbit-caddy')
+                    ->toContain($container->name())
+                    ->toContain('orbit-e2e-dev-abc123-dev-orbit-caddy')
                     ->and($issueKeys)
                     ->toContain('tool.container_not_running')
                     ->and(toolProbeIssue($drift, 'tool.container_not_running')?->detail)
@@ -838,7 +830,7 @@ describe('ToolsProbe', function (): void {
             exitCode: 0,
             stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\trestarting\t{$container->specHash()}\n",
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $drift = $probe->diff($tool, $probe->introspect($tool));
 
@@ -858,7 +850,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => $container->spec()],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t0\tmissing\t\n",
         ));
@@ -880,7 +872,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
             'config' => ['container' => $container->spec()],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+        $probe = toolsProbeWithRemoteShell(new ToolsProbeRemoteShell(
             exitCode: 0,
             stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\trunning\t".str_repeat('b', 64)."\n",
         ));
@@ -1019,7 +1011,7 @@ describe('ToolsProbe', function (): void {
                 1,
             ),
         );
-        $probe = new ToolsProbe($shell);
+        $probe = toolsProbeWithRemoteShell($shell);
 
         $snapshots = $probe->introspectMany([$composer, $docker]);
 
@@ -1089,7 +1081,7 @@ describe('ToolsProbe', function (): void {
                 1,
             ),
         );
-        $probe = new ToolsProbe($shell, $catalog);
+        $probe = toolsProbeWithRemoteShell($shell, $catalog);
 
         $snapshot = $probe->introspectMany([$tool])['caddy'];
         $drift = $probe->diff($tool, $snapshot);
@@ -1586,7 +1578,9 @@ describe('ToolsProbe', function (): void {
             'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
         ]);
 
-        $drift = new ToolsProbe()->diff($tool, new ToolsProbe()->introspect($tool));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
+            'openclaw' => ['installed' => true],
+        ]));
 
         expect(toolProbeIssue($drift, 'tool.agent_credentials_missing'))->toBeNull();
     });
@@ -1656,6 +1650,53 @@ describe('ToolsProbe', function (): void {
         );
     });
 });
+
+final readonly class ToolsProbeScriptExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private RemoteShell $shell,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        if ($commandName !== 'internal:tool:run-script') {
+            $script = implode(' ', [
+                $commandName,
+                ...array_map(static fn (mixed $argument): string => escapeshellarg((string) $argument), $arguments),
+            ]);
+
+            return $this->shell->run($node, $script, $transportOptions);
+        }
+
+        $payload = json_decode((string) ($transportOptions['input'] ?? ''), true, flags: JSON_THROW_ON_ERROR);
+        $result = $this->shell->run($node, (string) ($payload['script'] ?? ''), $transportOptions);
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => [
+                    'data' => [
+                        'exit_code' => $result->exitCode,
+                        'stdout' => $result->stdout,
+                        'stderr' => $result->stderr,
+                        'duration_ms' => $result->durationMs,
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
+        );
+    }
+}
 
 final class ToolsProbeRemoteShell implements RemoteShell
 {

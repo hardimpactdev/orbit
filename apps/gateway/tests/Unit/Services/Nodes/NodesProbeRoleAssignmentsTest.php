@@ -35,7 +35,7 @@ beforeEach(function (): void {
         new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor),
     );
     $this->app->instance(RemoteShell::class, $remoteShell);
-    $this->app->instance(NodesProbe::class, new NodesProbe(remoteShell: $remoteShell));
+    $this->app->instance(NodesProbe::class, new NodesProbe);
     $this->probe = app(NodesProbe::class);
 });
 

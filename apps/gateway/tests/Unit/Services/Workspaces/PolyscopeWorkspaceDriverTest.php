@@ -9,12 +9,12 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\PolyscopeWorkspaceBranchAligner;
 use App\Services\Workspaces\PolyscopeWorkspaceDriver;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -22,11 +22,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
+use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-it('reads Polyscope config through the local executor lookup command with stdout suppressed in activity logs', function (): void {
+it('reads Polyscope config through the Agent-push lookup command with stdout suppression requested', function (): void {
     $node = polyscopeWorkspaceDriverAppDevNode();
     $app = App::factory()->create([
         'name' => 'docs',
@@ -82,13 +83,10 @@ it('reads Polyscope config through the local executor lookup command with stdout
         ->not->toContain('sqlite3')->and($script)
         ->not->toContain('php -r');
 
-    $completed = polyscopeWorkspaceDriverLocalExecutorActivityRows()[1];
-    $properties = json_decode((string) $completed->properties, true, flags: JSON_THROW_ON_ERROR);
-
-    expect($properties['stdout_summary'])
-        ->toBe('<suppressed>')
-        ->and(json_encode($properties, JSON_THROW_ON_ERROR))
-        ->not->toContain('poly-token-secret');
+    expect($transport->calls[0]['options']['redact_stdout'])
+        ->toBeTrue()
+        ->and($transport->calls[0]['options']['redact_stderr'])
+        ->toBeTrue();
 });
 
 it('does not leak Polyscope api tokens from config lookup output into workspace exceptions', function (
@@ -194,22 +192,9 @@ it('treats Polyscope config lookup error messages as untrusted remote output', f
     }
 });
 
-function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $transport): RemoteLocalExecutor
+function polyscopeWorkspaceDriverExecutor(PolyscopeWorkspaceDriverTransport $transport): RunsInternalCommands
 {
-    return new RemoteLocalExecutor(
-        transport: $transport,
-        commands: new LocalExecutorCommandBuilder,
-        operationTokens: new OperationTokenFactory(
-            signer: new OperationTokenSigner,
-            secret: 'gateway-secret',
-            ttlSeconds: 120,
-            clock: static fn (): int => 1_798_105_200,
-        ),
-        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
-        operationRuns: app(OperationRunRecorder::class),
-        applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
-    );
+    return new RemoteExecutorBackedInternalExecutor($transport);
 }
 
 function polyscopeWorkspaceDriverUnusedBranchAligner(): PolyscopeWorkspaceBranchAligner

@@ -20,18 +20,19 @@ use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppsFixer;
 use App\Services\Ca\OrbitCaService;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspacePlacement;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Tests\Fakes\RemoteShellBackedInternalExecutor;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -62,13 +63,6 @@ final class AppsFixerRecordingRemoteShell implements RemoteShell
 
 function buildAppsFixer(RemoteShell $shell): AppsFixer
 {
-    if (! is_string(request()->header(ExplicitRemoteShellFallback::HEADER))) {
-        request()->headers->set(
-            ExplicitRemoteShellFallback::HEADER,
-            ExplicitRemoteShellFallback::REQUIRED,
-        );
-    }
-
     $appRuntimeContainerRenderer = new AppRuntimeContainerRenderer(
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
@@ -77,7 +71,6 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
     return new AppsFixer(
         $appRuntimeContainerRenderer,
         new AppRuntimeContainerManager(
-            $shell,
             new DockerCommandBuilder,
             new readonly class extends OrbitCaService {
                 public function rootCert(): string
@@ -85,6 +78,10 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
                     return "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n";
                 }
             },
+            scripts: new ToolScriptDispatcher(new RemoteShellBackedInternalExecutor(
+                new LocalExecutorCommandBuilder,
+                $shell,
+            )),
         ),
         new AppRuntimeUser,
         new EnsureFrankenPhpRuntimeProcess(
@@ -102,9 +99,9 @@ function appsFixerNode(): Node
 
 function fake_apps_fixer_security_repair(): void
 {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
     );
 
     Http::preventStrayRequests();

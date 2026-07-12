@@ -7,7 +7,7 @@ namespace App\Services\Workspaces;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use Throwable;
 
@@ -30,7 +30,7 @@ final readonly class PolyscopeWorkspaceBranchAligner
     ];
 
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function align(Node $node, string $workspaceId, string $path, string $name): void

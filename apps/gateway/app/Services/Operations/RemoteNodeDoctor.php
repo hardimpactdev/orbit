@@ -6,8 +6,8 @@ namespace App\Services\Operations;
 
 use App\Models\Node;
 use App\Models\OperationRun;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use Throwable;
 
@@ -16,7 +16,7 @@ class RemoteNodeDoctor
     private const int DOCTOR_TIMEOUT_SECONDS = 120;
 
     public function __construct(
-        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
         private readonly ?WorkloadNodeDoctorIssueParser $doctorIssues = null,
     ) {}
 
@@ -55,9 +55,9 @@ class RemoteNodeDoctor
         return $this->doctorIssues()->fromOutput($data['output']);
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     private function doctorIssues(): WorkloadNodeDoctorIssueParser

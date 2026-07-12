@@ -59,25 +59,6 @@ describe('GatewayLogStreamClient', function (): void {
             ->toBe(0);
     });
 
-    it('forwards explicit node transport preference on stream requests', function (): void {
-        Http::fake([
-            'https://gateway.test/api/logs*' => Http::response("line one\n", 200, [
-                'Content-Type' => 'text/plain; charset=UTF-8',
-            ]),
-        ]);
-
-        new GatewayLogStreamClient('https://gateway.test', 30)
-            ->withNodeTransportPreference('transitional-ssh-fallback')
-            ->streamText('/api/logs', ['lines' => 5], fn () => null);
-
-        Http::assertSent(
-            fn (Request $request): bool => (
-                $request->method() === 'GET'
-                && $request->header('X-Orbit-Node-Transport-Preference')[0] === 'transitional-ssh-fallback'
-            ),
-        );
-    });
-
     it('disables idle read timeout so long silent log streams can complete', function (): void {
         $options = [];
 

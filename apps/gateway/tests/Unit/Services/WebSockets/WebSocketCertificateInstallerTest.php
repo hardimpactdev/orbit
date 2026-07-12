@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\WebSockets\WebSocketBackendName;
 use App\Services\WebSockets\WebSocketCertificateInstaller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,9 +16,9 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
     );
 
     $this->tempStorage = sys_get_temp_dir().'/orbit-websocket-cert-test-'.uniqid();

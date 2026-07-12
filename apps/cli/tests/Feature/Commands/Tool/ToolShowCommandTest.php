@@ -53,7 +53,6 @@ describe('tool:show', function (): void {
             'tool' => 'composer',
             '--node' => 'app-1',
             '--live' => true,
-            '--node-transport' => 'transitional-ssh-fallback',
             '--json' => true,
         ]);
 
@@ -64,58 +63,11 @@ describe('tool:show', function (): void {
                 $request->method() === 'GET'
                 && str_contains($url, '/api/tools/composer')
                 && str_contains($url, 'live=1')
-                && $request->hasHeader('X-Orbit-Node-Transport-Preference', 'transitional-ssh-fallback')
+                && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
             );
         });
 
         expect($exitCode)->toBe(0);
-    });
-
-    it('requires the exact transitional SSH selector before a live request', function (): void {
-        Http::fake();
-
-        [$exitCode, $output] = runCommand($this, 'tool:show', [
-            'tool' => 'composer',
-            '--node' => 'app-1',
-            '--live' => true,
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($decoded['error']['code'])
-            ->toBe('node_transport_required')
-            ->and($decoded['error']['meta'])
-            ->toBe([
-                'field' => 'node-transport',
-                'required' => 'transitional-ssh-fallback',
-            ]);
-    });
-
-    it('rejects a node transport selector for registry-only inspection', function (): void {
-        Http::fake();
-
-        [$exitCode, $output] = runCommand($this, 'tool:show', [
-            'tool' => 'composer',
-            '--node' => 'app-1',
-            '--node-transport' => 'transitional-ssh-fallback',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        Http::assertNothingSent();
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($decoded['error']['code'])
-            ->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])
-            ->toBe('node-transport');
     });
 
     it('renders human output as a tool detail view', function (): void {

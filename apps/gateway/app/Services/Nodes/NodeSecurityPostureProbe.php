@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
@@ -12,7 +11,7 @@ use App\Enums\AdoptAction;
 use App\Enums\DriftKind;
 use App\Models\FirewallRule;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Security\PublicSshDenyInstaller;
 use App\Services\Security\SshdHardenedInstaller;
 use App\Services\Security\SshHostKeyPinner;
@@ -26,10 +25,8 @@ use Throwable;
  */
 final readonly class NodeSecurityPostureProbe
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     /**
@@ -116,15 +113,12 @@ final readonly class NodeSecurityPostureProbe
             return;
         }
 
-        $shell = $this->remoteShell ?? app(RemoteShell::class);
-
         match ($entry->key) {
             'node.security.sshd_config', 'node.security.sshd_listen' => app(SshdHardenedInstaller::class)->installFor(
                 $node,
-                $shell,
             ),
-            'node.security.public_ssh_deny' => app(PublicSshDenyInstaller::class)->installFor($node, $shell),
-            'node.security.sysctl' => app(SysctlBaselineInstaller::class)->installFor($node, $shell),
+            'node.security.public_ssh_deny' => app(PublicSshDenyInstaller::class)->installFor($node),
+            'node.security.sysctl' => app(SysctlBaselineInstaller::class)->installFor($node),
             'node.security.runtime_user' => throw new RuntimeException(
                 'Runtime user drift is report-only; re-bake or migrate the node.',
             ),
@@ -273,9 +267,9 @@ final readonly class NodeSecurityPostureProbe
         return $drift;
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     /**

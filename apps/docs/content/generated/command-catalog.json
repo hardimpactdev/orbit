@@ -231,7 +231,6 @@
             "options": [
                 "requested-version",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -785,7 +784,6 @@
                 "instance",
                 "driver",
                 "node",
-                "node-transport",
                 "path",
                 "root",
                 "domain",
@@ -1027,7 +1025,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "repo",
                 "template-repo",
                 "new-repo",
@@ -1149,7 +1146,6 @@
             "options": [
                 "dry-run",
                 "force",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -1230,7 +1226,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "path",
                 "root",
                 "php-version",
@@ -1316,7 +1311,6 @@
             ],
             "options": [
                 "force",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -2489,7 +2483,6 @@
             "options": [
                 "driver",
                 "node",
-                "node-transport",
                 "host",
                 "port",
                 "database",
@@ -2569,7 +2562,6 @@
             "options": [
                 "service",
                 "node",
-                "node-transport",
                 "database",
                 "username",
                 "password",
@@ -3290,7 +3282,6 @@
                 "slug",
                 "driver",
                 "node",
-                "node-transport",
                 "host",
                 "port",
                 "database",
@@ -3964,7 +3955,6 @@
                 "app",
                 "workspace",
                 "node",
-                "node-transport",
                 "self",
                 "all",
                 "family",
@@ -4055,7 +4045,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -4113,7 +4102,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "gateway",
                 "json"
             ],
@@ -4236,7 +4224,6 @@
             "options": [
                 "port",
                 "node",
-                "node-transport",
                 "direction",
                 "from",
                 "to",
@@ -4308,7 +4295,6 @@
             "options": [
                 "port",
                 "node",
-                "node-transport",
                 "direction",
                 "from",
                 "to",
@@ -4447,7 +4433,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json"
             ],
@@ -4914,7 +4899,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "reset",
                 "json"
             ],
@@ -4979,7 +4963,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "purge-data",
                 "json"
@@ -5037,7 +5020,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -5101,7 +5083,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -5612,7 +5593,6 @@
             "arguments": [],
             "options": [
                 "user",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7182,7 +7162,6 @@
             "arguments": [],
             "options": [
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7249,7 +7228,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "json",
                 "stream-json"
             ],
@@ -7325,7 +7303,6 @@
             ],
             "options": [
                 "node",
-                "node-transport",
                 "force",
                 "json",
                 "stream-json"
@@ -7406,7 +7383,6 @@
                 "interval",
                 "app",
                 "node",
-                "node-transport",
                 "timezone",
                 "json"
             ],
@@ -7532,7 +7508,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "run",
                 "lines",
                 "json"
@@ -7659,7 +7634,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -7726,7 +7700,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -12271,7 +12244,6 @@
             "options": [
                 "app",
                 "node",
-                "node-transport",
                 "live",
                 "json"
             ],
@@ -13922,7 +13894,6 @@
                 "app",
                 "keep-files",
                 "force",
-                "node-transport",
                 "json"
             ],
             "renderers": {
@@ -13981,7 +13952,6 @@
             "options": [
                 "app",
                 "path",
-                "node-transport",
                 "json",
                 "stream-json"
             ],

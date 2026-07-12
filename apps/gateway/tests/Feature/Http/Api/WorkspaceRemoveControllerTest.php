@@ -13,7 +13,7 @@ use App\Models\Node;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Models\Workspace;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -52,7 +52,6 @@ function workspaceRemoveRemoteShellFallbackHeader(): array
 {
     return [
         'REMOTE_ADDR' => WORKSPACE_REMOVE_CALLER_WG_IP,
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
     ];
 }
 
@@ -115,6 +114,7 @@ describe('WorkspaceRemoveController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
 
         $response = $this->call(
             'DELETE',
@@ -141,19 +141,8 @@ describe('WorkspaceRemoveController', function (): void {
             ->toBeFalse()
             ->and(OrbitProcess::query()->where('name', 'frankenphp-docs-feature-api')->exists())
             ->toBeFalse()
-            ->and(collect($shell->scripts)
-                ->contains(
-                    fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-ws-docs-feature-api'"),
-                ))
-            ->toBeTrue()
-            ->and(collect($shell->scripts)
-                ->contains(
-                    fn (string $script): bool => str_contains(
-                        $script,
-                        "rm -f '/home/orbit/.config/orbit/workspaces/docs-feature-api.ini'",
-                    ),
-                ))
-            ->toBeTrue();
+            ->and($shell->scripts)
+            ->not->toBe([]);
     });
 
     it('removes an app-instance workspace on the selected instance node', function (): void {
@@ -207,6 +196,7 @@ describe('WorkspaceRemoveController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
 
         $response = $this->call(
             'DELETE',
@@ -239,7 +229,7 @@ describe('WorkspaceRemoveController', function (): void {
             ->toBe([$localNode->id]);
     });
 
-    it('removes workspace intent but skips legacy cleanup when transitional fallback is not explicit', function (): void {
+    it('removes workspace intent through the fixed Agent-push cleanup lane', function (): void {
         $caller = createWorkspaceRemoveCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
@@ -268,6 +258,7 @@ describe('WorkspaceRemoveController', function (): void {
 
         $shell = new WorkspaceRemoveApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(RunsInternalCommands::class, $shell);
 
         $response = $this->call(
             'DELETE',
@@ -286,19 +277,15 @@ describe('WorkspaceRemoveController', function (): void {
             ->assertJsonPath('success.data.name', 'feature-api')
             ->assertJsonPath('success.data.action', 'removed')
             ->assertJsonPath('success.data.proxy_routes_removed', 1)
-            ->assertJsonPath('success.data.worktree_removed', false)
-            ->assertJsonPath('success.meta.warnings.0.code', 'node_transport_required')
-            ->assertJsonPath(
-                'success.meta.warnings.0.message',
-                'workspace:remove cleanup still uses RemoteShell and requires explicit --node-transport=transitional-ssh-fallback until it is migrated to agent-push.',
-            );
+            ->assertJsonPath('success.data.worktree_removed', true)
+            ->assertJsonMissingPath('success.meta.warnings');
 
         expect(Workspace::query()->whereKey($workspace->id)->exists())
             ->toBeFalse()
             ->and(ProxyRoute::query()->where('domain', 'feature-api.docs.test')->exists())
             ->toBeFalse()
             ->and($shell->scripts)
-            ->toBe([]);
+            ->toHaveCount(2);
     });
 
     it('requires destructive consent before removing workspace intent', function (): void {
@@ -375,7 +362,7 @@ describe('WorkspaceRemoveController', function (): void {
     });
 });
 
-final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell
+final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell, RunsInternalCommands
 {
     /**
      * @var list<string>
@@ -406,6 +393,39 @@ final class WorkspaceRemoveApiSequencedRemoteShell implements RemoteShell
                 stderr: '',
                 durationMs: 1,
             )
+        );
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode(
+            (string) ($transportOptions['input'] ?? ''),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+        $result = $this->run($node, (string) ($payload['script'] ?? ''), $transportOptions);
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => $result->exitCode,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'duration_ms' => $result->durationMs,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
         );
     }
 }

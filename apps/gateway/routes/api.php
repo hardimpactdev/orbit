@@ -328,7 +328,6 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/vpn/web-ui/password', VpnWebUiChangePasswordController::class);
         Route::get('/nodes', NodeListController::class);
         Route::post('/nodes', NodeStoreController::class);
-        Route::get('/nodes/self/manage-key', [NodeManageController::class, 'key']);
         Route::post('/nodes/self/manage', [NodeManageController::class, 'manage']);
         Route::post('/nodes/grant', NodeGrantController::class);
         Route::post('/nodes/permissions', NodePermissionsController::class);

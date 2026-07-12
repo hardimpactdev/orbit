@@ -9,7 +9,7 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\AppWebSocketBinding;
 use App\Models\Node;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Database\Eloquent\Collection;
 use RuntimeException;
 
@@ -18,7 +18,7 @@ class WebSocketRuntimeAppConfigSyncer
     public function __construct(
         private readonly NodeRoleAssignments $nodeRoleAssignments,
         private readonly WebSocketRuntimeContainerRenderer $runtimeContainerRenderer,
-        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function sync(): void
@@ -145,8 +145,8 @@ class WebSocketRuntimeAppConfigSyncer
         return $hosts === [] ? ['*'] : $hosts;
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 }

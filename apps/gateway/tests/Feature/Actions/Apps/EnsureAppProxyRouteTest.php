@@ -12,8 +12,8 @@ use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\Proxy\RemoteCaddyConfig;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -21,14 +21,14 @@ use Illuminate\Support\Facades\Http;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
-
     app()->instance(OrbitCaService::class, new EnsureAppProxyRouteTestCa);
+    app()->instance(
+        RemoteCaddyConfig::class,
+        new RemoteCaddyConfig(app(RemoteLocalExecutor::class)),
+    );
 });
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 final class EnsureAppProxyRouteTestShell implements RemoteShell
 {

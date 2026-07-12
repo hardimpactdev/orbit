@@ -16,7 +16,6 @@ use App\Services\NodeCommandTransport\NodeAgentPushStreamResult;
 use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
@@ -29,7 +28,6 @@ use Throwable;
 
 final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternalCommands
 {
-    // @orbit-ssh-lane transitional-ssh
     private const string OPERATION_ID_METADATA_KEY = 'ORBIT_OPERATION_ID';
 
     private const int OUTPUT_SUMMARY_BYTES = 4_096;
@@ -48,20 +46,14 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
 
     private const string BIND_INPUT_OPTION = 'bind_input';
 
-    private const string SSH_BOOTSTRAP_BINARY_OPTION = 'ssh_bootstrap_binary';
-
-    private const string SSH_BOOTSTRAP_INPUT_FILE_OPTION = 'ssh_bootstrap_input_file';
-
     private const string START_UNSUPPORTED_MESSAGE = 'RemoteLocalExecutor::startInternal() is not supported. Long-running local-executor processes are not currently audited; use runInternal() for completion-based dispatch. See apps/docs/content/execution-lanes.md.';
 
     public function __construct(
-        private RemoteExecutor $transport,
         private LocalExecutorCommandComposer $commands,
         private OperationTokenFactory $operationTokens,
         private ActivityLogger $activityLogger,
         private OperationRunRecorder $operationRuns,
         private string $applicationKey,
-        private NodeTransportPreference $defaultTransportPreference = NodeTransportPreference::Auto,
     ) {
         if (trim($this->applicationKey) === '') {
             throw new RuntimeException('Application key is required.');
@@ -80,8 +72,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
-     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
@@ -110,12 +100,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     public function runInternal(
@@ -154,7 +140,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 transportOptions: $transportOptions,
             );
 
-            $preference = $this->transportPreference($transportOptions);
             $envelope = NodeCommandEnvelope::agentPushBinary(
                 operationId: $operationId,
                 binary: 'orbit',
@@ -164,7 +149,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 environment: $this->localExecutorEnvironment($node, $transportOptions),
                 timeoutSeconds: $this->timeoutSeconds($transportOptions),
             );
-            $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
+            $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope);
             $result = match ($transport) {
                 NodeTransport::GatewayOnly => $this->runGatewayLocal(
                     node: $node,
@@ -173,18 +158,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                     commandOptions: $commandOptions,
                     dispatch: $dispatch,
                     transportOptions: $transportOptions,
-                ),
-                NodeTransport::TransitionalSshFallback => $this->transport->run(
-                    node: $node,
-                    script: $this->sshDispatchScript(
-                        node: $node,
-                        commandName: $commandName,
-                        arguments: $arguments,
-                        commandOptions: $commandOptions,
-                        dispatch: $dispatch,
-                        transportOptions: $transportOptions,
-                    ),
-                    options: $this->transportDispatchOptions($node, $transportOptions),
                 ),
                 NodeTransport::AgentPush => $this->runAgentPush(
                     node: $node,
@@ -309,12 +282,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     public function streamInternal(
@@ -461,8 +430,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
-     *     force_remote_host?: bool,
      * }  $options
      */
     #[\Override]
@@ -485,12 +452,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     public function startInternal(
@@ -586,12 +549,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function logDispatching(
@@ -733,12 +692,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function transportExceptionMessageSummary(
@@ -772,12 +727,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      * @return array<array-key, mixed>
      */
@@ -813,12 +764,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function shouldSuppressExceptionMessage(array $transportOptions): bool
@@ -872,14 +819,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         string $operationToken,
         array $transportOptions,
     ): string {
-        $redacted = $this->redactOperationToken($value, $operationToken);
-        $bootstrap = $transportOptions[self::SSH_BOOTSTRAP_BINARY_OPTION] ?? null;
-
-        if (is_array($bootstrap) && is_string($bootstrap['url'] ?? null) && $bootstrap['url'] !== '') {
-            $redacted = str_replace($bootstrap['url'], self::REDACTED_VALUE, $redacted);
-        }
-
-        return $redacted;
+        return $this->redactOperationToken($value, $operationToken);
     }
 
     /**
@@ -895,12 +835,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function redactExceptionText(
@@ -929,12 +865,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function redactCommandOptionSecrets(string $value, array $transportOptions, array $commandOptions): string
@@ -968,12 +900,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      * @return array<array-key, mixed>
      */
@@ -1017,12 +945,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function redactExceptionMetadataValue(
@@ -1146,12 +1070,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      * @return list<string>
      */
@@ -1194,12 +1114,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      */
     private function operationId(array $transportOptions): string
@@ -1215,266 +1131,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     }
 
     /**
-     * @param  array<int|string, mixed>  $arguments
-     * @param  array<int|string, mixed>  $commandOptions
-     * @param  array{operationId: string, operationToken: string, auditLine: string, argv: list<string>}  $dispatch
-     * @param  array<string, mixed>  $transportOptions
-     *
-     * @mago-expect lint:excessive-parameter-list
-     */
-    private function sshDispatchScript(
-        Node $node,
-        string $commandName,
-        array $arguments,
-        array $commandOptions,
-        array $dispatch,
-        array $transportOptions,
-    ): string {
-        $bootstrapBinary = $this->sshBootstrapBinary($transportOptions);
-
-        if ($bootstrapBinary === null) {
-            return $this->commands->build(
-                targetNode: $node,
-                commandName: $commandName,
-                arguments: $arguments,
-                options: $commandOptions,
-                operationToken: $dispatch['operationToken'],
-            );
-        }
-
-        $environment = $this->localExecutorEnvironment($node, $transportOptions);
-
-        if (array_key_exists('APP_KEY', $environment)) {
-            throw new RuntimeException(
-                self::SSH_BOOTSTRAP_BINARY_OPTION.' requires '.self::BIND_APPLICATION_KEY_OPTION.'=false.',
-            );
-        }
-
-        return $this->sshBootstrapBinaryScript(
-            argv: $dispatch['argv'],
-            bootstrapBinary: $bootstrapBinary,
-            inputFile: $this->sshBootstrapInputFile($transportOptions),
-            environment: $environment,
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $transportOptions
-     * @return array{url: string, sha256: string}|null
-     */
-    private function sshBootstrapBinary(array $transportOptions): ?array
-    {
-        if (! array_key_exists(self::SSH_BOOTSTRAP_BINARY_OPTION, $transportOptions)) {
-            return null;
-        }
-
-        if (! is_array($transportOptions[self::SSH_BOOTSTRAP_BINARY_OPTION])) {
-            throw new RuntimeException(self::SSH_BOOTSTRAP_BINARY_OPTION.' must be an object.');
-        }
-
-        $bootstrap = $transportOptions[self::SSH_BOOTSTRAP_BINARY_OPTION];
-
-        if (! array_key_exists('url', $bootstrap) || ! is_string($bootstrap['url']) || trim($bootstrap['url']) === '') {
-            throw new RuntimeException(self::SSH_BOOTSTRAP_BINARY_OPTION.'.url must be a non-empty string.');
-        }
-
-        if (
-            ! array_key_exists('sha256', $bootstrap)
-            || ! is_string($bootstrap['sha256'])
-            || preg_match('/\A[a-fA-F0-9]{64}\z/', $bootstrap['sha256']) !== 1
-        ) {
-            throw new RuntimeException(self::SSH_BOOTSTRAP_BINARY_OPTION.'.sha256 must be a SHA-256 hex string.');
-        }
-
-        $url = $bootstrap['url'];
-        $sha256 = $bootstrap['sha256'];
-
-        $this->ensureNoNullByte($url, self::SSH_BOOTSTRAP_BINARY_OPTION.'.url');
-
-        return [
-            'url' => $url,
-            'sha256' => strtolower($sha256),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $transportOptions
-     * @return array{path: string, sha256: string}|null
-     */
-    private function sshBootstrapInputFile(array $transportOptions): ?array
-    {
-        if (! array_key_exists(self::SSH_BOOTSTRAP_INPUT_FILE_OPTION, $transportOptions)) {
-            return null;
-        }
-
-        if (! is_array($transportOptions[self::SSH_BOOTSTRAP_INPUT_FILE_OPTION])) {
-            throw new RuntimeException(self::SSH_BOOTSTRAP_INPUT_FILE_OPTION.' must be an object.');
-        }
-
-        $inputFile = $transportOptions[self::SSH_BOOTSTRAP_INPUT_FILE_OPTION];
-
-        if (
-            ! array_key_exists('path', $inputFile)
-            || ! is_string($inputFile['path'])
-            || ! str_starts_with($inputFile['path'], '/')
-        ) {
-            throw new RuntimeException(self::SSH_BOOTSTRAP_INPUT_FILE_OPTION.'.path must be an absolute path.');
-        }
-
-        if (
-            ! array_key_exists('sha256', $inputFile)
-            || ! is_string($inputFile['sha256'])
-            || preg_match('/\A[a-fA-F0-9]{64}\z/', $inputFile['sha256']) !== 1
-        ) {
-            throw new RuntimeException(self::SSH_BOOTSTRAP_INPUT_FILE_OPTION.'.sha256 must be a SHA-256 hex string.');
-        }
-
-        $path = $inputFile['path'];
-        $sha256 = $inputFile['sha256'];
-
-        $this->ensureNoNullByte($path, self::SSH_BOOTSTRAP_INPUT_FILE_OPTION.'.path');
-
-        return [
-            'path' => $path,
-            'sha256' => strtolower($sha256),
-        ];
-    }
-
-    /**
-     * @param  list<string>  $argv
-     * @param  array{url: string, sha256: string}  $bootstrapBinary
-     * @param  array{path: string, sha256: string}|null  $inputFile
-     * @param  array<string, string>  $environment
-     */
-    private function sshBootstrapBinaryScript(
-        array $argv,
-        array $bootstrapBinary,
-        ?array $inputFile,
-        array $environment,
-    ): string {
-        $environmentLines = $this->shellEnvironmentLines($environment);
-        $inputFileLines = array_map(
-            static fn (string $line): string => "    {$line}",
-            $this->shellInputFileLines($inputFile),
-        );
-        $argvLine = $this->shellArgvLine($argv);
-        $url = escapeshellarg($bootstrapBinary['url']);
-        $sha256 = escapeshellarg($bootstrapBinary['sha256']);
-        $cleanupTargets = $inputFile === null ? '"$bootstrap_path"' : '"$bootstrap_path" "$payload_path"';
-
-        return implode(PHP_EOL, [
-            'set -euo pipefail',
-            'unset APP_KEY',
-            ...$environmentLines,
-            'bootstrap_path="$(mktemp "${TMPDIR:-/tmp}/orbit-executor-bootstrap.XXXXXX")"',
-            $inputFile === null ? '' : 'payload_path='.escapeshellarg($inputFile['path']),
-            "cleanup_executor_bootstrap() { rm -f {$cleanupTargets}; }",
-            'trap cleanup_executor_bootstrap EXIT',
-            'download_executor_bootstrap() {',
-            '    url="$1"',
-            '    target="$2"',
-            '    case "$url" in',
-            '        file:///*) cp "${url#file://}" "$target" ;;',
-            '        *) curl -fksSL "$url" -o "$target" ;;',
-            '    esac',
-            '}',
-            'check_executor_bootstrap_sha256() {',
-            '    expected="$1"',
-            '    file="$2"',
-            '    if command -v sha256sum >/dev/null 2>&1; then',
-            '        printf "%s  %s\n" "$expected" "$file" | sha256sum -c -',
-            '        return',
-            '    fi',
-            '    if command -v shasum >/dev/null 2>&1; then',
-            '        actual="$(shasum -a 256 "$file" | awk \'{ print $1 }\')"',
-            '        test "$actual" = "$expected"',
-            '        return',
-            '    fi',
-            '    echo "No SHA-256 checksum tool found." >&2',
-            '    return 127',
-            '}',
-            'prepare_executor_bootstrap() {',
-            ...$inputFileLines,
-            "    download_executor_bootstrap {$url} \"\$bootstrap_path\"",
-            "    check_executor_bootstrap_sha256 {$sha256} \"\$bootstrap_path\"",
-            '    chmod 0755 "$bootstrap_path"',
-            '}',
-            'prepare_executor_bootstrap 1>&2',
-            "\"\$bootstrap_path\" {$argvLine}",
-        ]);
-    }
-
-    /**
-     * @param  array{path: string, sha256: string}|null  $inputFile
-     * @return list<string>
-     */
-    private function shellInputFileLines(?array $inputFile): array
-    {
-        if ($inputFile === null) {
-            return [];
-        }
-
-        return [
-            'mkdir -p "$(dirname "$payload_path")"',
-            'cat > "$payload_path"',
-            'check_executor_bootstrap_sha256 '.escapeshellarg($inputFile['sha256']).' "$payload_path"',
-        ];
-    }
-
-    /**
-     * @param  array<string, string>  $environment
-     * @return list<string>
-     */
-    private function shellEnvironmentLines(array $environment): array
-    {
-        $lines = [];
-
-        foreach ($environment as $key => $value) {
-            if (preg_match(self::ENVIRONMENT_KEY_PATTERN, $key) !== 1) {
-                throw new RuntimeException("Invalid bootstrap environment key [{$key}].");
-            }
-
-            $this->ensureNoNullByte($value, "bootstrap environment [{$key}]");
-
-            $lines[] = 'export '.$key.'='.escapeshellarg($value);
-        }
-
-        return $lines;
-    }
-
-    /**
-     * @param  list<string>  $argv
-     */
-    private function shellArgvLine(array $argv): string
-    {
-        return implode(' ', array_map($this->shellArgvSegment(...), $argv));
-    }
-
-    private function shellArgvSegment(string $argument): string
-    {
-        $this->ensureNoNullByte($argument, 'argv');
-
-        if (str_starts_with($argument, '--operation-token=')) {
-            return '--operation-token='.escapeshellarg(substr($argument, strlen('--operation-token=')));
-        }
-
-        if (preg_match('/\A[A-Za-z0-9:_.=\/-]+\z/', $argument) === 1) {
-            return $argument;
-        }
-
-        return escapeshellarg($argument);
-    }
-
-    private function ensureNoNullByte(string $value, string $field): void
-    {
-        if (! str_contains($value, "\0")) {
-            return;
-        }
-
-        throw new RuntimeException("{$field} contains a null byte.");
-    }
-
-    /**
      * @param  array{
      *     cwd?: string,
      *     timeout?: int,
@@ -1486,12 +1142,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      * @return array{
      *     cwd?: string,
@@ -1501,7 +1153,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
-     *     force_remote_host?: bool,
      * }
      */
     private function transportDispatchOptions(Node $node, array $transportOptions): array
@@ -1514,24 +1165,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             $transportOptions['redact_command_options'],
         );
 
-        if (array_key_exists('transport', $transportOptions)) {
-            unset($transportOptions['transport']);
-        }
-
         if (array_key_exists(self::BIND_APPLICATION_KEY_OPTION, $transportOptions)) {
             unset($transportOptions[self::BIND_APPLICATION_KEY_OPTION]);
         }
 
         if (array_key_exists(self::BIND_INPUT_OPTION, $transportOptions)) {
             unset($transportOptions[self::BIND_INPUT_OPTION]);
-        }
-
-        if (array_key_exists(self::SSH_BOOTSTRAP_BINARY_OPTION, $transportOptions)) {
-            unset($transportOptions[self::SSH_BOOTSTRAP_BINARY_OPTION]);
-        }
-
-        if (array_key_exists(self::SSH_BOOTSTRAP_INPUT_FILE_OPTION, $transportOptions)) {
-            unset($transportOptions[self::SSH_BOOTSTRAP_INPUT_FILE_OPTION]);
         }
 
         $transportOptions['environment'] = $environment;
@@ -1609,12 +1248,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
-     *     transport?: NodeTransportPreference|string,
      *     bind_application_key?: bool,
      *     bind_input?: bool,
-     *     force_remote_host?: bool,
-     *     ssh_bootstrap_binary?: array{url: string, sha256: string},
-     *     ssh_bootstrap_input_file?: array{path: string, sha256: string},
      * }  $transportOptions
      *
      * @mago-expect lint:excessive-parameter-list
@@ -1652,7 +1287,6 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
         array $transportOptions,
         callable $onOutput,
     ): NodeAgentPushStreamResult {
-        $preference = $this->transportPreference($transportOptions);
         $envelope = NodeCommandEnvelope::agentPushBinary(
             operationId: $operationId,
             binary: 'orbit',
@@ -1663,7 +1297,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             timeoutSeconds: $this->streamTimeoutSeconds($transportOptions),
             stream: true,
         );
-        $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
+        $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope);
 
         if ($transport !== NodeTransport::AgentPush) {
             throw new RuntimeException('agent-push streaming transport is unavailable');
@@ -1732,51 +1366,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
             exitCode: $result->exitCode ?? 1,
             stdout: $stdout,
             stderr: $stderr,
-            // Match SSH executor semantics: gateway-observed dispatch round trip.
+            // Record the gateway-observed Agent dispatch round trip.
             durationMs: $result->timings['gateway_post_ms'],
-        );
-    }
-
-    /**
-     * @param  array<string, mixed>  $transportOptions
-     */
-    private function transportPreference(array $transportOptions): NodeTransportPreference
-    {
-        if (! array_key_exists('transport', $transportOptions)) {
-            return $this->requestTransportPreference() ?? $this->defaultTransportPreference;
-        }
-
-        if ($transportOptions['transport'] === null) {
-            return $this->requestTransportPreference() ?? $this->defaultTransportPreference;
-        }
-
-        if ($transportOptions['transport'] instanceof NodeTransportPreference) {
-            return $transportOptions['transport'];
-        }
-
-        if (! is_string($transportOptions['transport'])) {
-            throw new RuntimeException('transport must be a valid node transport preference.');
-        }
-
-        return (
-            NodeTransportPreference::tryFrom($transportOptions['transport']) ?? throw new RuntimeException(
-                "Invalid node transport preference [{$transportOptions['transport']}].",
-            )
-        );
-    }
-
-    private function requestTransportPreference(): ?NodeTransportPreference
-    {
-        $transport = request()->header('X-Orbit-Node-Transport-Preference');
-
-        if (! is_string($transport) || trim($transport) === '') {
-            return null;
-        }
-
-        return (
-            NodeTransportPreference::tryFrom($transport) ?? throw new RuntimeException(
-                "Invalid node transport preference [{$transport}].",
-            )
         );
     }
 

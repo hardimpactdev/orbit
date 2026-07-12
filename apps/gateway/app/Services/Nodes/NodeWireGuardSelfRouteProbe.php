@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Nodes;
 
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class NodeWireGuardSelfRouteProbe
 {
     public const string UnsupportedMessage = 'WireGuard self-route diagnostics are only supported on Linux.';
 
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
         private WireGuardSelfRouteOutput $routeOutput,
     ) {}
 

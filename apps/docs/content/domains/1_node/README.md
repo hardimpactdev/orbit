@@ -314,16 +314,13 @@ Node transport has different rules before and after bootstrap:
   local gateway configuration. This lets clients and CLI clients on nodes
   operate without owning fleet state.
 - A roleless active operator node can explicitly opt into managed Agent intent
-  by running `orbit node:manage --node-transport=transitional-ssh-fallback`
+  by running `orbit node:manage`
   locally. The command does not add a role; it sets `node.managed=true` only
-  after its exact-marked transitional bootstrap succeeds.
-- `node:manage` preflights the exact transitional SSH marker, installs the gateway management public key into the current
-  local user's `~/.ssh/authorized_keys`, persists `node.user` and
-  `node.platform`, pins the node SSH host key by `node.wireguard_address`, and
-  verifies that the gateway can reach the node over SSH at that WireGuard
-  address.
-- Provisioning is the sole permanent SSH lane. The exact-marked `node:manage`
-  seam is transitional and remains in the generated SSH inventory until it is
+  after its Agent-push verification succeeds.
+- `node:manage` persists `node.user` and `node.platform`, provisionally opts the
+  node into management, and verifies a typed Agent runtime probe over the
+  node's WireGuard identity. Failed verification restores the prior metadata.
+- Provisioning is the sole managed SSH lane.
   ported to Agent push.
 - Provisioning uses SSH to establish a node's managed substrate.
   After bootstrap, the gateway sends typed `binary + argv` envelopes to the

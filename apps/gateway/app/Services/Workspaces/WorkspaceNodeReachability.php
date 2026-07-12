@@ -6,13 +6,13 @@ namespace App\Services\Workspaces;
 
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Throwable;
 
 final readonly class WorkspaceNodeReachability
 {
     public function __construct(
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function ensureReachable(Node $node): void
@@ -42,9 +42,9 @@ final readonly class WorkspaceNodeReachability
         $this->throwUnreachable($node, $output === '' ? 'agent preflight failed' : $output);
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     private function throwUnreachable(Node $node, string $reason): never

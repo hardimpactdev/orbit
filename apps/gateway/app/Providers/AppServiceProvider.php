@@ -34,12 +34,13 @@ use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Doctor\DnsRuntimeProbe;
 use App\Services\Gateway\SdkUpdateAllGatewayStream;
 use App\Services\Nodes\NodeHostPaths;
+use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
+use App\Services\Nodes\WireGuardSelfRouteOutput;
 use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Operations\OperationTokenIntrospector;
 use App\Services\Php\AgentPushPhpRuntimeArtifactConverger;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteHostExecutor;
@@ -163,47 +164,42 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
         $this->app->bind(RunsInternalCommands::class, RemoteLocalExecutor::class);
         $this->app->bind(RemoteLocalExecutor::class, fn ($app): RemoteLocalExecutor => new RemoteLocalExecutor(
-            transport: $app->make(RemoteHostExecutor::class),
             commands: $app->make(LocalExecutorCommandBuilder::class),
             operationTokens: $app->make(OperationTokenFactory::class),
             activityLogger: $app->make(ActivityLogger::class),
             operationRuns: $app->make(OperationRunRecorder::class),
             applicationKey: $this->applicationKey(),
         ));
+        $this->app->bind(NodeWireGuardSelfRouteProbe::class, fn ($app): NodeWireGuardSelfRouteProbe => new NodeWireGuardSelfRouteProbe(
+            localExecutor: $app->make(RemoteLocalExecutor::class),
+            routeOutput: $app->make(WireGuardSelfRouteOutput::class),
+        ));
         $this->app->bind(AppRuntimeContainerManager::class, function (Application $app): AppRuntimeContainerManager {
-            $remoteShell = $app->make(RemoteShell::class);
             $commands = $app->make(DockerCommandBuilder::class);
             $ca = $app->make(OrbitCaService::class);
             $innerTlsPolicy = $app->make(AppDevelopmentInnerTlsPolicy::class);
-            $explicitFallback = $app->make(ExplicitRemoteShellFallback::class);
             $nodeHostPaths = $app->make(NodeHostPaths::class);
-            $localExecutor = $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null;
+            $localExecutor = $this->hasOperationTokenSigningKey() ? $app->make(RunsInternalCommands::class) : null;
 
             return new AppRuntimeContainerManager(
-                remoteShell: $remoteShell,
                 commands: $commands,
                 ca: $ca,
                 innerTlsPolicy: $innerTlsPolicy,
-                explicitFallback: $explicitFallback,
                 nodeHostPaths: $nodeHostPaths,
                 localExecutor: $localExecutor,
             );
         });
         $this->app->bind(WorkspaceRuntimeContainerManager::class, function (Application $app): WorkspaceRuntimeContainerManager {
-            $remoteShell = $app->make(RemoteShell::class);
             $commands = $app->make(DockerCommandBuilder::class);
             $ca = $app->make(OrbitCaService::class);
             $innerTlsPolicy = $app->make(AppDevelopmentInnerTlsPolicy::class);
-            $explicitFallback = $app->make(ExplicitRemoteShellFallback::class);
             $nodeHostPaths = $app->make(NodeHostPaths::class);
-            $localExecutor = $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null;
+            $localExecutor = $this->hasOperationTokenSigningKey() ? $app->make(RunsInternalCommands::class) : null;
 
             return new WorkspaceRuntimeContainerManager(
-                remoteShell: $remoteShell,
                 commands: $commands,
                 ca: $ca,
                 innerTlsPolicy: $innerTlsPolicy,
-                explicitFallback: $explicitFallback,
                 nodeHostPaths: $nodeHostPaths,
                 localExecutor: $localExecutor,
             );

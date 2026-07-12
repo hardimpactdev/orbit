@@ -54,9 +54,9 @@ it('plans ok when the docker process container already matches gateway intent', 
     $resource = process_docker_resource($container);
     $shell = new ProcessDockerContainerResourceUnusedShell;
 
-    $probe = $resource->probe($node, $shell);
+    $probe = $resource->probe($node);
     $plan = $resource->plan($probe);
-    $result = $resource->apply($node, $shell, $plan);
+    $result = $resource->apply($node, $plan);
 
     expect($probe->exists)
         ->toBeTrue()
@@ -118,9 +118,9 @@ it('ensures the docker network before creating a missing idle process container'
     $shell = new ProcessDockerContainerResourceUnusedShell;
 
     $resource->ensureNetwork($node, $shell);
-    $probe = $resource->probe($node, $shell);
+    $probe = $resource->probe($node);
     $plan = $resource->plan($probe);
-    $result = $resource->apply($node, $shell, $plan);
+    $result = $resource->apply($node, $plan);
 
     expect($probe->exists)
         ->toBeFalse()
@@ -180,9 +180,9 @@ it('removes and recreates a docker process container when the spec hash drifts',
     $resource = process_docker_resource($container);
     $shell = new ProcessDockerContainerResourceUnusedShell;
 
-    $probe = $resource->probe($node, $shell);
+    $probe = $resource->probe($node);
     $plan = $resource->plan($probe);
-    $result = $resource->apply($node, $shell, $plan);
+    $result = $resource->apply($node, $plan);
 
     expect($plan->status)
         ->toBe(ConvergenceStatus::Changed)
@@ -236,7 +236,7 @@ it('returns a failed apply result when applying the docker process container fai
     $resource = process_docker_resource($container);
     $shell = new ProcessDockerContainerResourceUnusedShell;
 
-    $result = $resource->apply($node, $shell, $resource->plan($resource->probe($node, $shell)));
+    $result = $resource->apply($node, $resource->plan($resource->probe($node)));
 
     expect($result->status)
         ->toBe(ConvergenceStatus::Failed)
@@ -287,7 +287,6 @@ function process_docker_resource(ProcessDockerContainer $container): ProcessDock
     return new ProcessDockerContainerResource(
         container: $container,
         localExecutor: new RemoteLocalExecutor(
-            transport: new ProcessDockerContainerResourceUnusedTransport,
             commands: new LocalExecutorCommandBuilder,
             operationTokens: new OperationTokenFactory(
                 signer: new OperationTokenSigner,

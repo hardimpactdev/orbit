@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\DatabaseConnections;
 
 use App\Models\DatabaseConnection;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use RuntimeException;
 
@@ -14,7 +14,7 @@ final readonly class DatabaseConnectionExecutor
     public function __construct(
         private DatabaseQueryRunner $runner,
         private DatabaseSchemaInspector $inspector,
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     /**

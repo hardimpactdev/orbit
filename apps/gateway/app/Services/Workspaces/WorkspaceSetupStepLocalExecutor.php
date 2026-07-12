@@ -6,14 +6,16 @@ namespace App\Services\Workspaces;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Throwable;
 
 final readonly class WorkspaceSetupStepLocalExecutor
 {
     public function __construct(
-        private ?RemoteLocalExecutor $localExecutor,
+        private ?RunsInternalCommands $localExecutor,
+        private NodeRoleAssignments $nodeRoleAssignments = new NodeRoleAssignments,
     ) {}
 
     /**
@@ -21,9 +23,13 @@ final readonly class WorkspaceSetupStepLocalExecutor
      */
     public function run(Node $node, string $command, ?string $cwd, int $timeout, array $environment): RemoteShellResult
     {
-        if (! $this->localExecutor instanceof RemoteLocalExecutor || ! $node->isAgentEligible()) {
+        if (
+            ! $this->localExecutor instanceof RunsInternalCommands
+            || ! $node->isAgentEligible()
+            && ! $this->nodeRoleAssignments->nodeIsGateway($node)
+        ) {
             return $this->failure(
-                'workspace:setup-step requires an Orbit Agent capable node or explicit --node-transport=transitional-ssh-fallback.',
+                'workspace:setup-step requires an Orbit Agent capable node.',
             );
         }
 

@@ -7,17 +7,19 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Vpn\WgEasyServiceInstaller;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
@@ -36,11 +38,17 @@ beforeEach(function (): void {
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
         'status' => 'active',
+        'tld' => 'test',
     ]);
 
     NodeRoleAssignment::factory()->for($this->vpnNode)->create([
         'role' => 'vpn',
         'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->for($this->vpnNode)->create([
+        'role' => 'app-dev',
+        'status' => 'active',
+        'settings' => ['tld' => 'test'],
     ]);
 
     $this->wgEasyStateTransport = new WgEasyServiceInstallerStateTransport(
@@ -54,7 +62,7 @@ beforeEach(function (): void {
         ),
     );
 
-    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($this->wgEasyStateTransport));
+    bindWgEasyServiceInstallerExecutor($this->wgEasyStateTransport);
 });
 
 afterEach(function (): void {
@@ -387,7 +395,7 @@ it('does not leak peer secrets from transport exception messages during peer ups
             );
         },
     );
-    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+    bindWgEasyServiceInstallerExecutor($transport);
 
     try {
         wgEasyServiceInstaller($this->workdir, $this->statePath)->configurePeers([
@@ -455,7 +463,7 @@ it('converges the runtime server address and routes supported database updates t
         ->not->toContain('setup_step');
 
     $scripts = array_column($this->wgEasyStateTransport->calls, 'script');
-    $metadata = array_column(array_column($this->wgEasyStateTransport->calls, 'options'), 'metadata');
+    $environments = array_column(array_column($this->wgEasyStateTransport->calls, 'options'), 'environment');
 
     expect($scripts)
         ->toHaveCount(4)
@@ -482,7 +490,7 @@ it('converges the runtime server address and routes supported database updates t
         ->and($scripts[3])
         ->toContain("--setup-step='0'");
 
-    foreach ($metadata as $entry) {
+    foreach ($environments as $entry) {
         expect($entry)
             ->toBeArray()
             ->and($entry['ORBIT_WG_EASY_DB_PATH'] ?? null)
@@ -544,7 +552,7 @@ it('raises a generic exception when wg-easy state output is not parseable JSON',
         durationMs: 1,
     ));
 
-    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+    bindWgEasyServiceInstallerExecutor($transport);
     Process::fake();
 
     try {
@@ -581,7 +589,7 @@ it('only exposes whitelisted wg-easy state error codes from remote failure envel
         durationMs: 1,
     ));
 
-    app()->instance(RemoteLocalExecutor::class, wgEasyServiceInstallerExecutor($transport));
+    bindWgEasyServiceInstallerExecutor($transport);
     Process::fake();
 
     try {
@@ -665,14 +673,71 @@ function wgEasyServiceInstaller(string $rootPath, ?string $statePath = null): Wg
     return new WgEasyServiceInstaller(
         rootPath: $rootPath,
         statePath: $statePath,
-        localExecutor: app(RemoteLocalExecutor::class),
+        localExecutor: app(RunsInternalCommands::class),
     );
+}
+
+function bindWgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $transport): void
+{
+    $executor = wgEasyServiceInstallerExecutor($transport);
+
+    app()->instance(RemoteLocalExecutor::class, $executor);
+    app()->instance(RunsInternalCommands::class, $executor);
+
+    Http::swap(new \Illuminate\Http\Client\Factory);
+    Http::preventStrayRequests();
+    Http::fake(function (Request $request) use ($transport): mixed {
+        $argv = is_array($request['argv'] ?? null) ? $request['argv'] : [];
+        $script =
+            "'/home/orbit/.local/bin/orbit' "
+            .collect($argv)
+                ->filter(fn (mixed $argument): bool => is_string($argument))
+                ->map(function (string $argument): string {
+                    if (preg_match('/^--(?<name>[^=]+)=(?<value>.*)$/', $argument, $matches) === 1) {
+                        return '--'.$matches['name'].'='.escapeshellarg($matches['value']);
+                    }
+
+                    return escapeshellarg($argument);
+                })
+                ->implode(' ');
+        $host = parse_url($request->url(), PHP_URL_HOST);
+        $node = Node::query()
+            ->where('wireguard_address', is_string($host) ? $host : null)
+            ->firstOrFail();
+        $environment = is_array($request['environment'] ?? null) ? $request['environment'] : [];
+        $result = $transport->run($node, $script, [
+            'input' => $request['input'] ?? null,
+            'environment' => $environment,
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => $request['operation_id'] ?? null,
+            ],
+        ]);
+        $frames = [];
+
+        if ($result->stdout !== '') {
+            $frames[] = ['type' => 'stdout', 'message' => $result->stdout];
+        }
+
+        if ($result->stderr !== '') {
+            $frames[] = ['type' => 'stderr', 'message' => $result->stderr];
+        }
+
+        $frames[] = ['type' => 'exit', 'message' => (string) $result->exitCode];
+
+        return Http::response([
+            'transport' => 'agent-push',
+            'operation_id' => $request['operation_id'],
+            'binary' => 'orbit',
+            'status' => $result->successful() ? 'succeeded' : 'failed',
+            'exit_code' => $result->exitCode,
+            'frames' => $frames,
+        ]);
+    });
 }
 
 function wgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $transport): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: $transport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -683,7 +748,6 @@ function wgEasyServiceInstallerExecutor(WgEasyServiceInstallerStateTransport $tr
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 

@@ -16,14 +16,12 @@ use function Laravel\Prompts\text;
 
 final class AppNewCommand extends AppGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use PromptsForGatewayRegistryEntities;
 
     #[\Override]
     protected $signature = 'app:new
         {name? : App name}
         {--node= : Target app node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--repo= : Repository to clone}
         {--template-repo= : GitHub template repository (owner/repo)}
         {--new-repo= : New private GitHub repository (owner/repo)}

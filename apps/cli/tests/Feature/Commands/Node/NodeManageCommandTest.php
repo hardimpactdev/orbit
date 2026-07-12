@@ -6,12 +6,11 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('node:manage', function (): void {
-    it('installs the gateway key locally before posting management metadata', function (): void {
+    it('posts management metadata without installing an SSH key', function (): void {
         $home = sys_get_temp_dir().'/orbit-node-manage-'.bin2hex(random_bytes(4));
         $previousHome = getenv('HOME');
         $previousUser = getenv('USER');
         $previousLogname = getenv('LOGNAME');
-        $publicKey = 'ssh-ed25519 AAAAC3NzaManagedGatewayKey orbit-gateway';
 
         mkdir($home, 0777, true);
         putenv("HOME={$home}");
@@ -36,19 +35,12 @@ describe('node:manage', function (): void {
                     'gateway' => ['name' => 'gateway-1'],
                 ]))
                 ->push(fakeSuccessEnvelope([
-                    'management_ssh_key' => [
-                        'public_key' => $publicKey,
-                    ],
-                ]))
-                ->push(fakeSuccessEnvelope([
                     'management' => [
                         'node' => 'mini',
                         'user' => 'nicky',
                         'platform' => 'macos_15-5',
-                        'ssh_host' => '10.44.0.24',
-                        'authorized_key_installed' => true,
-                        'host_key_pinned' => true,
-                        'ssh_verified' => true,
+                        'managed' => true,
+                        'agent_verified' => true,
                     ],
                 ])),
         ]);
@@ -56,7 +48,6 @@ describe('node:manage', function (): void {
         try {
             [$exitCode, $output] = runCommand($this, 'node:manage', [
                 '--user' => 'nicky',
-                '--node-transport' => 'transitional-ssh-fallback',
                 '--json' => true,
             ]);
         } finally {
@@ -71,20 +62,11 @@ describe('node:manage', function (): void {
         }
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-        $authorizedKeys = file_get_contents("{$home}/.ssh/authorized_keys");
 
         Http::assertSent(
             fn (Request $request): bool => (
                 $request->method() === 'GET'
                 && $request->url() === 'https://gateway.test/api/me'
-            ),
-        );
-        Http::assertSent(
-            fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/nodes/self/manage-key'
-            && $request->hasHeader(
-                'X-Orbit-Node-Transport-Preference',
-                'transitional-ssh-fallback',
             ),
         );
         Http::assertSent(
@@ -94,17 +76,14 @@ describe('node:manage', function (): void {
                 && $request['user'] === 'nicky'
                 && is_string($request['platform'])
                 && $request['platform'] !== ''
-                && $request->hasHeader(
-                    'X-Orbit-Node-Transport-Preference',
-                    'transitional-ssh-fallback',
-                )
+                && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
             ),
         );
 
         expect($exitCode)
             ->toBe(0)
-            ->and($authorizedKeys)
-            ->toContain($publicKey)
+            ->and(file_exists("{$home}/.ssh/authorized_keys"))
+            ->toBeFalse()
             ->and($decoded['success']['data']['management']['node'])
             ->toBe('mini');
     });
@@ -136,18 +115,12 @@ describe('node:manage', function (): void {
                         'addresses' => ['wireguard' => '10.44.0.24'],
                     ],
                     'gateway' => ['name' => 'gateway-1'],
-                ]))
-                ->push(fakeSuccessEnvelope([
-                    'management_ssh_key' => [
-                        'public_key' => 'ssh-ed25519 AAAAC3NzaManagedGatewayKey orbit-gateway',
-                    ],
                 ])),
         ]);
 
         try {
             [$exitCode, $output] = runCommand($this, 'node:manage', [
                 '--user' => 'other-user',
-                '--node-transport' => 'transitional-ssh-fallback',
                 '--json' => true,
             ]);
         } finally {
@@ -163,7 +136,7 @@ describe('node:manage', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSentCount(2);
+        Http::assertSentCount(1);
 
         expect($exitCode)
             ->toBe(1)

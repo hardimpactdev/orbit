@@ -19,6 +19,7 @@ use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Schedules\SchedulesProbe;
 use Illuminate\Contracts\Process\InvokedProcess;
@@ -392,17 +393,6 @@ describe('SchedulesProbe', function (): void {
 function schedule_probe_local_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new class implements RemoteExecutor {
-            public function run(Node $node, string $script, array $options = []): RemoteShellResult
-            {
-                throw new RuntimeException('Fallback transport should not be called for schedule target reachability.');
-            }
-
-            public function start(Node $node, string $script, array $options = []): InvokedProcess
-            {
-                throw new RuntimeException('Schedule target reachability tests do not start long-running transports.');
-            }
-        },
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -442,7 +432,7 @@ function schedule_probe_operation_secret(): string
     return implode('-', ['gateway', 'secret']);
 }
 
-final class SchedulesProbeRemoteShell implements RemoteShell
+final class SchedulesProbeRemoteShell implements RemoteShell, RunsInternalCommands
 {
     /**
      * @var list<string>
@@ -469,9 +459,19 @@ final class SchedulesProbeRemoteShell implements RemoteShell
             durationMs: 1,
         );
     }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        return $this->run($node, $commandName, $transportOptions);
+    }
 }
 
-final class SchedulesProbeQueuedRemoteShell implements RemoteShell
+final class SchedulesProbeQueuedRemoteShell implements RemoteShell, RunsInternalCommands
 {
     /**
      * @param  list<RemoteShellResult>  $results
@@ -486,5 +486,15 @@ final class SchedulesProbeQueuedRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        return $this->run($node, $commandName, $transportOptions);
     }
 }

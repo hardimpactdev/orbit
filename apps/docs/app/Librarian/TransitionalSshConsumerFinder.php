@@ -46,11 +46,7 @@ final readonly class TransitionalSshConsumerFinder
 
     /** @var list<string> */
     private const array EXPLICIT_EXECUTOR_PATHS = [
-        'apps/gateway/app/Services/NodeCommandTransport/NodeCommandTransportSelector.php',
-        'apps/gateway/app/Services/RemoteShell/ExplicitRemoteShellFallback.php',
         'apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php',
-        'apps/gateway/app/Services/RemoteShell/RemoteLocalExecutor.php',
-        'apps/gateway/app/Services/RemoteShell/RemoteOrbitGatewayExecutor.php',
         'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php',
     ];
 

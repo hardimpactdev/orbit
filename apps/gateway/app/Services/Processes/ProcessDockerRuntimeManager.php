@@ -8,7 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessDockerContainerApplyOutcome;
 use App\Exceptions\ProcessDockerContainerApplyException;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use RuntimeException;
 
@@ -19,7 +19,7 @@ use RuntimeException;
 final readonly class ProcessDockerRuntimeManager
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     /**

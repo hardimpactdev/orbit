@@ -6,23 +6,19 @@ namespace App\Commands\Node;
 
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
-use App\Services\Node\AuthorizedKeysInstaller;
 use App\Services\Platform\LocalPlatformDetector;
-use Throwable;
 
 final class NodeManageCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     #[\Override]
     protected $signature = 'node:manage
-        {--user= : Local SSH user the gateway should use}
-        {--node-transport= : Required transitional transport (transitional-ssh-fallback)}
+        {--user= : Local user the Orbit Agent runs as}
         {--json : Output JSON}';
 
     #[\Override]
-    protected $description = 'Opt this roleless node into transitional gateway SSH management.';
+    protected $description = 'Opt this roleless node into managed Orbit Agent execution.';
 
-    public function handle(AuthorizedKeysInstaller $authorizedKeys, LocalPlatformDetector $platform): int
+    public function handle(LocalPlatformDetector $platform): int
     {
         try {
             $me = $this->gatewayGet('/api/me');
@@ -32,21 +28,6 @@ final class NodeManageCommand extends GatewayCommand
 
         if (! $this->isActiveRolelessSelf($me)) {
             return $this->renderFailure('node.not_operator', 'Only active roleless nodes can run node:manage.');
-        }
-
-        try {
-            $keyResponse = $this->gatewayGet('/api/nodes/self/manage-key');
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        $publicKey = $this->publicKey($keyResponse);
-
-        if ($publicKey === null) {
-            return $this->renderFailure(
-                'node.management_key_unavailable',
-                'Gateway management SSH public key was not returned.',
-            );
         }
 
         $targetUser = $this->targetUser();
@@ -61,14 +42,6 @@ final class NodeManageCommand extends GatewayCommand
                     'current_user' => $currentUser,
                 ],
             );
-        }
-
-        try {
-            $authorizedKeys->install($this->homeDirectory(), $publicKey);
-        } catch (Throwable $exception) {
-            return $this->renderFailure('node.authorized_keys_failed', $exception->getMessage(), [
-                'path' => $this->homeDirectory().'/.ssh/authorized_keys',
-            ]);
         }
 
         try {
@@ -106,18 +79,6 @@ final class NodeManageCommand extends GatewayCommand
         );
     }
 
-    /**
-     * @param  array<string, mixed>  $response
-     */
-    private function publicKey(array $response): ?string
-    {
-        $key =
-            $response['success']['data']['management_ssh_key']['public_key'] ?? $response['success']['data']['public_key']
-                ?? null;
-
-        return is_string($key) && trim($key) !== '' ? trim($key) : null;
-    }
-
     private function targetUser(): string
     {
         $option = $this->option('user');
@@ -140,16 +101,5 @@ final class NodeManageCommand extends GatewayCommand
         }
 
         return get_current_user();
-    }
-
-    private function homeDirectory(): string
-    {
-        foreach ([getenv('HOME'), $_SERVER['HOME'] ?? null, $_ENV['HOME'] ?? null] as $candidate) {
-            if (is_string($candidate) && trim($candidate) !== '') {
-                return rtrim(trim($candidate), '/');
-            }
-        }
-
-        return (string) getcwd();
     }
 }

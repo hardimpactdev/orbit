@@ -17,8 +17,6 @@ use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -27,13 +25,9 @@ use Tests\Fakes\SiteCertificateInstallerFake;
 
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-});
+beforeEach(function (): void {});
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
 {
@@ -97,6 +91,9 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
     /** @var list<string> */
     public array $scripts = [];
 
+    /** @var list<array<string, mixed>> */
+    public array $options = [];
+
     /** @var list<RemoteShellResult> */
     public array $responses;
 
@@ -108,6 +105,7 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+        $this->options[] = $options;
 
         if (str_contains($script, "internal:caddy-config 'read-global'")) {
             return enact_app_runtime_shell_success(['content' => '']);
@@ -133,9 +131,8 @@ beforeEach(function (): void {
     app()->bind(
         AppRuntimeContainerManager::class,
         fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
-            app(RemoteShell::class),
-            app(DockerCommandBuilder::class),
-            app(OrbitCaService::class),
+            commands: app(DockerCommandBuilder::class),
+            ca: app(OrbitCaService::class),
         ),
     );
 });
@@ -217,8 +214,6 @@ function base64DecodedPhpIni(string $script): string
 }
 
 it('skips the FrankenPHP runtime container for static apps and serves the proxy route via file_server only', function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
-
     $app = makeAppOnDevNode(AppRuntimeKind::Static);
     $app->node->forceFill([
         'managed' => true,
@@ -250,7 +245,14 @@ it('skips the FrankenPHP runtime container for static apps and serves the proxy 
         'php_socket' => null,
     ]);
 
-    $caddySite = (string) (enact_app_runtime_site_payload('10.48.0.12')['content'] ?? '');
+    $writeIndex = collect($shell->scripts)
+        ->search(
+            fn (string $script): bool => str_contains($script, "internal:caddy-config 'write-site'"),
+        );
+    $writeInput = is_int($writeIndex)
+        ? json_decode((string) ($shell->options[$writeIndex]['input'] ?? ''), true)
+        : [];
+    $caddySite = is_array($writeInput) ? (string) ($writeInput['content'] ?? '') : '';
 
     expect($caddySite)
         ->toContain('file_server')

@@ -13,8 +13,6 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Services\Apps\AppsProbe;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,11 +23,6 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-
     $this->probe = new AppsProbe;
 });
 
@@ -637,6 +630,10 @@ describe('managed runtime config reality', function (): void {
         'reports Error status (no clean absence) when the remote shell call itself throws — SSH/transport failure must not abort doctor',
         function (): void {
             $node = appsProbeAgentNode();
+            app()->instance(
+                \App\Services\RemoteShell\RunsInternalCommands::class,
+                app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+            );
             Http::preventStrayRequests();
             Http::fake([
                 'http://10.6.0.63:9477/v1/commands' => Http::response(['error' => 'agent unavailable'], 503),
@@ -891,6 +888,10 @@ function appsProbeAgentNode(array $overrides = []): Node
 
 function fakeAppsRuntimeConfigsProbe(string $stdout): void
 {
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
     Http::preventStrayRequests();
     Http::fake([
         'http://10.6.0.63:9477/v1/commands' => Http::response([
@@ -934,6 +935,10 @@ function appsRuntimeConfigsProbeWasSent(): bool
  */
 function fake_apps_introspect_probe(array $snapshot): void
 {
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
     Http::preventStrayRequests();
     Http::fake([
         'http://10.6.0.63:9477/v1/commands' => Http::response([

@@ -16,6 +16,8 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Tools\ToolScriptDispatcher;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -55,7 +57,9 @@ describe('source path reality', function (): void {
             ]);
         $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
 
-        $snapshot = new WorkspacesProbe($shell)->introspect($workspace);
+        $snapshot = new WorkspacesProbe(
+            scripts: new ToolScriptDispatcher(new WorkspacesProbeScriptExecutor($shell)),
+        )->introspect($workspace);
 
         expect($snapshot->get('feature'))->toMatchArray([
             'path_exists' => true,
@@ -77,12 +81,8 @@ describe('source path reality', function (): void {
             ->toContain('docker container inspect')
             ->and($shell->scripts[0])
             ->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
-            ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))
-            ->toMatchArray([
-                'name' => 'feature',
-                'path' => "{$app->path}/.worktrees/feature",
-                'container_name' => 'orbit-ws-'.$app->name.'-feature',
-            ]);
+            ->and($shell->scripts[0])
+            ->toContain("{$app->path}/.worktrees/feature");
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
     });
 
@@ -618,6 +618,38 @@ final class WorkspacesProbeRecordingRemoteShell implements RemoteShell
             stdout: $this->stdout,
             stderr: '',
             durationMs: 1,
+        );
+    }
+}
+
+final readonly class WorkspacesProbeScriptExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private RemoteShell $shell,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $result = $this->shell->run($node, (string) $payload['script'], $transportOptions);
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => $result->exitCode,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'duration_ms' => $result->durationMs,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
         );
     }
 }

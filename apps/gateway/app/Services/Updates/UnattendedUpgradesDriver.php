@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
-use App\Contracts\RemoteShell;
 use App\Enums\DriftKind;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Security\UnattendedUpgradesInstaller;
 use JsonException;
 use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
@@ -14,16 +13,14 @@ use Throwable;
 
 final readonly class UnattendedUpgradesDriver implements UpdateDriver
 {
-    // @orbit-ssh-lane transitional-ssh
     private UnattendedUpgradesAptConfig $config;
 
     private UnattendedUpgradesInstaller $installer;
 
     public function __construct(
-        private RemoteShell $remoteShell,
         ?UnattendedUpgradesAptConfig $config = null,
         ?UnattendedUpgradesInstaller $installer = null,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {
         $this->config = $config ?? new UnattendedUpgradesAptConfig;
         $this->installer = $installer ?? new UnattendedUpgradesInstaller;
@@ -102,7 +99,7 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
 
     public function apply(UpdateTarget $target): UpdateApplyResult
     {
-        $installReport = $this->installer->installFor($target->node, $this->remoteShell);
+        $installReport = $this->installer->installFor($target->node);
 
         if (! $installReport->successful) {
             return new UpdateApplyResult(
@@ -281,9 +278,9 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
         return array_values(array_filter($value, is_string(...)));
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     /**

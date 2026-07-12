@@ -23,7 +23,6 @@ const TOOL_LIFECYCLE_API_CALLER_WG_IP = '10.6.0.94';
 function tool_lifecycle_api_server_headers(array $overrides = []): array
 {
     return [
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => 'transitional-ssh-fallback',
         'REMOTE_ADDR' => TOOL_LIFECYCLE_API_CALLER_WG_IP,
         ...$overrides,
     ];

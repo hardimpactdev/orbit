@@ -10,12 +10,11 @@ use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\WorkspaceSetupStepRunner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -28,8 +27,6 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-
     DB::table('nodes')->insert([
         'name' => 'app-1',
         'tld' => 'app-1',
@@ -39,34 +36,27 @@ beforeEach(function (): void {
         'created_at' => now(),
         'updated_at' => now(),
     ]);
+
+    $node = Node::query()->firstOrFail();
+    $node->forceFill([
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.44.0.40',
+        'managed' => true,
+    ])->save();
+    $node->roleAssignments()->create([
+        'role' => 'app-dev',
+        'status' => 'active',
+    ]);
 });
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
-function allow_workspace_setup_remote_shell_fallback(): void
-{
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-}
+function allow_workspace_setup_remote_shell_fallback(): void {}
 
 function workspace_setup_step_runner_local_executor(
     WorkspaceSetupStepRunnerExecutorTransport $transport,
-): RemoteLocalExecutor {
-    return new RemoteLocalExecutor(
-        transport: $transport,
-        commands: new LocalExecutorCommandBuilder,
-        operationTokens: new OperationTokenFactory(
-            signer: new OperationTokenSigner,
-            secret: workspace_setup_step_runner_signing_key(),
-            ttlSeconds: 120,
-            clock: static fn (): int => 1_798_105_200,
-        ),
-        activityLogger: new ActivityLogger(new ActivityLogCorrelation),
-        operationRuns: app(OperationRunRecorder::class),
-        applicationKey: workspace_setup_step_runner_signing_key(),
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
-    );
+): RunsInternalCommands {
+    return $transport;
 }
 
 function workspace_setup_step_runner_signing_key(): string
@@ -209,8 +199,16 @@ it('routes workspace lifecycle commands through the selected node home when app 
         'user' => 'nckrtl',
         'orbit_path' => '/Users/nckrtl/orbit',
         'status' => 'active',
+        'managed' => true,
+        'wireguard_address' => '10.44.0.41',
     ]);
     $selectedNode->save();
+    $selectedNode
+        ->roleAssignments()
+        ->create([
+            'role' => 'app-dev',
+            'status' => 'active',
+        ]);
 
     $app = new App([
         'name' => 'demo',
@@ -402,7 +400,6 @@ it('runs setup steps through the local executor by default for agent capable nod
     ));
 
     $runner = new WorkspaceSetupStepRunner(
-        remoteShell: $shell,
         localExecutor: workspace_setup_step_runner_local_executor($transport),
     );
 
@@ -426,8 +423,6 @@ it('runs setup steps through the local executor by default for agent capable nod
         ->toHaveCount(1)
         ->and($transport->runs[0]['script'])
         ->toContain('internal:workspace-setup-step')
-        ->and($transport->runs[0]['script'])
-        ->toContain('--operation-token=')
         ->and($runStep?->exit_code)
         ->toBe(0)
         ->and($runStep?->output)
@@ -459,7 +454,6 @@ it('routes php setup commands before dispatching through the local executor', fu
     ));
 
     $runner = new WorkspaceSetupStepRunner(
-        remoteShell: $shell,
         localExecutor: workspace_setup_step_runner_local_executor($transport),
     );
 
@@ -525,7 +519,6 @@ it('routes managed host tools before dispatching through the local executor', fu
     ));
 
     $runner = new WorkspaceSetupStepRunner(
-        remoteShell: $shell,
         localExecutor: workspace_setup_step_runner_local_executor($transport),
     );
 
@@ -565,39 +558,7 @@ it('routes managed host tools before dispatching through the local executor', fu
         ->toBe('/Users/nckrtl/.codex/worktrees/a59f/happie');
 });
 
-it('requires a local executor or explicit transitional ssh fallback before running workspace setup commands', function (): void {
-    $run = WorkspaceRun::factory()->create(['status' => 'pending']);
-    $node = Node::query()->firstOrFail();
-    $shell = new WorkspaceSetupStepRunnerTestShell;
-
-    $runner = new WorkspaceSetupStepRunner($shell);
-
-    $steps = [
-        new WorkspaceStep([
-            'id' => 1,
-            'command' => 'echo first',
-            'timeout_seconds' => 60,
-        ]),
-    ];
-
-    $result = $runner->run($run, $steps, '/app/path', ['ORBIT_APP' => 'demo'], $node);
-
-    $run->refresh();
-    $runStep = $run->runSteps()->first();
-
-    expect($result)
-        ->toBeFalse()
-        ->and($shell->runs)
-        ->toBeEmpty()
-        ->and($run->status)
-        ->toBe('failed')
-        ->and($runStep?->exit_code)
-        ->toBe(1)
-        ->and($runStep?->output)
-        ->toContain('requires an Orbit Agent capable node or explicit --node-transport=transitional-ssh-fallback');
-});
-
-final class WorkspaceSetupStepRunnerTestShell implements RemoteShell
+final class WorkspaceSetupStepRunnerTestShell implements RemoteShell, RunsInternalCommands
 {
     /** @var list<array{script: string, options: array<string, mixed>}> */
     public array $runs = [];
@@ -608,9 +569,30 @@ final class WorkspaceSetupStepRunnerTestShell implements RemoteShell
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        return workspace_setup_step_result_envelope($this->runFromTransport($node, $transportOptions));
+    }
+
+    private function runFromTransport(Node $node, array $transportOptions): RemoteShellResult
+    {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+
+        return $this->run($node, (string) $payload['command'], [
+            'cwd' => $payload['cwd'],
+            'timeout' => $payload['timeout'],
+            'environment' => $payload['environment'],
+        ]);
+    }
 }
 
-final class WorkspaceSetupStepRunnerFailingShell implements RemoteShell
+final class WorkspaceSetupStepRunnerFailingShell implements RemoteShell, RunsInternalCommands
 {
     public int $callCount = 0;
 
@@ -632,4 +614,37 @@ final class WorkspaceSetupStepRunnerFailingShell implements RemoteShell
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+
+        return workspace_setup_step_result_envelope($this->run($node, (string) $payload['command'], [
+            'cwd' => $payload['cwd'],
+            'timeout' => $payload['timeout'],
+            'environment' => $payload['environment'],
+        ]));
+    }
+}
+
+function workspace_setup_step_result_envelope(RemoteShellResult $result): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'success' => ['data' => [
+                'exit_code' => $result->exitCode,
+                'stdout' => $result->stdout,
+                'stderr' => $result->stderr,
+                'duration_ms' => $result->durationMs,
+            ]],
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: $result->durationMs,
+    );
 }

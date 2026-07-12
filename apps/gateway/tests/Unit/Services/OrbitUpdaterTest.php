@@ -2,101 +2,79 @@
 
 declare(strict_types=1);
 
-use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\OrbitUpdater;
+use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Tools\ToolScriptDispatcher;
 use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('runs migrations inside orbit-gateway', function (): void {
-    Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
-    ]);
+it('runs gateway migrations inside the orbit-gateway container', function (): void {
+    Process::fake(['*' => Process::result()]);
     Process::preventStrayProcesses();
 
     app(OrbitUpdater::class)->runMigrations();
 
     Process::assertRan(
         fn ($process): bool => (
-            is_array($process->command)
-            && $process->command[0] === 'docker'
-            && $process->command[1] === 'exec'
-            && $process->command[2] === 'orbit-gateway'
-            && $process->command[3] === 'php'
-            && $process->command[4] === 'apps/gateway/artisan'
-            && $process->command[5] === 'migrate'
-            && $process->command[6] === '--force'
+            $process->command === [
+                'docker',
+                'exec',
+                'orbit-gateway',
+                'php',
+                'apps/gateway/artisan',
+                'migrate',
+                '--force',
+            ]
         ),
     );
 });
 
-it('installs dependencies inside orbit-gateway', function (): void {
-    Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
-    ]);
-    Process::preventStrayProcesses();
+it('runs remote update stages through Agent-pushed tool scripts', function (): void {
+    $executor = new OrbitUpdaterRecordingExecutor;
+    $updater = new OrbitUpdater(new ToolScriptDispatcher($executor));
+    $node = new Node(['name' => 'beast', 'orbit_path' => '/home/nckrtl/orbit']);
 
-    app(OrbitUpdater::class)->installDependencies();
-
-    Process::assertRan(
-        fn ($process): bool => (
-            is_array($process->command)
-            && $process->command[0] === 'docker'
-            && $process->command[1] === 'exec'
-            && $process->command[2] === 'orbit-gateway'
-            && $process->command[3] === 'composer'
-            && $process->command[4] === '--working-dir=apps/gateway'
-            && $process->command[5] === 'install'
-            && $process->command[6] === '--no-interaction'
-        ),
-    );
+    expect($updater->updateRemote($node)->successful())
+        ->toBeTrue()
+        ->and(array_column($executor->payloads, 'action'))
+        ->toBe(['update', 'update', 'update'])
+        ->and(array_column($executor->payloads, 'script'))
+        ->toBe([
+            "cd '/home/nckrtl/orbit' && git pull --ff-only",
+            "cd '/home/nckrtl/orbit' && docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction",
+            "cd '/home/nckrtl/orbit' && docker exec orbit-gateway php apps/gateway/artisan migrate --force",
+        ]);
 });
 
-it('updates remote nodes through orbit-gateway container', function (): void {
-    $node = new Node([
-        'name' => 'beast',
-        'orbit_path' => '/home/nckrtl/orbit',
-    ]);
-    $shell = new OrbitUpdaterTestRemoteShell;
-    app()->instance(RemoteShell::class, $shell);
-
-    $result = app(OrbitUpdater::class)->updateRemote($node);
-
-    expect($result->successful())->toBeTrue();
-    expect(array_column($shell->calls, 'script'))->toBe([
-        'git pull --ff-only',
-        'docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction',
-        'docker exec orbit-gateway php apps/gateway/artisan migrate --force',
-    ]);
-    expect(array_column($shell->calls, 'cwd'))->toBe([
-        '/home/nckrtl/orbit',
-        '/home/nckrtl/orbit',
-        '/home/nckrtl/orbit',
-    ]);
-});
-
-final class OrbitUpdaterTestRemoteShell implements RemoteShell
+final class OrbitUpdaterRecordingExecutor implements RunsInternalCommands
 {
-    /**
-     * @var list<array{node: string, script: string, cwd: string|null, timeout: int|null}>
-     */
-    public array $calls = [];
+    /** @var list<array<string, mixed>> */
+    public array $payloads = [];
 
-    public function run(Node $node, string $script, array $options = []): RemoteShellResult
-    {
-        $this->calls[] = [
-            'node' => $node->name,
-            'script' => $script,
-            'cwd' => $options['cwd'] ?? null,
-            'timeout' => $options['timeout'] ?? null,
-        ];
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $this->payloads[] = $payload;
 
         return new RemoteShellResult(
             exitCode: 0,
-            stdout: '',
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => 0,
+                    'stdout' => '',
+                    'stderr' => '',
+                    'duration_ms' => 1,
+                ]],
+            ], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 1,
         );

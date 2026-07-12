@@ -15,9 +15,9 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
@@ -27,6 +27,10 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteEnvFile::class, new RemoteEnvFile(app(RemoteLocalExecutor::class)));
+});
 
 describe('DatabaseConnectionProbe', function (): void {
     it('reports env missing and mismatch for an app target on a local path', function (): void {
@@ -412,11 +416,6 @@ describe('DatabaseConnectionProbe', function (): void {
     });
 
     it('reads remote env files through agent-push for hosted workspaces', function (): void {
-        request()->headers->set(
-            ExplicitRemoteShellFallback::HEADER,
-            NodeTransportPreference::AgentPush->value,
-        );
-
         Http::preventStrayRequests();
         Http::fake([
             'http://10.44.0.73:9477/v1/commands' => Http::sequence()
@@ -691,11 +690,6 @@ describe('DatabaseConnectionProbe', function (): void {
     });
 
     it('uses remote shell for hosted nodes even when the same path exists locally', function (): void {
-        request()->headers->set(
-            ExplicitRemoteShellFallback::HEADER,
-            NodeTransportPreference::AgentPush->value,
-        );
-
         $node = Node::factory()->appDev()->create(['name' => 'app-1', 'status' => 'active']);
         $path = storage_path('framework/testing/database-probe-shadowed-remote');
         File::ensureDirectoryExists($path);

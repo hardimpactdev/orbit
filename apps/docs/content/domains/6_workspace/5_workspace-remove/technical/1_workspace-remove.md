@@ -10,10 +10,8 @@
 - The CLI caller can reach the Orbit gateway.
 - The target workspace exists in the gateway workspaces registry.
 - The current node identity is authorized to manage the resolved workspace or its parent app.
-- Typed runtime cleanup uses Agent push to the concrete app-instance node.
-  Process, teardown-step, and worktree cleanup still form an exact-marked
-  transitional SSH seam and run only with
-  `--node-transport=transitional-ssh-fallback`. Cleanup reachability is not a
+- Runtime, process, teardown-step, and worktree cleanup use Agent push to the
+  concrete app-instance node. Cleanup reachability is not a
   pre-configuration prerequisite; failures become structured warnings.
 
 This is the canonical technical contract for the `workspace:remove` command. It
@@ -24,7 +22,7 @@ gateway-owned workspace configuration and its derived node artifacts.
 ## Signature
 
 ```bash
-orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--node-transport=<transport>] [--json]
+orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
 ```
 
 ## Input Contract
@@ -38,7 +36,6 @@ This command follows the shared
 | `app` | `--app=<app>` | When `name` resolves to more than one workspace across apps. | Never. | None. | Parent app slug or app-instance selector. Dot notation such as `happie.nmbp` selects one concrete app instance. Used to disambiguate the workspace lookup. |
 | `keep_files` | `--keep-files` | Optional. | Never. | `false`. | Boolean flag. When `true`, the worktree directory is left on the node after configuration removal. |
 | `force` | `--force` | Non-interactive input mode, or when an interactive caller wants to skip the confirmation prompt. | Never. | `false`. | Boolean flag. Explicit destructive consent. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model. |
 
 ## Input Resolution
@@ -111,10 +108,8 @@ definition.
 
 #### Phase B — Node-side application
 
-Runtime container/config cleanup uses Agent push. Steps that still require a
-shell—process-unit cleanup, teardown commands, and worktree deletion—run only
-when the exact `transitional-ssh-fallback` marker is supplied. Orbit never
-selects that transitional seam implicitly.
+Runtime container/config cleanup, process-unit cleanup, teardown commands, and
+worktree deletion use Agent push.
 
 - **Step 3: Stop traffic.** Re-render the proxy backend so the workspace
   hostname stops serving requests.

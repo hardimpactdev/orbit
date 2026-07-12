@@ -11,7 +11,6 @@ use RuntimeException;
 
 final class ScheduleRunCommand extends ScheduleGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesScheduleSelection;
     use WithStepTree;
 
@@ -20,7 +19,6 @@ final class ScheduleRunCommand extends ScheduleGatewayCommand
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

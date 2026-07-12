@@ -8,10 +8,8 @@
 - The CLI caller can reach the Orbit gateway.
 - The target app exists in the gateway app registry.
 - The current node identity is authorized to remove the resolved app.
-- Typed runtime cleanup uses Agent push to the concrete app-instance node.
-  Residual shell-based cleanup is an exact-marked transitional SSH seam and
-  runs only with `--node-transport=transitional-ssh-fallback`. Neither lane is
-  a pre-configuration prerequisite; cleanup failures after removal become
+- All runtime and residual cleanup uses Agent push to the concrete app-instance
+  node. Reachability is not a pre-configuration prerequisite; cleanup failures after removal become
   structured warnings.
 - The caller has `app:remove` on the app's owning node.
 
@@ -19,7 +17,7 @@ This is the canonical technical contract for the `app:remove` command. It owns t
 
 ## Signature
 
-`orbit app:remove [app] [--force] [--node-transport=<transport>] [--json]`
+`orbit app:remove [app] [--force] [--json]`
 
 ## Input Contract
 
@@ -30,7 +28,6 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `app` | `[app]` | Always. | Never. | None. | App name or hostname. Must resolve to exactly one gateway app record. |
 | `force` | `--force` | Optional. | Never. | `false`. | Explicit destructive consent. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | `agent-push` is the normal typed runtime lane. The exact `transitional-ssh-fallback` value opts into the marked residual cleanup seam; no other SSH value is accepted. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 ## Input Resolution

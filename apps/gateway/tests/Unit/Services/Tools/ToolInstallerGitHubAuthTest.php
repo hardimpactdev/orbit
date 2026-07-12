@@ -11,10 +11,8 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -25,16 +23,13 @@ use App\Services\Tools\ToolUpdater;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Enums\InternalCommand;
-use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Security\OperationTokenSigner;
 use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-});
+beforeEach(function (): void {});
 
 afterEach(function (): void {
     putenv('GH_TOKEN');
@@ -93,7 +88,7 @@ it('stages GitHub auth for laravel installer repairs without embedding the token
         ->and($installPayload['script'] ?? null)
         ->toContain('gh auth login --hostname github.com --with-token')
         ->and($shell->commands[2])
-        ->toContain("internal:secret-file 'remove'");
+        ->toBe('internal:secret-file remove');
 
     foreach ([$installPayload['script'] ?? '', ...$shell->commands] as $script) {
         expect((string) $script)
@@ -155,7 +150,7 @@ it('stages GitHub auth for laravel installer updates without embedding the token
         ->and($updatePayload['script'] ?? null)
         ->toContain('gh auth login --hostname github.com --with-token')
         ->and($shell->commands[2])
-        ->toContain("internal:secret-file 'remove'");
+        ->toBe('internal:secret-file remove');
 
     foreach ([$updatePayload['script'] ?? '', ...$shell->commands] as $script) {
         expect((string) $script)
@@ -192,7 +187,6 @@ function toolInstallerGitHubAuthPayload(ToolInstallerGitHubAuthRecordingShell $s
 function toolInstallerGitHubAuthLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new ToolInstallerGitHubAuthRemoteExecutor($remoteShell),
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -203,7 +197,6 @@ function toolInstallerGitHubAuthLocalExecutor(RemoteShell $remoteShell): RemoteL
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 
@@ -242,32 +235,26 @@ final class ToolInstallerGitHubAuthToolRunExecutor implements RunsInternalComman
         array $commandOptions = [],
         array $transportOptions = [],
     ): RemoteShellResult {
+        if ($commandName === 'internal:secret-file') {
+            return $this->shell->run(
+                $node,
+                implode(' ', [$commandName, ...array_map(strval(...), $arguments)]),
+                [
+                    'input' => $transportOptions['input'] ?? null,
+                ],
+            );
+        }
+
         if ($commandName !== InternalCommand::ToolRunScript->value) {
             throw new RuntimeException("Unexpected internal command {$commandName}.");
         }
 
-        $result = $this->shell->run(
+        return $this->shell->run(
             $node,
             $commandName,
             [
                 'input' => $transportOptions['input'] ?? null,
             ],
-        );
-
-        if (! $result->successful()) {
-            return $result;
-        }
-
-        return new RemoteShellResult(
-            exitCode: 0,
-            stdout: json_encode(JsonEnvelope::success([
-                'exit_code' => 0,
-                'stdout' => '',
-                'stderr' => '',
-                'duration_ms' => 1,
-            ]), JSON_THROW_ON_ERROR),
-            stderr: '',
-            durationMs: 1,
         );
     }
 }

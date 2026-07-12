@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Node;
 use App\Models\WireGuardPeer;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeIdentityArtifactProbe;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -14,12 +12,7 @@ use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
+beforeEach(function (): void {});
 
 function node_identity_public_key_agent_response(string $publicKey): mixed
 {

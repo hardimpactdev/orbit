@@ -10,7 +10,6 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
 use App\Services\Ca\OrbitCaService;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -77,7 +76,6 @@ function app_store_fallback_server(): array
 {
     return [
         'REMOTE_ADDR' => APP_STORE_CALLER_WG_IP,
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
     ];
 }
 

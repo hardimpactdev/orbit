@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
@@ -27,7 +26,7 @@ use App\Services\Nodes\Roles\NodeRoleDefinition;
 use App\Services\Nodes\Roles\NodeRoleRegistry;
 use App\Services\Nodes\Roles\NodeToolBaselineConfigRenderer;
 use App\Services\Platform\PlatformDetector;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Updates\UpdateDriverRegistry;
 use App\Services\Updates\UpdatePostureIssue;
@@ -40,10 +39,8 @@ use Throwable;
 
 final readonly class NodesProbe
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private ?PlatformDetector $platformDetector = null,
-        private ?RemoteShell $remoteShell = null,
         private ?RuntimeBackendProbe $runtimeBackendProbe = null,
         private ?WireGuardPeerRealityProbe $wireGuardPeerRealityProbe = null,
         private ?NodeIdentityArtifactProbe $nodeIdentityArtifactProbe = null,
@@ -54,7 +51,7 @@ final readonly class NodesProbe
         private ?NodeRoleBaselineConverger $nodeRoleBaselineConverger = null,
         private ?UpdateDriverRegistry $updateDriverRegistry = null,
         private ?UpdateTargetFactory $updateTargetFactory = null,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function key(): string
@@ -1038,14 +1035,7 @@ final readonly class NodesProbe
 
     private function runtimeBackendProbe(): RuntimeBackendProbe
     {
-        return (
-            $this->runtimeBackendProbe
-            ?? (
-                $this->remoteShell instanceof RemoteShell
-                    ? new RuntimeBackendProbe($this->remoteShell, $this->localExecutor)
-                    : app(RuntimeBackendProbe::class)
-            )
-        );
+        return $this->runtimeBackendProbe ?? new RuntimeBackendProbe($this->localExecutor());
     }
 
     private function wireGuardPeerRealityProbe(): WireGuardPeerRealityProbe
@@ -1058,7 +1048,7 @@ final readonly class NodesProbe
         return (
             $this->nodeIdentityArtifactProbe
             ?? (
-                $this->localExecutor instanceof RemoteLocalExecutor
+                $this->localExecutor instanceof RunsInternalCommands
                     ? new NodeIdentityArtifactProbe($this->localExecutor)
                     : app(NodeIdentityArtifactProbe::class)
             )
@@ -1233,7 +1223,7 @@ final readonly class NodesProbe
 
     private function reconcileAppRuntime(Node $node): void
     {
-        // App runtime reconciliation requires SSH bootstrap
+        // App runtime reconciliation is owned by typed Agent commands.
     }
 
     private function reconcileAccessGrants(Node $node): void
@@ -1676,7 +1666,7 @@ final readonly class NodesProbe
 
     private function nodeSecurityPostureProbe(): NodeSecurityPostureProbe
     {
-        return $this->nodeSecurityPostureProbe ?? new NodeSecurityPostureProbe($this->remoteShell);
+        return $this->nodeSecurityPostureProbe ?? new NodeSecurityPostureProbe($this->localExecutor());
     }
 
     private function updateDriverRegistry(): UpdateDriverRegistry
@@ -1689,9 +1679,9 @@ final readonly class NodesProbe
         return $this->updateTargetFactory ?? app(UpdateTargetFactory::class);
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     /**

@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit database:add-user [connection] --service=<process> --database=<name> --username=<user> --password=<password> [--node=<node>] [--node-transport=<transport>] [--json]
+orbit database:add-user [connection] --service=<process> --database=<name> --username=<user> --password=<password> [--node=<node>] [--json]
 ```
 
 ## Input Contract
@@ -31,7 +31,6 @@ This command follows the shared
 | `username` | `--username` | Always. | Never. | MySQL identifier: letters, digits, and underscores. |
 | `password` | `--password` | Always. | Never. | Secret; stored only in encrypted credentials. |
 | `node` | `--node` | Optional. | Never. | Visible node slug used to disambiguate process lookup. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | Selects the JSON renderer. |
 
 ## Behavior Contract

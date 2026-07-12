@@ -14,8 +14,8 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -24,6 +24,10 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteEnvFile::class, new RemoteEnvFile(app(RemoteLocalExecutor::class)));
+});
 
 describe('DatabaseConnectionAdopter', function (): void {
     it('materializes a connection and target for an existing app env and encrypts the password', function (): void {
@@ -60,11 +64,6 @@ describe('DatabaseConnectionAdopter', function (): void {
     });
 
     it('materializes a workspace connection with the workspace-app slug', function (): void {
-        request()->headers->set(
-            ExplicitRemoteShellFallback::HEADER,
-            NodeTransportPreference::AgentPush->value,
-        );
-
         Http::preventStrayRequests();
         Http::fake([
             'http://10.44.0.76:9477/v1/commands' => Http::sequence()

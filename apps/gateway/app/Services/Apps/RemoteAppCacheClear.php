@@ -7,12 +7,12 @@ namespace App\Services\Apps;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 
 final readonly class RemoteAppCacheClear
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
         private AppRuntimeUser $runtimeUser = new AppRuntimeUser,
     ) {}
 

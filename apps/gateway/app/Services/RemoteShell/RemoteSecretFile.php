@@ -10,7 +10,7 @@ use RuntimeException;
 final readonly class RemoteSecretFile
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     /**

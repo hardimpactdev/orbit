@@ -51,7 +51,7 @@ final class RecordingSecurityInstallerShell implements RemoteShell
 
 describe('security installers', function (): void {
     it('installs the sysctl baseline through remote shell', function (): void {
-        $node = Node::factory()->create();
+        $node = Node::factory()->create(['status' => 'provisioning']);
         $shell = new RecordingSecurityInstallerShell;
 
         $report = app(SysctlBaselineInstaller::class)->installFor($node, $shell);
@@ -69,7 +69,7 @@ describe('security installers', function (): void {
     });
 
     it('locks down the orbit home directory as a bake-time invariant', function (): void {
-        $node = Node::factory()->create();
+        $node = Node::factory()->create(['status' => 'provisioning']);
         $shell = new RecordingSecurityInstallerShell;
 
         $report = app(HomeDirectoryLockdownInstaller::class)->installFor($node, $shell);
@@ -88,6 +88,7 @@ describe('security installers', function (): void {
 
     it('renders hardened sshd configuration bound to wireguard and loopback', function (): void {
         $node = Node::factory()->create([
+            'status' => 'provisioning',
             'wireguard_address' => '10.6.0.44',
         ]);
         $shell = new RecordingSecurityInstallerShell;
@@ -114,6 +115,7 @@ describe('security installers', function (): void {
 
     it('renders hardened sshd configuration for a custom provisioning runtime user', function (): void {
         $node = Node::factory()->create([
+            'status' => 'provisioning',
             'wireguard_address' => '10.6.0.44',
             'user' => 'nckrtl',
         ]);
@@ -132,7 +134,7 @@ describe('security installers', function (): void {
     });
 
     it('installs unattended security upgrades without enabling automatic reboots', function (): void {
-        $node = Node::factory()->appDev()->create();
+        $node = Node::factory()->appDev()->create(['status' => 'provisioning']);
         $shell = new RecordingSecurityInstallerShell(results: [
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             securityManagedFileProbeResult(exists: false),
@@ -156,13 +158,17 @@ describe('security installers', function (): void {
                     )
                     ->count(),
             )
-            ->toBe(4)
+            ->toBe(0)
+            ->and($shell->runs[0]['script'])
+            ->toContain('/etc/apt/apt.conf.d/20auto-upgrades')
+            ->and($shell->runs[0]['script'])
+            ->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
             ->and($report->details['managed_files'])
             ->toHaveCount(2);
     });
 
     it('declares protected public SSH deny rules and applies them to the public interface', function (): void {
-        $node = Node::factory()->create();
+        $node = Node::factory()->create(['status' => 'provisioning']);
         $shell = new RecordingSecurityInstallerShell;
 
         $report = app(PublicSshDenyInstaller::class)->installFor($node, $shell);

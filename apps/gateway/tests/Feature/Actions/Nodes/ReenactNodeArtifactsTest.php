@@ -5,20 +5,13 @@ declare(strict_types=1);
 use App\Actions\Nodes\ReenactNodeArtifacts;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
 
-beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-});
+beforeEach(function (): void {});
 
 it('rotates wireguard endpoints when gateway endpoint changes', function (): void {
     Http::preventStrayRequests();

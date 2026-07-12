@@ -32,7 +32,6 @@ final readonly class GatewayApiClient
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
-        private ?string $nodeTransportPreference = null,
     ) {}
 
     public function withMinimumTimeout(int $seconds): self
@@ -45,21 +44,6 @@ final readonly class GatewayApiClient
             baseUrl: $this->baseUrl,
             timeout: $seconds,
             caPemPath: $this->caPemPath,
-            nodeTransportPreference: $this->nodeTransportPreference,
-        );
-    }
-
-    public function withNodeTransportPreference(?string $preference): self
-    {
-        if ($preference === $this->nodeTransportPreference) {
-            return $this;
-        }
-
-        return new self(
-            baseUrl: $this->baseUrl,
-            timeout: $this->timeout,
-            caPemPath: $this->caPemPath,
-            nodeTransportPreference: $preference,
         );
     }
 
@@ -163,10 +147,6 @@ final readonly class GatewayApiClient
 
         if ($this->shouldVerifyAgainstGatewayCa()) {
             $request = $request->withOptions(['verify' => $this->caPemPath]);
-        }
-
-        if ($this->nodeTransportPreference !== null) {
-            $request = $request->withHeader('X-Orbit-Node-Transport-Preference', $this->nodeTransportPreference);
         }
 
         return $request;
@@ -276,10 +256,6 @@ final readonly class GatewayApiClient
             'Accept: application/json',
             'Content-Type: application/json',
         ];
-
-        if ($this->nodeTransportPreference !== null) {
-            $headers[] = "X-Orbit-Node-Transport-Preference: {$this->nodeTransportPreference}";
-        }
 
         curl_setopt_array($curl, [
             CURLOPT_POST => true,

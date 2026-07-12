@@ -708,22 +708,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/nodes/self/manage-key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["nodeManage.key"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/nodes/self/manage": {
         parameters: {
             query?: never;
@@ -2511,12 +2495,12 @@ export interface operations {
                                     next_command: "doctor --family=app --restore";
                                 } | {
                                     /** @constant */
-                                    code: "node_transport_required";
+                                    code: "app.cleanup_failed";
                                     /** @constant */
-                                    family: "transport";
+                                    family: "app";
                                     message: string;
                                     /** @constant */
-                                    next_command: "app:remove --node-transport=transitional-ssh-fallback";
+                                    next_command: "doctor --family=app --restore";
                                 })[];
                             };
                         };
@@ -4551,92 +4535,6 @@ export interface operations {
             };
         };
     };
-    "nodeManage.key": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: {
-                            data: {
-                                management_ssh_key: {
-                                    public_key: string;
-                                };
-                            };
-                        };
-                    };
-                };
-            };
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "authorization_failed";
-                            /** @constant */
-                            message: "Peer identity unknown.";
-                            meta: string | string[];
-                        };
-                    };
-                };
-            };
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "node_transport_required";
-                            message: string;
-                            meta: string | {
-                                /** @constant */
-                                field: "node-transport";
-                                /** @constant */
-                                required: "transitional-ssh-fallback";
-                            };
-                        };
-                    } | {
-                        error: {
-                            /** @constant */
-                            code: "node.not_operator";
-                            /** @constant */
-                            message: "Only active roleless nodes can manage themselves.";
-                            meta: string | string[];
-                        };
-                    };
-                };
-            };
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        error: {
-                            /** @constant */
-                            code: "node.management_key_unavailable";
-                            message: string;
-                            meta: string | string[];
-                        };
-                    };
-                };
-            };
-        };
-    };
     "nodeManage.manage": {
         parameters: {
             query?: never;
@@ -4659,9 +4557,7 @@ export interface operations {
                                     user: string | null;
                                     platform: string | null;
                                     managed: boolean;
-                                    ssh_host: string;
-                                    host_key_pinned: boolean;
-                                    ssh_verified: boolean;
+                                    agent_verified: boolean;
                                 };
                             };
                         };
@@ -7468,14 +7364,6 @@ export interface operations {
                                     message: string;
                                     /** @constant */
                                     next_command: "doctor --family=workspace --restore";
-                                } | {
-                                    /** @constant */
-                                    code: "node_transport_required";
-                                    /** @constant */
-                                    family: "transport";
-                                    message: string;
-                                    /** @constant */
-                                    next_command: "workspace:remove --node-transport=transitional-ssh-fallback";
                                 } | {
                                     /** @constant */
                                     code: "process.runtime_unit_extra";

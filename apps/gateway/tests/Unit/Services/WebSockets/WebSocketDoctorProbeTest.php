@@ -9,7 +9,6 @@ use App\Models\NodeRoleAssignment;
 use App\Models\Process as NodeProcess;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
@@ -20,6 +19,7 @@ use App\Services\WebSockets\WebSocketRuntimeContainerRenderer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Security\OperationTokenSigner;
+use Tests\Fakes\RemoteExecutorBackedInternalExecutor;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -67,7 +67,10 @@ it('runs the redis doctor script inside the rendered websocket runtime container
         ),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
-    app()->instance(RemoteLocalExecutor::class, websocketDoctorProbeExecutor($shell));
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        new RemoteExecutorBackedInternalExecutor($shell),
+    );
 
     $drift = app(WebSocketDoctorProbe::class)->toolDrift($websocketNode, $assignment);
 
@@ -97,7 +100,6 @@ it('runs the redis doctor script inside the rendered websocket runtime container
 function websocketDoctorProbeExecutor(WebSocketDoctorProbeTestTransport $transport): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: $transport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -108,7 +110,6 @@ function websocketDoctorProbeExecutor(WebSocketDoctorProbeTestTransport $transpo
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 

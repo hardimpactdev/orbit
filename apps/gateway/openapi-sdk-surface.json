@@ -346,14 +346,6 @@
       "reason": "Metrics status belongs to the optional metrics role and is outside the first SDK promotion set."
     },
     {
-      "operation": "GET /nodes/self/manage-key",
-      "operation_id": "nodeManage.key",
-      "classification": "public_sdk",
-      "group": "node_self_management",
-      "reason": "Self-management is needed by local Agent/macOS surfaces that enroll or manage the current node.",
-      "follow_up": "Add a dedicated PHP SDK request class for reading the self-management key."
-    },
-    {
       "operation": "POST /nodes/self/manage",
       "operation_id": "nodeManage.manage",
       "classification": "public_sdk",

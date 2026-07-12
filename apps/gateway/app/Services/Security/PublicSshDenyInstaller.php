@@ -10,15 +10,12 @@ use App\Models\Node;
 
 final class PublicSshDenyInstaller implements SecurityInstaller
 {
-    // @orbit-ssh-lane transitional-ssh
-    public function installFor(Node $node, RemoteShell $shell): InstallReport
+    // @orbit-ssh-lane provisioning-ssh
+    public function installFor(Node $node, ?RemoteShell $provisioningShell = null): InstallReport
     {
         $this->declareRules($node);
 
-        $result = $shell->run($node, $this->script(), [
-            'timeout' => 120,
-            'throw' => false,
-        ]);
+        $result = app(SecurityInstallerTransport::class)->run($node, $provisioningShell, $this->script(), 120);
 
         return new InstallReport(
             successful: $result->successful(),

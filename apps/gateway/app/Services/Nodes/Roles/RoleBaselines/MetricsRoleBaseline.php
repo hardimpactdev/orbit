@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
@@ -39,7 +38,6 @@ use RuntimeException;
 
 class MetricsRoleBaseline implements RoleBaseline
 {
-    // @orbit-ssh-lane transitional-ssh
     use ManagesNodeToolBaseline;
 
     private const string ServiceDomain = MetricsServiceRoute::Domain;
@@ -404,11 +402,9 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private function applyManagedFiles(Node $node, Process $process): bool
     {
-        $remoteShell = app(RemoteShell::class);
-
         foreach ($this->managedFiles($process) as $file) {
-            $probe = $file->probe($node, $remoteShell);
-            $result = $file->apply($node, $remoteShell, $file->plan($probe));
+            $probe = $file->probe($node);
+            $result = $file->apply($node, $file->plan($probe));
 
             if (! $result->successful()) {
                 return false;

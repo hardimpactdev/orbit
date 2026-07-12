@@ -80,7 +80,6 @@ describe('workspace write commands', function (): void {
                 'name' => 'feature-docs',
                 '--app' => 'docs',
                 '--path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
-                '--node-transport' => 'transitional-ssh-fallback',
                 '--json' => true,
             ]);
         } finally {
@@ -91,7 +90,7 @@ describe('workspace write commands', function (): void {
             fn (FakeGatewayStreamRequest $request): bool => (
                 $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/workspaces/setup'
-                && $request->hasHeader('X-Orbit-Node-Transport-Preference', 'transitional-ssh-fallback')
+                && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
                 && $request->data() === [
                     'name' => 'feature-docs',
                     'app' => 'docs',
@@ -246,7 +245,6 @@ describe('workspace write commands', function (): void {
             '--app' => 'docs',
             '--keep-files' => true,
             '--force' => true,
-            '--node-transport' => 'transitional-ssh-fallback',
             '--json' => true,
         ]);
 
@@ -258,7 +256,7 @@ describe('workspace write commands', function (): void {
             return (
                 $request->method() === 'DELETE'
                 && $url === 'https://gateway.test/api/workspaces/feature-docs?app=docs'
-                && $request->header('X-Orbit-Node-Transport-Preference')[0] === 'transitional-ssh-fallback'
+                && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
                 && $request->data() === [
                     'keep_files' => true,
                     'destructive_consent' => true,

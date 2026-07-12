@@ -10,15 +10,15 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
-use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use InvalidArgumentException;
 use Throwable;
 
 final readonly class WebSocketDoctorProbe
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
         private WebSocketRuntimeContainerRenderer $runtimeRenderer,
         private WebSocketBackendName $backendName,
         private WebSocketRedisResolver $redisResolver,

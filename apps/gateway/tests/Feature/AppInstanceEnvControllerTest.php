@@ -9,7 +9,6 @@ use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
@@ -198,9 +197,7 @@ it('applies set env values to the remote app runtime when apply is requested', f
             'value' => 'smtp',
             'apply' => true,
         ],
-        [
-            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
-        ],
+        [],
     );
 
     $response

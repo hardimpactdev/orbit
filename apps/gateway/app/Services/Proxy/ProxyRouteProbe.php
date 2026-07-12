@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Contracts\RemoteShell;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\DriftKind;
@@ -16,11 +15,11 @@ use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Tools\ToolScriptDispatcher;
 use Throwable;
 
 final readonly class ProxyRouteProbe
 {
-    // @orbit-ssh-lane transitional-ssh
     private const array OwnerTypes = [
         'app',
         'app-analytics',
@@ -36,7 +35,7 @@ final readonly class ProxyRouteProbe
     private const array Kinds = ['app', 'workspace', 'internal', 'proxy', 'redirect'];
 
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
+        private ?ToolScriptDispatcher $scripts = null,
         private ?ProxyRouteRenderer $renderer = null,
     ) {}
 
@@ -193,14 +192,15 @@ final readonly class ProxyRouteProbe
             ' sh "$path" "$upstream"
             BASH;
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
-            'throw' => true,
-            'metadata' => [
-                'ORBIT_PROXY_DOMAIN' => $domain,
-                'ORBIT_PROXY_SUFFIX' => $backend ? '.backend' : '',
-                'ORBIT_PROXY_RUNTIME_UPSTREAM' => $runtimeUpstream ?? '',
-            ],
-        ]);
+        $script = sprintf(
+            "export ORBIT_PROXY_DOMAIN=%s ORBIT_PROXY_SUFFIX=%s ORBIT_PROXY_RUNTIME_UPSTREAM=%s\n%s",
+            escapeshellarg($domain),
+            escapeshellarg($backend ? '.backend' : ''),
+            escapeshellarg($runtimeUpstream ?? ''),
+            $script,
+        );
+
+        $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script, throw: true);
 
         $parts = explode("\t", trim($result->stdout), limit: 8);
 
@@ -260,7 +260,7 @@ final readonly class ProxyRouteProbe
             '
             BASH;
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
+        $result = $this->scripts()->run($node, 'orbit-proxy', 'probe-many', $script, throw: true);
         $items = [];
 
         foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
@@ -308,7 +308,7 @@ final readonly class ProxyRouteProbe
             '
             BASH;
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
+        $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script, throw: true);
         $parts = explode("\t", trim($result->stdout), limit: 2);
         $exists = ($parts[0] ?? '') === '1';
         $content = '';
@@ -369,7 +369,7 @@ final readonly class ProxyRouteProbe
             escapeshellarg($caddyName),
         );
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => false]);
+        $result = $this->scripts()->run($node, 'orbit-proxy', 'probe', $script);
         $parts = explode("\t", trim($result->stdout), 3);
         $runtimeStatus = ($parts[0] ?? '') !== '' ? $parts[0] : 'unknown';
 
@@ -474,7 +474,7 @@ final readonly class ProxyRouteProbe
             '
             BASH;
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
+        $result = $this->scripts()->run($node, 'orbit-proxy', 'probe-many', $script, throw: true);
         $items = [];
 
         foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
@@ -1344,6 +1344,11 @@ final readonly class ProxyRouteProbe
     private function renderer(): ProxyRouteRenderer
     {
         return $this->renderer ?? app(ProxyRouteRenderer::class);
+    }
+
+    private function scripts(): ToolScriptDispatcher
+    {
+        return $this->scripts ?? app(ToolScriptDispatcher::class);
     }
 
     private function shouldProbeRuntimeUpstream(ProxyRoute $route): bool

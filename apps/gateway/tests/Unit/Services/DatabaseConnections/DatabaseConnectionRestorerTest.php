@@ -12,8 +12,8 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteEnvFile;
+use App\Services\RemoteShell\RemoteLocalExecutor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\File;
@@ -22,6 +22,10 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(RemoteEnvFile::class, new RemoteEnvFile(app(RemoteLocalExecutor::class)));
+});
 
 describe('DatabaseConnectionRestorer', function (): void {
     it('updates mapped env keys and preserves unrelated content', function (): void {
@@ -239,7 +243,6 @@ describe('DatabaseConnectionRestorer', function (): void {
     });
 
     it('writes remote managed database env through base64-safe transport', function (): void {
-        request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
         Http::preventStrayRequests();
         Http::fake([
             'http://10.44.0.75:9477/v1/commands' => Http::sequence()
@@ -281,7 +284,6 @@ describe('DatabaseConnectionRestorer', function (): void {
                 'env_prefix' => 'DB',
             ]);
         app(DatabaseConnectionRestorer::class)->restore($target);
-        request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
 
         $writeRequest = collect(Http::recorded())
             ->map(fn (array $record) => $record[0])

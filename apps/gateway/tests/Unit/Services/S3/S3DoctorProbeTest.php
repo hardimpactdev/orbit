@@ -9,7 +9,6 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
@@ -90,7 +89,6 @@ function s3Probe(S3DoctorProbeTestTransport $shell): S3DoctorProbe
 function s3ProbeExecutor(S3DoctorProbeTestTransport $transport): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: $transport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -101,7 +99,6 @@ function s3ProbeExecutor(S3DoctorProbeTestTransport $transport): RemoteLocalExec
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 

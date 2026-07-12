@@ -18,6 +18,8 @@ use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Proxy\ProxyRouteProbe;
 use App\Services\Proxy\ProxyRouteRenderer;
+use App\Services\RemoteShell\RunsInternalCommands;
+use App\Services\Tools\ToolScriptDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -28,6 +30,13 @@ uses(RefreshDatabase::class);
 function proxyProbeIssue(array $drift, string $key): mixed
 {
     return collect($drift)->first(fn ($entry): bool => $entry->key === $key);
+}
+
+function proxyProbeWithRemoteShell(RemoteShell $shell): ProxyRouteProbe
+{
+    return new ProxyRouteProbe(
+        scripts: new ToolScriptDispatcher(new ProxyProbeScriptExecutor($shell)),
+    );
 }
 
 function createProxyProbeGatewayAssignmentNode(): Node
@@ -418,7 +427,7 @@ describe('proxy backend and TLS reality', function (): void {
             ."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
         );
 
-        $snapshot = new ProxyRouteProbe($shell)->introspect($route);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspect($route);
 
         expect($snapshot->get('vite.docs.test'))
             ->toMatchArray([
@@ -431,10 +440,8 @@ describe('proxy backend and TLS reality', function (): void {
             ])
             ->and($shell->nodes[0]->is($node))
             ->toBeTrue()
-            ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])
-            ->toBe('vite.docs.test')
-            ->and($shell->options[0]['metadata']['ORBIT_PROXY_SUFFIX'])
-            ->toBe('');
+            ->and($shell->scripts[0])
+            ->toContain("ORBIT_PROXY_DOMAIN='vite.docs.test'");
     });
 
     it('introspects backend route artifacts through orbit-caddy container mounts', function (): void {
@@ -452,7 +459,7 @@ describe('proxy backend and TLS reality', function (): void {
         ]);
         $shell = new ProxyProbeRecordingRemoteShell("0\t\t\t\t0\t0\t\t\n");
 
-        new ProxyRouteProbe($shell)->introspect($route);
+        proxyProbeWithRemoteShell($shell)->introspect($route);
 
         expect($shell->scripts[0])
             ->toContain('docker exec orbit-caddy sh')
@@ -500,7 +507,7 @@ describe('proxy backend and TLS reality', function (): void {
             ."\n",
         );
 
-        $snapshot = new ProxyRouteProbe($shell)->introspect($route);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspect($route);
 
         expect($snapshot->get('happie.nmbp'))
             ->toMatchArray([
@@ -512,8 +519,11 @@ describe('proxy backend and TLS reality', function (): void {
             ->and($shell->scripts[0])
             ->toContain('--connect-to "$domain:$port:$host:$port"')
             ->toContain('"https://$domain:$port$path"')
-            ->and($shell->options[0]['metadata']['ORBIT_PROXY_RUNTIME_UPSTREAM'])
-            ->toBe('https://orbit-app-happie-nmbp:'.AppDevelopmentInnerTlsPolicy::InternalTlsPort);
+            ->toContain(
+                "ORBIT_PROXY_RUNTIME_UPSTREAM='https://orbit-app-happie-nmbp:"
+                .AppDevelopmentInnerTlsPolicy::InternalTlsPort
+                ."'",
+            );
     });
 
     it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
@@ -1246,7 +1256,7 @@ describe('proxy node-level introspection', function (): void {
             ."\t/etc/orbit/certs/api.docs.test.crt\t/etc/orbit/certs/api.docs.test.key\t1\t1\n",
         );
 
-        $snapshot = new ProxyRouteProbe($shell)->introspectNode($node);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspectNode($node);
 
         expect($snapshot->keys())
             ->toHaveCount(2)
@@ -1274,7 +1284,7 @@ describe('proxy node-level introspection', function (): void {
         $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell('');
 
-        $snapshot = new ProxyRouteProbe($shell)->introspectNode($node);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspectNode($node);
 
         expect($snapshot->isEmpty())->toBeTrue();
     });
@@ -1289,7 +1299,7 @@ describe('proxy node-level introspection', function (): void {
             ."\n",
         );
 
-        $snapshot = new ProxyRouteProbe($shell)->introspectNode($node);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspectNode($node);
 
         expect($snapshot->keys())
             ->toHaveCount(1)
@@ -1302,7 +1312,7 @@ describe('proxy node-level introspection', function (): void {
         $contents = "paper.nmbp {\n    reverse_proxy http://127.0.0.1:29979\n}\n";
         $shell = new ProxyProbeRecordingRemoteShell("1\t".base64_encode($contents)."\n");
 
-        $snapshot = new ProxyRouteProbe($shell)->introspectGlobalConfig($node);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspectGlobalConfig($node);
 
         expect($snapshot->get('global_caddy_config'))
             ->toMatchArray([
@@ -1431,7 +1441,7 @@ describe('proxy adoption snapshot', function (): void {
             "vite.docs.test\t".str_repeat('a', 64)."\t{$bodyB64}\n",
         );
 
-        $snapshot = new ProxyRouteProbe($shell)->snapshotForAdopt($node);
+        $snapshot = proxyProbeWithRemoteShell($shell)->snapshotForAdopt($node);
 
         expect($snapshot->keys())
             ->toHaveCount(1)
@@ -1448,7 +1458,7 @@ describe('orbit-caddy container readiness', function (): void {
         $node = createTestAppHostNode();
         $shell = new ProxyProbeCaddyContainerShell('available', 'true', 'true');
 
-        $snapshot = new ProxyRouteProbe($shell)->introspectCaddyContainer($node);
+        $snapshot = proxyProbeWithRemoteShell($shell)->introspectCaddyContainer($node);
 
         expect($snapshot->get('orbit-caddy'))
             ->toMatchArray([
@@ -1749,7 +1759,7 @@ describe('legacy php_fastcgi route convergence after Docker-first runtime backfi
                 "1\t{$observedLegacyHash}\t/etc/orbit/certs/legacy-docs.test.crt\t/etc/orbit/certs/legacy-docs.test.key\t1\t1\n",
             );
 
-            $snapshot = new ProxyRouteProbe($shell)->introspect($route);
+            $snapshot = proxyProbeWithRemoteShell($shell)->introspect($route);
             $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
             expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)
@@ -1962,6 +1972,42 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
         expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->not->toBeNull();
     });
 });
+
+final readonly class ProxyProbeScriptExecutor implements RunsInternalCommands
+{
+    public function __construct(
+        private RemoteShell $shell,
+    ) {}
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        $payload = json_decode((string) $transportOptions['input'], true, flags: JSON_THROW_ON_ERROR);
+        $result = $this->shell->run($node, (string) $payload['script'], $transportOptions);
+
+        if (! $result->successful()) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'success' => ['data' => [
+                    'exit_code' => $result->exitCode,
+                    'stdout' => $result->stdout,
+                    'stderr' => $result->stderr,
+                    'duration_ms' => $result->durationMs,
+                ]],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: $result->durationMs,
+        );
+    }
+}
 
 final class ProxyProbeCaddyContainerShell implements RemoteShell
 {

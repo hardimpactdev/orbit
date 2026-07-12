@@ -6,7 +6,7 @@ namespace App\Services\WebSockets;
 
 use App\Models\Node;
 use App\Services\Ca\OrbitCaService;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 
@@ -17,7 +17,7 @@ class WebSocketCertificateInstaller
     public function __construct(
         private readonly OrbitCaService $ca,
         private readonly WebSocketBackendName $backendName,
-        private readonly ?RemoteLocalExecutor $localExecutor = null,
+        private readonly ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     /**
@@ -92,8 +92,8 @@ class WebSocketCertificateInstaller
         return $wireGuardAddress;
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 }

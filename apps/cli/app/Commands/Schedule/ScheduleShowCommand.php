@@ -13,7 +13,6 @@ use App\Exceptions\GatewayApiException;
 
 final class ScheduleShowCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use PromptsForGatewayRegistryEntities;
     use RendersShowDetails;
     use ResolvesHostContext;
@@ -24,7 +23,6 @@ final class ScheduleShowCommand extends GatewayCommand
         {name? : Schedule name}
         {--app= : Filter by app scope}
         {--node= : Filter by node scope}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json}';
 
     #[\Override]

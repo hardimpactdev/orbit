@@ -157,7 +157,6 @@ it('defers fallback source path validation until source install runs', function 
 function websocket_runtime_source_installer_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new WebSocketRuntimeSourceInstallerUnusedTransport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

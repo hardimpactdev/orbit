@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit analytics:update [--node=<node>] [--node-transport=<transport>] [--version=<version>] [--json]
+orbit analytics:update [--node=<node>] [--version=<version>] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | --- | --- | --- | --- | --- | --- |
 | `version` | `--version` | Always. | Never. | None. | Plausible CE semantic version string such as `3.2.2`. |
 | `node` | `--node` | Required when zero or multiple visible active analytics nodes exist. | Never. | The only visible active analytics node when exactly one exists. | Must match an active node with the `analytics` role. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Input Resolution

@@ -24,7 +24,7 @@ use App\Services\Apps\NodeRuntimeContainersProbe;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
 use App\Services\Processes\ProcessDockerContainerRenderer;
 use App\Services\Processes\ProcessesProbe;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\RuntimeBackend\RuntimeBackendProbe;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
@@ -36,11 +36,6 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        ExplicitRemoteShellFallback::REQUIRED,
-    );
-
     $this->probe = new ProcessesProbe;
 });
 
@@ -173,7 +168,10 @@ describe('runtime backend availability', function (): void {
             ->toContain('probe_unit')
             ->toContain("probe_unit 'orbit_{$app->name}_main_vite'")
             ->toContain("printf '%s\\t%s\\t%s\\t%s\\t%s\\n'");
-        expect($shell->options[1])->not->toHaveKey('input');
+        expect($shell->options[1])
+            ->toHaveKey('input')
+            ->and($shell->options[1]['bind_input'])
+            ->toBeTrue();
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
         expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
             'config_exists' => true,
@@ -1468,7 +1466,7 @@ function processFor(App $app, array $overrides = []): Process
         ]);
 }
 
-final class ProcessesProbeRecordingRemoteShell implements RemoteShell
+final class ProcessesProbeRecordingRemoteShell implements RemoteShell, RunsInternalCommands
 {
     /**
      * @var list<Node>
@@ -1506,6 +1504,48 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell
                 durationMs: 1,
             )
         );
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        if ($commandName === 'internal:tool:run-script') {
+            $payload = json_decode(
+                (string) ($transportOptions['input'] ?? ''),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
+            $result = $this->run($node, (string) ($payload['script'] ?? ''), $transportOptions);
+
+            if (! $result->successful()) {
+                return $result;
+            }
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'success' => ['data' => [
+                        'exit_code' => $result->exitCode,
+                        'stdout' => $result->stdout,
+                        'stderr' => $result->stderr,
+                        'duration_ms' => $result->durationMs,
+                    ]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: $result->durationMs,
+            );
+        }
+
+        $script = implode(' ', [
+            $commandName,
+            ...array_map(static fn (mixed $argument): string => escapeshellarg((string) $argument), $arguments),
+        ]);
+
+        return $this->run($node, $script, $transportOptions);
     }
 }
 

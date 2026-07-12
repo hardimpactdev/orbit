@@ -24,7 +24,7 @@ orbit app:prune docs --force
 orbit app:prune docs --json --force
 
 # Opt stale workspaces into the exact-marked transitional cleanup seam
-orbit app:prune docs --force --node-transport=transitional-ssh-fallback
+orbit app:prune docs --force
 ```
 
 ## Arguments and options
@@ -33,9 +33,6 @@ orbit app:prune docs --force --node-transport=transitional-ssh-fallback
 - `--dry-run`: Shows which workspaces would be removed without performing any side effects.
 - `--force`: Skips the interactive confirmation prompt. Required for
   non-interactive execution only when `--dry-run` is absent.
-- `--node-transport=<transport>`: Uses Agent push for typed workspace runtime
-  cleanup. The exact `transitional-ssh-fallback` value opts into the tracked
-  residual SSH cleanup seam; no other SSH selector is accepted.
 - `--json`: Outputs structured JSON data instead of human-readable text.
 
 ## Behavior Summary
@@ -69,8 +66,8 @@ Database cleanup requires Orbit to explicitly track a database as workspace-owne
 - The target app must be resolved and authorized.
 - The app must have at least one agent IDE adapter configured (directly or inherited).
 - The gateway must be able to query the effective agent IDE adapter(s).
-  Agent reachability is not a pre-prune prerequisite. Residual shell cleanup
-  runs only with the exact `transitional-ssh-fallback` marker; cleanup
+  Agent reachability is not a pre-prune prerequisite. Node cleanup uses Agent
+  push; cleanup
   failures after workspace configuration removal are reported as warnings with repair
   commands.
 

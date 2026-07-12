@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Models\Node;
@@ -13,7 +14,6 @@ use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
@@ -30,6 +30,13 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
+});
+
 it('applies app runtime containers through the agent-push local executor', function (): void {
     Http::preventStrayRequests();
     Http::fake([
@@ -39,7 +46,6 @@ it('applies app runtime containers through the agent-push local executor', funct
     $container = app_runtime_manager_app_container();
 
     new AppRuntimeContainerManager(
-        new AppRuntimeManagerUnusedTransport,
         new DockerCommandBuilder,
         app_runtime_manager_ca(),
         localExecutor: app_runtime_manager_executor(),
@@ -85,9 +91,11 @@ it('uses the resolved local executor for agent-capable app runtime nodes', funct
     );
 });
 
-it('lets explicit transitional SSH fallback override local executor for agent capable app runtime nodes', function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
+it('does not let a remote shell override the fixed Agent-push runtime lane', function (): void {
     Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.80:9477/v1/commands' => Http::response(app_runtime_manager_agent_response('created')),
+    ]);
 
     $node = app_runtime_manager_node();
     $container = app_runtime_manager_app_container();
@@ -102,26 +110,20 @@ it('lets explicit transitional SSH fallback override local executor for agent ca
         new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
     );
 
+    app()->instance(RemoteShell::class, $transport);
+
     $outcome = new AppRuntimeContainerManager(
-        $transport,
         new DockerCommandBuilder,
         app_runtime_manager_ca(),
         localExecutor: app_runtime_manager_executor(),
     )->apply($node, $container);
 
     expect($outcome)
-        ->toBe(AppRuntimeContainerApplyOutcome::Unchanged)
+        ->toBe(AppRuntimeContainerApplyOutcome::Created)
         ->and($transport->calls)
-        ->toHaveCount(3)
-        ->and($transport->calls[0]['script'])
-        ->toContain('docker network inspect')
-        ->and($transport->calls[1]['script'])
-        ->toContain('docker container inspect')
-        ->and($transport->calls[2]['script'])
-        ->toContain('docker image inspect');
+        ->toBe([]);
 
-    Http::assertNothingSent();
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
+    Http::assertSentCount(1);
 });
 
 it('applies workspace runtime containers through the agent-push local executor', function (): void {
@@ -133,7 +135,6 @@ it('applies workspace runtime containers through the agent-push local executor',
     $container = app_runtime_manager_workspace_container();
 
     new WorkspaceRuntimeContainerManager(
-        new AppRuntimeManagerUnusedTransport,
         new DockerCommandBuilder,
         app_runtime_manager_ca(),
         localExecutor: app_runtime_manager_executor(),
@@ -163,7 +164,6 @@ it('passes the macOS node home to workspace runtime container agent-push actions
     $container = app_runtime_manager_macos_workspace_container();
 
     new WorkspaceRuntimeContainerManager(
-        new AppRuntimeManagerUnusedTransport,
         new DockerCommandBuilder,
         app_runtime_manager_ca(),
         localExecutor: app_runtime_manager_executor(),
@@ -534,7 +534,6 @@ function app_runtime_manager_agent_response(string $outcome): array
 function app_runtime_manager_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new AppRuntimeManagerUnusedTransport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

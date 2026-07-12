@@ -21,7 +21,6 @@ use Throwable;
 
 final class DoctorCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
     use StreamsGatewayProgress;
 
@@ -32,7 +31,6 @@ final class DoctorCommand extends GatewayCommand
         {--app= : Limit to one app}
         {--workspace= : Limit to one workspace}
         {--node= : Target node name}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--self : Limit to the calling node identity}
         {--all : Run across all eligible active role nodes}
         {--family=* : Scope to one or more state families}

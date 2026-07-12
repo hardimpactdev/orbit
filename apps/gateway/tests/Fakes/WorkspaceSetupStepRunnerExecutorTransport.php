@@ -7,10 +7,11 @@ namespace Tests\Fakes;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use RuntimeException;
 
-final class WorkspaceSetupStepRunnerExecutorTransport implements RemoteExecutor
+final class WorkspaceSetupStepRunnerExecutorTransport implements RemoteExecutor, RunsInternalCommands
 {
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $runs = [];
@@ -35,5 +36,15 @@ final class WorkspaceSetupStepRunnerExecutorTransport implements RemoteExecutor
     public function start(Node $node, string $script, array $options = []): InvokedProcess
     {
         throw new RuntimeException('Workspace setup step runner tests do not start long-running transports.');
+    }
+
+    public function runInternal(
+        Node $node,
+        string $commandName,
+        array $arguments = [],
+        array $commandOptions = [],
+        array $transportOptions = [],
+    ): RemoteShellResult {
+        return $this->run($node, $commandName, $transportOptions);
     }
 }

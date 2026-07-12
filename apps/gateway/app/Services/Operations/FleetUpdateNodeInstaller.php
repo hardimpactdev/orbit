@@ -7,14 +7,12 @@ namespace App\Services\Operations;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RunsInternalCommands;
 use RuntimeException;
 
 final readonly class FleetUpdateNodeInstaller
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         private RunsInternalCommands $localExecutor,
         private OperationRunRecorder $operationRuns,
@@ -23,7 +21,7 @@ final readonly class FleetUpdateNodeInstaller
 
     /**
      * @param  array<int|string, mixed>  $commandOptions
-     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, transport?: NodeTransportPreference|string, bind_application_key?: bool, bind_input?: bool, ssh_bootstrap_binary?: array{url: string, sha256: string}, ssh_bootstrap_input_file?: array{path: string, sha256: string}}  $transportOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, bind_application_key?: bool, bind_input?: bool}  $transportOptions
      */
     public function run(
         OperationRun $operationRun,
@@ -70,7 +68,7 @@ final readonly class FleetUpdateNodeInstaller
 
     /**
      * @param  array<int|string, mixed>  $commandOptions
-     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, transport?: NodeTransportPreference|string, bind_application_key?: bool, bind_input?: bool, ssh_bootstrap_binary?: array{url: string, sha256: string}, ssh_bootstrap_input_file?: array{path: string, sha256: string}}  $transportOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, bind_application_key?: bool, bind_input?: bool}  $transportOptions
      */
     private function runCliInstallAllowingAgentRestartDisconnect(
         Node $node,
@@ -90,7 +88,7 @@ final readonly class FleetUpdateNodeInstaller
 
     /**
      * @param  array<int|string, mixed>  $commandOptions
-     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, transport?: NodeTransportPreference|string, bind_application_key?: bool, bind_input?: bool, ssh_bootstrap_binary?: array{url: string, sha256: string}, ssh_bootstrap_input_file?: array{path: string, sha256: string}}  $transportOptions
+     * @param  array{timeout: int, input: string, metadata: array<string, string>, cwd?: string, environment?: array<string, string>, bind_application_key?: bool, bind_input?: bool}  $transportOptions
      */
     private function runCliInstall(Node $node, array $commandOptions, array $transportOptions): RemoteShellResult
     {

@@ -7,7 +7,6 @@ namespace App\Services\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\Node;
-use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitGatewayContainer;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Process\PendingProcess;
@@ -15,7 +14,6 @@ use Illuminate\Support\Facades\Process;
 
 final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 {
-    // @orbit-ssh-lane transitional-ssh
     private const int DEFAULT_TIMEOUT = 120;
 
     private const string CONTAINER = 'orbit-gateway';
@@ -24,8 +22,6 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 
     public function __construct(
         private RemoteShellScriptComposer $scripts,
-        private SshCommandBuilder $ssh,
-        private NodeRoleAssignments $roleAssignments,
         private RemoteShellAuditLogger $auditLogger,
     ) {}
 
@@ -806,18 +802,6 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 
     private function command(Node $node, string $script): string
     {
-        if ($this->roleAssignments->nodeIsGateway($node)) {
-            return 'bash -c '.escapeshellarg($script);
-        }
-
-        return $this->ssh->enforceForNode(
-            node: $node,
-            remoteCommand: 'bash -lc '.escapeshellarg($script),
-            options: [
-                'log_level' => 'ERROR',
-                'server_alive_interval' => 30,
-                'server_alive_count_max' => 10,
-            ],
-        );
+        return 'bash -c '.escapeshellarg($script);
     }
 }

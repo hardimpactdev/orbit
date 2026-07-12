@@ -114,7 +114,6 @@ describe(DatabaseConnectionExecutor::class, function (): void {
 function databaseConnectionExecutorRemoteLocalExecutor(DatabaseConnectionExecutorRecordingTransport $transport): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: $transport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

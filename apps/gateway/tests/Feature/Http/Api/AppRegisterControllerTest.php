@@ -11,7 +11,6 @@ use App\Models\NodeRoleAssignment;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Nodes\Access\NodePermissionPresets;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\Runtime\DockerCommandBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -27,9 +26,8 @@ beforeEach(function (): void {
     app()->bind(
         AppRuntimeContainerManager::class,
         fn (): AppRuntimeContainerManager => new AppRuntimeContainerManager(
-            app(RemoteShell::class),
-            app(DockerCommandBuilder::class),
-            app(OrbitCaService::class),
+            commands: app(DockerCommandBuilder::class),
+            ca: app(OrbitCaService::class),
         ),
     );
 });
@@ -85,7 +83,6 @@ function app_register_fallback_server(): array
 {
     return [
         'REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP,
-        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => ExplicitRemoteShellFallback::REQUIRED,
     ];
 }
 

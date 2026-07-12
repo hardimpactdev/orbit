@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\RuntimeBackend;
 
-use App\Contracts\RemoteShell;
 use App\Data\RuntimeBackend\RuntimeBackendProbeResult;
 use App\Models\Node;
 use App\Services\Nodes\NodeHostPaths;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
 /**
@@ -16,10 +15,8 @@ use JsonException;
  */
 final readonly class RuntimeBackendProbe
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private RemoteShell $_remoteShell,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
     ) {}
 
     public function check(Node $node): RuntimeBackendProbeResult
@@ -45,9 +42,9 @@ final readonly class RuntimeBackendProbe
         );
     }
 
-    public function remoteShell(): RemoteShell
+    public function executor(): RunsInternalCommands
     {
-        return $this->_remoteShell;
+        return $this->localExecutor();
     }
 
     private function provider(Node $node): string
@@ -63,9 +60,9 @@ final readonly class RuntimeBackendProbe
         return 'systemd';
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
     }
 
     /**

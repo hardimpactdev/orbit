@@ -9,13 +9,10 @@ use App\Models\Node;
 
 final class SysctlBaselineInstaller implements SecurityInstaller
 {
-    // @orbit-ssh-lane transitional-ssh
-    public function installFor(Node $node, RemoteShell $shell): InstallReport
+    // @orbit-ssh-lane provisioning-ssh
+    public function installFor(Node $node, ?RemoteShell $provisioningShell = null): InstallReport
     {
-        $result = $shell->run($node, $this->script(), [
-            'timeout' => 120,
-            'throw' => false,
-        ]);
+        $result = app(SecurityInstallerTransport::class)->run($node, $provisioningShell, $this->script(), 120);
 
         return new InstallReport(
             successful: $result->successful(),

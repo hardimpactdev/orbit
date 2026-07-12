@@ -250,14 +250,14 @@ class Node extends Model
         if ($this->relationLoaded('roleAssignments')) {
             return $this->roleAssignments
                 ->whereInStrict('role', self::AGENT_WORKLOAD_ROLES)
-                ->whereStrict('status', NodeRoleStatus::Active)
+                ->whereInStrict('status', [NodeRoleStatus::Pending, NodeRoleStatus::Active])
                 ->isNotEmpty();
         }
 
         return $this
             ->roleAssignments()
             ->whereIn('role', self::AGENT_WORKLOAD_ROLES)
-            ->where('status', NodeRoleStatus::Active->value)
+            ->whereIn('status', [NodeRoleStatus::Pending->value, NodeRoleStatus::Active->value])
             ->exists();
     }
 

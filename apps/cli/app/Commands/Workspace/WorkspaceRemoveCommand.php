@@ -13,7 +13,6 @@ use function Laravel\Prompts\text;
 
 final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]
@@ -22,7 +21,6 @@ final class WorkspaceRemoveCommand extends WorkspaceGatewayCommand
         {--app= : Parent app slug or app.instance selector}
         {--keep-files : Preserve workspace files on the app node}
         {--force : Confirm destructive operation without prompting}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--json : Output JSON}';
 
     #[\Override]

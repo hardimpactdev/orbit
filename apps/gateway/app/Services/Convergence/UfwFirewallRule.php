@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Convergence;
 
-use App\Contracts\RemoteShell;
 use App\Data\Convergence\ConvergenceApplyResult;
 use App\Data\Convergence\UfwFirewallRulePlan;
 use App\Data\Convergence\UfwFirewallRuleProbe;
@@ -17,7 +16,6 @@ use App\Services\Firewall\RemoteFirewallRule;
 
 final readonly class UfwFirewallRule
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
         public string $name,
         public string $direction,
@@ -49,7 +47,7 @@ final readonly class UfwFirewallRule
         );
     }
 
-    public function probe(Node $node, ?RemoteShell $remoteShell = null): UfwFirewallRuleProbe
+    public function probe(Node $node): UfwFirewallRuleProbe
     {
         [$snapshot, $error] = new FirewallRuleProbe()->tryIntrospectNode($node);
 
@@ -115,7 +113,7 @@ final readonly class UfwFirewallRule
         );
     }
 
-    public function apply(Node $node, RemoteShell $remoteShell, UfwFirewallRulePlan $plan): ConvergenceApplyResult
+    public function apply(Node $node, UfwFirewallRulePlan $plan): ConvergenceApplyResult
     {
         if (! $plan->shouldApply()) {
             return new ConvergenceApplyResult(

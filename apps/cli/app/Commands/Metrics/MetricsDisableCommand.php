@@ -12,13 +12,11 @@ use function Laravel\Prompts\confirm;
 
 final class MetricsDisableCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]
     protected $signature = 'metrics:disable
         {--node= : Node to disable the metrics role on}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--force : Confirm metrics role removal}
         {--purge-data : Purge metrics-owned data}
         {--json : Output JSON}';

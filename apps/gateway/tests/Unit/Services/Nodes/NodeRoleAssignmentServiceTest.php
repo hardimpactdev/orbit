@@ -15,7 +15,6 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
@@ -30,6 +29,7 @@ use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RemoteExecutor;
 use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Contracts\Process\InvokedProcess;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -999,7 +999,7 @@ describe('node role assignment service', function (): void {
         app()->instance(RemoteLocalExecutor::class, nodeRoleAssignmentLocalExecutor($remoteShell));
         app()->instance(AgentRoleBaseline::class, new AgentRoleBaseline(
             developmentDnsMappingEnactor: app(DevelopmentDnsMappingEnactor::class),
-            localExecutor: app(RemoteLocalExecutor::class),
+            localExecutor: app(RunsInternalCommands::class),
         ));
 
         $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', []);
@@ -1443,7 +1443,6 @@ describe('node role assignment service', function (): void {
 function nodeRoleAssignmentLocalExecutor(RemoteShell $remoteShell): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new NodeRoleAssignmentRemoteExecutor($remoteShell),
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,
@@ -1454,7 +1453,6 @@ function nodeRoleAssignmentLocalExecutor(RemoteShell $remoteShell): RemoteLocalE
         activityLogger: new ActivityLogger(new ActivityLogCorrelation),
         operationRuns: app(OperationRunRecorder::class),
         applicationKey: 'gateway-secret',
-        defaultTransportPreference: NodeTransportPreference::TransitionalSshFallback,
     );
 }
 

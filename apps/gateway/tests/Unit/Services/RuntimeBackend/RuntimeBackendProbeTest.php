@@ -34,7 +34,7 @@ it('reports the runtime backend as available when systemd responds through agent
     ]);
     $node = runtime_backend_probe_node('ubuntu_24-04');
 
-    $result = new RuntimeBackendProbe(runtime_backend_probe_unused_transport(), runtime_backend_probe_executor())
+    $result = new RuntimeBackendProbe(runtime_backend_probe_executor())
         ->check($node);
 
     expect($result->available)
@@ -62,7 +62,7 @@ it('reports macOS runtime readiness through launchd provider availability', func
     ]);
     $node = runtime_backend_probe_node($platform);
 
-    $result = new RuntimeBackendProbe(runtime_backend_probe_unused_transport(), runtime_backend_probe_executor())
+    $result = new RuntimeBackendProbe(runtime_backend_probe_executor())
         ->check($node);
 
     expect($result->available)
@@ -90,7 +90,7 @@ it('reports the runtime backend as unavailable when systemd is missing or unreac
     ]);
     $node = runtime_backend_probe_node('ubuntu_24-04');
 
-    $result = new RuntimeBackendProbe(runtime_backend_probe_unused_transport(), runtime_backend_probe_executor())
+    $result = new RuntimeBackendProbe(runtime_backend_probe_executor())
         ->check($node);
 
     expect($result->available)
@@ -116,7 +116,6 @@ function runtime_backend_probe_node(string $platform): Node
 function runtime_backend_probe_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: runtime_backend_probe_unused_transport(),
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Commands\Concerns\EmitsCanonicalEnvelopes;
-use App\Commands\Concerns\ResolvesNodeTransportPreference;
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayApiClient;
 use LaravelZero\Framework\Commands\Command;
@@ -13,18 +12,10 @@ use LaravelZero\Framework\Commands\Command;
 abstract class GatewayCommand extends Command
 {
     use EmitsCanonicalEnvelopes;
-    use ResolvesNodeTransportPreference;
 
     protected function gateway(): GatewayApiClient
     {
-        $client = app(GatewayApiClient::class);
-        $preference = $this->nodeTransportPreference();
-
-        if ($preference === null) {
-            return $client;
-        }
-
-        return $client->withNodeTransportPreference($preference);
+        return app(GatewayApiClient::class);
     }
 
     /**

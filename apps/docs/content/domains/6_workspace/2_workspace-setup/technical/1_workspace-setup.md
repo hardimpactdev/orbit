@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--node-transport=<transport>] [--json|--stream-json]
+orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -27,7 +27,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `name` | `[name]` | When local workspace context, Codex metadata for an explicit `--path`, and Agent IDE adapter resolution cannot resolve it. | Local workspace context, Codex metadata for an explicit `--path`, or adapter-resolved identity when available. | Workspace slug (lowercase letters, digits, and hyphens; max 63 chars independent of the parent app slug; cannot start/end with hyphen). |
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug or app-instance selector such as `happie.nmbp`. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
-| `--node-transport` | `text` | Optional. | `auto` | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `--json` | `flag` | Optional. | `false` | n/a |
 | `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 

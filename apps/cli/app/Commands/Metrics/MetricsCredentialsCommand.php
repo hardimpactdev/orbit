@@ -12,13 +12,11 @@ use function Laravel\Prompts\table;
 
 final class MetricsCredentialsCommand extends GatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use ResolvesHostContext;
 
     #[\Override]
     protected $signature = 'metrics:credentials
         {--node= : Metrics node to read credentials for}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--reset : Rotate the Grafana admin password before returning credentials}
         {--json : Output JSON}';
 

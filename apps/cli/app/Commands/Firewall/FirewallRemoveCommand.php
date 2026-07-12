@@ -10,14 +10,12 @@ use RuntimeException;
 
 final class FirewallRemoveCommand extends FirewallGatewayCommand
 {
-    // @orbit-ssh-lane transitional-ssh
     use WithStepTree;
 
     #[\Override]
     protected $signature = 'firewall:remove
         {name? : Firewall rule name}
         {--node= : Target node}
-        {--node-transport= : Node command transport preference (auto|agent-push|transitional-ssh-fallback)}
         {--force : Confirm destructive operation without prompting}
         {--json : Output JSON}';
 

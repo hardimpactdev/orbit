@@ -13,7 +13,7 @@ workspace or reset its state.
 Run this command to tear down a workspace and its owned artifacts.
 
 ```bash
-orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--node-transport=<transport>] [--json]
+orbit workspace:remove [name] [--app=<app>] [--keep-files] [--force] [--json]
 ```
 
 Destructive consent is always required before removal side effects start.
@@ -56,15 +56,6 @@ Use `--force` in non-interactive environments or scripts that have already obtai
 orbit workspace:remove feature-api --force
 ```
 
-### Force transitional SSH fallback during cleanup
-
-Use `--node-transport=transitional-ssh-fallback` when node-side cleanup must
-avoid agent-push transport.
-
-```bash
-orbit workspace:remove feature-api --force --node-transport=transitional-ssh-fallback
-```
-
 ## Arguments and options
 
 - `name`: workspace name. Optional when running from inside a registered
@@ -78,9 +69,6 @@ orbit workspace:remove feature-api --force --node-transport=transitional-ssh-fal
 - `--force`: explicit destructive consent. Skips the interactive confirmation
   prompt. Required in non-interactive input mode. `--json` never implies
   `--force`.
-- `--node-transport=<transport>`: Node command transport preference for
-  node-side cleanup. Allowed values are `auto`, `agent-push`, and
-  `transitional-ssh-fallback`.
 - `--json`: Output JSON.
 
 ## Behavior Summary
@@ -128,9 +116,8 @@ The output format depends on whether `--json` is passed.
 - CLI caller must reach the Orbit gateway.
 - Caller identity must have `workspace:remove` on the workspace's owning node.
   Instance-bound workspaces use the selected app instance node for cleanup.
-- Agent push handles typed runtime cleanup on the concrete app-instance node.
-  Process, teardown-step, and worktree cleanup use the exact-marked
-  `transitional-ssh-fallback` seam only when explicitly selected. If cleanup
+- Agent push handles runtime, process, teardown-step, and worktree cleanup on
+  the concrete app-instance node. If cleanup
   cannot finish after workspace configuration removal,
   the command still succeeds and reports warnings with repair commands.
 - Destructive consent is required through the interactive confirmation prompt

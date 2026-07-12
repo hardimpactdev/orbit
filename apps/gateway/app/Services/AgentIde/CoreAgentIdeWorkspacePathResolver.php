@@ -8,14 +8,14 @@ use App\Contracts\AgentIdeWorkspacePathResolver;
 use App\Data\AgentIde\WorkspacePathResolution;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 use RuntimeException;
 
 final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorkspacePathResolver
 {
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function resolve(string $adapter, App $app, string $absolutePath): ?WorkspacePathResolution

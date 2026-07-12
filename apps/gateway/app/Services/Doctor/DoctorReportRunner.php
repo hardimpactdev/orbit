@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DoctorRunRequest;
 use App\Data\Doctor\DoctorTargetScope;
@@ -85,7 +84,6 @@ use Throwable;
 
 final readonly class DoctorReportRunner
 {
-    // @orbit-ssh-lane transitional-ssh
     public const int FLEET_PROBE_BATCH_SIZE = 5;
 
     private const int FLEET_PROBE_POLL_INTERVAL_MICROSECONDS = 50_000;
@@ -2739,7 +2737,6 @@ final readonly class DoctorReportRunner
     private function appRuntimeContainerManagerForAgentPush(): AppRuntimeContainerManager
     {
         return new AppRuntimeContainerManager(
-            app(RemoteShell::class),
             app(DockerCommandBuilder::class),
             app(OrbitCaService::class),
             app(AppDevelopmentInnerTlsPolicy::class),
@@ -2750,7 +2747,6 @@ final readonly class DoctorReportRunner
     private function workspaceRuntimeContainerManagerForAgentPush(): WorkspaceRuntimeContainerManager
     {
         return new WorkspaceRuntimeContainerManager(
-            app(RemoteShell::class),
             app(DockerCommandBuilder::class),
             app(OrbitCaService::class),
             app(AppDevelopmentInnerTlsPolicy::class),

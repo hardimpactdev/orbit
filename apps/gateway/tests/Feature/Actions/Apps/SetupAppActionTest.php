@@ -8,14 +8,11 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppSetupStep;
 use App\Models\Node;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
 it('passes Laravel Vite URL and dev server certificate environment into app setup steps', function (): void {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-
     $node = Node::factory()
         ->appDev()
         ->create([
@@ -58,7 +55,7 @@ it('passes Laravel Vite URL and dev server certificate environment into app setu
 
     expect($shell->runs)
         ->toHaveCount(1)
-        ->and($shell->runs[0]['options']['metadata'])
+        ->and($shell->runs[0]['options']['environment'])
         ->toMatchArray([
             'APP_URL' => 'https://craft-starterkit-react.test',
             'VITE_APP_URL' => 'https://craft-starterkit-react.test',

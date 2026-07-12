@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit metrics:credentials [--node=<node>] [--node-transport=<transport>] [--reset] [--json]
+orbit metrics:credentials [--node=<node>] [--reset] [--json]
 ```
 
 ## Input Contract
@@ -24,7 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Optional. | Never. | The only active metrics node when exactly one exists. | Active node with the `metrics` role. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `reset` | `--reset` | Optional. | Never. | `false` | Rotate Grafana admin password before rendering. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 

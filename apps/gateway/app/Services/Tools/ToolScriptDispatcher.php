@@ -6,7 +6,6 @@ namespace App\Services\Tools;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -40,12 +39,9 @@ final readonly class ToolScriptDispatcher
                 ], JSON_THROW_ON_ERROR),
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => "tool.{$action}",
-                    'tool' => $tool,
-                    'action' => $action,
                 ],
                 'strict' => false,
                 'timeout' => self::DEFAULT_TIMEOUT + self::TIMEOUT_PADDING,
-                'transport' => NodeTransportPreference::AgentPush,
                 'bind_input' => true,
                 'throw' => $throw,
             ],
@@ -86,8 +82,8 @@ final readonly class ToolScriptDispatcher
         return ToolRegistryFailure::nodeTransportRequired(
             message: "Tool '{$tool}' {$action} requires agent-push transport on the target node.",
             meta: [
-                'required' => NodeTransportPreference::AgentPush->value,
-                'transport' => NodeTransportPreference::AgentPush->value,
+                'required' => 'agent-push',
+                'transport' => 'agent-push',
                 'tool' => $tool,
                 'action' => $action,
                 'error' => $exception->getMessage(),

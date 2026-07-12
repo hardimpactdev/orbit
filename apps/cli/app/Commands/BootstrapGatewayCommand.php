@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Commands;
 
 use App\Commands\Concerns\EmitsCanonicalEnvelopes;
-use App\Commands\Concerns\ResolvesNodeTransportPreference;
 use LaravelZero\Framework\Commands\Command;
 
 /**
@@ -15,5 +14,4 @@ use LaravelZero\Framework\Commands\Command;
 abstract class BootstrapGatewayCommand extends Command
 {
     use EmitsCanonicalEnvelopes;
-    use ResolvesNodeTransportPreference;
 }

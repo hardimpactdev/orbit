@@ -10,9 +10,7 @@ use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Proxy\ProxyRouteRenderer;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
@@ -29,22 +27,11 @@ uses(TestCase::class);
 uses()->group('doctor', 'fixer');
 uses(RefreshDatabase::class);
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
-function allow_tools_fixer_remote_shell_fallback(): void
-{
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
-}
+function allow_tools_fixer_remote_shell_fallback(): void {}
 
-function use_tools_fixer_agent_push(): void
-{
-    request()->headers->set(
-        ExplicitRemoteShellFallback::HEADER,
-        NodeTransportPreference::AgentPush->value,
-    );
-}
+function use_tools_fixer_agent_push(): void {}
 
 function use_tools_fixer_internal_tool_dispatch(): ToolsFixerRecordingInternalExecutor
 {
@@ -65,7 +52,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.lifecycle_state_mismatch',
             kind: DriftKind::Divergent,
@@ -89,7 +76,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
@@ -110,7 +97,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.version_mismatch',
             kind: DriftKind::Divergent,
@@ -169,7 +156,7 @@ describe('ToolsFixer', function (): void {
             ),
         ]);
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
@@ -235,7 +222,7 @@ describe('ToolsFixer', function (): void {
             ),
         ]);
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
@@ -275,7 +262,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_missing',
             kind: DriftKind::Missing,
@@ -317,7 +304,7 @@ describe('ToolsFixer', function (): void {
             ),
         ]);
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.credentials_missing',
             kind: DriftKind::Missing,
@@ -361,7 +348,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.credentials_mismatch',
             kind: DriftKind::Divergent,
@@ -382,7 +369,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -414,7 +401,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -448,7 +435,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -492,7 +479,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -525,7 +512,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -545,7 +532,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: $key,
             kind: DriftKind::Missing,
@@ -577,7 +564,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
+        $action = new ToolsFixer()->fix($tool, new DriftEntry(
             family: 'tool',
             key: $key,
             kind: $key === 'tool.container_missing' ? DriftKind::Missing : DriftKind::Divergent,
@@ -618,7 +605,6 @@ describe('agent tool fixes', function (): void {
         ]);
 
         $fixer = new ToolsFixer(
-            remoteShell: new ToolsFixerRemoteShell,
             catalog: makeToolsFixerAgentToolCatalog(),
             proxyRouteRenderer: new ProxyRouteRenderer,
         );
@@ -643,7 +629,6 @@ describe('agent tool fixes', function (): void {
         ]);
 
         $fixer = new ToolsFixer(
-            remoteShell: new ToolsFixerRemoteShell,
             catalog: makeToolsFixerAgentToolCatalog(),
         );
 
@@ -663,7 +648,6 @@ describe('agent tool fixes', function (): void {
         ]);
 
         $fixer = new ToolsFixer(
-            remoteShell: new ToolsFixerRemoteShell,
             catalog: makeToolsFixerAgentToolCatalog(),
         );
 
@@ -675,7 +659,6 @@ describe('agent tool fixes', function (): void {
     it('creates canonical proxy route when missing', function (): void {
         [$node, $tool] = createAgentToolForFixer();
         $fixer = new ToolsFixer(
-            remoteShell: new ToolsFixerRemoteShell,
             catalog: makeToolsFixerAgentToolCatalog(),
             proxyRouteRenderer: new ProxyRouteRenderer,
         );
@@ -704,7 +687,6 @@ describe('agent tool fixes', function (): void {
             'config' => ['owner_name' => 'openclaw'],
         ]);
         $fixer = new ToolsFixer(
-            remoteShell: new ToolsFixerRemoteShell,
             catalog: makeToolsFixerAgentToolCatalog(),
             proxyRouteRenderer: new ProxyRouteRenderer,
         );
@@ -735,7 +717,6 @@ describe('agent tool fixes', function (): void {
         $shell = new ToolsFixerRemoteShell;
 
         $fixer = new ToolsFixer(
-            remoteShell: $shell,
             catalog: makeToolsFixerAgentToolCatalog([
                 'credentialsScript' => "echo '[\"user\",\"pass\"]'",
             ]),
@@ -761,7 +742,6 @@ describe('agent tool fixes', function (): void {
         $shell = new ToolsFixerRemoteShell;
 
         $fixer = new ToolsFixer(
-            remoteShell: $shell,
             catalog: makeToolsFixerAgentToolCatalog([
                 'credentialsScript' => "echo '[\"user\",\"pass\"]'",
             ]),
@@ -794,7 +774,6 @@ describe('agent tool fixes', function (): void {
         $shell = new ToolsFixerRemoteShell;
 
         $fixer = new ToolsFixer(
-            remoteShell: $shell,
             catalog: makeToolsFixerAgentToolCatalog([
                 'credentialsScript' => 'echo invalid',
             ]),
@@ -823,7 +802,6 @@ describe('agent tool fixes', function (): void {
         ]);
 
         $fixer = new ToolsFixer(
-            remoteShell: $shell,
             catalog: makeToolsFixerAgentToolCatalog(),
         );
 

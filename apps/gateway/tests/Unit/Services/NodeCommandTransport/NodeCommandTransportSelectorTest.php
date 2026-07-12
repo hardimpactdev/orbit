@@ -8,7 +8,6 @@ use App\Models\NodeRoleAssignment;
 use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -78,15 +77,12 @@ function active_gateway_node(): Node
     return $node;
 }
 
-it('selects gateway-only for gateway-owned reads like app:list regardless of requested transport', function (): void {
+it('selects gateway-only for gateway-owned reads like app:list', function (): void {
     $node = activeCapableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::gatewayOnlyRead('app:list');
 
     expect($selector->select($node, $envelope))->toBe(NodeTransport::GatewayOnly);
-    expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback))
-        ->toBe(NodeTransport::GatewayOnly);
-    expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))->toBe(NodeTransport::GatewayOnly);
 });
 
 it('selects gateway-only for gateway targets even when the envelope requires node execution', function (): void {
@@ -98,10 +94,6 @@ it('selects gateway-only for gateway targets even when the envelope requires nod
     );
 
     expect($selector->select($node, $envelope))->toBe(NodeTransport::GatewayOnly);
-    expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback))
-        ->toBe(NodeTransport::GatewayOnly);
-    expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))
-        ->toBe(NodeTransport::GatewayOnly);
 });
 
 it('defaults to auto selection semantics when transport arg omitted', function (): void {
@@ -112,32 +104,20 @@ it('defaults to auto selection semantics when transport arg omitted', function (
     expect($selector->select($node, $envelope))->toBe(NodeTransport::AgentPush);
 });
 
-it('selects transitional ssh fallback only when explicitly requested for node-executing commands', function (): void {
-    $node = activeCapableNode();
-    $selector = new NodeCommandTransportSelector;
-    $agentEnvelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);
-    $unsupportedEnvelope = NodeCommandEnvelope::nodeExecuting('internal:agent-unsupported');
-
-    expect($selector->select($node, $agentEnvelope, NodeTransportPreference::TransitionalSshFallback))
-        ->toBe(NodeTransport::TransitionalSshFallback);
-    expect($selector->select($node, $unsupportedEnvelope, NodeTransportPreference::TransitionalSshFallback))
-        ->toBe(NodeTransport::TransitionalSshFallback);
-});
-
-it('selects agent-push under auto when node is active, managed, and envelope supports agent push', function (): void {
+it('selects agent-push when node is active, managed, and the envelope supports it', function (): void {
     $node = activeCapableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);
 
-    expect($selector->select($node, $envelope, NodeTransportPreference::Auto))->toBe(NodeTransport::AgentPush);
+    expect($selector->select($node, $envelope))->toBe(NodeTransport::AgentPush);
 });
 
-it('fails under auto while node lacks agent capability instead of silently falling back to ssh', function (): void {
+it('fails while node lacks agent capability instead of falling back to ssh', function (): void {
     $node = activeAgentUnavailableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);
 
-    expect(fn () => $selector->select($node, $envelope, NodeTransportPreference::Auto))
+    expect(fn () => $selector->select($node, $envelope))
         ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
 });
 
@@ -150,41 +130,37 @@ it('treats the omitted transport preference as auto and refuses ssh fallback for
         ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
 });
 
-it('fails under auto when node is not active instead of silently falling back to ssh', function (): void {
+it('fails when node is not active instead of falling back to ssh', function (): void {
     $node = inactiveCapableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);
 
-    expect(fn () => $selector->select($node, $envelope, NodeTransportPreference::Auto))
+    expect(fn () => $selector->select($node, $envelope))
         ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
 });
 
-it('selects agent-push when explicitly requested and conditions are met', function (): void {
+it('selects agent-push when conditions are met', function (): void {
     $node = activeCapableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);
 
-    expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))->toBe(NodeTransport::AgentPush);
+    expect($selector->select($node, $envelope))->toBe(NodeTransport::AgentPush);
 });
 
-it('fails explicit agent-push request when node cannot support agent push instead of falling back to ssh', function (): void {
+it('fails when node cannot support agent push instead of falling back to ssh', function (): void {
     $node = activeAgentUnavailableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:executor:verify', supportsAgentPushTransport: true);
 
-    expect(fn () => $selector->select($node, $envelope, NodeTransportPreference::AgentPush))
+    expect(fn () => $selector->select($node, $envelope))
         ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
 });
 
-it('fails unsupported node-executing envelopes unless ssh fallback is explicitly requested', function (): void {
+it('fails unsupported node-executing envelopes without an ssh fallback', function (): void {
     $node = activeCapableNode();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting('internal:agent-unsupported');
 
-    expect(fn () => $selector->select($node, $envelope, NodeTransportPreference::Auto))
+    expect(fn () => $selector->select($node, $envelope))
         ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
-    expect(fn () => $selector->select($node, $envelope, NodeTransportPreference::AgentPush))
-        ->toThrow(RuntimeException::class, 'agent-push transport is unavailable');
-    expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback))
-        ->toBe(NodeTransport::TransitionalSshFallback);
 });

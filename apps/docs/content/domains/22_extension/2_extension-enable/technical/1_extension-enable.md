@@ -1,4 +1,4 @@
-# Technical Contract: `orbit extension:enable <extension> [--node=<node>] [--node-transport=<transport>] [--gateway] [--json]`
+# Technical Contract: `orbit extension:enable <extension> [--node=<node>] [--gateway] [--json]`
 
 [Back to public `extension:enable` documentation.](../extension-enable.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit extension:enable <extension> [--node=<node>] [--node-transport=<transport>] [--gateway] [--json]
+orbit extension:enable <extension> [--node=<node>] [--gateway] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,6 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `extension` | Argument `extension` | Always. | Never. | None. | Built-in extension slug. |
 | `node` | `--node` | Optional. | Never. | Local caller node. | Only `gateway` is supported in this slice. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `gateway` | `--gateway` | Optional. | Never. | `false` | Enables gateway state after local enablement when required; ignored when `--node=gateway` already targets gateway state. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer and non-interactive input mode. |
 

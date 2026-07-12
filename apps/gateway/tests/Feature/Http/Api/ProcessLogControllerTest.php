@@ -9,8 +9,6 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +56,10 @@ function grantProcessLogAccess(Node $caller, Node $appNode): void
 
 function fake_process_log_agent(string $output, int $exitCode = 0, string $stderr = ''): void
 {
+    app()->instance(
+        \App\Services\RemoteShell\RunsInternalCommands::class,
+        app(\App\Services\RemoteShell\RemoteLocalExecutor::class),
+    );
     Http::preventStrayRequests();
     Http::fake([
         '*' => Http::response([
@@ -94,8 +96,6 @@ function process_log_agent_push_server(): array
 {
     return [
         'REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP,
-        'HTTP_'.str_replace('-', '_', strtoupper(ExplicitRemoteShellFallback::HEADER)) =>
-            NodeTransportPreference::AgentPush->value,
     ];
 }
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Tools;
 
-use App\Contracts\RemoteShell;
 use App\Data\Convergence\ManagedFileDriftSignals;
 use App\Data\Convergence\ManagedFilePlan;
 use App\Data\Convergence\ManagedFileProbe;
@@ -19,7 +18,7 @@ use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Tools\UserScopedCliTool;
 use App\Tools\UserScopedCliUsers;
@@ -29,13 +28,12 @@ use Throwable;
 
 final readonly class ToolsProbe
 {
-    // @orbit-ssh-lane transitional-ssh
     private const array ExpectedStates = ['installed', 'absent'];
 
     public function __construct(
-        private ?RemoteShell $remoteShell = null,
         private ?ToolCatalog $catalog = null,
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
+        private ?ToolScriptDispatcher $scripts = null,
     ) {}
 
     public function key(): string
@@ -76,16 +74,7 @@ final readonly class ToolsProbe
             extraProbe: $this->extraProbeFromMetadata($metadata),
         );
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
-            'throw' => false,
-            'input' => json_encode([
-                'binary' => $binary,
-                'version_command' => is_string($versionCommand) ? $versionCommand : '',
-                'service' => is_string($service) ? $service : '',
-                'provider_command' => is_string($providerCommand) ? $providerCommand : '',
-                'container' => is_string($container) ? $container : '',
-            ], JSON_THROW_ON_ERROR),
-        ]);
+        $result = $this->scriptDispatcher()->run($tool->node, $tool->name, 'probe', $script);
         $parts = explode(separator: "\t", string: trim($result->stdout), limit: 12);
         $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
 
@@ -169,10 +158,7 @@ final readonly class ToolsProbe
         }
 
         $script = $this->batchedToolCapabilityProbeScript($batch);
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
-            'throw' => false,
-            'input' => json_encode(['tools' => $batch], JSON_THROW_ON_ERROR),
-        ]);
+        $result = $this->scriptDispatcher()->run($node, 'tool-catalog', 'probe-many', $script);
 
         if (! $result->successful()) {
             foreach (array_keys($batch) as $toolName) {
@@ -559,10 +545,8 @@ final readonly class ToolsProbe
             [ "$found" -eq 1 ]
             BASH;
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
-            'throw' => false,
-            'input' => implode("\n", $images)."\n",
-        ]);
+        $script = 'printf %s '.escapeshellarg(implode("\n", $images)."\n").' | ('.$script.')';
+        $result = $this->scriptDispatcher()->run($tool->node, $tool->name, 'probe-images', $script);
         $catalog = app(PhpRuntimeCatalog::class);
         $observedImages = array_values(array_filter(
             preg_split('/\R/', trim($result->stdout)) ?: [],
@@ -998,7 +982,7 @@ final readonly class ToolsProbe
         }
 
         try {
-            return ManagedFile::fromIntent($intent);
+            return ManagedFile::fromIntent($intent, localExecutor: $this->localExecutor());
         } catch (InvalidArgumentException) {
             return null;
         }
@@ -1072,6 +1056,7 @@ final readonly class ToolsProbe
                 defaultMode: '0600',
                 defaultDirectoryMode: '0700',
                 sensitive: true,
+                localExecutor: $this->localExecutor(),
             );
         } catch (InvalidArgumentException) {
             return null;
@@ -1139,19 +1124,17 @@ final readonly class ToolsProbe
             return $snapshot;
         }
 
-        $remoteShell = $this->remoteShell ?? app(RemoteShell::class);
-
         if (($file = $this->managedConfigFile($tool)) instanceof ManagedFile) {
             $observed = [
                 ...$observed,
-                ...$this->managedFileProbeSnapshot('config', $file->probe($tool->node, $remoteShell)),
+                ...$this->managedFileProbeSnapshot('config', $file->probe($tool->node)),
             ];
         }
 
         if (($file = $this->managedSecretFile($tool)) instanceof ManagedFile) {
             $observed = [
                 ...$observed,
-                ...$this->managedFileProbeSnapshot('secret', $file->probe($tool->node, $remoteShell)),
+                ...$this->managedFileProbeSnapshot('secret', $file->probe($tool->node)),
             ];
         }
 
@@ -1513,9 +1496,14 @@ final readonly class ToolsProbe
         return [];
     }
 
-    private function localExecutor(): RemoteLocalExecutor
+    private function localExecutor(): RunsInternalCommands
     {
-        return $this->localExecutor ?? app(RemoteLocalExecutor::class);
+        return $this->localExecutor ?? app(RunsInternalCommands::class);
+    }
+
+    private function scriptDispatcher(): ToolScriptDispatcher
+    {
+        return $this->scripts ?? app(ToolScriptDispatcher::class);
     }
 
     /**

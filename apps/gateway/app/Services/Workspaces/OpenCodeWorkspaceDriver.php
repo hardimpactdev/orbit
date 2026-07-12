@@ -10,7 +10,7 @@ use App\Data\Workspaces\WorkspaceProvisionResult;
 use App\Exceptions\WorkspaceCreateFailed;
 use App\Models\App;
 use App\Models\Node;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use HardImpact\OpenCode\Data\Worktree as OpenCodeWorktree;
 use HardImpact\OpenCode\OpenCode;
 use Throwable;
@@ -19,7 +19,7 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
 {
     public function __construct(
         private OpenCodeClientFactory $clientFactory,
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
     ) {}
 
     public function create(App $app, Node $node, string $name, string $base): WorkspaceProvisionResult

@@ -4,18 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes;
 
-use App\Contracts\RemoteShell;
-use App\Data\Security\PinnedHostKey;
 use App\Models\Node;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
-use App\Services\Security\SshHostKeyPinner;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use Throwable;
 
 final readonly class OperatorNodeManager
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private RemoteShell $remoteShell,
-        private ExplicitRemoteShellFallback $explicitFallback,
+        private RemoteLocalExecutor $localExecutor,
     ) {}
 
     /**
@@ -26,53 +22,49 @@ final readonly class OperatorNodeManager
         if (! $node->isActive() || ! $node->isOperator()) {
             throw new OperatorNodeManagementException(
                 'node.not_operator',
-                'Only active roleless nodes can opt into gateway SSH management.',
+                'Only active roleless nodes can opt into managed Agent execution.',
             );
         }
 
-        $wireguardAddress = $this->wireguardAddress($node);
-
-        if (! $this->explicitFallback->allowed()) {
-            throw new OperatorNodeManagementException(
-                'node_transport_required',
-                $this->explicitFallback->message('node self-management SSH verification'),
-            );
-        }
+        $this->wireguardAddress($node);
+        $original = $node->only(['user', 'platform', 'managed']);
 
         $node->forceFill([
             'user' => $user,
             'platform' => $platform,
+            'managed' => true,
         ])->save();
 
-        $pinner = app(SshHostKeyPinner::class);
-        $pinnedHostKey = $pinner->pin($wireguardAddress);
-
-        if (! $pinnedHostKey instanceof PinnedHostKey) {
-            throw new OperatorNodeManagementException(
-                'node.host_key_pin_failed',
-                'Gateway SSH host key pinning failed.',
+        try {
+            $result = $this->localExecutor->runInternal(
+                node: $node->fresh(),
+                commandName: 'internal:agent-runtime:probe',
+                transportOptions: [
+                    'metadata' => ['ORBIT_OPERATION_ID' => 'node.manage.agent-probe'],
+                    'throw' => false,
+                ],
             );
+        } catch (Throwable $exception) {
+            $node->forceFill($original)->save();
+
+            throw new OperatorNodeManagementException('node.agent_unreachable', $exception->getMessage());
         }
-
-        $pinner->persist($node, $pinnedHostKey);
-        $node->refresh();
-
-        $result = $this->remoteShell->run($node, 'true', ['throw' => false]);
 
         if (! $result->successful()) {
-            throw new OperatorNodeManagementException('node.ssh_unreachable', 'Gateway SSH reachability check failed.');
-        }
+            $node->forceFill($original)->save();
 
-        $node->forceFill(['managed' => true])->save();
+            throw new OperatorNodeManagementException(
+                'node.agent_unreachable',
+                'Gateway Agent-push reachability check failed.',
+            );
+        }
 
         return [
             'node' => $node->name,
             'user' => $node->user,
             'platform' => $node->platform,
             'managed' => true,
-            'ssh_host' => $wireguardAddress,
-            'host_key_pinned' => true,
-            'ssh_verified' => true,
+            'agent_verified' => true,
         ];
     }
 
@@ -83,7 +75,7 @@ final readonly class OperatorNodeManager
         if ($address === '') {
             throw new OperatorNodeManagementException(
                 'node.wireguard_address_missing',
-                'Node has no WireGuard address for gateway SSH.',
+                'Node has no WireGuard address for Agent push.',
             );
         }
 

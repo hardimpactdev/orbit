@@ -10,7 +10,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistry;
 use App\Services\DatabaseConnections\DatabaseConnectionRegistryFailure;
-use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use JsonException;
 
 final readonly class AddDatabaseUser
@@ -20,7 +20,7 @@ final readonly class AddDatabaseUser
     private const string IdentifierPattern = '/^[A-Za-z0-9_]{1,64}$/';
 
     public function __construct(
-        private RemoteLocalExecutor $localExecutor,
+        private RunsInternalCommands $localExecutor,
         private DatabaseConnectionRegistry $registry,
     ) {}
 

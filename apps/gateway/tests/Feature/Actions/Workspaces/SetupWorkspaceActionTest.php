@@ -24,9 +24,9 @@ use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeHostPaths;
-use App\Services\RemoteShell\ExplicitRemoteShellFallback;
+use App\Services\RemoteShell\RemoteLocalExecutor;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Services\Workspaces\WorkspaceSetupTargetResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -91,18 +91,14 @@ beforeEach(function (): void {
     app()->instance(RemoteShell::class, new SetupWorkspaceActionTestShell);
     app()->instance(SiteCertificateInstaller::class, new SetupWorkspaceActionTestCertificateInstaller);
     app()->instance(OrbitCaService::class, new SetupWorkspaceActionTestCa);
-
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
 });
 
-afterEach(function (): void {
-    request()->headers->remove(ExplicitRemoteShellFallback::HEADER);
-});
+afterEach(function (): void {});
 
 function setup_workspace_use_agent_push(): void
 {
-    request()->headers->set(ExplicitRemoteShellFallback::HEADER, NodeTransportPreference::AgentPush->value);
     Node::query()->whereNull('platform')->update(['platform' => 'ubuntu_24-04']);
+    app()->instance(RunsInternalCommands::class, app(RemoteLocalExecutor::class));
 }
 
 it('sets up a workspace and marks it active', function (): void {
@@ -1114,7 +1110,7 @@ it('passes lifecycle environment into host-routed setup steps', function (): voi
     expect($composerRun['script'])
         ->toContain('VITE_DEV_SERVER_CERT=')
         ->toContain("/home/gateway/.config/orbit/certs/{$workspaceHost}.crt");
-    expect($composerRun['options']['metadata'])->toMatchArray([
+    expect($composerRun['options']['environment'])->toMatchArray([
         'APP_URL' => $workspaceUrl,
         'VITE_APP_URL' => $workspaceUrl,
         'VITE_VALET_HOST' => $workspaceHost,

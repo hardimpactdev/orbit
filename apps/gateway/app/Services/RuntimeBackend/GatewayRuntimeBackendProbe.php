@@ -11,6 +11,7 @@ use App\Enums\DriftKind;
 use App\Models\Node;
 use App\Services\RemoteShell\RemoteLocalExecutor;
 use App\Services\RemoteShell\RemoteShellSuccessData;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitContainerNames;
 
 /**
@@ -23,7 +24,7 @@ use App\Services\Runtime\OrbitContainerNames;
 final readonly class GatewayRuntimeBackendProbe
 {
     public function __construct(
-        private ?RemoteLocalExecutor $localExecutor = null,
+        private ?RunsInternalCommands $localExecutor = null,
         private OrbitContainerNames $containerNames = new OrbitContainerNames,
     ) {}
 
@@ -55,7 +56,7 @@ final readonly class GatewayRuntimeBackendProbe
         );
     }
 
-    public function localExecutor(): RemoteLocalExecutor
+    public function localExecutor(): RunsInternalCommands
     {
         return $this->localExecutor ?? app(RemoteLocalExecutor::class);
     }

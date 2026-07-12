@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Proxy;
 
-use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
@@ -16,13 +15,12 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Gateway\CaddyGlobalSiteBlocks;
+use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Runtime\OrbitContainerNames;
 
 final readonly class ProxyRouteFixer
 {
-    // @orbit-ssh-lane transitional-ssh
     public function __construct(
-        private RemoteShell $remoteShell,
         private ProxyRouteRenderer $renderer,
         private OrbitCaService $ca,
         private SiteCertificateInstaller $siteCertificateInstaller,
@@ -204,6 +202,7 @@ final readonly class ProxyRouteFixer
             content: (string) file_get_contents($leaf['cert']),
             mode: '0644',
             directoryMode: '0755',
+            localExecutor: app(RunsInternalCommands::class),
         ));
         $this->applyManagedFile($route->node, new ManagedFile(
             path: $hostPaths['key'],
@@ -211,6 +210,7 @@ final readonly class ProxyRouteFixer
             mode: '0600',
             directoryMode: '0755',
             sensitive: true,
+            localExecutor: app(RunsInternalCommands::class),
         ));
         $this->reloadCaddy($route->node);
     }
@@ -364,14 +364,15 @@ final readonly class ProxyRouteFixer
             content: $this->ca->rootCert(),
             mode: '0644',
             directoryMode: '0755',
+            localExecutor: app(RunsInternalCommands::class),
         );
         $this->applyManagedFile($node, $file);
     }
 
     private function applyManagedFile(Node $node, ManagedFile $file): void
     {
-        $plan = $file->plan($file->probe($node, $this->remoteShell));
-        $result = $file->apply($node, $this->remoteShell, $plan);
+        $plan = $file->plan($file->probe($node));
+        $result = $file->apply($node, $plan);
 
         if (! $result->successful()) {
             throw new \RuntimeException($result->summary);

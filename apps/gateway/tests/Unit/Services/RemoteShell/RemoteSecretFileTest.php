@@ -116,7 +116,6 @@ function remote_secret_file_node(): Node
 function remote_secret_file_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: new RemoteSecretFileUnusedTransport,
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

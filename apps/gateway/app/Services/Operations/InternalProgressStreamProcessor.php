@@ -11,7 +11,7 @@ use RuntimeException;
 
 /**
  * Gateway-side processor for the framed-progress stream emitted by a hidden
- * `internal:*` command over SSH stdout (NDJSON, one frame per line).
+ * `internal:*` command output (NDJSON, one frame per line).
  *
  * Responsibilities:
  *   - Decode each line via {@see InternalProgressFrameDecoder}.

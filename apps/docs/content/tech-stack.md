@@ -255,10 +255,10 @@ Agent-eligible Ubuntu, macOS, or Darwin nodes. Active workload roles derive
 Agent intent. A roleless non-gateway operator can opt in with `managed`.
 Gateway nodes are never Agent targets.
 
-SSH is permanent only for provisioning and bootstrap. Every production
-non-provisioning consumer carries `@orbit-ssh-lane transitional-ssh` and must
-move to Agent push or gateway-local execution. A failed Agent dispatch does not
-select SSH. Break-glass SSH is a super-admin action outside Orbit commands.
+SSH is permanent only for provisioning and bootstrap. Production
+non-provisioning execution uses Agent push or gateway-local execution. A failed
+Agent dispatch does not select SSH. Break-glass SSH is a super-admin action
+outside Orbit commands.
 
 Gateway-to-node work uses three boundaries:
 
@@ -306,10 +306,9 @@ artifacts, host-key policy, and the first runtime baseline. Provisioning scripts
 are non-interactive; prompts finish before side effects. Managed system-path
 writes use the bootstrap user's passwordless sudo contract.
 
-The generated [SSH migration inventory](generated/transitional-ssh-inventory.json)
+The generated [SSH inventory](generated/transitional-ssh-inventory.json)
 classifies every concrete SSH consumer. Only `provisioning-ssh` entries are
-permanent. Entries marked `transitional-ssh` are implementation debt and may
-not gain new callers.
+allowed, and the transitional list must remain empty.
 
 On an Agent-eligible node, a typed command may run user-level work locally and
 may invoke the operating-system sudo prompt for a protected step. V1 has no
@@ -757,8 +756,7 @@ calls the gateway over the VPN, and renders the result. The gateway
 authenticates the WireGuard peer, derives grants from its own node records, and
 decides what to do. Gateway-owned reads/writes stay gateway-only. Node-local
 execution uses Agent push when the command family needs node-local work.
-Exact-marked transitional command debt may retain an explicit SSH selector
-until its port lands. Other commands never select SSH, and break-glass access
+Normal commands never select SSH, and break-glass access
 stays outside Orbit.
 
 One machine in the network carries the gateway service. Gateway code runs only

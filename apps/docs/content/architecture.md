@@ -95,9 +95,8 @@ The gateway is the central store of everything Orbit knows: apps, nodes, workspa
 
 The gateway exposes the typed API that the CLI talks to. The managed execution
 model has two normal paths: gateway-owned work stays gateway-only, and
-node-local execution goes through Orbit Agent. Some command families still use
-SSH through `RemoteShell`; each is exact-marked `transitional-ssh`
-implementation debt. Break-glass SSH is
+node-local execution goes through Orbit Agent. `RemoteShell` is limited to
+provisioning and bootstrap. Break-glass SSH is
 operator-owned recovery performed by a super admin whose SSH key is present on
 the nodes, outside normal Orbit command execution. The gateway remains the
 source of truth for intent, authorization, operation history, release manifests,
@@ -310,9 +309,8 @@ a node-side control plane: for reachable Agent-eligible nodes, the gateway opens
 an authenticated HTTP connection to the node's Agent listener over the
 Orbit/WireGuard network, sends a typed Orbit command envelope with a scoped
 operation token, and receives stdout/stderr/status/exit frames back. SSH is
-permanent only for provisioning and bootstrap. Current non-provisioning SSH
-consumers are implementation debt carrying the exact `transitional-ssh` marker;
-they are ported or removed rather than treated as a recovery transport.
+permanent only for provisioning and bootstrap; non-provisioning execution has
+no SSH recovery transport.
 Reachable Agent nodes use gateway push only; the gateway is the
 sole initiator and the Agent runs no background retrieval loop. Agent command
 delivery itself does not use WebSockets; durable long-operation progress uses
@@ -331,10 +329,7 @@ the Orbit/WireGuard network to the node-local Orbit Agent. This is a narrow
 Agent listener endpoint, not general inbound Orbit RPC: the gateway sends
 structured `binary + argv` requests and the Agent executes only allowlisted
 node-local binaries with scoped operation tokens. A command's stable contract
-fixes its execution lane. A few exact-marked debt surfaces retain a transitional
-selector until their Agent port lands. Every remaining non-provisioning
-`RemoteShell` consumer is marked `transitional-ssh`, admits no new callers, and
-must be ported to Agent push.
+fixes its execution lane, and public commands expose no transport selector.
 
 Break-glass SSH is outside normal Orbit command execution. It is operator-owned
 recovery performed by a super admin who has an SSH key installed on all nodes;
@@ -387,8 +382,7 @@ authority path is:
 
 `CLI caller -> gateway API -> gateway authorization -> operation record -> agent-push to node -> token-gated local executor -> result recorded`
 
-Where a port is incomplete, the implementation carries `transitional-ssh`.
-Commands without that exact marker fail clearly rather than selecting SSH.
+Commands fail clearly when Agent push is unavailable rather than selecting SSH.
 The authority path still starts and ends at the gateway.
 
 Node-local CLI execution is never an authority bypass. Internal local executor

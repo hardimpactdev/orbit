@@ -95,7 +95,6 @@ it('accepts a custom Orbit runtime user from the node record', function (): void
         'interface' => 'public',
     ]);
     $drift = new NodeSecurityPostureProbe(
-        remoteShell: node_security_posture_unused_transport(),
         localExecutor: node_security_posture_executor(),
     )->diff($node);
 
@@ -156,7 +155,6 @@ it('reports remote node security drift from the posture script', function (): vo
     ]);
 
     $drift = new NodeSecurityPostureProbe(
-        remoteShell: node_security_posture_unused_transport(),
         localExecutor: node_security_posture_executor(),
     )->diff($node);
 
@@ -243,7 +241,6 @@ function node_security_posture_request_matches(Request $request, string $managed
 function node_security_posture_executor(): RemoteLocalExecutor
 {
     return new RemoteLocalExecutor(
-        transport: node_security_posture_unused_transport(),
         commands: new LocalExecutorCommandBuilder,
         operationTokens: new OperationTokenFactory(
             signer: new OperationTokenSigner,

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit metrics:enable --node=<node> [--node-transport=<transport>]`
+# Technical Contract: `orbit metrics:enable --node=<node>`
 
 [Back to public `metrics:enable` documentation.](../metrics-enable.md)
 
@@ -16,7 +16,7 @@ converges the owned metrics runtime units.
 ## Signature
 
 ```bash
-orbit metrics:enable --node=<node> [--node-transport=<transport>] [--json]
+orbit metrics:enable --node=<node> [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `node` | `--node` | Always. | Never. | None. | Active node that can accept the `metrics` role. |
-| `node_transport` | `--node-transport` | Optional. | Never. | `auto`. | One of `auto`, `agent-push`, or `transitional-ssh-fallback`. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
 
 ## Behavior Contract

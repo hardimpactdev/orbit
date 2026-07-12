@@ -75,7 +75,7 @@ describe('gateway API-backed public commands', function (): void {
         );
     });
 
-    it('forwards explicit node transport preference from node-targeted commands', function (): void {
+    it('uses the fixed Agent-push lane for node-targeted commands', function (): void {
         configureGatewayStatusCommand();
 
         Http::fake([
@@ -92,7 +92,6 @@ describe('gateway API-backed public commands', function (): void {
             'tool' => 'composer',
             '--node' => 'beast',
             '--live' => true,
-            '--node-transport' => 'transitional-ssh-fallback',
             '--json' => true,
         ]);
 
@@ -104,34 +103,15 @@ describe('gateway API-backed public commands', function (): void {
                 && str_starts_with($request->url(), 'https://gateway.test/api/tools/composer')
                 && str_contains($request->url(), 'node=beast')
                 && str_contains($request->url(), 'live=1')
-                && $request->header('X-Orbit-Node-Transport-Preference')[0] === 'transitional-ssh-fallback'
+                && ! $request->hasHeader('X-Orbit-Node-Transport-Preference')
             ),
         );
     });
 
-    it('rejects invalid node transport preferences before calling the gateway', function (): void {
-        configureGatewayStatusCommand();
+    it('does not expose a node transport selector on node-targeted commands', function (): void {
+        $command = \Illuminate\Support\Facades\Artisan::all()['tool:show'];
 
-        Http::fake();
-
-        [$exitCode, $output] = runPublicCommand($this, 'tool:show', [
-            'tool' => 'composer',
-            '--node' => 'beast',
-            '--live' => true,
-            '--node-transport' => 'ssh',
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)
-            ->toBe(1)
-            ->and($decoded['error']['code'])
-            ->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])
-            ->toBe('node-transport');
-
-        Http::assertNothingSent();
+        expect($command->getDefinition()->hasOption('node-transport'))->toBeFalse();
     });
 
     it('keeps node transport preference off commands already ported to Agent push', function (): void {

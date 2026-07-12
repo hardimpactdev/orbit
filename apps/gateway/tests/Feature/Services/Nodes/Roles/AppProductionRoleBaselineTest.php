@@ -9,7 +9,6 @@ use App\Enums\Nodes\NodeStatus;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
 use App\Services\RemoteShell\RunsInternalCommands;
 use App\Services\Tools\ToolScriptDispatcher;
@@ -185,7 +184,7 @@ describe('AppProductionRoleBaseline host toolchain', function (): void {
             ->and($executor->calls)
             ->toHaveCount(1)
             ->and($executor->calls[0]['transport'])
-            ->toBe(NodeTransportPreference::AgentPush)
+            ->toBeNull()
             ->and($executor->calls[0]['script'])
             ->toContain('composer global remove laravel/installer');
     });
