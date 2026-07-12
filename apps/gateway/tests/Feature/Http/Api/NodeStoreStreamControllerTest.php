@@ -10,17 +10,20 @@ use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Operations\ProvisioningAgentInstaller;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Tests\Fakes\NodeStoreProvisioningAgentInstaller;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     bindDevelopmentDnsMappingTestDoubles('node-store-stream-controller-dns');
+    app()->instance(ProvisioningAgentInstaller::class, new NodeStoreProvisioningAgentInstaller);
 
     app()->instance(SshHostKeyPinner::class, new class {
         public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey

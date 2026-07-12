@@ -640,8 +640,8 @@ final class GatewayNodeCreator
             return null;
         }
 
-        $errorOutput = trim($result->errorOutput);
-        $output = trim($result->output);
+        $errorOutput = trim($result->errorOutput());
+        $output = trim($result->output());
 
         $error = match (true) {
             $errorOutput !== '' => $errorOutput,

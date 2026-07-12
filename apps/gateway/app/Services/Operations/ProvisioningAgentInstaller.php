@@ -34,11 +34,7 @@ class ProvisioningAgentInstaller
         $platform = CliArtifactPlatform::forNode($node);
         $artifact = $this->manifests->resolve()->agentArtifacts[$platform] ?? null;
 
-        if (
-            ! is_array($artifact)
-            || ! is_string($artifact['url'] ?? null)
-            || ! is_string($artifact['sha256'] ?? null)
-        ) {
+        if ($artifact === null) {
             throw new RuntimeException(
                 "Release manifest does not contain an Agent artifact for platform [{$platform}].",
             );

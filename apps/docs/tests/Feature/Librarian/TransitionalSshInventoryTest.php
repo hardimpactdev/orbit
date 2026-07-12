@@ -20,6 +20,7 @@ it('keeps SSH limited to the provisioning and bootstrap lane', function (): void
         ->and(array_column($inventory['provisioning_ssh'], 'path'))
         ->toBe([
             'apps/gateway/app/Services/Nodes/GatewayNodeCreator.php',
+            'apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php',
             'apps/gateway/app/Services/OrbitHostInstaller.php',
             'apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php',
             'apps/gateway/app/Services/RemoteShell/SshRemoteShell.php',
