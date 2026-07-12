@@ -36,7 +36,7 @@ final readonly class E2EGatewayApi
                 ['name' => 'operator-1'],
                 array_merge(
                     [
-                        'tld' => null,
+                        'tld' => 'operator',
                         'platform' => 'ubuntu',
                         'host' => {$operatorIpValue},
                         'wireguard_address' => {$operatorWireGuardIpValue},
