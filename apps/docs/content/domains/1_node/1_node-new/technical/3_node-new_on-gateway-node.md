@@ -57,7 +57,7 @@ complete before side effects that the gateway owns begin.
 | `app-dev` role set | Provision or adopt an app-dev node over SSH, then create the role assignment. |
 | `app-prod` role set | Provision or adopt an app-prod node over SSH, then create the role assignment. |
 | `database` role set | Provision a private Ubuntu database node over SSH, configure WireGuard, then create the active database role assignment and Docker tool baseline. |
-| `agent` role set | Provision or adopt an agent node over SSH, then create the role assignment with `tld`. |
+| `agent` role set | Provision or adopt an agent node over SSH, then create the role assignment. The node row already owns the required explicit `tld`; the role only consumes it. |
 | `websocket` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the WebSocket todo lands. |
 | `s3` role set | Reserved stable input surface; returns `role_not_implemented` before side effects until the S3 todo lands. |
 | `metrics` role set | Provision or adopt a metrics node over SSH, then create the role assignment and converge metrics runtime intent. |
@@ -140,17 +140,16 @@ role sets that include those host-provisioned roles:
 2. Derive the internal app lane from the requested role set:
    - `app-dev` maps to the development lane;
    - `app-prod` maps to the production lane.
-3. When the derived lane is development, resolve `node_new.tld`.
+3. Use the already validated explicit `node_new.tld` as node identity.
 4. Verify the target host is reachable over SSH.
 5. Verify the target host platform is supported for every requested role.
 6. Install or converge the Orbit runtime.
 7. Mint or verify WireGuard identity.
-8. Register node configuration, including `nodes.tld` for development nodes.
-9. Configure the node's local TLD default for development nodes.
-12. Use the internal DNS applier for the node family to create or converge
-    the development DNS mapping that the gateway owns for `*.{node_new.tld}` to
-    the node's WireGuard address.
-13. Verify node readiness.
+8. Register node configuration, including `nodes.tld` for every node.
+9. When the role set consumes development DNS, use the internal DNS applier for
+   the node family to create or converge the gateway-owned
+   `*.{node_new.tld}` mapping to the node's WireGuard address.
+10. Verify node readiness.
 
 The development DNS configuration model that the gateway owns is derived from the
 active development app-role row, not from a public DNS command record. The

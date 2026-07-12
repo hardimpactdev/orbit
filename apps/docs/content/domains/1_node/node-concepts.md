@@ -187,18 +187,19 @@ separately in role output, but first gateway bootstrap assigns them together and
 ## Role Settings
 
 Role-local desired configuration lives on the role assignment when the setting
-is specific to that role. Some settings are shared dependencies of multiple
-roles and live as node-level fields that any qualifying role assignment can
-require, read, and write.
+is specific to that role. Every active node independently owns one mandatory
+unique `tld` as part of node identity. The table lists role-local settings and
+the node-level fields a role consumes for its behavior; consuming a field does
+not transfer ownership to the role.
 
-| Role | Role-assignment settings | Node-level settings the role requires |
+| Role | Role-assignment settings | Node-level settings the role consumes |
 | --- | --- | --- |
 | `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` | — |
 | `router` | — | — |
 | `app-dev` | — | `tld` |
-| `app-prod` | `ingress_node_id` | `tld` |
-| `database` | — | `tld` |
-| `gateway` | — | `tld` |
+| `app-prod` | `ingress_node_id` | — |
+| `database` | — | — |
+| `gateway` | — | — |
 | `agent` | — | `tld` |
 | `ingress` | — | — |
 | `websocket` | `redis_node_id` | — |
@@ -254,7 +255,7 @@ Role baselines are code-defined desired state, not editable package lists.
 | `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and process-backed runtime units where configured |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and process-backed runtime units where configured |
 | `database` | Docker running as the substrate for managed database process units and related tool capabilities |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
@@ -582,13 +583,14 @@ node-family desired state, but they are not the public `dns:*` command surface.
   gateway-coupled `vpn` role in v1.
 - **Agent DNS mapping owned by the gateway:** Same node-family gateway
   configuration and resolver reality as the mapping that `app-dev`
-  uses, but derived from an active `agent` role assignment's `tld` setting.
+  uses, but derived from the node-owned `tld` while its `agent` role assignment
+  is active.
   Routes agent tool internal HTTPS hostnames such as
   `openclaw.agent` and `hermes.agent` to the node's WireGuard address.
 - **Development DNS configuration model:** Derived from the active
   `app-dev` role assignment. A mapping exists only when that assignment
-  is active, its `tld` setting is a single lowercase DNS label without a leading
-  dot, and the node row has a non-empty WireGuard address.
+  is active, the node-owned `tld` is a valid single lowercase DNS label, and the
+  node row has a non-empty WireGuard address.
   The canonical domain is `*.{tld}` and the canonical target is the
   node's WireGuard address.
 - **App-dev HTTP address for callers:** Optional node `public_ipv4`

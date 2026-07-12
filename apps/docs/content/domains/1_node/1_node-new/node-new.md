@@ -228,7 +228,8 @@ Requires `--host`, `--postgres-node`, and `--clickhouse-node`.
 
 Provisions an isolated agent host with the exclusive `agent` role assignment.
 
-Requires `--host`. `--tld` is optional; the default is the node name.
+Requires `--host` and an explicit unique `--tld`. The agent role consumes the
+node-owned TLD for its DNS mapping; it does not define a role-local default.
 
 **Explicit `--roles` composition**
 

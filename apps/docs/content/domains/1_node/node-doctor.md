@@ -108,19 +108,19 @@ The node probe reads gateway node records and checks these layers:
    their role requires, current assignment convergence state, and no baseline
    drift.
 
-   For `app-dev`, assignments have a `tld` value, the node's
-   local TLD default matches the active assignment, and the gateway maps
-   `*.{tld}` to the node's WireGuard address. The development DNS resolver that
-   the gateway maintains must be WireGuard-reachable and must not expose a
-   public open resolver.
+   For `app-dev`, the node has its mandatory valid node-owned `tld`, and the
+   gateway maps `*.{tld}` to the node's WireGuard address. The development DNS
+   resolver that the gateway maintains must be WireGuard-reachable and must not
+   expose a public open resolver.
 
-   For `agent`, assignments have a `tld` value, the gateway maps `*.{tld}` to
-   the node's WireGuard address through the same DNS configuration model, and
-   the node baseline includes `orbit-caddy`, the shared unprivileged `agent`
-   runtime user, and any role-specific runtime containers the agent workload
-   needs. The gateway runs `orbit-gateway` for the API and `orbit-scheduler`
-   for schedule execution. Workload and agent nodes run the public Orbit CLI as
-   gateway clients and run workloads in role-specific runtime containers.
+   For `agent`, the role consumes the node's mandatory valid node-owned `tld`.
+   The gateway maps `*.{tld}` to the node's WireGuard address through the same
+   DNS configuration model, and the node baseline includes `orbit-caddy`, the
+   shared unprivileged `agent` runtime user, and any role-specific runtime
+   containers the agent workload needs. The gateway runs `orbit-gateway` for
+   the API and `orbit-scheduler` for schedule execution. Workload and agent
+   nodes run the public Orbit CLI as gateway clients and run workloads in
+   role-specific runtime containers.
 
    For `vpn`, assignments have valid `public_endpoint`, `wireguard_cidr`,
    `wireguard_port`, and `dns_ip` settings. The node baseline includes the

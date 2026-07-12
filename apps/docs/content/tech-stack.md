@@ -663,9 +663,9 @@ baseline converges `orbit-caddy`, the WireGuard/node identity and trust
 material every other Orbit node uses, a single unprivileged shared `agent`
 runtime user, and whatever role-specific runtime containers the agent workloads
 need. Agent tools never run as the privileged `orbit` maintenance user. The
-`agent` role requires a node-level `tld` setting (default `agent` when chosen
-during interactive `node:new`); `tld` is a shared node-level field that the
-`app-dev` role also requires, so a node holds at most one `tld` value at a time.
+node identity requires an explicit unique `tld`, as every active node does.
+The `agent` and `app-dev` roles consume that node-owned field for DNS mappings;
+neither role owns it or supplies a default.
 The gateway maps `*.{tld}` to the node's WireGuard address through the same
 gateway-owned development DNS mapping pattern that `app-dev` uses. Stable
 private `.orbit` service names are router-owned and distinct from these

@@ -130,7 +130,7 @@ Roles materialize baseline tool intent when a role assignment converges.
 | `app-dev` | App runtime baseline, development DNS mapping, `orbit-caddy` app/workspace routes, and systemd process units where configured |
 | `app-prod` | Private `orbit-caddy` backend, FrankenPHP app containers, and systemd process units where configured |
 | `database` | Docker running as the substrate for managed database service processes |
-| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping for the role's `tld`, and any role-specific runtime containers the agent workload needs |
+| `agent` | `orbit-caddy`, the shared unprivileged `agent` runtime user, the gateway-owned agent DNS mapping derived from the node's `tld`, and any role-specific runtime containers the agent workload needs |
 | `ingress` | `orbit-caddy` running as the public production HTTP ingress boundary, forwarding public routes to `router` |
 | `websocket` | Laravel Reverb in a Docker runtime container managed by Orbit, private TLS backend binding on WireGuard, backend certificate material, and Redis-backed scaling configuration |
 | `s3` | SeaweedFS in a Docker runtime container rendered by Orbit, private S3 API binding on WireGuard, service-level credentials on the `seaweedfs` tool row, backend pool registration, and role-owned data path |
