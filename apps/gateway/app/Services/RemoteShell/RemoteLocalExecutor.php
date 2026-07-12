@@ -164,7 +164,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
                 environment: $this->localExecutorEnvironment($node, $transportOptions),
                 timeoutSeconds: $this->timeoutSeconds($transportOptions),
             );
-            $transport = app(NodeCommandTransportSelector::class)->select($node, $envelope, $preference);
+            $transport = app(NodeCommandTransportSelector::class)->select(
+                $node,
+                $envelope,
+                $preference,
+                ($transportOptions['force_remote_host'] ?? false) === true,
+            );
             $result = match ($transport) {
                 NodeTransport::GatewayOnly => $this->runGatewayLocal(
                     node: $node,

@@ -35,16 +35,11 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 describe(RemoteLocalExecutor::class, function (): void {
-    it('runs gateway-targeted node execution through the local gateway runtime even when ssh is requested', function (): void {
+    it('runs gateway-targeted node execution through the explicit transitional host fallback', function (): void {
         Http::preventStrayRequests();
         ProcessFacade::preventStrayProcesses();
-        ProcessFacade::fake([
-            '*' => ProcessFacade::result(output: "gateway-ok\n"),
-        ]);
         $sshTransport = new RemoteLocalExecutorRecordingTransport(
-            static fn (): RemoteShellResult => throw new RuntimeException(
-                'SSH transport must never be called for a gateway target.',
-            ),
+            new RemoteShellResult(exitCode: 0, stdout: "gateway-host-ok\n", stderr: '', durationMs: 1),
         );
         $executor = remoteLocalExecutor(
             transport: $sshTransport,
@@ -57,6 +52,7 @@ describe(RemoteLocalExecutor::class, function (): void {
             commandName: 'internal:executor:verify',
             transportOptions: [
                 'transport' => NodeTransportPreference::TransitionalSshFallback,
+                'force_remote_host' => true,
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000428',
                 ],
@@ -64,21 +60,18 @@ describe(RemoteLocalExecutor::class, function (): void {
         );
 
         expect($result->stdout)
-            ->toBe("gateway-ok\n")
+            ->toBe("gateway-host-ok\n")
             ->and($sshTransport->calls)
-            ->toBeEmpty();
+            ->toHaveCount(1)
+            ->and($sshTransport->calls[0]['node']->is($node))
+            ->toBeTrue()
+            ->and($sshTransport->calls[0]['script'])
+            ->toContain('internal:executor:verify')
+            ->and($sshTransport->calls[0]['options']['force_remote_host'] ?? null)
+            ->toBeTrue();
 
         Http::assertNothingSent();
-        ProcessFacade::assertRan(function (PendingProcess $process): bool {
-            $command = (string) $process->command;
-
-            return (
-                str_contains($command, 'docker exec -i')
-                && str_contains($command, 'orbit-gateway')
-                && str_contains($command, 'internal:executor:verify')
-                && ! str_contains($command, ' ssh ')
-            );
-        });
+        ProcessFacade::assertNothingRan();
     });
 
     it('defaults node-local internal command execution to agent-push without calling ssh transport', function (): void {

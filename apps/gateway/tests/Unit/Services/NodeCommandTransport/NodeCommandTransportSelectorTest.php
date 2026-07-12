@@ -89,7 +89,7 @@ it('selects gateway-only for gateway-owned reads like app:list regardless of req
     expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))->toBe(NodeTransport::GatewayOnly);
 });
 
-it('selects gateway-only for gateway targets even when the envelope requires node execution', function (): void {
+it('honors a forced transitional host fallback for gateway node execution', function (): void {
     $node = active_gateway_node();
     $selector = new NodeCommandTransportSelector;
     $envelope = NodeCommandEnvelope::nodeExecuting(
@@ -100,6 +100,8 @@ it('selects gateway-only for gateway targets even when the envelope requires nod
     expect($selector->select($node, $envelope))->toBe(NodeTransport::GatewayOnly);
     expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback))
         ->toBe(NodeTransport::GatewayOnly);
+    expect($selector->select($node, $envelope, NodeTransportPreference::TransitionalSshFallback, true))
+        ->toBe(NodeTransport::TransitionalSshFallback);
     expect($selector->select($node, $envelope, NodeTransportPreference::AgentPush))
         ->toBe(NodeTransport::GatewayOnly);
 });

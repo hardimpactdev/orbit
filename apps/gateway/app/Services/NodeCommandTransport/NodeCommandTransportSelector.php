@@ -15,12 +15,16 @@ final readonly class NodeCommandTransportSelector
         Node $node,
         NodeCommandEnvelope $envelope,
         NodeTransportPreference $preference = NodeTransportPreference::Auto,
+        bool $forceRemoteHost = false,
     ): NodeTransport {
-        if (
-            $node->hasActiveRole(NodeRoleName::Gateway->value)
-            || ! $envelope->requiresNodeExecution
-        ) {
+        if (! $envelope->requiresNodeExecution) {
             return NodeTransport::GatewayOnly;
+        }
+
+        if ($node->hasActiveRole(NodeRoleName::Gateway->value)) {
+            return $forceRemoteHost && $preference === NodeTransportPreference::TransitionalSshFallback
+                ? NodeTransport::TransitionalSshFallback
+                : NodeTransport::GatewayOnly;
         }
 
         if ($preference === NodeTransportPreference::TransitionalSshFallback) {
