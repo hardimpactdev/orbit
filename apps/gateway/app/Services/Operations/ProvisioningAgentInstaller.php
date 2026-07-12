@@ -76,7 +76,7 @@ class ProvisioningAgentInstaller
 
         return <<<BASH
             set -euo pipefail
-            tmp="\$(mktemp -d \"\${TMPDIR:-/tmp}/orbit-agent-bootstrap.XXXXXX\")"
+            tmp="\$(mktemp -d "\${TMPDIR:-/tmp}/orbit-agent-bootstrap.XXXXXX")"
             cleanup() { rm -rf "\$tmp"; }
             trap cleanup EXIT
 

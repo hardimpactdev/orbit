@@ -54,6 +54,7 @@ it('installs and starts the initial Agent over provisioning SSH before role conv
         ->and($transport->runs[0]['node']->is($node))
         ->toBeTrue()
         ->and($transport->runs[0]['script'])
+        ->toContain('tmp="$(mktemp -d "${TMPDIR:-/tmp}/orbit-agent-bootstrap.XXXXXX")"')
         ->toContain('orbit-agent-linux-x64')
         ->toContain('sha256sum -c -')
         ->toContain('/home/orbit/.local/bin/orbit-agent')
