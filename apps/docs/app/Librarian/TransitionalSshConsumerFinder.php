@@ -22,14 +22,17 @@ final readonly class TransitionalSshConsumerFinder
         'use App\\Contracts\\StartsRemoteShellProcesses;',
         'use App\\Services\\RemoteShell\\RemoteExecutor;',
         'use App\\Services\\RemoteShell\\SshCommandBuilder;',
-        'NodeTransportPreference::TransitionalSshFallback',
+        'NodeTransportPreference',
+        'withNodeTransportPreference',
+        'X-Orbit-Node-Transport-Preference',
+        'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE',
         'ssh_bootstrap_binary',
     ];
 
     /** @var list<string> */
     private const array CLI_SELECTOR_PATTERNS = [
         '--node-transport',
-        'transitional-ssh-fallback',
+        'node-transport',
     ];
 
     /** @var list<string> */
@@ -37,7 +40,6 @@ final readonly class TransitionalSshConsumerFinder
         'apps/gateway/app/Providers/AppServiceProvider.php',
         'apps/gateway/app/Contracts/RemoteShell.php',
         'apps/gateway/app/Contracts/StartsRemoteShellProcesses.php',
-        'apps/gateway/app/Data/RemoteShell/RemoteShellPoolJob.php',
         'apps/gateway/app/Services/RemoteShell/RemoteExecutor.php',
         'apps/gateway/app/Services/RemoteShell/RunsInternalCommands.php',
         'apps/gateway/app/Services/RemoteShell/RemoteShellScriptComposer.php',
@@ -112,7 +114,7 @@ final readonly class TransitionalSshConsumerFinder
         return self::EXPLICIT_EXECUTOR_PATHS;
     }
 
-    private function isConsumer(string $path, string $contents): bool
+    public function isConsumer(string $path, string $contents): bool
     {
         if (in_array($path, self::EXPLICIT_EXECUTOR_PATHS, strict: true)) {
             return true;
@@ -120,7 +122,7 @@ final readonly class TransitionalSshConsumerFinder
 
         if (
             str_starts_with($path, 'apps/cli/app/Commands/')
-            && array_all(
+            && array_any(
                 self::CLI_SELECTOR_PATTERNS,
                 static fn (string $pattern): bool => str_contains($contents, $pattern),
             )

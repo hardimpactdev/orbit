@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Models\App;
 use App\Models\GatewayExtension;
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +44,6 @@ describe('CodexAppController', function (): void {
     {
         return [
             'REMOTE_ADDR' => CODEX_APP_CALLER_WG_IP,
-            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => NodeTransportPreference::AgentPush->value,
         ];
     }
 

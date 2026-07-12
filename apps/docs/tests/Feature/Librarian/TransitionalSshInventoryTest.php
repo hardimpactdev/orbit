@@ -66,6 +66,28 @@ it('reports unmarked consumers and rejects conflicting lane markers', function (
         );
 });
 
+it('treats every public transport selector shape as an SSH consumer', function (string $selector): void {
+    $finder = app(TransitionalSshConsumerFinder::class);
+
+    expect($finder->isConsumer('apps/gateway/app/Example.php', $selector))
+        ->toBeTrue();
+})->with([
+    'preference enum' => 'NodeTransportPreference',
+    'forwarding helper' => 'withNodeTransportPreference',
+    'HTTP header' => 'X-Orbit-Node-Transport-Preference',
+    'PHP server header' => 'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE',
+]);
+
+it('treats either CLI selector spelling as an SSH consumer', function (string $selector): void {
+    $finder = app(TransitionalSshConsumerFinder::class);
+
+    expect($finder->isConsumer('apps/cli/app/Commands/ExampleCommand.php', $selector))
+        ->toBeTrue();
+})->with([
+    'long option' => '--node-transport',
+    'source spelling' => 'node-transport',
+]);
+
 it('passes the transitional SSH inventory freshness command', function (): void {
     $exitCode = Artisan::call('orbit:transitional-ssh-inventory', ['--check' => true]);
 

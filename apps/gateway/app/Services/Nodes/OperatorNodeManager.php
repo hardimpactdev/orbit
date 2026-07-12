@@ -36,8 +36,10 @@ final readonly class OperatorNodeManager
         ])->save();
 
         try {
+            /** @var Node $managedNode */
+            $managedNode = $node->fresh();
             $result = $this->localExecutor->runInternal(
-                node: $node->fresh(),
+                node: $managedNode,
                 commandName: 'internal:agent-runtime:probe',
                 transportOptions: [
                     'metadata' => ['ORBIT_OPERATION_ID' => 'node.manage.agent-probe'],

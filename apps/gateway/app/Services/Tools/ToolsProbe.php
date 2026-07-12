@@ -49,8 +49,9 @@ final readonly class ToolsProbe
     public function introspect(NodeTool $tool): ProbeSnapshot
     {
         $tool->loadMissing('node');
+        $node = $tool->node;
 
-        if (! $tool->node instanceof Node || $tool->name === '') {
+        if (! $node instanceof Node || $tool->name === '') {
             return new ProbeSnapshot([]);
         }
 
@@ -74,7 +75,7 @@ final readonly class ToolsProbe
             extraProbe: $this->extraProbeFromMetadata($metadata),
         );
 
-        $result = $this->scriptDispatcher()->run($tool->node, $tool->name, 'probe', $script);
+        $result = $this->scriptDispatcher()->run($node, $tool->name, 'probe', $script);
         $parts = explode(separator: "\t", string: trim($result->stdout), limit: 12);
         $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
 
@@ -529,6 +530,12 @@ final readonly class ToolsProbe
      */
     private function introspectDockerImages(NodeTool $tool, array $metadata): ProbeSnapshot
     {
+        $node = $tool->node;
+
+        if (! $node instanceof Node) {
+            return new ProbeSnapshot([]);
+        }
+
         $images = is_array($metadata['images'] ?? null)
             ? array_values(array_filter($metadata['images'], is_string(...)))
             : [];
@@ -546,7 +553,7 @@ final readonly class ToolsProbe
             BASH;
 
         $script = 'printf %s '.escapeshellarg(implode("\n", $images)."\n").' | ('.$script.')';
-        $result = $this->scriptDispatcher()->run($tool->node, $tool->name, 'probe-images', $script);
+        $result = $this->scriptDispatcher()->run($node, $tool->name, 'probe-images', $script);
         $catalog = app(PhpRuntimeCatalog::class);
         $observedImages = array_values(array_filter(
             preg_split('/\R/', trim($result->stdout)) ?: [],

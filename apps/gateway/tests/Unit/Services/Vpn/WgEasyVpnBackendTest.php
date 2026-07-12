@@ -601,7 +601,7 @@ function wgEasyVpnBackendExecutor(WgEasyVpnBackendStateTransport $transport): Re
 
             [$key, $value] = array_pad(explode('=', substr($argument, 2), 2), 2, true);
 
-            if ($key === 'operation-token') {
+            if (hash_equals('operation-token', $key)) {
                 $operationToken = (string) $value;
 
                 continue;

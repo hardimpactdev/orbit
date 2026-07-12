@@ -11,7 +11,6 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -76,7 +75,7 @@ function toolsProbeWithRemoteShell(RemoteShell $remoteShell, ?ToolCatalog $catal
 
 function toolsProbeWithAgentPush(RemoteShell $_remoteShell): ToolsProbe
 {
-    $localExecutor = toolsProbeLocalExecutor(NodeTransportPreference::Auto);
+    $localExecutor = toolsProbeLocalExecutor();
 
     return new ToolsProbe(
         localExecutor: $localExecutor,
@@ -84,7 +83,7 @@ function toolsProbeWithAgentPush(RemoteShell $_remoteShell): ToolsProbe
     );
 }
 
-function toolsProbeLocalExecutor(NodeTransportPreference $defaultTransportPreference): RemoteLocalExecutor
+function toolsProbeLocalExecutor(): RemoteLocalExecutor
 {
     $secret = config('app.key');
 

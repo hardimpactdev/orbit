@@ -11,7 +11,6 @@ use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Core\Enums\InternalCommand;
@@ -215,8 +214,9 @@ it('dispatches deployment steps through the dedicated Agent-push command without
         ->toHaveCount(3)
         ->and($shell->runs[0]['command_name'])
         ->toBe(InternalCommand::DeployRunStep->value)
-        ->and($shell->runs[0]['transport_options']['transport'])
-        ->toBe(NodeTransportPreference::AgentPush)
+        ->and($shell->runs[0]['transport_options'])
+        ->not
+        ->toHaveKey('transport')
         ->and($shell->runs[0]['binary'])
         ->toBe('/bin/sh')
         ->and($shell->runs[0]['arguments'][0])

@@ -9,7 +9,6 @@ use App\Services\NodeCommandTransport\NodeAgentPushClient;
 use App\Services\NodeCommandTransport\NodeCommandEnvelope;
 use App\Services\NodeCommandTransport\NodeCommandTransportSelector;
 use App\Services\NodeCommandTransport\NodeTransport;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -48,7 +47,7 @@ class AgentPushProofCommand extends Command
             argv: ['version', '--json'],
         );
         try {
-            $transport = $selector->select($node, $envelope, NodeTransportPreference::Auto);
+            $transport = $selector->select($node, $envelope);
         } catch (RuntimeException) {
             $this->emit([
                 'node' => $node->name,

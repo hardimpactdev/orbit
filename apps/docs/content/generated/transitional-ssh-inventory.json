@@ -10,12 +10,15 @@
             "use App\\Contracts\\StartsRemoteShellProcesses;",
             "use App\\Services\\RemoteShell\\RemoteExecutor;",
             "use App\\Services\\RemoteShell\\SshCommandBuilder;",
-            "NodeTransportPreference::TransitionalSshFallback",
+            "NodeTransportPreference",
+            "withNodeTransportPreference",
+            "X-Orbit-Node-Transport-Preference",
+            "HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE",
             "ssh_bootstrap_binary"
         ],
         "cli_selector_patterns": [
             "--node-transport",
-            "transitional-ssh-fallback"
+            "node-transport"
         ],
         "explicit_executor_paths": [
             "apps/gateway/app/Services/RemoteShell/RemoteHostExecutor.php",

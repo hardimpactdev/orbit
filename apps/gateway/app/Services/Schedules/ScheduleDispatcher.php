@@ -9,7 +9,6 @@ use App\Data\Schedules\ScheduleDispatchResult;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -180,7 +179,6 @@ final readonly class ScheduleDispatcher
                 ],
                 'strict' => false,
                 'timeout' => self::DEFAULT_TIMEOUT + 15,
-                'transport' => NodeTransportPreference::AgentPush,
             ],
         );
 

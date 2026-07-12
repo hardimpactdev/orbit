@@ -8,7 +8,6 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
 use App\Services\RemoteShell\Exceptions\LocalExecutorCommandBuilderException;
@@ -1441,7 +1440,6 @@ describe(RemoteLocalExecutor::class, function (): void {
 function remoteLocalExecutor(
     RemoteLocalExecutorRecordingTransport $transport,
     ?OperationTokenFactory $operationTokens = null,
-    NodeTransportPreference $defaultTransportPreference = NodeTransportPreference::AgentPush,
     ?LocalExecutorCommandComposer $commands = null,
     bool $stubAgent = true,
 ): RemoteLocalExecutor {

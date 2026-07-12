@@ -69,6 +69,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,
@@ -77,6 +78,8 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
     #[\Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
+        unset($options['force_remote_host']);
+
         return $this->runInternal(
             node: $node,
             commandName: $script,
@@ -427,6 +430,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor, RunsInternal
      *     environment?: array<string, string>,
      *     metadata?: array<string, string>,
      *     strict?: bool,
+     *     force_remote_host?: bool,
      *     redact_stdout?: bool,
      *     redact_stderr?: bool,
      *     redact_command_options?: list<string>,

@@ -11,6 +11,7 @@ use App\Services\RemoteShell\LocalExecutorCommandBuilder;
 use App\Services\RemoteShell\RunsInternalCommands;
 use Orbit\Core\Enums\InternalCommand;
 
+/** @mago-expect lint:cyclomatic-complexity */
 final readonly class RemoteShellBackedInternalExecutor implements RunsInternalCommands
 {
     public function __construct(

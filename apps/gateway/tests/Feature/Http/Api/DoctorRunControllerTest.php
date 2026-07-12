@@ -23,7 +23,6 @@ use App\Models\SchedulerState;
 use App\Models\Workspace;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -645,7 +644,6 @@ describe('DoctorRunController', function (): void {
             [],
             [],
             [
-                'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => NodeTransportPreference::AgentPush->value,
                 'REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP,
             ],
         );

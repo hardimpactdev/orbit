@@ -43,7 +43,6 @@ use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\DatabaseConnections\DatabaseConnectionRestorer;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Firewall\FirewallRuleProbe;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodeHostPaths;
 use App\Services\Nodes\NodesProbe;
@@ -2940,7 +2939,6 @@ final readonly class DoctorReportRunner
                     'ORBIT_OPERATION_ID' => 'process-event-notifier.restore',
                 ],
                 'timeout' => 30,
-                'transport' => NodeTransportPreference::AgentPush,
                 'throw' => false,
             ],
         );

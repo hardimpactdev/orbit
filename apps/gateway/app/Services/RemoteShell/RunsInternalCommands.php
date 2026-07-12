@@ -6,7 +6,6 @@ namespace App\Services\RemoteShell;
 
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 
 interface RunsInternalCommands
 {

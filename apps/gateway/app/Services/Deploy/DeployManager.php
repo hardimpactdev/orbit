@@ -22,7 +22,6 @@ use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppSelectorResolver;
-use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\RemoteShell\RemoteLocalExecutorTransportFailed;
 use App\Services\RemoteShell\RemoteShellSuccessData;
 use App\Services\RemoteShell\RunsInternalCommands;
@@ -449,7 +448,6 @@ final readonly class DeployManager
                     ],
                     'strict' => false,
                     'timeout' => $timeout + 15,
-                    'transport' => NodeTransportPreference::AgentPush,
                     'bind_input' => true,
                     'throw' => false,
                 ],
@@ -459,8 +457,8 @@ final readonly class DeployManager
                 message: 'Deployment requires Agent-push transport on the target node.',
                 errorCode: 'node_transport_required',
                 errorMeta: [
-                    'required' => NodeTransportPreference::AgentPush->value,
-                    'transport' => NodeTransportPreference::AgentPush->value,
+                    'required' => 'agent-push',
+                    'transport' => 'agent-push',
                     'error' => $exception->getMessage(),
                 ],
             );

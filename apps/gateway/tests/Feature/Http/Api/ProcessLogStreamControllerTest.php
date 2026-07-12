@@ -44,7 +44,7 @@ describe('ProcessLogStreamStartController', function (): void {
         ]);
         $app = process_log_stream_create_app(['name' => 'docs', 'node_id' => $appNode->id]);
         process_log_stream_create_process($app, name: 'vite');
-        $response = process_log_stream_start_api_call('agent-push');
+        $response = process_log_stream_start_api_call();
         $operationRunId = $response->json('success.data.operation.uuid');
 
         $response
@@ -106,7 +106,7 @@ function process_log_stream_create_process(App $app, string $name): Process
     return $process;
 }
 
-function process_log_stream_start_api_call(string $transportPreference): TestResponse
+function process_log_stream_start_api_call(): TestResponse
 {
     return call(
         method: 'POST',
@@ -119,7 +119,6 @@ function process_log_stream_start_api_call(string $transportPreference): TestRes
         files: [],
         server: [
             'REMOTE_ADDR' => PROCESS_LOG_STREAM_CALLER_WG_IP,
-            'HTTP_X_ORBIT_NODE_TRANSPORT_PREFERENCE' => $transportPreference,
         ],
     );
 }

@@ -127,13 +127,13 @@ class AppServiceProvider extends ServiceProvider
             ]);
         });
 
-        $this->app->bind(OperationTokenFactory::class, fn ($app): OperationTokenFactory => new OperationTokenFactory(
+        $this->app->bind(OperationTokenFactory::class, fn (Application $app): OperationTokenFactory => new OperationTokenFactory(
             signer: $app->make(OperationTokenSigner::class),
             secret: $this->operationTokenSigningKey(),
             ttlSeconds: $this->operationTokenTtlSeconds(),
             keyId: $this->operationTokenSigningKeyId(),
         ));
-        $this->app->bind(OperationTokenIntrospector::class, fn ($app): OperationTokenIntrospector => new OperationTokenIntrospector(
+        $this->app->bind(OperationTokenIntrospector::class, fn (Application $app): OperationTokenIntrospector => new OperationTokenIntrospector(
             verifier: $app->make(OperationTokenVerifier::class),
             secretsByKeyId: $this->operationTokenSecretsByKeyId(),
             notBeforeSkewSeconds: $this->operationTokenNotBeforeSkewSeconds(),
@@ -156,21 +156,21 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(PhpRuntimeArtifactConverger::class, AgentPushPhpRuntimeArtifactConverger::class);
         $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
         $this->app->bind(OpenCodeClientFactory::class, SdkOpenCodeClientFactory::class);
-        $this->app->bind(AgentIdeWorkspacePathResolver::class, fn ($app): CoreAgentIdeWorkspacePathResolver => new CoreAgentIdeWorkspacePathResolver(
+        $this->app->bind(AgentIdeWorkspacePathResolver::class, fn (Application $app): CoreAgentIdeWorkspacePathResolver => new CoreAgentIdeWorkspacePathResolver(
             localExecutor: $app->make(RemoteLocalExecutor::class),
         ));
         $this->app->bind(RemoteExecutor::class, RemoteHostExecutor::class);
         $this->app->bind(RemoteShell::class, RemoteHostExecutor::class);
         $this->app->bind(StartsRemoteShellProcesses::class, RemoteHostExecutor::class);
         $this->app->bind(RunsInternalCommands::class, RemoteLocalExecutor::class);
-        $this->app->bind(RemoteLocalExecutor::class, fn ($app): RemoteLocalExecutor => new RemoteLocalExecutor(
+        $this->app->bind(RemoteLocalExecutor::class, fn (Application $app): RemoteLocalExecutor => new RemoteLocalExecutor(
             commands: $app->make(LocalExecutorCommandBuilder::class),
             operationTokens: $app->make(OperationTokenFactory::class),
             activityLogger: $app->make(ActivityLogger::class),
             operationRuns: $app->make(OperationRunRecorder::class),
             applicationKey: $this->applicationKey(),
         ));
-        $this->app->bind(NodeWireGuardSelfRouteProbe::class, fn ($app): NodeWireGuardSelfRouteProbe => new NodeWireGuardSelfRouteProbe(
+        $this->app->bind(NodeWireGuardSelfRouteProbe::class, fn (Application $app): NodeWireGuardSelfRouteProbe => new NodeWireGuardSelfRouteProbe(
             localExecutor: $app->make(RemoteLocalExecutor::class),
             routeOutput: $app->make(WireGuardSelfRouteOutput::class),
         ));
@@ -204,7 +204,7 @@ class AppServiceProvider extends ServiceProvider
                 localExecutor: $localExecutor,
             );
         });
-        $this->app->bind(PolyscopeWorkspaceDriver::class, fn ($app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
+        $this->app->bind(PolyscopeWorkspaceDriver::class, fn (Application $app): PolyscopeWorkspaceDriver => new PolyscopeWorkspaceDriver(
             branchAligner: $app->make(PolyscopeWorkspaceBranchAligner::class),
             localExecutor: $app->make(RemoteLocalExecutor::class),
         ));
@@ -250,38 +250,38 @@ class AppServiceProvider extends ServiceProvider
         );
         $this->app->singleton(
             UpdateDriverRegistry::class,
-            fn ($app): UpdateDriverRegistry => new UpdateDriverRegistry([
+            fn (Application $app): UpdateDriverRegistry => new UpdateDriverRegistry([
                 $app->make(UnattendedUpgradesDriver::class),
             ]),
         );
 
-        $this->app->bind(WgEasyVpnBackend::class, fn ($app): WgEasyVpnBackend => new WgEasyVpnBackend(
+        $this->app->bind(WgEasyVpnBackend::class, fn (Application $app): WgEasyVpnBackend => new WgEasyVpnBackend(
             username: (string) config('services.wg_easy.username', config('orbit.wg_easy.username', 'orbit')),
             password: (string) config('services.wg_easy.password', config('orbit.wg_easy.password', '')),
             localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
-        $this->app->singleton(WgEasyServiceInstaller::class, fn ($app): WgEasyServiceInstaller => new WgEasyServiceInstaller(
+        $this->app->singleton(WgEasyServiceInstaller::class, fn (Application $app): WgEasyServiceInstaller => new WgEasyServiceInstaller(
             rootPath: $this->orbitConfigPath(),
             statePath: $this->wgEasyStatePath(),
             localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
-        $this->app->singleton(VpnDnsSwarmInstaller::class, fn ($app): VpnDnsSwarmInstaller => new VpnDnsSwarmInstaller(
+        $this->app->singleton(VpnDnsSwarmInstaller::class, fn (Application $app): VpnDnsSwarmInstaller => new VpnDnsSwarmInstaller(
             rootPath: $this->orbitConfigPath(),
             statePath: $this->orbitConfigPath().'/wg-easy',
             localExecutor: $this->hasOperationTokenSigningKey() ? $app->make(RemoteLocalExecutor::class) : null,
             vpnNodeResolver: $app->make(VpnNodeResolver::class),
         ));
 
-        $this->app->singleton(OrbitDnsServiceInstaller::class, fn ($app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
+        $this->app->singleton(OrbitDnsServiceInstaller::class, fn (Application $app): OrbitDnsServiceInstaller => new OrbitDnsServiceInstaller(
             configBuilder: $app->make(DnsmasqConfigBuilder::class),
             rootPath: $this->orbitConfigPath(),
         ));
 
-        $this->app->singleton(DnsmasqReconciler::class, fn ($app): DnsmasqReconciler => new DnsmasqReconciler(
+        $this->app->singleton(DnsmasqReconciler::class, fn (Application $app): DnsmasqReconciler => new DnsmasqReconciler(
             configBuilder: $app->make(DnsmasqConfigBuilder::class),
             rootPath: $this->orbitConfigPath(),
             swarmManager: $app->make(VpnDnsSwarmManager::class),

@@ -17,6 +17,7 @@ use JsonException;
 
 final readonly class ManagedFile
 {
+    /** @mago-expect lint:excessive-parameter-list */
     public function __construct(
         public string $path,
         public string $content,
