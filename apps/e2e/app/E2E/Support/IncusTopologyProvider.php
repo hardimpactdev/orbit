@@ -18,6 +18,10 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
     private const string IngressWireGuardIp = '10.6.0.7';
 
+    private const string GatewayConfigRoot = '/home/orbit/.config/orbit';
+
+    private const string GatewayDatabase = self::GatewayConfigRoot.'/gateway.sqlite';
+
     public function __construct(
         private E2EConfig $config,
         private ?SourceMountedCheckoutSyncer $sourceSyncer = null,
@@ -1215,7 +1219,9 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
 
         if ($sourceMountedCheckout) {
             $bootstrapCommand =
-                E2EGatewayApi::sourceMountedGatewayStateCommand().' && php apps/gateway/artisan '.$bootstrapArguments;
+                E2EGatewayApi::sourceMountedGatewayStateCommand()
+                .' && '
+                .$this->sourceMountedGatewayArtisanCommand($bootstrapArguments);
             E2ECommand::ssh(
                 $gateway,
                 'orbit',
@@ -1406,7 +1412,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             return sprintf(
                 'incus exec %s -- runuser -u orbit -- bash -lc %s',
                 escapeshellarg($gateway->name()),
-                escapeshellarg('cd /home/orbit/orbit && php apps/gateway/artisan '.$arguments),
+                escapeshellarg('cd /home/orbit/orbit && '.$this->sourceMountedGatewayArtisanCommand($arguments)),
             );
         }
 
@@ -1429,7 +1435,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
                 $gateway,
                 'orbit',
                 $sshKeyPair,
-                'cd /home/orbit/orbit && php apps/gateway/artisan '.$arguments,
+                'cd /home/orbit/orbit && '.$this->sourceMountedGatewayArtisanCommand($arguments),
                 timeoutSeconds: $timeoutSeconds,
             );
 
@@ -1442,6 +1448,19 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
             'Could not run gateway artisan command during Incus topology retarget',
             timeoutSeconds: $timeoutSeconds,
         );
+    }
+
+    private function sourceMountedGatewayArtisanCommand(string $arguments): string
+    {
+        return implode(' ', [
+            'env',
+            escapeshellarg('ORBIT_CONFIG_ROOT='.self::GatewayConfigRoot),
+            escapeshellarg('DB_CONNECTION=sqlite'),
+            escapeshellarg('DB_DATABASE='.self::GatewayDatabase),
+            escapeshellarg('SESSION_DRIVER=file'),
+            'php apps/gateway/artisan',
+            $arguments,
+        ]);
     }
 
     /**

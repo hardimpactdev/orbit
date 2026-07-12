@@ -418,6 +418,27 @@ it('prepares gateway state before source-mounted incus retarget bootstrap', func
         ->not->toContain('/home/orbit/orbit/apps/gateway/database/database.sqlite');
 });
 
+it('targets source-mounted incus retarget artisan commands at the live gateway database', function (): void {
+    $host = new IncusHost(incusTopologyProviderTestConfig());
+    $provider = new IncusTopologyProvider(incusTopologyProviderTestConfig());
+    $method = new ReflectionMethod($provider, 'gatewayArtisanTask');
+    $method->setAccessible(true);
+
+    $command = $method->invoke(
+        $provider,
+        new IncusInstance($host, 'gateway', commandTransport: true),
+        'orbit:internal:bake-agent-node agent-1',
+        true,
+    );
+
+    expect($command)
+        ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
+        ->toContain('DB_CONNECTION=sqlite')
+        ->toContain('DB_DATABASE=/home/orbit/.config/orbit/gateway.sqlite')
+        ->toContain('SESSION_DRIVER=file')
+        ->toContain('php apps/gateway/artisan orbit:internal:bake-agent-node agent-1');
+});
+
 function incusTopologyProviderTestConfig(): E2EConfig
 {
     return new E2EConfig(
