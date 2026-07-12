@@ -1081,7 +1081,7 @@ final readonly class DockerTopologyBuilder
             'orbit',
             $key,
             sprintf(
-                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-gateway-service-install --skip-wireguard-install',
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --tld=gateway --skip-gateway-service-install --skip-wireguard-install',
                 $gatewayWireGuardAddress,
             ),
             timeoutSeconds: 120,

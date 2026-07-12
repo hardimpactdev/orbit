@@ -1208,7 +1208,7 @@ final readonly class IncusTopologyProvider implements E2ETopologyProvider
         }
 
         $bootstrapArguments = sprintf(
-            'orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-gateway-service-install',
+            'orbit:internal:bootstrap-gateway-local gateway %s --tld=gateway --public-host=%s --skip-gateway-service-install',
             escapeshellarg(self::GatewayWireGuardIp),
             escapeshellarg($gateway->waitForIpv4()),
         );

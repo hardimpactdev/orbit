@@ -127,7 +127,7 @@ final readonly class E2EGatewayApi
 
         if ($gatewayWireGuardAddress !== null) {
             $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --skip-gateway-service-install --skip-wireguard-install',
+                'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway %s --tld=gateway --skip-gateway-service-install --skip-wireguard-install',
                 escapeshellarg($gatewayWireGuardAddress),
             );
         }

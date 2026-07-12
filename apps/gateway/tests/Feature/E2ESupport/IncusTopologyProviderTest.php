@@ -405,6 +405,8 @@ it('prepares gateway state before source-mounted incus retarget bootstrap', func
         ->and($commandOutput)
         ->toContain('ORBIT_CONFIG_ROOT')
         ->and($commandOutput)
+        ->toContain('--tld=gateway')
+        ->and($commandOutput)
         ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
         ->and($commandOutput)
         ->toContain('/home/operator/.config/orbit/config.json')

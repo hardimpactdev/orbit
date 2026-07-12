@@ -3892,7 +3892,7 @@ class IncusTopologyBuilder
         E2ECommand::gatewayArtisan(
             $gateway,
             sprintf(
-                'orbit:internal:bootstrap-gateway-local gateway %s --public-host=%s --skip-gateway-service-install',
+                'orbit:internal:bootstrap-gateway-local gateway %s --tld=gateway --public-host=%s --skip-gateway-service-install',
                 escapeshellarg(self::GatewayWireGuardIp),
                 escapeshellarg($publicHost),
             ),

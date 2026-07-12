@@ -679,7 +679,7 @@ it('builds Docker topology state through the host orbit launcher', function (): 
             "cd /home/orbit/orbit && ORBIT_CONFIG_ROOT='\\''/home/orbit/.config/orbit'\\'' DB_CONNECTION=sqlite DB_DATABASE='\\''/home/orbit/.config/orbit/gateway.sqlite'\\'' SESSION_DRIVER=file php apps/gateway/artisan migrate --force --no-interaction --ansi",
         )
         ->toContain(
-            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --skip-gateway-service-install --skip-wireguard-install',
+            'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway 10.6.0.2 --tld=gateway --skip-gateway-service-install --skip-wireguard-install',
         )
         ->toContain(
             'sudo -iu orbit env ORBIT_GATEWAY_CONTAINER="${ORBIT_GATEWAY_CONTAINER:-}" ORBIT_E2E_DOCKER_NETWORK="${ORBIT_E2E_DOCKER_NETWORK:-}" ORBIT_CONFIG_ROOT="${ORBIT_CONFIG_ROOT:-/home/orbit/.config/orbit}" DB_CONNECTION="${DB_CONNECTION:-sqlite}" DB_DATABASE="${DB_DATABASE:-/home/orbit/.config/orbit/gateway.sqlite}" SESSION_DRIVER="${SESSION_DRIVER:-file}" bash -lc',
