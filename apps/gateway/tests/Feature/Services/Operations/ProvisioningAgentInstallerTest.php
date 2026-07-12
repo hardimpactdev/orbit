@@ -1,0 +1,145 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Data\Operations\ReleaseManifest;
+use App\Models\Node;
+use App\Models\NodeRoleAssignment;
+use App\Services\Ca\OrbitCaService;
+use App\Services\Operations\FleetUpdateTargetSelector;
+use App\Services\Operations\NodeAgentServicePayloadBuilder;
+use App\Services\Operations\ProvisioningAgentInstaller;
+use App\Services\Operations\ReleaseManifestResolver;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Fakes\ProvisioningAgentInstallerRemoteExecutor;
+
+uses(RefreshDatabase::class);
+
+it('installs and starts the initial Agent over provisioning SSH before role convergence', function (): void {
+    $gateway = Node::factory()->create([
+        'name' => 'gateway-1',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+    app(OrbitCaService::class)->ensureRootCa();
+
+    $node = Node::factory()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.4',
+        'user' => 'orbit',
+        'status' => 'provisioning',
+    ]);
+
+    $transport = new ProvisioningAgentInstallerRemoteExecutor;
+    $installer = new ProvisioningAgentInstaller(
+        transport: $transport,
+        manifests: provisioning_agent_installer_manifest_resolver(),
+        agentServices: app(NodeAgentServicePayloadBuilder::class),
+        targets: app(FleetUpdateTargetSelector::class),
+    );
+
+    $result = $installer->install($node);
+
+    expect($result->successful())
+        ->toBeTrue()
+        ->and($transport->runs)
+        ->toHaveCount(1)
+        ->and($transport->runs[0]['node']->is($node))
+        ->toBeTrue()
+        ->and($transport->runs[0]['script'])
+        ->toContain('orbit-agent-linux-x64')
+        ->toContain('sha256sum -c -')
+        ->toContain('/home/orbit/.local/bin/orbit-agent')
+        ->toContain('/etc/systemd/system/orbit-agent.service')
+        ->toContain("systemctl enable 'orbit-agent.service'")
+        ->toContain("systemctl restart 'orbit-agent.service'")
+        ->toContain('http://10.6.0.4:9477/health')
+        ->and($transport->runs[0]['options']['input'])
+        ->toBeString()
+        ->not
+        ->toContain('gateway_url =')
+        ->and($node->fresh()->isProvisioning())
+        ->toBeTrue();
+});
+
+it('refuses provisioning SSH after the node becomes active', function (): void {
+    $gateway = Node::factory()->create([
+        'name' => 'gateway-1',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.2',
+        'status' => 'active',
+    ]);
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $gateway->id,
+        'role' => 'gateway',
+        'status' => 'active',
+    ]);
+
+    $node = Node::factory()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.4',
+        'status' => 'active',
+    ]);
+    $transport = new ProvisioningAgentInstallerRemoteExecutor;
+    $installer = new ProvisioningAgentInstaller(
+        transport: $transport,
+        manifests: provisioning_agent_installer_manifest_resolver(),
+        agentServices: app(NodeAgentServicePayloadBuilder::class),
+        targets: app(FleetUpdateTargetSelector::class),
+    );
+
+    expect(fn () => $installer->install($node))
+        ->toThrow(\RuntimeException::class, 'Provisioning Agent installation requires a provisioning node.')
+        ->and($transport->runs)
+        ->toBeEmpty();
+});
+
+function provisioning_agent_installer_manifest_resolver(): ReleaseManifestResolver
+{
+    $manifest = ReleaseManifest::fromArray([
+        'schema_version' => 1,
+        'version' => '1.2.3',
+        'source' => 'github-release',
+        'images' => [
+            'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway@sha256:'.str_repeat('a', times: 64),
+        ],
+        'cli_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://artifacts.orbit.test/orbit-linux-x64',
+                'sha256' => str_repeat('b', times: 64),
+            ],
+            'darwin-arm64' => [
+                'url' => 'https://artifacts.orbit.test/orbit-macos-arm64',
+                'sha256' => str_repeat('c', times: 64),
+            ],
+        ],
+        'agent_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://artifacts.orbit.test/orbit-agent-linux-x64',
+                'sha256' => str_repeat('d', times: 64),
+            ],
+        ],
+        'role_images' => [
+            'orbit-caddy' => 'ghcr.io/hardimpactdev/orbit-caddy@sha256:'.str_repeat('e', times: 64),
+        ],
+    ]);
+
+    return new class($manifest) extends ReleaseManifestResolver {
+        public function __construct(
+            private ReleaseManifest $manifest,
+        ) {}
+
+        public function resolve(): ReleaseManifest
+        {
+            return $this->manifest;
+        }
+    };
+}

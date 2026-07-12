@@ -236,13 +236,18 @@ class Node extends Model
         return ! in_array(
             false,
             [
-                $this->isActive(),
+                $this->isActive() || $this->isProvisioning(),
                 $this->hasAgentIntent(),
                 $this->hasSupportedAgentPlatform(),
                 $this->hasValidWireguardAddress(),
             ],
             strict: true,
         );
+    }
+
+    public function isAgentProvisioningReady(): bool
+    {
+        return $this->isProvisioning() && $this->hasSupportedAgentPlatform() && $this->hasValidWireguardAddress();
     }
 
     private function hasAgentWorkloadRole(): bool

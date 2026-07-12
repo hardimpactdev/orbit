@@ -1,0 +1,148 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Operations;
+
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\Node;
+use App\Services\RemoteShell\RemoteExecutor;
+use RuntimeException;
+
+class ProvisioningAgentInstaller
+{
+    // @orbit-ssh-lane provisioning-ssh
+    public function __construct(
+        private readonly RemoteExecutor $transport,
+        private readonly ReleaseManifestResolver $manifests,
+        private readonly NodeAgentServicePayloadBuilder $agentServices,
+        private readonly FleetUpdateTargetSelector $targets,
+    ) {}
+
+    public function install(Node $node): RemoteShellResult
+    {
+        if (! $node->isProvisioning()) {
+            throw new RuntimeException('Provisioning Agent installation requires a provisioning node.');
+        }
+
+        $gateway = $this->targets->gatewayNode();
+
+        if (! $gateway instanceof Node) {
+            throw new RuntimeException('An active gateway identity is required to bootstrap Orbit Agent.');
+        }
+
+        $platform = CliArtifactPlatform::forNode($node);
+        $artifact = $this->manifests->resolve()->agentArtifacts[$platform] ?? null;
+
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+        ) {
+            throw new RuntimeException(
+                "Release manifest does not contain an Agent artifact for platform [{$platform}].",
+            );
+        }
+
+        $service = $this->agentServices->forProvisioningNode($node, $gateway);
+
+        return $this->transport->run(
+            node: $node,
+            script: $this->installScript($artifact, $service),
+            options: [
+                'timeout' => 300,
+                'input' => $this->installInput($service),
+                'strict' => true,
+                'metadata' => [
+                    'ORBIT_PROVISIONING_STEP' => 'agent_bootstrap',
+                ],
+            ],
+        );
+    }
+
+    /**
+     * @param  array{url: string, sha256: string}  $artifact
+     * @param  array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}  $service
+     */
+    private function installScript(array $artifact, array $service): string
+    {
+        $artifactUrl = escapeshellarg($artifact['url']);
+        $artifactSha256 = escapeshellarg(strtolower($artifact['sha256']));
+        $binaryPath = escapeshellarg($service['exec_start']);
+        $configPath = escapeshellarg($service['config_path']);
+        $caPath = escapeshellarg($service['ca_path']);
+        $serviceUser = escapeshellarg($service['user']);
+        $httpBind = escapeshellarg($service['http_bind']);
+        $healthUrl = escapeshellarg('http://'.$service['http_bind'].'/health');
+        $unitName = escapeshellarg($service['unit_name'].'.service');
+        $unitPath = escapeshellarg('/etc/systemd/system/'.$service['unit_name'].'.service');
+
+        return <<<BASH
+            set -euo pipefail
+            tmp="\$(mktemp -d \"\${TMPDIR:-/tmp}/orbit-agent-bootstrap.XXXXXX\")"
+            cleanup() { rm -rf "\$tmp"; }
+            trap cleanup EXIT
+
+            IFS= read -r agent_config_base64
+            IFS= read -r root_ca_base64
+
+            curl -fksSL --retry 3 --retry-delay 2 {$artifactUrl} -o "\$tmp/orbit-agent-linux-x64"
+            printf '%s  %s\n' {$artifactSha256} "\$tmp/orbit-agent-linux-x64" | sha256sum -c -
+            chmod 0755 "\$tmp/orbit-agent-linux-x64"
+
+            sudo install -d -m 0755 -o {$serviceUser} -g {$serviceUser} "\$(dirname {$binaryPath})"
+            sudo install -d -m 0700 -o {$serviceUser} -g {$serviceUser} "\$(dirname {$configPath})"
+            sudo install -d -m 0755 -o {$serviceUser} -g {$serviceUser} "\$(dirname {$caPath})"
+            printf '%s' "\$agent_config_base64" | base64 --decode > "\$tmp/agent.toml"
+            printf '%s' "\$root_ca_base64" | base64 --decode > "\$tmp/root.crt"
+            sudo install -m 0755 -o {$serviceUser} -g {$serviceUser} "\$tmp/orbit-agent-linux-x64" {$binaryPath}
+            sudo install -m 0600 -o {$serviceUser} -g {$serviceUser} "\$tmp/agent.toml" {$configPath}
+            sudo install -m 0644 -o {$serviceUser} -g {$serviceUser} "\$tmp/root.crt" {$caPath}
+
+            cat > "\$tmp/orbit-agent.service" <<'UNIT'
+            [Unit]
+            Description=Orbit Agent
+            After=network-online.target
+            Wants=network-online.target
+
+            [Service]
+            Type=simple
+            User={$service['user']}
+            Environment=ORBIT_AGENT_CONFIG={$service['config_path']}
+            Environment=ORBIT_AGENT_HTTP_BIND={$service['http_bind']}
+            ExecStart={$service['exec_start']}
+            Restart=always
+            RestartSec=3
+
+            [Install]
+            WantedBy=multi-user.target
+            UNIT
+
+            sudo install -m 0644 "\$tmp/orbit-agent.service" {$unitPath}
+            sudo systemctl daemon-reload
+            sudo systemctl enable {$unitName}
+            sudo systemctl restart {$unitName}
+
+            for attempt in \$(seq 1 30); do
+                if curl -fsS {$healthUrl} >/dev/null; then
+                    printf '%s\n' agent-ready
+                    exit 0
+                fi
+
+                sleep 1
+            done
+
+            sudo systemctl status {$unitName} --no-pager >&2 || true
+            printf 'Orbit Agent did not become ready on %s.\n' {$httpBind} >&2
+            exit 1
+            BASH;
+    }
+
+    /**
+     * @param  array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}  $service
+     */
+    private function installInput(array $service): string
+    {
+        return base64_encode($service['config'])."\n".base64_encode($service['ca_pem'])."\n";
+    }
+}

@@ -22,6 +22,7 @@ use App\Services\Nodes\Access\NodePermissionPresets;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\RoleSelfGrantMaterializer;
+use App\Services\Operations\ProvisioningAgentInstaller;
 use App\Services\OrbitHostInstaller;
 use App\Services\RemoteShell\Exceptions\HostKeyMismatch;
 use App\Services\RemoteShell\Exceptions\HostKeyPinningFailed;
@@ -398,6 +399,19 @@ final class GatewayNodeCreator
             return $wireGuardPeerFailure;
         }
 
+        if ($requiresHostProvisioning) {
+            $agentBootstrap = $this->bootstrapProvisionedAgent($node);
+
+            if (is_int($agentBootstrap)) {
+                $this->rollbackProvisioningNode($node, 'agent_bootstrap_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'agent_bootstrap',
+                ]);
+
+                return $agentBootstrap;
+            }
+        }
+
         $failedAssignment = null;
 
         foreach ($this->orderWorkloadRoles($roles) as $role) {
@@ -612,6 +626,43 @@ final class GatewayNodeCreator
         ]);
 
         return null;
+    }
+
+    private function bootstrapProvisionedAgent(Node $node): ?int
+    {
+        try {
+            $result = app(ProvisioningAgentInstaller::class)->install($node);
+        } catch (Throwable $exception) {
+            return $this->agentBootstrapFailure($node, $exception->getMessage());
+        }
+
+        if ($result->successful()) {
+            return null;
+        }
+
+        $errorOutput = trim($result->errorOutput);
+        $output = trim($result->output);
+
+        $error = match (true) {
+            $errorOutput !== '' => $errorOutput,
+            $output !== '' => $output,
+            default => null,
+        };
+
+        return $this->agentBootstrapFailure($node, $error);
+    }
+
+    private function agentBootstrapFailure(Node $node, ?string $error): int
+    {
+        return $this->failCommand(
+            code: 'node.provisioning_incomplete',
+            message: "Node '{$node->name}' created but the initial Orbit Agent could not be installed.",
+            meta: [
+                'node' => $node->name,
+                'step' => 'agent_bootstrap',
+                'error' => $error,
+            ],
+        );
     }
 
     private function configureProvisionedNodeWireGuard(
@@ -1352,6 +1403,17 @@ final class GatewayNodeCreator
                 ]);
 
                 return $wireGuardProvisioning;
+            }
+
+            $agentBootstrap = $this->bootstrapProvisionedAgent($node);
+
+            if (is_int($agentBootstrap)) {
+                $this->rollbackProvisioningNode($node, 'agent_bootstrap_failed', [
+                    'host' => $inputs['host'],
+                    'step' => 'agent_bootstrap',
+                ]);
+
+                return $agentBootstrap;
             }
 
             $roleAssignmentFailure = $this->ensureInitialWorkloadRoles(

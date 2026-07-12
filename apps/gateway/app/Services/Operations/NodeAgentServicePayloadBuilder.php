@@ -23,11 +23,27 @@ final readonly class NodeAgentServicePayloadBuilder
             return null;
         }
 
+        return $this->payload($node, $gateway, $this->configs->render($node, $gateway));
+    }
+
+    /**
+     * @return array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}
+     */
+    public function forProvisioningNode(Node $node, Node $gateway): array
+    {
+        return $this->payload($node, $gateway, $this->configs->renderForProvisioning($node, $gateway));
+    }
+
+    /**
+     * @return array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}
+     */
+    private function payload(Node $node, Node $gateway, string $config): array
+    {
         return [
             'unit_name' => 'orbit-agent',
             'exec_start' => FleetUpdateNodeAgentBinary::binPath($node),
             'config_path' => $this->configs->path($node),
-            'config' => $this->configs->render($node, $gateway),
+            'config' => $config,
             'ca_path' => $this->configs->caPath($node),
             'ca_pem' => $this->ca->rootCert(),
             'http_bind' => trim((string) $node->wireguard_address).':9477',

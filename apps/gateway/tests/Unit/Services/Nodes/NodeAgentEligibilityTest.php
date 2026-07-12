@@ -65,6 +65,25 @@ it('fails closed without a supported platform or WireGuard identity', function (
         ->toBeFalse();
 });
 
+it('admits provisioning nodes only after workload Agent intent is persisted', function (): void {
+    $node = Node::factory()->create([
+        'status' => 'provisioning',
+        'platform' => 'ubuntu_24-04',
+        'managed' => false,
+        'wireguard_address' => '10.6.0.47',
+    ]);
+
+    expect($node->isAgentEligible())->toBeFalse();
+
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'app-dev',
+        'status' => 'pending',
+    ]);
+
+    expect($node->fresh()->isAgentEligible())->toBeTrue();
+});
+
 it('generates factory WireGuard identities from a deterministic private unicast range', function (): void {
     $nodes = Node::factory()->appDev()->count(32)->create();
 

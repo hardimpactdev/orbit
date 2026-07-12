@@ -20,6 +20,20 @@ class NodeAgentConfigRenderer
             throw new RuntimeException("Node [{$node->name}] is not eligible for managed Agent execution.");
         }
 
+        return $this->renderConfig($node, $gateway);
+    }
+
+    public function renderForProvisioning(Node $node, Node $gateway): string
+    {
+        if (! $node->isAgentProvisioningReady()) {
+            throw new RuntimeException("Node [{$node->name}] is not ready for provisioning Agent installation.");
+        }
+
+        return $this->renderConfig($node, $gateway);
+    }
+
+    private function renderConfig(Node $node, Node $gateway): string
+    {
         if ($node->hasActiveRole('gateway')) {
             throw new RuntimeException('Gateway nodes are never Orbit Agent targets.');
         }

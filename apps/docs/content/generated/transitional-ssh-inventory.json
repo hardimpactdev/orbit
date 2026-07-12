@@ -34,7 +34,11 @@
     "provisioning_ssh": [
         {
             "path": "apps/gateway/app/Services/Nodes/GatewayNodeCreator.php",
-            "marker_line": 57
+            "marker_line": 58
+        },
+        {
+            "path": "apps/gateway/app/Services/Operations/ProvisioningAgentInstaller.php",
+            "marker_line": 14
         },
         {
             "path": "apps/gateway/app/Services/OrbitHostInstaller.php",

@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\WireGuardPeer;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use App\Services\Operations\ProvisioningAgentInstaller;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Security\SshHostKeyPinner;
 use App\Services\Vpn\VpnDnsSwarmInstaller;
@@ -19,11 +20,13 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Spatie\Activitylog\Models\Activity;
+use Tests\Fakes\NodeStoreProvisioningAgentInstaller;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     bindDevelopmentDnsMappingTestDoubles('node-store-controller-dns');
+    app()->instance(ProvisioningAgentInstaller::class, new NodeStoreProvisioningAgentInstaller);
 
     app()->instance(SshHostKeyPinner::class, new class {
         public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
@@ -400,6 +403,17 @@ describe('NodeStoreController', function (): void {
             ->toHaveCount(1)
             ->and(array_values(array_unique($shell->toolNodeStatuses)))
             ->toBe([NodeStatus::Provisioning->value]);
+
+        $agentInstaller = app(ProvisioningAgentInstaller::class);
+
+        expect($agentInstaller)
+            ->toBeInstanceOf(NodeStoreProvisioningAgentInstaller::class)
+            ->and($agentInstaller->provisioningSnapshots)
+            ->toBe([[
+                'node' => 'app-dev-1',
+                'status' => NodeStatus::Provisioning->value,
+                'role_count' => 0,
+            ]]);
 
         $entry = Activity::query()
             ->where('event', 'node.created')
