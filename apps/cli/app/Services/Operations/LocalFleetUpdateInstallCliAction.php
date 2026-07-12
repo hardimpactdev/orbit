@@ -9,6 +9,10 @@ use Symfony\Component\Process\Process;
 
 final readonly class LocalFleetUpdateInstallCliAction
 {
+    public function __construct(
+        private LocalFleetUpdateInstallCliEnvironment $environment,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
@@ -22,30 +26,7 @@ final readonly class LocalFleetUpdateInstallCliAction
 
         $process = new Process(['/usr/bin/env', 'bash', '-c', $this->installScript()]);
         $process->setTimeout(300);
-        $agentArtifact = $installPayload->agentArtifact;
-        $agentService = $installPayload->agentService;
-        $process->setEnv([
-            'PATH' => is_string($path) ? $path : '',
-            'ORBIT_CLI_ARTIFACT_URL' => $installPayload->artifactUrl,
-            'ORBIT_CLI_SHA256' => strtolower($installPayload->sha256),
-            'ORBIT_INSTALL_PATH' => $installPayload->installRoot,
-            'ORBIT_BIN_PATH' => $installPayload->binPath,
-            'ORBIT_SHARED_BINARY_PATH' => $installPayload->sharedBinaryPath ?? '',
-            'ORBIT_AGENT_ARTIFACT_URL' => $agentArtifact->artifactUrl ?? '',
-            'ORBIT_AGENT_SHA256' => strtolower($agentArtifact->sha256 ?? ''),
-            'ORBIT_AGENT_BIN_PATH' => $agentArtifact->binPath ?? '',
-            'ORBIT_AGENT_LAUNCHD_LABEL' => $this->environmentString('ORBIT_AGENT_LAUNCHD_LABEL'),
-            'ORBIT_AGENT_LAUNCHCTL_BIN' => $this->environmentString('ORBIT_AGENT_LAUNCHCTL_BIN'),
-            'ORBIT_AGENT_SERVICE_UNIT_NAME' => $agentService->unitName ?? '',
-            'ORBIT_AGENT_SERVICE_EXEC_START' => $agentService->execStart ?? '',
-            'ORBIT_AGENT_SERVICE_CONFIG_PATH' => $agentService->configPath ?? '',
-            'ORBIT_AGENT_SERVICE_CONFIG_BASE64' => $agentService instanceof LocalFleetUpdateInstallAgentServicePayload
-                ? base64_encode($agentService->config)
-                : '',
-            'ORBIT_AGENT_SERVICE_HTTP_BIND' => $agentService->httpBind ?? '',
-            'ORBIT_AGENT_SERVICE_USER' => $agentService->user ?? '',
-            'ORBIT_ROLE_IMAGES_JSON' => json_encode($installPayload->roleImages, JSON_THROW_ON_ERROR),
-        ]);
+        $process->setEnv($this->environment->forPayload($installPayload, $path));
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -132,15 +113,56 @@ final readonly class LocalFleetUpdateInstallCliAction
             install_agent_config() {
                 config_path="${ORBIT_AGENT_SERVICE_CONFIG_PATH:-}"
                 config_base64="${ORBIT_AGENT_SERVICE_CONFIG_BASE64:-}"
+                ca_path="${ORBIT_AGENT_SERVICE_CA_PATH:-}"
+                ca_base64="${ORBIT_AGENT_SERVICE_CA_BASE64:-}"
 
-                if [ -z "$config_path" ] || [ -z "$config_base64" ]; then
+                if [ -z "$config_path" ] || [ -z "$config_base64" ] || [ -z "$ca_path" ] || [ -z "$ca_base64" ]; then
                     return
                 fi
 
                 echo write_agent_config
-                php -r '$decoded = base64_decode((string) getenv("ORBIT_AGENT_SERVICE_CONFIG_BASE64"), true); if (! is_string($decoded)) { exit(1); } file_put_contents($argv[1], $decoded);' "$tmp/orbit-agent.toml"
-                run_privileged install -d -m 0755 "$(dirname "$config_path")"
-                run_privileged install -m 0644 "$tmp/orbit-agent.toml" "$config_path"
+                php -r '$decoded = base64_decode((string) getenv("ORBIT_AGENT_SERVICE_CONFIG_BASE64"), true); if (! is_string($decoded) || file_put_contents($argv[1], $decoded) === false) { exit(1); }' "$tmp/orbit-agent.toml"
+                php -r '$decoded = base64_decode((string) getenv("ORBIT_AGENT_SERVICE_CA_BASE64"), true); if (! is_string($decoded) || file_put_contents($argv[1], $decoded) === false) { exit(1); }' "$tmp/orbit-root.crt"
+
+                config_parent="$(dirname "$config_path")"
+                ca_parent="$(dirname "$ca_path")"
+                config_staged="$config_parent/.orbit-agent-config.$$.tmp"
+                ca_staged="$ca_parent/.orbit-agent-ca.$$.tmp"
+
+                cleanup_agent_config_staging() {
+                    if [ -n "$config_staged" ]; then
+                        run_privileged rm -f "$config_staged" >/dev/null 2>&1 || true
+                    fi
+
+                    if [ -n "$ca_staged" ]; then
+                        run_privileged rm -f "$ca_staged" >/dev/null 2>&1 || true
+                    fi
+                }
+
+                run_privileged install -d -m 0755 "$config_parent"
+                run_privileged install -d -m 0755 "$ca_parent"
+
+                if ! run_privileged install -m 0644 "$tmp/orbit-agent.toml" "$config_staged"; then
+                    cleanup_agent_config_staging
+                    return 1
+                fi
+
+                if ! run_privileged install -m 0644 "$tmp/orbit-root.crt" "$ca_staged"; then
+                    cleanup_agent_config_staging
+                    return 1
+                fi
+
+                if ! run_privileged mv -f "$ca_staged" "$ca_path"; then
+                    cleanup_agent_config_staging
+                    return 1
+                fi
+                ca_staged=""
+
+                if ! run_privileged mv -f "$config_staged" "$config_path"; then
+                    cleanup_agent_config_staging
+                    return 1
+                fi
+                config_staged=""
             }
 
             link_binary() {
@@ -534,13 +556,6 @@ final readonly class LocalFleetUpdateInstallCliAction
             echo verify
             "$bin_path" --version --local
             BASH;
-    }
-
-    private function environmentString(string $key): string
-    {
-        $value = getenv($key);
-
-        return is_string($value) ? $value : '';
     }
 
     /**

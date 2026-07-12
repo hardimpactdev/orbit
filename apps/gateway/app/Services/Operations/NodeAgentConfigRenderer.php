@@ -35,7 +35,7 @@ class NodeAgentConfigRenderer
             'node_id = "'.$this->tomlString((string) $node->getKey()).'"',
             'node_name = "'.$this->tomlString($node->name).'"',
             'gateway_name = "'.$this->tomlString($gateway->name).'"',
-            'ca_pem_path = "'.$this->tomlString($this->caPemPath($node)).'"',
+            'ca_pem_path = "'.$this->tomlString($this->caPath($node)).'"',
             'platform = "'.$this->tomlString((string) $node->platform).'"',
             'managed = true',
             'wireguard_address = "'.$this->tomlString((string) $node->wireguard_address).'"',
@@ -48,7 +48,7 @@ class NodeAgentConfigRenderer
         return $this->configRoot($node).'/agent.toml';
     }
 
-    private function caPemPath(Node $node): string
+    public function caPath(Node $node): string
     {
         return $this->configRoot($node).'/ca/root.crt';
     }

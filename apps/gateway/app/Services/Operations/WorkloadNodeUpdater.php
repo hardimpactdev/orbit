@@ -248,7 +248,7 @@ final readonly class WorkloadNodeUpdater
      *     bin_path: string,
      *     shared_binary_path: string|null,
      *     agent_artifact: array{artifact_url: string, sha256: string, bin_path: string}|null,
-     *     agent_service: array{unit_name: string, exec_start: string, config_path: string, config: string, http_bind: string, user: string}|null,
+     *     agent_service: array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}|null,
      *     role_images: list<string>,
      * }
      */
@@ -396,7 +396,7 @@ final readonly class WorkloadNodeUpdater
     }
 
     /**
-     * @return array{unit_name: string, exec_start: string, config_path: string, config: string, http_bind: string, user: string}|null
+     * @return array{unit_name: string, exec_start: string, config_path: string, config: string, ca_path: string, ca_pem: string, http_bind: string, user: string}|null
      */
     private function agentServicePayload(Node $node): ?array
     {

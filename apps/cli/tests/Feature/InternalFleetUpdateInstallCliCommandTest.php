@@ -35,10 +35,7 @@ describe('internal fleet update install cli command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'missing_token',
-                'Operation token is required.',
-            ));
+            ->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
     it('installs a downloaded CLI artifact into typed local paths', function (): void {
@@ -128,10 +125,7 @@ describe('internal fleet update install cli command', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
-            ->toBe(JsonEnvelope::failure(
-                'validation_failed',
-                'Fleet update CLI install payload is invalid.',
-            ));
+            ->toBe(JsonEnvelope::failure('validation_failed', 'Fleet update CLI install payload is invalid.'));
     });
 
     it('retries transient curl failures while downloading artifacts', function (): void {
@@ -355,13 +349,9 @@ describe('internal fleet update install cli command', function (): void {
         }
 
         expect($exitCode)->toBe(0);
-        expect($stdout)
-            ->toContain('restart_agent_unmanaged')
-            ->toContain('start_agent_unmanaged');
+        expect($stdout)->toContain('restart_agent_unmanaged')->toContain('start_agent_unmanaged');
         expect(str_contains($stdout, 'skip_agent_restart_no_unit'))->toBeFalse();
-        expect($calls)
-            ->toContain('pgrep -f '.$workspace.'/bin/orbit-agent')
-            ->toContain('ps -p 4242 -o command=');
+        expect($calls)->toContain('pgrep -f '.$workspace.'/bin/orbit-agent')->toContain('ps -p 4242 -o command=');
     });
 
     it('keeps cli installs successful when role image pre-pulls are unavailable', function (): void {
@@ -423,6 +413,8 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
         $artifactPath = "{$workspace}/artifact/orbit";
         $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
         $agentConfigPath = "{$workspace}/agent.toml";
+        $agentCaPath = "{$workspace}/ca/root.crt";
+        $agentCaPem = "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
         file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
         chmod(filename: $agentArtifactPath, permissions: 0o755);
         $sha256 = fleet_update_install_cli_sha256($artifactPath);
@@ -461,6 +453,8 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
                         'wireguard_address = "10.6.0.2"',
                         '',
                     ]),
+                    'ca_path' => $agentCaPath,
+                    'ca_pem' => $agentCaPem,
                     'http_bind' => '10.6.0.2:9477',
                     'user' => 'orbit',
                 ],
@@ -473,6 +467,7 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
         $calls = file_get_contents("{$workspace}/missing-systemd-calls.log");
         $unit = file_get_contents("{$workspace}/adopted-orbit-agent.service");
         $config = file_get_contents($agentConfigPath);
+        $caPem = file_get_contents($agentCaPath);
 
         expect($exitCode)->toBe(0);
         expect($stdout)
@@ -498,6 +493,71 @@ describe('systemd Orbit Agent adoption during fleet update install', function ()
             ->toContain('platform = "ubuntu_24-04"')
             ->toContain('managed = true')
             ->toContain('wireguard_address = "10.6.0.2"');
+        expect($caPem)->toBe($agentCaPem);
+    });
+
+    it('preserves live Agent trust files and does not restart when staging fails', function (): void {
+        $workspace = make_fleet_update_install_cli_workspace();
+        $failureBin = make_fleet_update_install_cli_failing_agent_config_bin($workspace);
+        $artifactPath = "{$workspace}/artifact/orbit";
+        $agentArtifactPath = "{$workspace}/artifact/orbit-agent";
+        $agentConfigPath = "{$workspace}/agent.toml";
+        $agentCaPath = "{$workspace}/ca/root.crt";
+        $oldConfig = "node_name = \"old-node\"\n";
+        $oldCaPem = "-----BEGIN CERTIFICATE-----\nb2xk\n-----END CERTIFICATE-----\n";
+        $newCaPem = "-----BEGIN CERTIFICATE-----\nbmV3\n-----END CERTIFICATE-----\n";
+
+        mkdir(dirname($agentCaPath), recursive: true);
+        file_put_contents(filename: $agentArtifactPath, data: "#!/usr/bin/env sh\necho agent\n");
+        file_put_contents(filename: $agentConfigPath, data: $oldConfig);
+        file_put_contents(filename: $agentCaPath, data: $oldCaPem);
+        chmod(filename: $agentArtifactPath, permissions: 0o755);
+
+        $path = $failureBin.PATH_SEPARATOR.($_ENV['ORBIT_FLEET_UPDATE_INSTALL_CLI_ORIGINAL_PATH'] ?? '');
+        putenv("PATH={$path}");
+        $_ENV['PATH'] = $path;
+        $_SERVER['PATH'] = $path;
+
+        [$exitCode, $output] = run_internal_fleet_update_install_cli_command(
+            [
+                '--operation-token' => fleet_update_install_cli_signed_operation_token(),
+                '--json' => true,
+            ],
+            stdin: json_encode([
+                'artifact_url' => "file://{$artifactPath}",
+                'sha256' => fleet_update_install_cli_sha256($artifactPath),
+                'install_root' => "{$workspace}/install-root",
+                'bin_path' => "{$workspace}/bin/orbit",
+                'shared_binary_path' => null,
+                'agent_artifact' => [
+                    'artifact_url' => "file://{$agentArtifactPath}",
+                    'sha256' => fleet_update_install_cli_sha256($agentArtifactPath),
+                    'bin_path' => "{$workspace}/bin/orbit-agent",
+                ],
+                'agent_service' => [
+                    'unit_name' => 'orbit-agent',
+                    'exec_start' => "{$workspace}/bin/orbit-agent",
+                    'config_path' => $agentConfigPath,
+                    'config' => "node_name = \"new-node\"\n",
+                    'ca_path' => $agentCaPath,
+                    'ca_pem' => $newCaPem,
+                    'http_bind' => '10.6.0.2:9477',
+                    'user' => 'orbit',
+                ],
+                'role_images' => [],
+            ], JSON_THROW_ON_ERROR),
+        );
+
+        $calls = file_get_contents("{$workspace}/agent-config-failure-calls.log");
+
+        expect($exitCode)
+            ->toBe(1, $output)
+            ->and(file_get_contents($agentConfigPath))
+            ->toBe($oldConfig)
+            ->and(file_get_contents($agentCaPath))
+            ->toBe($oldCaPem)
+            ->and($calls)
+            ->not->toContain('systemctl');
     });
 });
 
@@ -951,6 +1011,42 @@ function make_fleet_update_install_cli_fake_missing_agent_systemd_bin(string $wo
         exit 0
         SH);
     chmod(filename: "{$bin}/sleep", permissions: 0o755);
+
+    return $bin;
+}
+
+function make_fleet_update_install_cli_failing_agent_config_bin(string $workspace): string
+{
+    $bin = "{$workspace}/agent-config-failure-bin";
+    $log = "{$workspace}/agent-config-failure-calls.log";
+    $configPath = "{$workspace}/agent.toml";
+    $realInstall = trim((string) shell_exec('command -v install'));
+
+    mkdir($bin, recursive: true);
+    file_put_contents($log, '');
+    file_put_contents("{$bin}/install", <<<SH
+        #!/usr/bin/env sh
+        echo "install \$*" >> {$log}
+        last=""
+        for arg in "\$@"; do
+          last="\$arg"
+        done
+        case "\$last" in
+          {$configPath}|*/.orbit-agent-config.*)
+            printf '%s' 'partial' > "\$last"
+            exit 42
+            ;;
+        esac
+        exec {$realInstall} "\$@"
+        SH);
+    chmod(filename: "{$bin}/install", permissions: 0o755);
+
+    file_put_contents("{$bin}/systemctl", <<<SH
+        #!/usr/bin/env sh
+        echo "systemctl \$*" >> {$log}
+        exit 0
+        SH);
+    chmod(filename: "{$bin}/systemctl", permissions: 0o755);
 
     return $bin;
 }

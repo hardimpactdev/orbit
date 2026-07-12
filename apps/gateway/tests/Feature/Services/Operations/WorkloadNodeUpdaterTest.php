@@ -14,6 +14,7 @@ use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
+use App\Services\Ca\OrbitCaService;
 use App\Services\NodeCommandTransport\NodeTransportPreference;
 use App\Services\Operations\FleetUpdateVerifier;
 use App\Services\Operations\GatewayCliArtifactRelay;
@@ -39,6 +40,7 @@ beforeEach(function (): void {
     request()->headers->set(ExplicitRemoteShellFallback::HEADER, ExplicitRemoteShellFallback::REQUIRED);
     app()->instance(GatewayCliArtifactRelay::class, new WorkloadUpdaterFakeArtifactRelay);
     app()->instance(RemoteNodeDoctor::class, new WorkloadUpdaterFakeNodeDoctor);
+    app()->instance(OrbitCaService::class, new WorkloadUpdaterFakeCa);
     Node::factory()
         ->gateway()
         ->create([
@@ -262,6 +264,11 @@ it('installs and records agent artifacts for Agent-eligible workload nodes', fun
             'artifact_url' => "http://gateway.test/api/update/artifacts/{$run->id}/agent/linux-amd64?token=fake",
             'sha256' => str_repeat('9', times: 64),
             'bin_path' => '/home/orbit/.local/bin/orbit-agent',
+        ])
+        ->and(workload_updater_install_payload($shell, node: 'app-dev-1')['agent_service'])
+        ->toMatchArray([
+            'ca_path' => '/home/orbit/.config/orbit/ca/root.crt',
+            'ca_pem' => "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n",
         ])
         ->and($node->fresh()->installed_agent)
         ->toBeInstanceOf(InstalledAgentArtifact::class)
@@ -1471,6 +1478,15 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
     public function cleanup(OperationRun $operationRun): void
     {
         //
+    }
+}
+
+readonly class WorkloadUpdaterFakeCa extends OrbitCaService
+{
+    #[Override]
+    public function rootCert(): string
+    {
+        return "-----BEGIN CERTIFICATE-----\ndGVzdA==\n-----END CERTIFICATE-----\n";
     }
 }
 

@@ -15,6 +15,8 @@ final readonly class LocalFleetUpdateInstallAgentServicePayload
         public string $execStart,
         public string $configPath,
         public string $config,
+        public string $caPath,
+        public string $caPem,
         public string $httpBind,
         public string $user,
     ) {}
@@ -40,6 +42,11 @@ final readonly class LocalFleetUpdateInstallAgentServicePayload
                 'agent_service.config_path',
             ),
             config: self::config($payload['config'] ?? null),
+            caPath: LocalFleetUpdateInstallCliPayloadField::absolutePath(
+                $payload['ca_path'] ?? null,
+                'agent_service.ca_path',
+            ),
+            caPem: self::caPem($payload['ca_pem'] ?? null),
             httpBind: self::httpBind($payload['http_bind'] ?? null),
             user: self::user($payload['user'] ?? null),
         );
@@ -70,6 +77,20 @@ final readonly class LocalFleetUpdateInstallAgentServicePayload
         }
 
         throw LocalFleetUpdateInstallCliPayloadField::validationFailure('agent_service.config');
+    }
+
+    private static function caPem(mixed $value): string
+    {
+        if (
+            is_string($value)
+            && str_contains($value, '-----BEGIN CERTIFICATE-----')
+            && str_contains($value, '-----END CERTIFICATE-----')
+            && ! str_contains($value, "\0")
+        ) {
+            return $value;
+        }
+
+        throw LocalFleetUpdateInstallCliPayloadField::validationFailure('agent_service.ca_pem');
     }
 
     private static function user(mixed $value): string
