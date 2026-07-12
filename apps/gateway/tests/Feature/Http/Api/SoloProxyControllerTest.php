@@ -322,7 +322,6 @@ describe('Solo proxy API', function (): void {
     });
 
     it('executes non-gateway Solo upstream requests on the target node loopback', function (): void {
-        request()->headers->set('X-Orbit-Node-Transport-Preference', 'agent-push');
         $target = create_solo_operator_node(name: 'NMBP');
         Http::preventStrayRequests();
         Http::fake([
@@ -368,7 +367,6 @@ describe('Solo proxy API', function (): void {
             ->toBeTrue()
             ->and($response->data['projects'][0]['name'] ?? null)
             ->toBe('orbit');
-        request()->headers->remove('X-Orbit-Node-Transport-Preference');
 
         Http::assertSent(function (Request $request): bool {
             $input = json_decode((string) $request['input'], associative: true);
