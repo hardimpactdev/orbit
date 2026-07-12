@@ -12,6 +12,8 @@ use RuntimeException;
 
 final class ProvisioningAgentInstallerRemoteExecutor implements RemoteExecutor
 {
+    public ?RemoteShellResult $result = null;
+
     /**
      * @var list<array{node: Node, script: string, options: array<string, mixed>}>
      */
@@ -24,7 +26,7 @@ final class ProvisioningAgentInstallerRemoteExecutor implements RemoteExecutor
     {
         $this->runs[] = compact('node', 'script', 'options');
 
-        return new RemoteShellResult(exitCode: 0, stdout: 'agent-ready', stderr: '', durationMs: 1);
+        return $this->result ?? new RemoteShellResult(exitCode: 0, stdout: 'agent-ready', stderr: '', durationMs: 1);
     }
 
     /**

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Operations\ReleaseManifest;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Ca\OrbitCaService;
@@ -38,6 +39,12 @@ it('installs and starts the initial Agent over provisioning SSH before role conv
     ]);
 
     $transport = new ProvisioningAgentInstallerRemoteExecutor;
+    $transport->result = new RemoteShellResult(
+        exitCode: 1,
+        stdout: "artifact: OK\nagent-ready\n",
+        stderr: 'retained SSH postamble returned non-zero',
+        durationMs: 1,
+    );
     $installer = new ProvisioningAgentInstaller(
         transport: $transport,
         manifests: provisioning_agent_installer_manifest_resolver(),
@@ -49,6 +56,8 @@ it('installs and starts the initial Agent over provisioning SSH before role conv
 
     expect($result->successful())
         ->toBeTrue()
+        ->and($result->stderr)
+        ->toBe('retained SSH postamble returned non-zero')
         ->and($transport->runs)
         ->toHaveCount(1)
         ->and($transport->runs[0]['node']->is($node))
@@ -67,6 +76,15 @@ it('installs and starts the initial Agent over provisioning SSH before role conv
         ->toBeString()
         ->not->toContain('gateway_url =')->and($transport->runs[0]['options'])
         ->not->toHaveKey('metadata')->and($node->fresh()->isProvisioning())->toBeTrue();
+
+    $transport->result = new RemoteShellResult(
+        exitCode: 1,
+        stdout: "artifact: OK\n",
+        stderr: 'agent service failed',
+        durationMs: 1,
+    );
+
+    expect($installer->install($node)->successful())->toBeFalse();
 });
 
 it('refuses provisioning SSH after the node becomes active', function (): void {

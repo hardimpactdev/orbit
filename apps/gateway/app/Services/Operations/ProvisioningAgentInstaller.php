@@ -46,7 +46,7 @@ class ProvisioningAgentInstaller
 
         $service = $this->agentServices->forProvisioningNode($node, $gateway);
 
-        return $this->transport->run(
+        $result = $this->transport->run(
             node: $node,
             script: $this->installScript($artifact, $service),
             options: [
@@ -54,6 +54,17 @@ class ProvisioningAgentInstaller
                 'input' => $this->installInput($service),
                 'strict' => true,
             ],
+        );
+
+        if ($result->successful() || ! str_ends_with(trim($result->stdout), 'agent-ready')) {
+            return $result;
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: $result->stdout,
+            stderr: $result->stderr,
+            durationMs: $result->durationMs,
         );
     }
 
