@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-12T22:48:49+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/codex-agent-push-transports/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-13-004849-codex-agent-push-transports",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "900d23f7d45777eaf80220c148ff121138cedbb76b99aff100660930a08afe8d"
+    },
+    "branch": "codex/agent-push-transports",
+    "candidate_commit": "d1f3994ae085dc6a46fbd5315a6179acb78857fa",
+    "accepted_feature_tip": "d1f3994ae085dc6a46fbd5315a6179acb78857fa",
+    "accepted_main_tip": "442fa202216262fae87f34063b202763fd11bbc2",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
