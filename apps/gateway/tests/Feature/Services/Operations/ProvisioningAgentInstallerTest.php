@@ -63,10 +63,8 @@ it('installs and starts the initial Agent over provisioning SSH before role conv
         ->toContain('http://10.6.0.4:9477/health')
         ->and($transport->runs[0]['options']['input'])
         ->toBeString()
-        ->not
-        ->toContain('gateway_url =')
-        ->and($node->fresh()->isProvisioning())
-        ->toBeTrue();
+        ->not->toContain('gateway_url =')->and($transport->runs[0]['options'])
+        ->not->toHaveKey('metadata')->and($node->fresh()->isProvisioning())->toBeTrue();
 });
 
 it('refuses provisioning SSH after the node becomes active', function (): void {

@@ -53,9 +53,6 @@ class ProvisioningAgentInstaller
                 'timeout' => 300,
                 'input' => $this->installInput($service),
                 'strict' => true,
-                'metadata' => [
-                    'ORBIT_PROVISIONING_STEP' => 'agent_bootstrap',
-                ],
             ],
         );
     }
