@@ -70,7 +70,7 @@ class ProvisioningAgentInstaller
         $caPath = escapeshellarg($service['ca_path']);
         $serviceUser = escapeshellarg($service['user']);
         $httpBind = escapeshellarg($service['http_bind']);
-        $healthUrl = escapeshellarg('http://'.$service['http_bind'].'/health');
+        $commandUrl = escapeshellarg('http://'.$service['http_bind'].'/v1/commands');
         $unitName = escapeshellarg($service['unit_name'].'.service');
         $unitPath = escapeshellarg('/etc/systemd/system/'.$service['unit_name'].'.service');
 
@@ -121,7 +121,9 @@ class ProvisioningAgentInstaller
             sudo systemctl restart {$unitName}
 
             for attempt in \$(seq 1 30); do
-                if curl -fsS {$healthUrl} >/dev/null; then
+                command_status="\$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' {$commandUrl} || true)"
+
+                if [ "\$command_status" = 405 ]; then
                     printf '%s\n' agent-ready
                     exit 0
                 fi
