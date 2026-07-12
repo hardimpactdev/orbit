@@ -1,0 +1,21 @@
+{
+    "schema_version": 2,
+    "generated_at": "2026-07-12T15:13:10+00:00",
+    "mode": "created",
+    "archive_mode": "compact",
+    "source_orbit_dir": "/Users/nckrtl/orbit/.worktrees/docs-drift-remediation/.orbit",
+    "archive_dir": "/Users/nckrtl/orbit/.orbit/sessions/2026-07-12-171310-docs-drift-remediation",
+    "agent_sessions_dir": null,
+    "copied_entries": [
+        "loop.md"
+    ],
+    "entry_digests": {
+        "loop.md": "ae992f71831e515623883e457898630d4d6f81d0e7994ab7609a4f1d4d653248"
+    },
+    "branch": "docs-drift-remediation",
+    "candidate_commit": "4136cac3f67f8fc5f6f3cec8b18bf18f7663b560",
+    "accepted_feature_tip": "4136cac3f67f8fc5f6f3cec8b18bf18f7663b560",
+    "accepted_main_tip": "3fcb9d433b72114549fb93ce59a37afec79c69ec",
+    "discovered_solo_process_ids": [],
+    "agent_results": []
+}
